@@ -51,19 +51,56 @@ Implemented:
 - Close backup creation and global UI/task exception logging.
 - Shared section-title design token and English/Gujarati setup/login resource keys.
 
-## Verification
+## Verification and completeness audit — 26 September 2026
 
-`dotnet build GroceryErp.slnx -c Release --no-restore` passes with zero warnings and zero errors.
+The Release build passes with zero warnings and zero errors. The existing test suite passes all 6
+tests, but those tests cover Phase 0 localization, architecture, and UI smoke behavior. There are
+no Phase 1 property tests, migration tests, backup/restore round-trip tests, authentication tests,
+or database-rule tests yet.
 
-## Known follow-up
+Phase 1 is **partially implemented**. The code present covers the foundation primitives and a basic
+first-run/login path, but it does not meet the Phase 1 exit criteria in `implementation.md`.
 
-- The repository did not contain a `.git` directory when this work began. Checkpoint commits are
-  created after repository initialization in the workspace, with the exact commit IDs recorded below.
-- Native Gujarati review remains a Phase 0/Phase 1 content task; Gujarati strings added here are
-  machine-drafted and marked for review.
+Implemented and verified by source/build inspection:
+
+- Paths, SQLite connection setup, WAL and pragmas, serialized database writes, Dapper handlers,
+  migrations 001–003, numerics, fiscal-year helpers, document numbers, domain errors, settings
+  snapshot, period guard, audit writer, operation guard, Argon2id authentication, first-run form,
+  backup manifest/hash verification, staged restore, and startup/login wiring.
+- The three supplied SQL files are embedded as migrations and the schema contains the required
+  strict tables, triggers, foreign keys, FTS5 tables, views, seeds, and operation table.
+- Tech stack packages for Microsoft.Data.Sqlite, Dapper, Argon2, Serilog, WPF-UI, analyzers, and
+  test tooling are centrally pinned and the solution builds cleanly.
+
+Missing or incomplete against the Phase 1 specification:
+
+- No idle lock overlay, manual lock command, lock timer, or lock/unlock shell state.
+- No clock-behind-last-bill startup check or audited override.
+- No free-disk startup warning, lot-cache integrity job, daily-backup job, weekly integrity check,
+  depreciation job, expiry refresh, operation purge job, stale-temp cleanup, or WAL checkpoint on close.
+- No `StartupPipeline` or `ShutdownPipeline`; the startup work is directly in `App` and only covers
+  capability check, migrations, restore marker quick-check, settings, wizard, login, and close backup.
+- Restore does not implement confirmation, undo after failed restart, restore audit entry, migration
+  of an older restored database, replaced-database retention/purge, or full startup integrity checks.
+- Backup rotation does not enforce the documented newest-N/monthly/pre-* retention policy.
+- Settings are only partially typed, do not publish `SettingsChangedMessage`, and settings changes
+  are not audited. Several Appendix C settings have no typed code default.
+- The first-run wizard displays printer, keyboard, and start pages but does not collect or persist
+  the required printer configuration, USB reminder, scale rule, Excel import choice, or keyboard check.
+  GSTIN validation and state prefill are also missing. Many wizard labels remain hard-coded instead
+  of using English/Gujarati resources.
+- No Phase 1 service handlers use `OperationGuard`; only the reusable guard itself exists.
+- No Core property tests, migration-with-data tests, Dapper round-trip tests, backup tamper tests,
+  duplicate-submission race tests, or restore round-trip tests.
+- Public Core/Data APIs do not consistently have the XML documentation required by PLANS.md.
+- The current implementation uses `DateTime.UtcNow` in backup rotation and bypasses the documented
+  `IClock` boundary.
+
+The correct status is therefore **Phase 1 foundation slice implemented; Phase 1 exit criteria not met**.
+Phase 2 should not start until the missing lock/startup jobs, restore lifecycle, settings/audit wiring,
+and Phase 1 test layer are completed.
 
 ## Commit history
 
-- `phase1: core and persistence foundation` — pending commit ID
-- `phase1: security and backup foundation` — pending commit ID
-- `phase1: first-run application flow` — pending commit ID
+- `00560ed phase1: foundations, security, backup, and app flow`
+- `phase1: audit implementation status` — current documentation checkpoint
