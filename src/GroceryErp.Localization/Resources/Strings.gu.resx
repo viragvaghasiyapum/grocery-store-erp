@@ -25,4 +25,6 @@
   <data name="Startup_LowDisk" xml:space="preserve"><value>ડિસ્કમાં 1 GB કરતાં ઓછી જગ્યા છે. ચાલુ રાખતા પહેલાં જગ્યા ખાલી કરો.</value><comment>MT - needs review</comment></data>
   <data name="Startup_LotCache" xml:space="preserve"><value>ઇન્વેન્ટરી અખંડિતતા તપાસ જરૂરી છે. ચાલુ રાખતા પહેલાં બેકઅપ તપાસો.</value><comment>MT - needs review</comment></data>
   <data name="Startup_ClockWarning" xml:space="preserve"><value>કમ્પ્યુટર ઘડિયાળ છેલ્લી બિલ તારીખ {0:d} કરતાં પાછળ છે. તારીખ તપાસ્યા પછી જ ચાલુ રાખો.</value><comment>MT - needs review</comment></data>
+  <data name="Startup_RestorePending" xml:space="preserve"><value>પુનઃસ્થાપિત ડેટાબેઝ પુષ્ટિની રાહ જોઈ રહ્યો છે. પુનઃસ્થાપિત ડેટા રાખવા માટે હા, પાછું ફેરવવા માટે ના, અથવા તેને બાકી રાખીને એપ્લિકેશન બંધ કરવા માટે રદ કરો પસંદ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Startup_RestoreUndone" xml:space="preserve"><value>પુનઃસ્થાપન રદ કરવામાં આવ્યું છે. અગાઉનો ડેટાબેઝ પાછો મૂકવામાં આવ્યો છે.</value><comment>MT - needs review</comment></data>
 </root>

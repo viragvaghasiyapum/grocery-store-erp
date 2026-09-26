@@ -25,4 +25,6 @@
   <data name="Startup_LowDisk" xml:space="preserve"><value>Less than 1 GB of free disk space is available. Make space before continuing.</value></data>
   <data name="Startup_LotCache" xml:space="preserve"><value>Inventory integrity needs attention. Review your backups before continuing.</value></data>
   <data name="Startup_ClockWarning" xml:space="preserve"><value>The computer clock is behind the last bill dated {0:d}. Continue only after confirming the date.</value></data>
+  <data name="Startup_RestorePending" xml:space="preserve"><value>A restored database is waiting for confirmation. Choose Yes to keep the restored data, No to undo the restore, or Cancel to leave it pending and close the application.</value></data>
+  <data name="Startup_RestoreUndone" xml:space="preserve"><value>The restore was undone. The previous database has been put back.</value></data>
 </root>

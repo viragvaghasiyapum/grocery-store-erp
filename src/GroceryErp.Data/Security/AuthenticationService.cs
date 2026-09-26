@@ -68,7 +68,11 @@ public sealed class AuthenticationService(DbExecutor database, PasswordHasher ha
 public sealed record FirstRunRequest(
     string Username, string Password, string StoreName, string Address, string Phone,
     string Gstin, string State, string TaxMode, string Language, string BackupDirectory,
-    string LotPrefix = "20", string ProductPrefix = "21");
+    string LotPrefix = "20", string ProductPrefix = "21",
+    string ReceiptPrinterName = "", int ReceiptWidthDots = 576,
+    string LabelPrinterName = "", string LabelSize = "50x25", string A4PrinterName = "",
+    int UsbReminderDays = 7, string ScaleRule = "", bool GujaratiKeyboardAvailable = false,
+    string StartChoice = "EMPTY");
 
 public sealed class FirstRunService(DbExecutor database, PasswordHasher hasher)
 {
@@ -92,8 +96,21 @@ public sealed class FirstRunService(DbExecutor database, PasswordHasher hasher)
                 ["barcode.lot_prefix"] = request.LotPrefix, ["barcode.product_prefix"] = request.ProductPrefix,
                 ["security.idle_lock_minutes"] = "15",
             };
+            settings["printer.receipt.name"] = request.ReceiptPrinterName.Trim();
+            settings["printer.receipt.width_dots"] = request.ReceiptWidthDots.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            settings["printer.receipt.mode"] = "RASTER";
+            settings["printer.label.name"] = request.LabelPrinterName.Trim();
+            settings["printer.label.size"] = request.LabelSize.Trim();
+            settings["printer.a4.name"] = request.A4PrinterName.Trim();
+            settings["backup.usb_reminder_days"] = request.UsbReminderDays.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            settings["barcode.scale_rule"] = request.ScaleRule.Trim();
+            settings["setup.keyboard.gujarati_available"] = request.GujaratiKeyboardAvailable ? "1" : "0";
+            settings["setup.start_choice"] = request.StartChoice;
             foreach ((string key, string value) in settings)
-                transaction.Connection.Execute("UPDATE setting SET value = @value WHERE key = @key", new { key, value }, transaction.Transaction);
+                transaction.Connection.Execute("""
+                    INSERT INTO setting(key, value) VALUES (@key, @value)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                    """, new { key, value }, transaction.Transaction);
         }, cancellationToken);
     }
 
@@ -110,6 +127,9 @@ public sealed class FirstRunService(DbExecutor database, PasswordHasher hasher)
         if (request.LotPrefix == request.ProductPrefix || request.LotPrefix.Length != 2 || request.ProductPrefix.Length != 2 ||
             !request.LotPrefix.All(char.IsAsciiDigit) || !request.ProductPrefix.All(char.IsAsciiDigit))
             throw new DomainException(ErrorCode.Validation, "Barcode prefixes must be distinct two-digit values.");
+        if (request.ReceiptWidthDots is not (384 or 576)) throw new DomainException(ErrorCode.Validation, "Receipt width must be 58 or 80 mm.");
+        if (request.UsbReminderDays is < 1 or > 365) throw new DomainException(ErrorCode.Validation, "USB reminder must be between 1 and 365 days.");
+        if (request.StartChoice is not ("EMPTY" or "IMPORT")) throw new DomainException(ErrorCode.Validation, "Invalid start choice.");
         if (!string.IsNullOrWhiteSpace(request.BackupDirectory)) AppPaths.RejectCloudSynchronizedPath(request.BackupDirectory);
     }
 }

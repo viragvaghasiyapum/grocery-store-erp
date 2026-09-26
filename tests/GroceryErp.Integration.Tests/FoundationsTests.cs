@@ -75,6 +75,24 @@ public sealed class FoundationsTests
         hasher.Verify("wrong password", stored).ShouldBeFalse();
     }
 
+    [Fact]
+    public async Task FirstRun_PersistsWizardConfiguration()
+    {
+        using var fixture = new FoundationFixture();
+        var service = new FirstRunService(fixture.Database, new PasswordHasher());
+
+        await service.CompleteAsync(new FirstRunRequest(
+            "owner", "correct horse battery staple", "Test Store", "Address", "9999999999", "", "Gujarat",
+            "REGULAR", "en-IN", fixture.Paths.DefaultBackupDir, "20", "21", "Receipt", 384,
+            "Labels", "60x40", "A4", 14, "02{weight:5}", true, "IMPORT"), TestContext.Current.CancellationToken);
+
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'printer.receipt.width_dots'").ShouldBe("384");
+        connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'backup.usb_reminder_days'").ShouldBe("14");
+        connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'setup.start_choice'").ShouldBe("IMPORT");
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM app_user").ShouldBe(1L);
+    }
+
     private sealed class FoundationFixture : IDisposable
     {
         public FoundationFixture()

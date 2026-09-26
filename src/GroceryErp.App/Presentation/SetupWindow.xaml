@@ -21,7 +21,7 @@
           <TextBlock Margin="0,12,0,4" Text="Store name *"/><TextBox x:Name="StoreName"/>
           <TextBlock Margin="0,10,0,4" Text="Address"/><TextBox x:Name="Address"/>
           <TextBlock Margin="0,10,0,4" Text="Phone"/><TextBox x:Name="Phone"/>
-          <TextBlock Margin="0,10,0,4" Text="GSTIN"/><TextBox x:Name="Gstin"/>
+          <TextBlock Margin="0,10,0,4" Text="GSTIN"/><TextBox x:Name="Gstin" TextChanged="Gstin_OnTextChanged"/>
           <TextBlock Margin="0,10,0,4" Text="State"/><TextBox x:Name="State"/>
           <ComboBox x:Name="TaxMode" Margin="0,10,0,0" SelectedIndex="0"><ComboBoxItem Content="Regular GST" Tag="REGULAR"/><ComboBoxItem Content="Composition" Tag="COMPOSITION"/><ComboBoxItem Content="Not registered" Tag="NONE"/></ComboBox>
         </StackPanel></ScrollViewer>
@@ -38,13 +38,21 @@
         <StackPanel Margin="24"><TextBlock Style="{StaticResource SectionTitle}" Text="Data and backups"/>
           <TextBlock Margin="0,12,0,4" Text="Data folder"/><TextBox x:Name="DataFolder" IsReadOnly="True"/>
           <TextBlock Margin="0,10,0,4" Text="Backup folder"/><TextBox x:Name="BackupFolder"/>
+          <TextBlock Margin="0,10,0,4" Text="USB backup reminder"/><ComboBox x:Name="UsbReminder" SelectedIndex="0"><ComboBoxItem Content="Every 7 days" Tag="7"/><ComboBoxItem Content="Every 14 days" Tag="14"/><ComboBoxItem Content="Every 30 days" Tag="30"/><ComboBoxItem Content="Every 60 days" Tag="60"/><ComboBoxItem Content="Every 90 days" Tag="90"/></ComboBox>
           <TextBlock Margin="0,12,0,0" Text="Cloud-synchronized folders such as OneDrive are not allowed." TextWrapping="Wrap"/>
         </StackPanel>
       </TabItem>
-      <TabItem Header="5  Printers"><StackPanel Margin="24"><TextBlock Style="{StaticResource SectionTitle}" Text="Printers"/><TextBlock Margin="0,14,0,0" Text="Printers can be configured later in Settings. The default receipt width is 80 mm." TextWrapping="Wrap"/></StackPanel></TabItem>
-      <TabItem Header="6  Barcodes"><StackPanel Margin="24"><TextBlock Style="{StaticResource SectionTitle}" Text="Internal barcode prefixes"/><TextBlock Margin="0,14,0,4" Text="Lot prefix"/><TextBox x:Name="LotPrefix" Text="20"/><TextBlock Margin="0,10,0,4" Text="Product prefix"/><TextBox x:Name="ProductPrefix" Text="21"/></StackPanel></TabItem>
-      <TabItem Header="7  Keyboard"><StackPanel Margin="24"><TextBlock Style="{StaticResource SectionTitle}" Text="Gujarati keyboard"/><TextBlock Margin="0,14,0,0" Text="For Gujarati entry, install the Gujarati Phonetic keyboard in Windows Settings → Time &amp; language → Language &amp; region." TextWrapping="Wrap"/></StackPanel></TabItem>
-      <TabItem Header="8  Start"><StackPanel Margin="24"><TextBlock Style="{StaticResource SectionTitle}" Text="Ready to start"/><TextBlock Margin="0,14,0,0" Text="Setup will create the owner account, save store settings, and make the first verified backup. Product import and opening stock are available after setup." TextWrapping="Wrap"/></StackPanel></TabItem>
+      <TabItem Header="5  Printers"><ScrollViewer><StackPanel Margin="24"><TextBlock Style="{StaticResource SectionTitle}" Text="Printers"/>
+        <TextBlock Margin="0,14,0,4" Text="Receipt printer"/><TextBox x:Name="ReceiptPrinter"/>
+        <TextBlock Margin="0,10,0,4" Text="Receipt width"/><ComboBox x:Name="ReceiptWidth" SelectedIndex="1"><ComboBoxItem Content="58 mm" Tag="384"/><ComboBoxItem Content="80 mm" Tag="576"/></ComboBox>
+        <TextBlock Margin="0,10,0,4" Text="Label printer"/><TextBox x:Name="LabelPrinter"/>
+        <TextBlock Margin="0,10,0,4" Text="Label size"/><ComboBox x:Name="LabelSize" SelectedIndex="0"><ComboBoxItem Content="50 × 25 mm" Tag="50x25"/><ComboBoxItem Content="60 × 40 mm" Tag="60x40"/><ComboBoxItem Content="100 × 150 mm" Tag="100x150"/></ComboBox>
+        <TextBlock Margin="0,10,0,4" Text="A4 printer"/><TextBox x:Name="A4Printer"/>
+        <TextBlock Margin="0,12,0,0" Text="Install Windows printer drivers before setup. Printer test pages are available from Settings after setup." TextWrapping="Wrap"/>
+      </StackPanel></ScrollViewer></TabItem>
+      <TabItem Header="6  Barcodes"><ScrollViewer><StackPanel Margin="24"><TextBlock Style="{StaticResource SectionTitle}" Text="Internal barcode prefixes"/><TextBlock Margin="0,14,0,4" Text="Lot prefix"/><TextBox x:Name="LotPrefix" Text="20"/><TextBlock Margin="0,10,0,4" Text="Product prefix"/><TextBox x:Name="ProductPrefix" Text="21"/><TextBlock Margin="0,10,0,4" Text="Weighing-scale rule (optional)"/><TextBox x:Name="ScaleRule"/><TextBlock Margin="0,12,0,0" Text="Prefixes must be different two-digit values. The scale rule can be configured later if no scale is used." TextWrapping="Wrap"/></StackPanel></ScrollViewer></TabItem>
+      <TabItem Header="7  Keyboard"><StackPanel Margin="24"><TextBlock Style="{StaticResource SectionTitle}" Text="Gujarati keyboard"/><TextBlock x:Name="KeyboardStatus" Margin="0,14,0,8" TextWrapping="Wrap"/><TextBlock Margin="0,4,0,0" Text="For Gujarati entry, install the Gujarati Phonetic keyboard in Windows Settings → Time &amp; language → Language &amp; region." TextWrapping="Wrap"/></StackPanel></TabItem>
+      <TabItem Header="8  Start"><StackPanel Margin="24"><TextBlock Style="{StaticResource SectionTitle}" Text="Ready to start"/><TextBlock Margin="0,14,0,8" Text="Choose how to begin. Product import can be completed after setup from the Catalog module." TextWrapping="Wrap"/><RadioButton x:Name="StartEmpty" Margin="0,4,0,8" Content="Start with an empty catalog" IsChecked="True"/><RadioButton x:Name="StartImport" Content="Import products from Excel after setup"/><TextBlock Margin="0,14,0,0" Text="Opening stock can be entered later." TextWrapping="Wrap"/></StackPanel></TabItem>
     </TabControl>
     <Grid Grid.Row="2"><TextBlock x:Name="ErrorText" VerticalAlignment="Center" Foreground="Crimson" TextWrapping="Wrap"/>
       <StackPanel HorizontalAlignment="Right" Orientation="Horizontal"><Button x:Name="BackButton" Width="90" Margin="0,0,8,0" Click="Back_OnClick" Content="Back"/><Button x:Name="NextButton" Width="110" Click="Next_OnClick" Content="Next"/></StackPanel>

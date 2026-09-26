@@ -59,11 +59,11 @@ public sealed class TranslationSource : INotifyPropertyChanged
     /// <summary>Gets the translated value for a stable resource key.</summary>
     public string this[string key] => Get(key, _uiCulture);
 
-    /// <summary>Registers shared strings under the Common, Error, Validation, Enum, Print, and Pnl prefixes.</summary>
+    /// <summary>Registers shared strings under the shared application and module-independent prefixes.</summary>
     public void RegisterShared(ResourceManager manager)
     {
         ArgumentNullException.ThrowIfNull(manager);
-        foreach (string prefix in new[] { "Common", "Error", "Validation", "Enum", "Print", "Pnl", "App", "Shell", "Demo" })
+        foreach (string prefix in new[] { "Common", "Error", "Validation", "Enum", "Print", "Pnl", "App", "Shell", "Demo", "Setup", "Login", "Lock", "Startup" })
         {
             _managers[prefix] = manager;
         }

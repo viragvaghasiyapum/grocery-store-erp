@@ -55,6 +55,9 @@ public sealed class MaintenanceService(
             string integrity = connection.ExecuteScalar<string>("PRAGMA integrity_check;") ?? "";
             if (!string.Equals(integrity, "ok", StringComparison.OrdinalIgnoreCase))
                 throw new DomainException(ErrorCode.BackupInvalid, integrity);
+            // FTS5 keeps a separate index; checking it with SQLite's supported command catches
+            // stale or corrupt product search data before a user relies on search results.
+            connection.Execute("INSERT INTO product_fts(product_fts) VALUES ('integrity-check');");
             return true;
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -94,7 +97,7 @@ public sealed class MaintenanceService(
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
 
-        string backupDirectory = paths.DefaultBackupDir;
+        string backupDirectory = backups.BackupDirectory;
         if (!Directory.Exists(backupDirectory)) return;
         foreach (string partial in Directory.EnumerateFiles(backupDirectory, "*.partial"))
             try
@@ -111,7 +114,6 @@ public sealed record StartupState(StartupHealth Health, AppSettings Settings);
 public sealed class StartupPipeline(
     SqliteConnectionFactory factory,
     MigrationRunner migrations,
-    BackupService backups,
     SettingsService settings,
     MaintenanceService maintenance)
 {
@@ -119,7 +121,6 @@ public sealed class StartupPipeline(
     {
         DatabaseCapabilities.Verify(factory);
         migrations.Run();
-        backups.FinishPendingRestore();
         await settings.LoadAsync(cancellationToken).ConfigureAwait(false);
         StartupHealth health = await maintenance.CheckBeforeShellAsync(cancellationToken).ConfigureAwait(false);
         return new(health, settings.Current);

@@ -164,6 +164,37 @@ Verification:
 - `dotnet test GroceryErp.slnx -c Release --no-build --no-restore`: passed, 14 tests, 0 failures.
 
 Remaining Phase 1 work is limited to the complete wizard printer/USB/keyboard/import controls,
-full restore confirmation UI and failure recovery presentation, weekly FTS/integrity scheduling,
-and final XML documentation/native Gujarati review. Business-module operation handlers remain in
-their later phases.
+full restore confirmation UI and failure recovery presentation, and final XML documentation/native
+Gujarati review. Business-module operation handlers remain in their later phases.
+
+## Checkpoint 6 — first-run wizard completion and search integrity
+
+Implemented:
+
+- The first-run wizard now collects and persists USB reminder frequency, receipt printer and width,
+  label printer and size, A4 printer, weighing-scale rule, keyboard availability, and the empty-vs-
+  import start choice.
+- Wizard navigation validates store name/GSTIN, owner credentials, backup path, and barcode prefixes
+  before advancing; GSTIN state codes prefill the state field when it is still empty.
+- Gujarati Phonetic keyboard availability is detected through the installed Windows input languages
+  and stored in the setup settings snapshot.
+- First-run settings are upserted (rather than assumed to exist in the seed set), with typed accessors
+  for the new Appendix C values and an integration test covering the persisted configuration.
+- Background startup maintenance now runs SQLite's supported FTS5 integrity command in addition to
+  `PRAGMA integrity_check`, so product search corruption is detected before normal use.
+- Shared localization registration now includes setup, login, lock, and startup resource prefixes,
+  so the existing wizard and startup warning keys resolve in both supported UI languages.
+- A staged restore is now presented after login with explicit keep, undo, or cancel choices; undo
+  restores the replaced database and closes the application without deleting the recovery marker.
+
+Verification:
+
+- `git diff --check`: passed.
+- Build/test rerun is currently blocked in this shell because the repository requests .NET SDK
+  `10.0.401` and this machine has no installed SDK. The previous committed baseline was verified with
+  `dotnet build GroceryErp.slnx -c Release --no-restore` (0 warnings/0 errors) and 14 passing tests.
+
+Remaining Phase 1 presentation work is the actual printer test-page action and a visible restore
+confirmation/undo dialog; the printer choices are now stored and explicitly deferred to Settings,
+while catalog import itself remains a later module feature. Final XML documentation and native
+Gujarati review are still release-hardening work.

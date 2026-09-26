@@ -78,6 +78,7 @@ public partial class App : Application
             };
 
             SettingsService settings = _host.Services.GetRequiredService<SettingsService>();
+            BackupService backups = _host.Services.GetRequiredService<BackupService>();
             StartupState startup = await _host.Services.GetRequiredService<StartupPipeline>().RunAsync();
             TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo(startup.Settings.UiLanguage);
             _databaseReady = true;
@@ -87,7 +88,7 @@ public partial class App : Application
             {
                 var setup = new SetupWindow(
                     _host.Services.GetRequiredService<FirstRunService>(), paths,
-                    _host.Services.GetRequiredService<BackupService>(),
+                    backups,
                     settings);
                 if (setup.ShowDialog() != true) { Shutdown(); return; }
                 await settings.LoadAsync();
@@ -95,6 +96,29 @@ public partial class App : Application
 
             var login = new LoginWindow(authentication);
             if (login.ShowDialog() != true) { Shutdown(); return; }
+
+            if (backups.HasPendingRestore)
+            {
+                MessageBoxResult restoreChoice = MessageBox.Show(
+                    TranslationSource.Instance["Startup_RestorePending"],
+                    "Grocery ERP", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+                if (restoreChoice == MessageBoxResult.Yes)
+                {
+                    backups.FinishPendingRestore();
+                }
+                else if (restoreChoice == MessageBoxResult.No)
+                {
+                    backups.UndoPendingRestore();
+                    MessageBox.Show(TranslationSource.Instance["Startup_RestoreUndone"], "Grocery ERP", MessageBoxButton.OK, MessageBoxImage.Information);
+                    Shutdown();
+                    return;
+                }
+                else
+                {
+                    Shutdown();
+                    return;
+                }
+            }
 
             MaintenanceService maintenance = _host.Services.GetRequiredService<MaintenanceService>();
             StartupHealth health = startup.Health;

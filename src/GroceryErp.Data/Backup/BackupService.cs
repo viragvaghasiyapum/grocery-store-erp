@@ -27,6 +27,7 @@ public sealed class BackupService(
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
     public string BackupDirectory => settings.Current.BackupDirectory;
+    public bool HasPendingRestore => File.Exists(Path.Combine(paths.DbDir, "restore.pending.json"));
 
     public void CreateBeforeMigration(string reason) => Create(reason);
 
