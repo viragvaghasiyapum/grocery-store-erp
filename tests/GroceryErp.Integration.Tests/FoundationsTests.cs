@@ -54,10 +54,14 @@ public sealed class FoundationsTests
         BackupInfo created = backup.Create("manual");
         BackupManifest verified = BackupService.Verify(created.Path);
         RestoreCandidate candidate = backup.InspectRestore(created.Path);
+        backup.ApplyRestore(candidate);
+        backup.FinishPendingRestore();
 
         verified.SchemaVersion.ShouldBe(3L);
         candidate.Manifest.Database.Sha256.ShouldBe(verified.Database.Sha256);
-        File.Exists(candidate.StagedDatabase).ShouldBeTrue();
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity = 'restore' AND action = 'RESTORE'")
+            .ShouldBe(1L);
     }
 
     [Fact]

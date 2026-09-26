@@ -22,4 +22,7 @@
   <data name="Lock_Title" xml:space="preserve"><value>સત્ર લૉક છે</value><comment>MT - needs review</comment></data>
   <data name="Lock_Body" xml:space="preserve"><value>ચાલુ રાખવા માટે માલિકનો પાસવર્ડ દાખલ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Lock_Action" xml:space="preserve"><value>અનલૉક</value><comment>MT - needs review</comment></data>
+  <data name="Startup_LowDisk" xml:space="preserve"><value>ડિસ્કમાં 1 GB કરતાં ઓછી જગ્યા છે. ચાલુ રાખતા પહેલાં જગ્યા ખાલી કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Startup_LotCache" xml:space="preserve"><value>ઇન્વેન્ટરી અખંડિતતા તપાસ જરૂરી છે. ચાલુ રાખતા પહેલાં બેકઅપ તપાસો.</value><comment>MT - needs review</comment></data>
+  <data name="Startup_ClockWarning" xml:space="preserve"><value>કમ્પ્યુટર ઘડિયાળ છેલ્લી બિલ તારીખ {0:d} કરતાં પાછળ છે. તારીખ તપાસ્યા પછી જ ચાલુ રાખો.</value><comment>MT - needs review</comment></data>
 </root>

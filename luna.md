@@ -141,3 +141,29 @@ Still outside the completed Phase 1 exit criteria:
 
 The implementation remains **Phase 1 partially complete**. The new reliability and test slice is
 committed as `phase1: reliability checks, locking, and foundation tests`.
+
+## Checkpoint 5 — startup pipeline, typed settings, and validation
+
+Implemented:
+
+- Explicit `StartupPipeline` and `ShutdownPipeline` services used by the application host.
+- Complete typed accessors for the Appendix C settings surface, including tax, stock, expiry, POS,
+  barcode, scanner, UI, printing, receipt, and backup values.
+- Backup retention enforcement for newest sets, monthly retention, pre-operation retention, and
+  stale partial-file cleanup.
+- Background `PRAGMA integrity_check` and optimization after shell startup.
+- Visible low-disk and lot-cache startup warnings.
+- Clock-behind-last-bill confirmation with an audited override.
+- Indian GSTIN, PAN, and pincode validation helpers; first-run GSTIN validation now uses them.
+- Restore round-trip integration coverage now applies the staged database, finishes the pending
+  restore, and asserts the RESTORE audit entry.
+
+Verification:
+
+- `dotnet build GroceryErp.slnx -c Release --no-restore`: passed, 0 warnings, 0 errors.
+- `dotnet test GroceryErp.slnx -c Release --no-build --no-restore`: passed, 14 tests, 0 failures.
+
+Remaining Phase 1 work is limited to the complete wizard printer/USB/keyboard/import controls,
+full restore confirmation UI and failure recovery presentation, weekly FTS/integrity scheduling,
+and final XML documentation/native Gujarati review. Business-module operation handlers remain in
+their later phases.

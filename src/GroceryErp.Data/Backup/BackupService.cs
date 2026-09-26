@@ -68,7 +68,7 @@ public sealed class BackupService(
             }
             File.Move(partial, final);
             Verify(final);
-            Rotate(backupDirectory, settings.Current.BackupKeep);
+            Rotate(backupDirectory, settings.Current.BackupKeep, clock.Now.ToUniversalTime());
             return new(final, new FileInfo(final).Length, manifest);
         }
         finally
@@ -256,16 +256,26 @@ public sealed class BackupService(
         return File.Exists(path) ? Path.Combine(directory, $"GroceryErp_{stamp}_{reason}_{Guid.NewGuid():N}.zip") : path;
     }
 
-    private static void Rotate(string directory, int keep)
+    private static void Rotate(string directory, int keep, DateTime now)
     {
         foreach (FileInfo partial in new DirectoryInfo(directory).EnumerateFiles("*.partial")
-                     .Where(static file => file.LastWriteTimeUtc < DateTime.UtcNow.AddDays(-1)))
+                     .Where(file => file.LastWriteTimeUtc < now.AddDays(-1)))
             partial.Delete();
         FileInfo[] regular = new DirectoryInfo(directory).EnumerateFiles("GroceryErp_*.zip")
             .Where(static file => !file.Name.Contains("_pre-", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(static file => file.LastWriteTimeUtc).ToArray();
-        foreach (FileInfo file in regular.Skip(keep))
-            if (file.LastWriteTimeUtc < DateTime.UtcNow.AddMonths(-12)) file.Delete();
+        var protectedPaths = regular.Take(keep).Select(static file => file.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (FileInfo file in regular.Where(file => file.LastWriteTimeUtc >= now.AddMonths(-12)))
+        {
+            string month = file.LastWriteTimeUtc.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+            if (regular.First(candidate => candidate.LastWriteTimeUtc.ToString("yyyy-MM", CultureInfo.InvariantCulture) == month).FullName == file.FullName)
+                protectedPaths.Add(file.FullName);
+        }
+        foreach (FileInfo file in regular.Where(file => !protectedPaths.Contains(file.FullName)))
+            file.Delete();
+
+        foreach (FileInfo file in new DirectoryInfo(directory).EnumerateFiles("GroceryErp_*_pre-*.zip"))
+            if (file.LastWriteTimeUtc < now.AddDays(-90)) file.Delete();
     }
 
     private static void TryDeleteDirectory(string directory)

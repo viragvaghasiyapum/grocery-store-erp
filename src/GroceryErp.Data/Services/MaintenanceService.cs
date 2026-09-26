@@ -16,7 +16,8 @@ public sealed class MaintenanceService(
     SqliteConnectionFactory factory,
     DbExecutor database,
     BackupService backups,
-    IClock clock)
+    IClock clock,
+    IAuditLog auditLog)
 {
     public async Task<StartupHealth> CheckBeforeShellAsync(CancellationToken cancellationToken = default)
     {
@@ -27,13 +28,14 @@ public sealed class MaintenanceService(
             return (lastDate, healthy);
         }, cancellationToken).ConfigureAwait(false);
 
-        if (lastSaleDate is not null &&
-            DateOnly.TryParseExact(lastSaleDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly last) &&
-            clock.BusinessDate < last)
-            throw new DomainException(ErrorCode.ClockBehindLastBill, last);
-
         return new(HasLowDiskSpace(paths.Root), lastSaleDate, lotCacheHealthy);
     }
+
+    public Task OverrideClockWarningAsync(string lastSaleDate, CancellationToken cancellationToken = default) =>
+        database.WriteAsync(transaction =>
+        {
+            auditLog.Write(transaction, "clock", 0, "CLOCK_WARNING_OVERRIDE", new { lastSaleDate, businessDate = clock.BusinessDate });
+        }, cancellationToken);
 
     public async Task RunAfterShellAsync(CancellationToken cancellationToken = default)
     {
@@ -50,6 +52,9 @@ public sealed class MaintenanceService(
         await database.ReadAsync(connection =>
         {
             connection.Execute("PRAGMA optimize;");
+            string integrity = connection.ExecuteScalar<string>("PRAGMA integrity_check;") ?? "";
+            if (!string.Equals(integrity, "ok", StringComparison.OrdinalIgnoreCase))
+                throw new DomainException(ErrorCode.BackupInvalid, integrity);
             return true;
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -99,4 +104,29 @@ public sealed class MaintenanceService(
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
     }
+}
+
+public sealed record StartupState(StartupHealth Health, AppSettings Settings);
+
+public sealed class StartupPipeline(
+    SqliteConnectionFactory factory,
+    MigrationRunner migrations,
+    BackupService backups,
+    SettingsService settings,
+    MaintenanceService maintenance)
+{
+    public async Task<StartupState> RunAsync(CancellationToken cancellationToken = default)
+    {
+        DatabaseCapabilities.Verify(factory);
+        migrations.Run();
+        backups.FinishPendingRestore();
+        await settings.LoadAsync(cancellationToken).ConfigureAwait(false);
+        StartupHealth health = await maintenance.CheckBeforeShellAsync(cancellationToken).ConfigureAwait(false);
+        return new(health, settings.Current);
+    }
+}
+
+public sealed class ShutdownPipeline(MaintenanceService maintenance)
+{
+    public Task RunAsync(CancellationToken cancellationToken = default) => Task.Run(maintenance.Shutdown, cancellationToken);
 }

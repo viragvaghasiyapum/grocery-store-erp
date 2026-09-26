@@ -55,6 +55,8 @@ public partial class App : Application
             builder.Services.AddSingleton<IAuditLog, AuditLog>();
             builder.Services.AddSingleton<MigrationRunner>();
             builder.Services.AddSingleton<MaintenanceService>();
+            builder.Services.AddSingleton<StartupPipeline>();
+            builder.Services.AddSingleton<ShutdownPipeline>();
             builder.Services.AddSingleton<ShellViewModel>();
             builder.Services.AddSingleton<ShellWindow>();
 
@@ -75,14 +77,9 @@ public partial class App : Application
                 args.Handled = true;
             };
 
-            SqliteConnectionFactory factory = _host.Services.GetRequiredService<SqliteConnectionFactory>();
-            DatabaseCapabilities.Verify(factory);
-            _host.Services.GetRequiredService<MigrationRunner>().Run();
-            _host.Services.GetRequiredService<BackupService>().FinishPendingRestore();
             SettingsService settings = _host.Services.GetRequiredService<SettingsService>();
-            await settings.LoadAsync();
-            TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo(
-                await ReadLanguageAsync(_host.Services.GetRequiredService<DbExecutor>()));
+            StartupState startup = await _host.Services.GetRequiredService<StartupPipeline>().RunAsync();
+            TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo(startup.Settings.UiLanguage);
             _databaseReady = true;
 
             AuthenticationService authentication = _host.Services.GetRequiredService<AuthenticationService>();
@@ -100,11 +97,31 @@ public partial class App : Application
             if (login.ShowDialog() != true) { Shutdown(); return; }
 
             MaintenanceService maintenance = _host.Services.GetRequiredService<MaintenanceService>();
-            StartupHealth health = await maintenance.CheckBeforeShellAsync();
+            StartupHealth health = startup.Health;
             if (health.FreeDiskWarning)
+            {
                 Log.Warning("Available disk space is below 1 GB");
+                MessageBox.Show(TranslationSource.Instance["Startup_LowDisk"], "Grocery ERP", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
             if (!health.LotCacheHealthy)
+            {
                 Log.Error("Lot cache integrity check failed");
+                MessageBox.Show(TranslationSource.Instance["Startup_LotCache"], "Grocery ERP", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            if (health.LastSaleDate is not null &&
+                DateOnly.TryParseExact(health.LastSaleDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly lastSale) &&
+                _host.Services.GetRequiredService<IClock>().BusinessDate < lastSale)
+            {
+                MessageBoxResult choice = MessageBox.Show(
+                    string.Format(CultureInfo.CurrentCulture, TranslationSource.Instance["Startup_ClockWarning"], lastSale),
+                    "Grocery ERP", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                if (choice != MessageBoxResult.Yes)
+                {
+                    Shutdown();
+                    return;
+                }
+                await maintenance.OverrideClockWarningAsync(health.LastSaleDate);
+            }
 
             ShellWindow shell = _host.Services.GetRequiredService<ShellWindow>();
             MainWindow = shell;
@@ -128,7 +145,7 @@ public partial class App : Application
             {
                 if (_databaseReady)
                 {
-                    try { _host.Services.GetRequiredService<MaintenanceService>().Shutdown(); }
+                    try { await _host.Services.GetRequiredService<ShutdownPipeline>().RunAsync(); }
                     catch (Exception exception) { Log.Error(exception, "Close backup failed"); }
                 }
                 await _host.StopAsync();
@@ -146,9 +163,6 @@ public partial class App : Application
             base.OnExit(e);
         }
     }
-
-    private static Task<string> ReadLanguageAsync(DbExecutor database) => database.ReadAsync(connection =>
-        Dapper.SqlMapper.ExecuteScalar<string>(connection, "SELECT value FROM setting WHERE key = 'ui.language'") ?? "en-IN");
 
     private static void ConfigureCultures()
     {

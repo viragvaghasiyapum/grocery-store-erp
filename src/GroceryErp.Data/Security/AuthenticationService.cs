@@ -1,6 +1,7 @@
 using Dapper;
 using GroceryErp.Core.Errors;
 using GroceryErp.Core.Time;
+using GroceryErp.Core.Validation;
 using GroceryErp.Data.Infrastructure;
 
 namespace GroceryErp.Data.Security;
@@ -104,6 +105,8 @@ public sealed class FirstRunService(DbExecutor database, PasswordHasher hasher)
         if (request.Password.Length < 8) throw new DomainException(ErrorCode.Validation, "Password must contain at least 8 characters.");
         if (request.TaxMode is not ("REGULAR" or "COMPOSITION" or "NONE")) throw new DomainException(ErrorCode.Validation, "Invalid tax mode.");
         if (request.Language is not ("en-IN" or "gu-IN")) throw new DomainException(ErrorCode.Validation, "Invalid language.");
+        if (!string.IsNullOrWhiteSpace(request.Gstin) && !IndianIds.IsGstin(request.Gstin.Trim().ToUpperInvariant()))
+            throw new DomainException(ErrorCode.Validation, "Invalid GSTIN.");
         if (request.LotPrefix == request.ProductPrefix || request.LotPrefix.Length != 2 || request.ProductPrefix.Length != 2 ||
             !request.LotPrefix.All(char.IsAsciiDigit) || !request.ProductPrefix.All(char.IsAsciiDigit))
             throw new DomainException(ErrorCode.Validation, "Barcode prefixes must be distinct two-digit values.");

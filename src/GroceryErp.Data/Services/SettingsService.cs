@@ -16,7 +16,49 @@ public sealed record AppSettings(
     DateOnly? BooksLockedUntil,
     int IdleLockMinutes,
     int BackupKeep,
-    string BackupDirectory) : IBusinessClockSettings;
+    string BackupDirectory) : IBusinessClockSettings
+{
+    public IReadOnlyDictionary<string, string> Values { get; init; } = ImmutableDictionary<string, string>.Empty;
+    public string StoreAddress => Get("store.address", "");
+    public string StorePhone => Get("store.phone", "");
+    public string StoreGstin => Get("store.gstin", "");
+    public string StoreState => Get("store.state", "");
+    public string TaxMode => Get("tax.mode", "REGULAR");
+    public bool PricesIncludeTax => GetBool("tax.prices_include_tax", true);
+    public int BillRoundTo => GetInt("bill.round_to", 1000, 0, int.MaxValue);
+    public bool AllowNegativeStock => GetBool("stock.allow_negative", false);
+    public int ExpiryDefaultAlertDays => GetInt("expiry.default_alert_days", 30, 0, 3650);
+    public bool ExpiryPopupOnLogin => GetBool("expiry.popup_on_login", true);
+    public bool BlockExpiredLots => GetBool("pos.block_expired", true);
+    public bool VoidSameDayOnly => GetBool("pos.void_same_day_only", true);
+    public string LotPrefix => Get("barcode.lot_prefix", "20");
+    public string ProductPrefix => Get("barcode.product_prefix", "21");
+    public int ScannerMaxGapMs => GetInt("scanner.max_gap_ms", 35, 1, 1000);
+    public int ScannerMinLength => GetInt("scanner.min_length", 6, 1, 100);
+    public string UiLanguage => Get("ui.language", "en-IN");
+    public string UiTheme => Get("ui.theme", "Light");
+    public string UiBackdrop => Get("ui.backdrop", "None");
+    public bool AlwaysShowThreeDecimals => GetBool("format.always_3dp", true);
+    public string PrintLanguage => Get("print.language", "en-IN");
+    public bool PrintBilingualNames => GetBool("print.bilingual_names", true);
+    public string ReceiptPrinterName => Get("printer.receipt.name", "");
+    public int ReceiptPrinterWidthDots => GetInt("printer.receipt.width_dots", 576, 1, 2400);
+    public string ReceiptPrinterMode => Get("printer.receipt.mode", "RASTER");
+    public string LabelPrinterName => Get("printer.label.name", "");
+    public string LabelSize => Get("printer.label.size", "50x25");
+    public string A4PrinterName => Get("printer.a4.name", "");
+    public string ReceiptFooter => Get("receipt.footer", "");
+    public string GujaratiReceiptFooter => Get("receipt.footer.gu", "");
+    public string LastUsbExport => Get("backup.last_usb_export", "");
+
+    private string Get(string key, string fallback) => Values.TryGetValue(key, out string? value) ? value : fallback;
+    private int GetInt(string key, int fallback, int minimum, int maximum)
+    {
+        return int.TryParse(Get(key, fallback.ToString(CultureInfo.InvariantCulture)), NumberStyles.Integer,
+            CultureInfo.InvariantCulture, out int value) && value >= minimum && value <= maximum ? value : fallback;
+    }
+    private bool GetBool(string key, bool fallback) => Get(key, fallback ? "1" : "0") is "1" or "true";
+}
 
 public interface ISettings
 {
@@ -79,14 +121,17 @@ public sealed class SettingsService(DbExecutor database, AppPaths paths, IAuditL
         DateOnly? lockedUntil = DateOnly.TryParseExact(locked, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly date)
             ? date : null;
         string backup = Get(values, "backup.dir", "");
-        return new(
+        return new AppSettings(
             Get(values, "store.name", ""),
             GetInt(values, "fy.start_month", 4, 1, 12),
             GetInt(values, "business.day_start_hour", 0, 0, 23),
             lockedUntil,
             GetInt(values, "security.idle_lock_minutes", 15, 1, 1440),
             GetInt(values, "backup.keep", 30, 1, 365),
-            string.IsNullOrWhiteSpace(backup) ? paths.DefaultBackupDir : backup);
+            string.IsNullOrWhiteSpace(backup) ? paths.DefaultBackupDir : backup)
+        {
+            Values = values.ToImmutableDictionary(StringComparer.Ordinal),
+        };
     }
 }
 
