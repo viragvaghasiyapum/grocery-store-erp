@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../GroceryErp.Core/GroceryErp.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="Konscious.Security.Cryptography.Argon2" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../grocery_erp_schema.sql" Link="db/001_initial.sql" />
+    <EmbeddedResource Include="../../002_i18n_pricing_reporting.sql" Link="db/002_i18n_pricing_reporting.sql" />
+    <EmbeddedResource Include="../../003_operations.sql" Link="db/003_operations.sql" />
+  </ItemGroup>
+</Project>

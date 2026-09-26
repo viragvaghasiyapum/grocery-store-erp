@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="App_Title" xml:space="preserve"><value>Grocery ERP</value></data>
+  <data name="Shell_Language" xml:space="preserve"><value>Language</value></data>
+  <data name="Shell_English" xml:space="preserve"><value>English</value></data>
+  <data name="Shell_Gujarati" xml:space="preserve"><value>Gujarati</value></data>
+  <data name="Demo_Navigation" xml:space="preserve"><value>Welcome</value></data>
+  <data name="Demo_Title" xml:space="preserve"><value>Your store, ready for business</value></data>
+  <data name="Demo_Body" xml:space="preserve"><value>This offline workspace is ready for the next implementation phase.</value></data>
+  <data name="Demo_AmountLabel" xml:space="preserve"><value>Sample amount</value></data>
+  <data name="Demo_DateLabel" xml:space="preserve"><value>Sample date</value></data>
+  <data name="Setup_Title" xml:space="preserve"><value>Set up Grocery ERP</value></data>
+  <data name="Login_Title" xml:space="preserve"><value>Sign in</value></data>
+  <data name="Login_Username" xml:space="preserve"><value>Username</value></data>
+  <data name="Login_Password" xml:space="preserve"><value>Password</value></data>
+  <data name="Login_Action" xml:space="preserve"><value>Sign in</value></data>
+  <data name="Error_WrongPassword" xml:space="preserve"><value>The username or password is incorrect.</value></data>
+</root>

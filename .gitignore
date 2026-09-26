@@ -1,0 +1,15 @@
+bin/
+obj/
+.vs/
+*.user
+publish/
+Releases/
+artifacts/
+logs/
+*.db
+*.db-wal
+*.db-shm
+TestResults/
+.tools/
+.packages/
+

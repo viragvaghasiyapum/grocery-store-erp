@@ -1,0 +1,9 @@
+# All projects (SystemClock carries the single documented suppression)
+P:System.DateTime.Now;Use IClock
+P:System.DateTime.Today;Use IClock.BusinessDate
+P:System.DateTimeOffset.Now;Use IClock
+M:System.Decimal.Round(System.Decimal);Default is banker's rounding - use Fx3.Round
+M:System.Decimal.Round(System.Decimal,System.Int32);Default is banker's rounding - use Fx3.Round
+M:System.Math.Round(System.Decimal);Default is banker's rounding - use Fx3.Round
+M:System.Math.Round(System.Decimal,System.Int32);Default is banker's rounding - use Fx3.Round
+

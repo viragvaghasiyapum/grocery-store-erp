@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.401
+          cache: true
+          cache-dependency-path: Directory.Packages.props
+      - run: dotnet restore GroceryErp.slnx
+      - run: dotnet format GroceryErp.slnx --verify-no-changes --no-restore
+      - run: dotnet build GroceryErp.slnx -c Release --no-restore
+      - run: dotnet test GroceryErp.slnx -c Release --no-build
+

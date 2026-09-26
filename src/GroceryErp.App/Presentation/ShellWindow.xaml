@@ -1,0 +1,58 @@
+<ui:FluentWindow
+    x:Class="GroceryErp.App.Presentation.ShellWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    xmlns:local="clr-namespace:GroceryErp.App.Presentation"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Title="{l:Tr App_Title}"
+    Width="1180"
+    Height="760"
+    MinWidth="960"
+    MinHeight="640"
+    WindowStartupLocation="CenterScreen"
+    FontFamily="{StaticResource AppFont}"
+    NumberSubstitution.CultureSource="Override"
+    NumberSubstitution.CultureOverride="en-IN"
+    NumberSubstitution.Substitution="European"
+    mc:Ignorable="d">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <Border Padding="16,10" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+      <Grid>
+        <TextBlock
+            VerticalAlignment="Center"
+            FontSize="20"
+            FontWeight="SemiBold"
+            Text="{l:Tr App_Title}" />
+        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+          <TextBlock Margin="0,0,12,0" VerticalAlignment="Center" Text="{l:Tr Shell_Language}" />
+          <Button Margin="0,0,8,0" Command="{Binding UseEnglishCommand}" Content="{l:Tr Shell_English}" />
+          <Button Command="{Binding UseGujaratiCommand}" Content="{l:Tr Shell_Gujarati}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <ui:NavigationView
+        x:Name="RootNavigation"
+        Grid.Row="1"
+        IsBackButtonVisible="Collapsed"
+        IsPaneOpen="True"
+        OpenPaneLength="220"
+        PaneDisplayMode="Left">
+      <ui:NavigationView.MenuItems>
+        <ui:NavigationViewItem
+            Content="{l:Tr Demo_Navigation}"
+            Icon="{ui:SymbolIcon Home24}"
+            TargetPageType="{x:Type local:DemoPage}" />
+      </ui:NavigationView.MenuItems>
+    </ui:NavigationView>
+  </Grid>
+</ui:FluentWindow>
+

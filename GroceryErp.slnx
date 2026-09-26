@@ -1,0 +1,31 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GroceryErp.App/GroceryErp.App.csproj" />
+    <Project Path="src/GroceryErp.Core/GroceryErp.Core.csproj" />
+    <Project Path="src/GroceryErp.Data/GroceryErp.Data.csproj" />
+    <Project Path="src/GroceryErp.Localization/GroceryErp.Localization.csproj" />
+    <Project Path="src/GroceryErp.Printing/GroceryErp.Printing.csproj" />
+    <Project Path="src/GroceryErp.UI.Common/GroceryErp.UI.Common.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/">
+    <Project Path="src/Modules/GroceryErp.Assets/GroceryErp.Assets.csproj" />
+    <Project Path="src/Modules/GroceryErp.Catalog/GroceryErp.Catalog.csproj" />
+    <Project Path="src/Modules/GroceryErp.Expenses/GroceryErp.Expenses.csproj" />
+    <Project Path="src/Modules/GroceryErp.Inventory/GroceryErp.Inventory.csproj" />
+    <Project Path="src/Modules/GroceryErp.Purchasing/GroceryErp.Purchasing.csproj" />
+    <Project Path="src/Modules/GroceryErp.Reports/GroceryErp.Reports.csproj" />
+    <Project Path="src/Modules/GroceryErp.Sales/GroceryErp.Sales.csproj" />
+    <Project Path="src/Modules/GroceryErp.Settings/GroceryErp.Settings.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GroceryErp.Architecture.Tests/GroceryErp.Architecture.Tests.csproj" />
+    <Project Path="tests/GroceryErp.Core.Tests/GroceryErp.Core.Tests.csproj" />
+    <Project Path="tests/GroceryErp.Integration.Tests/GroceryErp.Integration.Tests.csproj" />
+    <Project Path="tests/GroceryErp.UI.Tests/GroceryErp.UI.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/GroceryErp.Benchmarks/GroceryErp.Benchmarks.csproj" />
+    <Project Path="tools/GroceryErp.DataGen/GroceryErp.DataGen.csproj" />
+  </Folder>
+</Solution>
+

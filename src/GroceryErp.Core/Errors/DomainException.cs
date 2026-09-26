@@ -1,0 +1,18 @@
+namespace GroceryErp.Core.Errors;
+
+public enum ErrorCode
+{
+    Unknown, NotFound, Validation, InsufficientStock, NoLotForProduct, ExpiredLot,
+    FractionalQtyNotAllowed, SaleFinalized, PurchaseFinalized, LedgerAppendOnly,
+    LotProductMismatch, PriceAboveMrp, DuplicateVendorBill, InvalidDate, PeriodLocked,
+    BarcodeNotFound, BarcodeExists, InvalidBarcode, EmptyBill, PaymentShort,
+    OverpaymentNonCash, CreditNeedsCustomer, DiscountExceedsLine, ReturnQtyExceedsSold,
+    VoidNotAllowed, CancelNotAllowed, DatabaseNewerThanApp, ClockBehindLastBill,
+    WrongPassword, BackupInvalid
+}
+
+public sealed class DomainException(ErrorCode code, params object[] arguments) : Exception(code.ToString())
+{
+    public ErrorCode Code { get; } = code;
+    public IReadOnlyList<object> Arguments { get; } = arguments;
+}

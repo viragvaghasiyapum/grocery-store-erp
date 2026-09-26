@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="App_Title" xml:space="preserve"><value>ગ્રોસરી ERP</value><comment>MT – needs review</comment></data>
+  <data name="Shell_Language" xml:space="preserve"><value>ભાષા</value><comment>MT – needs review</comment></data>
+  <data name="Shell_English" xml:space="preserve"><value>અંગ્રેજી</value><comment>MT – needs review</comment></data>
+  <data name="Shell_Gujarati" xml:space="preserve"><value>ગુજરાતી</value><comment>MT – needs review</comment></data>
+  <data name="Demo_Navigation" xml:space="preserve"><value>સ્વાગત</value><comment>MT – needs review</comment></data>
+  <data name="Demo_Title" xml:space="preserve"><value>તમારી દુકાન, વ્યવસાય માટે તૈયાર</value><comment>MT – needs review</comment></data>
+  <data name="Demo_Body" xml:space="preserve"><value>આ ઑફલાઇન કાર્યસ્થળ આગામી અમલીકરણ તબક્કા માટે તૈયાર છે.</value><comment>MT – needs review</comment></data>
+  <data name="Demo_AmountLabel" xml:space="preserve"><value>નમૂનાની રકમ</value><comment>MT – needs review</comment></data>
+  <data name="Demo_DateLabel" xml:space="preserve"><value>નમૂનાની તારીખ</value><comment>MT – needs review</comment></data>
+  <data name="Setup_Title" xml:space="preserve"><value>ગ્રોસરી ERP સેટ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Login_Title" xml:space="preserve"><value>સાઇન ઇન કરો</value><comment>MT - needs review</comment></data>
+  <data name="Login_Username" xml:space="preserve"><value>વપરાશકર્તા નામ</value><comment>MT - needs review</comment></data>
+  <data name="Login_Password" xml:space="preserve"><value>પાસવર્ડ</value><comment>MT - needs review</comment></data>
+  <data name="Login_Action" xml:space="preserve"><value>સાઇન ઇન</value><comment>MT - needs review</comment></data>
+  <data name="Error_WrongPassword" xml:space="preserve"><value>વપરાશકર્તા નામ અથવા પાસવર્ડ ખોટો છે.</value><comment>MT - needs review</comment></data>
+</root>

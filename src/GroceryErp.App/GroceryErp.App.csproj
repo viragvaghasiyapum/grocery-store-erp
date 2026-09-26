@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../GroceryErp.Localization/GroceryErp.Localization.csproj" />
+    <ProjectReference Include="../GroceryErp.Data/GroceryErp.Data.csproj" />
+    <ProjectReference Include="../GroceryErp.UI.Common/GroceryErp.UI.Common.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Serilog.Extensions.Hosting" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="WPF-UI" />
+  </ItemGroup>
+</Project>
