@@ -53,6 +53,15 @@
             TargetPageType="{x:Type local:DemoPage}" />
       </ui:NavigationView.MenuItems>
     </ui:NavigationView>
+
+    <Border x:Name="LockOverlay" Grid.RowSpan="2" Panel.ZIndex="20" Background="#F7F8FA" Visibility="Collapsed">
+      <StackPanel Width="360" VerticalAlignment="Center" HorizontalAlignment="Center">
+        <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Lock_Title}" />
+        <TextBlock Margin="0,10,0,18" Text="{l:Tr Lock_Body}" TextWrapping="Wrap" />
+        <PasswordBox x:Name="UnlockPassword" Height="36" KeyDown="UnlockPassword_OnKeyDown" />
+        <Button Margin="0,12,0,0" Click="Unlock_OnClick" Content="{l:Tr Lock_Action}" />
+        <TextBlock x:Name="LockError" Margin="0,10,0,0" Foreground="Crimson" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
   </Grid>
 </ui:FluentWindow>
-

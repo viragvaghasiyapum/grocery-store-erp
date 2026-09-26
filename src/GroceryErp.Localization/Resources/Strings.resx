@@ -19,4 +19,7 @@
   <data name="Login_Password" xml:space="preserve"><value>Password</value></data>
   <data name="Login_Action" xml:space="preserve"><value>Sign in</value></data>
   <data name="Error_WrongPassword" xml:space="preserve"><value>The username or password is incorrect.</value></data>
+  <data name="Lock_Title" xml:space="preserve"><value>Session locked</value></data>
+  <data name="Lock_Body" xml:space="preserve"><value>Enter the owner password to continue.</value></data>
+  <data name="Lock_Action" xml:space="preserve"><value>Unlock</value></data>
 </root>

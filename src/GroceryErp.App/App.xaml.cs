@@ -52,7 +52,9 @@ public partial class App : Application
             builder.Services.AddSingleton<FirstRunService>();
             builder.Services.AddSingleton<BackupService>();
             builder.Services.AddSingleton<IMigrationBackup>(static provider => provider.GetRequiredService<BackupService>());
+            builder.Services.AddSingleton<IAuditLog, AuditLog>();
             builder.Services.AddSingleton<MigrationRunner>();
+            builder.Services.AddSingleton<MaintenanceService>();
             builder.Services.AddSingleton<ShellViewModel>();
             builder.Services.AddSingleton<ShellWindow>();
 
@@ -97,9 +99,19 @@ public partial class App : Application
             var login = new LoginWindow(authentication);
             if (login.ShowDialog() != true) { Shutdown(); return; }
 
+            MaintenanceService maintenance = _host.Services.GetRequiredService<MaintenanceService>();
+            StartupHealth health = await maintenance.CheckBeforeShellAsync();
+            if (health.FreeDiskWarning)
+                Log.Warning("Available disk space is below 1 GB");
+            if (!health.LotCacheHealthy)
+                Log.Error("Lot cache integrity check failed");
+
             ShellWindow shell = _host.Services.GetRequiredService<ShellWindow>();
             MainWindow = shell;
             shell.Show();
+            _ = maintenance.RunAfterShellAsync().ContinueWith(
+                task => { if (task.IsFaulted) Log.Error(task.Exception, "Background startup maintenance failed"); },
+                TaskScheduler.FromCurrentSynchronizationContext());
         }
         catch (Exception exception)
         {
@@ -116,7 +128,7 @@ public partial class App : Application
             {
                 if (_databaseReady)
                 {
-                    try { _host.Services.GetRequiredService<BackupService>().Create("close"); }
+                    try { _host.Services.GetRequiredService<MaintenanceService>().Shutdown(); }
                     catch (Exception exception) { Log.Error(exception, "Close backup failed"); }
                 }
                 await _host.StopAsync();

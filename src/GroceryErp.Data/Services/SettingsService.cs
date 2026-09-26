@@ -1,7 +1,9 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Dapper;
+using CommunityToolkit.Mvvm.Messaging;
 using GroceryErp.Core.Errors;
+using GroceryErp.Core.Messages;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
 
@@ -21,7 +23,7 @@ public interface ISettings
     AppSettings Current { get; }
 }
 
-public sealed class SettingsService(DbExecutor database, AppPaths paths) : ISettings, IBusinessClockSettings
+public sealed class SettingsService(DbExecutor database, AppPaths paths, IAuditLog auditLog) : ISettings, IBusinessClockSettings
 {
     private ImmutableDictionary<string, string> _values = ImmutableDictionary<string, string>.Empty;
     public AppSettings Current { get; private set; } = Defaults(paths);
@@ -45,14 +47,19 @@ public sealed class SettingsService(DbExecutor database, AppPaths paths) : ISett
         await database.WriteAsync(transaction =>
         {
             foreach ((string key, string value) in changes)
+            {
+                string? oldValue = _values.TryGetValue(key, out string? previous) ? previous : null;
                 transaction.Connection.Execute("""
                     INSERT INTO setting(key, value) VALUES (@key, @value)
                     ON CONFLICT(key) DO UPDATE SET value = excluded.value
                     """, new { key, value }, transaction.Transaction);
+                auditLog.Write(transaction, "setting", 0, "UPDATE", new { old = oldValue, @new = value });
+            }
         }, cancellationToken);
 
         _values = _values.SetItems(changes);
         Current = CreateSnapshot(_values, paths);
+        WeakReferenceMessenger.Default.Send(new SettingsChangedMessage(changes.Keys.ToArray()));
     }
 
     private static AppSettings Defaults(AppPaths paths) => new("", 4, 0, null, 15, 30, paths.DefaultBackupDir);

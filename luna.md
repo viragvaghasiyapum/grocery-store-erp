@@ -104,3 +104,40 @@ and Phase 1 test layer are completed.
 
 - `00560ed phase1: foundations, security, backup, and app flow`
 - `phase1: audit implementation status` — current documentation checkpoint
+
+## Checkpoint 4 — Phase 1 reliability and verification slice
+
+Implemented:
+
+- Shell idle lock and manual `Ctrl+Shift+L` lock with authenticated owner-password unlock.
+- Password-only unlock path in `AuthenticationService` with failed-password handling.
+- Startup clock-behind-last-bill check and lot-cache check.
+- Free-disk warning calculation, daily backup scheduling, operation purge, stale temporary cleanup,
+  close backup, WAL checkpoint, and database optimization maintenance.
+- Settings changes now write audit entries and publish `SettingsChangedMessage` through the weak
+  reference messenger.
+- Restore startup validation now checks quick-check, foreign keys, schema version, writes a RESTORE
+  audit entry, purges old replaced databases, and exposes an undo path.
+- Numeric unit tests, migration/seed tests, operation replay tests, backup manifest and restore
+  inspection tests, and password hashing tests.
+
+Verification after this checkpoint:
+
+- `dotnet build GroceryErp.slnx -c Release --no-restore`: passed, 0 warnings, 0 errors.
+- `dotnet test GroceryErp.slnx -c Release --no-build --no-restore`: passed, 14 tests, 0 failures.
+
+Still outside the completed Phase 1 exit criteria:
+
+- Visible low-disk/integrity warning UI and audited clock-warning override.
+- Weekly `PRAGMA integrity_check`, elapsed-month depreciation posting, expiry/low-stock refresh,
+  and full restore confirmation/undo UI.
+- Complete backup rotation policy, USB export, and backup status messaging.
+- Full typed Appendix C settings surface and settings UI.
+- Complete wizard validation and persistence for printers, USB reminder, weighing-scale rules,
+  keyboard detection, and Excel/start choice.
+- Service-level use of operation IDs for business commands; only the reusable guard exists because
+  Catalog, Purchasing, Inventory, Sales, Expenses, and Assets handlers are Phase 2–5 work.
+- Native Gujarati review and XML documentation for public Core/Data APIs.
+
+The implementation remains **Phase 1 partially complete**. The new reliability and test slice is
+committed as `phase1: reliability checks, locking, and foundation tests`.

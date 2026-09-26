@@ -45,6 +45,18 @@ public sealed class AuthenticationService(DbExecutor database, PasswordHasher ha
             "UPDATE app_user SET password_hash = @hash WHERE id = 1", new { hash }, transaction.Transaction), cancellationToken);
     }
 
+    public async Task UnlockAsync(string password, CancellationToken cancellationToken = default)
+    {
+        UserCredential user = await database.ReadAsync(connection => connection.QuerySingle<UserCredential>(
+            "SELECT username AS Username, password_hash AS PasswordHash FROM app_user WHERE id = 1"), cancellationToken);
+        if (!hasher.Verify(password, user.PasswordHash)) throw new DomainException(ErrorCode.WrongPassword);
+        Interlocked.Exchange(ref _failures, 0);
+        await database.WriteAsync(transaction => transaction.Connection.Execute(
+            "UPDATE app_user SET last_login_at = @at WHERE id = 1",
+            new { at = clock.Now.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture) },
+            transaction.Transaction), cancellationToken);
+    }
+
     private sealed class UserCredential
     {
         public string Username { get; init; } = "";

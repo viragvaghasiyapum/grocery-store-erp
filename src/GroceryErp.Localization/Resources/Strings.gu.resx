@@ -19,4 +19,7 @@
   <data name="Login_Password" xml:space="preserve"><value>પાસવર્ડ</value><comment>MT - needs review</comment></data>
   <data name="Login_Action" xml:space="preserve"><value>સાઇન ઇન</value><comment>MT - needs review</comment></data>
   <data name="Error_WrongPassword" xml:space="preserve"><value>વપરાશકર્તા નામ અથવા પાસવર્ડ ખોટો છે.</value><comment>MT - needs review</comment></data>
+  <data name="Lock_Title" xml:space="preserve"><value>સત્ર લૉક છે</value><comment>MT - needs review</comment></data>
+  <data name="Lock_Body" xml:space="preserve"><value>ચાલુ રાખવા માટે માલિકનો પાસવર્ડ દાખલ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Lock_Action" xml:space="preserve"><value>અનલૉક</value><comment>MT - needs review</comment></data>
 </root>

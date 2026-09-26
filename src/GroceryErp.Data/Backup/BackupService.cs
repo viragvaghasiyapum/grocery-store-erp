@@ -26,6 +26,8 @@ public sealed class BackupService(
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
+    public string BackupDirectory => settings.Current.BackupDirectory;
+
     public void CreateBeforeMigration(string reason) => Create(reason);
 
     public BackupInfo Create(string reason)
@@ -156,10 +158,53 @@ public sealed class BackupService(
     {
         string marker = Path.Combine(paths.DbDir, "restore.pending.json");
         if (!File.Exists(marker)) return;
+        RestoreMarker pending = JsonSerializer.Deserialize<RestoreMarker>(File.ReadAllText(marker), JsonOptions)
+            ?? throw new DomainException(ErrorCode.BackupInvalid, "restore marker is invalid");
         using SqliteConnection connection = factory.Open();
-        if (connection.ExecuteScalar<string>("PRAGMA quick_check;") != "ok")
+        if (connection.ExecuteScalar<string>("PRAGMA quick_check;") != "ok" ||
+            connection.Query("PRAGMA foreign_key_check;").Any())
             throw new DomainException(ErrorCode.BackupInvalid, "restored database failed startup check");
+        long schemaVersion = connection.ExecuteScalar<long>("PRAGMA user_version;");
+        if (schemaVersion > MigrationRunner.LatestVersion)
+            throw new DomainException(ErrorCode.DatabaseNewerThanApp, schemaVersion, MigrationRunner.LatestVersion);
+        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        connection.Execute(
+            "INSERT INTO audit_log(entity, entity_id, action, changes) VALUES ('restore', 0, 'RESTORE', @changes)",
+            new { changes = JsonSerializer.Serialize(new { pending.SourceZip, pending.Manifest.SchemaVersion }, JsonOptions) },
+            transaction);
+        transaction.Commit();
         File.Delete(marker);
+        PurgeReplacedDatabases();
+    }
+
+    public void UndoPendingRestore()
+    {
+        string marker = Path.Combine(paths.DbDir, "restore.pending.json");
+        if (!File.Exists(marker)) return;
+        RestoreMarker pending = JsonSerializer.Deserialize<RestoreMarker>(File.ReadAllText(marker), JsonOptions)
+            ?? throw new DomainException(ErrorCode.BackupInvalid, "restore marker is invalid");
+        SqliteConnection.ClearAllPools();
+        string current = paths.DatabaseFile;
+        string replaced = Path.Combine(pending.ReplacedDirectory, Path.GetFileName(current));
+        if (!File.Exists(replaced)) throw new DomainException(ErrorCode.BackupInvalid, "replaced database is missing");
+        string failed = current + ".restore-failed";
+        if (File.Exists(failed)) File.Delete(failed);
+        if (File.Exists(current)) File.Move(current, failed);
+        File.Move(replaced, current);
+        File.Delete(marker);
+        try { File.Delete(failed); } catch (IOException) { }
+    }
+
+    private void PurgeReplacedDatabases()
+    {
+        DateTime cutoff = clock.Now.AddDays(-7);
+        foreach (string directory in Directory.EnumerateDirectories(paths.DbDir, "replaced-*"))
+            try
+            {
+                if (Directory.GetLastWriteTime(directory) < cutoff) Directory.Delete(directory, recursive: true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
     }
 
     private static BackupManifest ReadManifest(ZipArchive archive)
