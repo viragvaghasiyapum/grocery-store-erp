@@ -103,6 +103,10 @@ and Phase 1 test layer are completed.
 ## Commit history
 
 - `00560ed phase1: foundations, security, backup, and app flow`
+- `838f689 phase1: audit implementation status`
+- `cd3113f phase1: reliability checks, locking, and foundation tests`
+- `0132e77 phase1: startup pipeline, typed settings, and validation`
+- `d64536a phase1: complete setup and restore lifecycle` (current checkpoint)
 - `phase1: audit implementation status` — current documentation checkpoint
 
 ## Checkpoint 4 — Phase 1 reliability and verification slice
