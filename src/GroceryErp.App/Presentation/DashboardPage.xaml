@@ -1,0 +1,29 @@
+<Page x:Class="GroceryErp.App.Presentation.DashboardPage"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+ Title="{l:Tr Dashboard_Title}">
+ <ScrollViewer VerticalScrollBarVisibility="Auto">
+  <Grid Margin="24">
+   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="220"/><RowDefinition Height="260"/></Grid.RowDefinitions>
+   <Grid>
+    <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Dashboard_Title}"/>
+    <Button HorizontalAlignment="Right" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
+   </Grid>
+   <UniformGrid Grid.Row="1" Columns="4" Margin="0,16,0,16">
+    <Button Margin="4" Padding="14" Tag="Today" Click="Tile_OnClick"><StackPanel><TextBlock Text="{l:Tr Dashboard_TodaySales}"/><TextBlock x:Name="TodaySales" FontSize="22" FontWeight="SemiBold"/></StackPanel></Button>
+    <Button Margin="4" Padding="14" Tag="Month" Click="Tile_OnClick"><StackPanel><TextBlock Text="{l:Tr Dashboard_MonthSales}"/><TextBlock x:Name="MonthSales" FontSize="22" FontWeight="SemiBold"/></StackPanel></Button>
+    <Button Margin="4" Padding="14" Tag="Stock" Click="Tile_OnClick"><StackPanel><TextBlock Text="{l:Tr Dashboard_StockValue}"/><TextBlock x:Name="StockValue" FontSize="22" FontWeight="SemiBold"/></StackPanel></Button>
+    <Button Margin="4" Padding="14" Tag="Payables" Click="Tile_OnClick"><StackPanel><TextBlock Text="{l:Tr Dashboard_Payables}"/><TextBlock x:Name="Payables" FontSize="22" FontWeight="SemiBold"/></StackPanel></Button>
+   </UniformGrid>
+   <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+    <StackPanel Margin="4"><TextBlock FontWeight="SemiBold" Text="{l:Tr Dashboard_Trend}"/><Canvas x:Name="TrendCanvas" Height="170" Margin="0,12,8,0" Background="#FFF7F8FA" SizeChanged="TrendCanvas_OnSizeChanged"/></StackPanel>
+    <StackPanel Grid.Column="1" Margin="4"><TextBlock FontWeight="SemiBold" Text="{l:Tr Dashboard_Attention}"/><TextBlock x:Name="Attention" Margin="0,12,0,0" TextWrapping="Wrap"/><TextBlock x:Name="PaymentSplit" Margin="0,12,0,0" TextWrapping="Wrap"/><TextBlock x:Name="Backup" Margin="0,12,0,0" TextWrapping="Wrap"/></StackPanel>
+   </Grid>
+   <Grid Grid.Row="3"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+    <StackPanel Margin="4"><TextBlock FontWeight="SemiBold" Text="{l:Tr Dashboard_TopRevenue}"/><DataGrid x:Name="RevenueGrid" Margin="0,8,8,0" IsReadOnly="True" CanUserAddRows="False" AutoGenerateColumns="True" EnableRowVirtualization="True"/></StackPanel>
+    <StackPanel Grid.Column="1" Margin="4"><TextBlock FontWeight="SemiBold" Text="{l:Tr Dashboard_TopMargin}"/><DataGrid x:Name="MarginGrid" Margin="0,8,0,0" IsReadOnly="True" CanUserAddRows="False" AutoGenerateColumns="True" EnableRowVirtualization="True"/></StackPanel>
+   </Grid>
+  </Grid>
+ </ScrollViewer>
+</Page>

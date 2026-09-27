@@ -358,4 +358,40 @@
   <data name="Assets_PostNow" xml:space="preserve"><value>ઘસારો હમણાં પોસ્ટ કરો</value></data>
   <data name="Assets_Salvage" xml:space="preserve"><value>બચત કિંમત</value></data>
   <data name="Assets_Proceeds" xml:space="preserve"><value>નિકાલની રકમ</value></data>
+  <data name="Dashboard_Navigation" xml:space="preserve"><value>ડેશબોર્ડ</value></data>
+  <data name="Dashboard_Title" xml:space="preserve"><value>વ્યવસાય ડેશબોર્ડ</value></data>
+  <data name="Dashboard_TodaySales" xml:space="preserve"><value>આજનું વેચાણ</value></data>
+  <data name="Dashboard_MonthSales" xml:space="preserve"><value>આ મહિનો</value></data>
+  <data name="Dashboard_StockValue" xml:space="preserve"><value>કિંમત પર સ્ટોક મૂલ્ય</value></data>
+  <data name="Dashboard_Payables" xml:space="preserve"><value>વેપારીને ચૂકવવાપાત્ર</value></data>
+  <data name="Dashboard_Trend" xml:space="preserve"><value>વેચાણ વલણ — છેલ્લા 30 દિવસ</value></data>
+  <data name="Dashboard_Attention" xml:space="preserve"><value>ધ્યાન જરૂરી</value></data>
+  <data name="Dashboard_TopRevenue" xml:space="preserve"><value>આવક મુજબ ટોચની વસ્તુઓ</value></data>
+  <data name="Dashboard_TopMargin" xml:space="preserve"><value>માર્જિન મુજબ ટોચની વસ્તુઓ</value></data>
+  <data name="Reports_Navigation" xml:space="preserve"><value>અહેવાલો</value></data>
+  <data name="Reports_Title" xml:space="preserve"><value>અહેવાલો અને નફા-નુકસાન</value></data>
+  <data name="Reports_ExportExcel" xml:space="preserve"><value>એક્સેલ નિકાસ</value></data>
+  <data name="Reports_PrintA4" xml:space="preserve"><value>A4 પૂર્વદર્શન / છાપો</value></data>
+  <data name="Reports_Particulars" xml:space="preserve"><value>વિગતો</value></data>
+  <data name="Reports_Amount" xml:space="preserve"><value>રકમ</value></data>
+  <data name="Reports_MonthlyMatrix" xml:space="preserve"><value>માસિક કોષ્ટક</value></data>
+  <data name="Reports_ComparePrevious" xml:space="preserve"><value>અગાઉના સમયગાળા સાથે સરખાવો</value></data>
+  <data name="Reports_PnlExplanation" xml:space="preserve"><value>ખરીદી પહેલાં સ્ટોક બને છે. વેચાયેલી વસ્તુની કિંમત જ નફા-નુકસાનમાં આવે છે; ન વેચાયેલી ખરીદી સ્ટોક મૂલ્યના અહેવાલમાં રહે છે.</value></data>
+  <data name="Reports_PnlCutMonthNote" xml:space="preserve"><value>મહિનાના ભાગને આવરી લેતી તારીખ શ્રેણીમાં પગાર અને ઘસારો ત્યારે જ દેખાશે જ્યારે મહિનાનો છેલ્લો દિવસ તેમાં સામેલ હોય.</value></data>
+  <data name="Pnl_Head_Sales" xml:space="preserve"><value>વેચાણ (GST બાદ)</value></data>
+  <data name="Pnl_Head_SalesReturns" xml:space="preserve"><value>વેચાણ પરત</value></data>
+  <data name="Pnl_Head_RoundOff" xml:space="preserve"><value>રાઉન્ડ ઓફ</value></data>
+  <data name="Pnl_Head_Cogs" xml:space="preserve"><value>વેચાયેલા માલની કિંમત</value></data>
+  <data name="Pnl_Head_Damages" xml:space="preserve"><value>નુકસાન અને સમાપ્તિ</value></data>
+  <data name="Pnl_Head_StockAdjustment" xml:space="preserve"><value>સ્ટોક ગોઠવણ</value></data>
+  <data name="Pnl_Head_Salaries" xml:space="preserve"><value>પગાર</value></data>
+  <data name="Pnl_Head_Depreciation" xml:space="preserve"><value>ઘસારો</value></data>
+  <data name="Pnl_Head_AssetDisposal" xml:space="preserve"><value>મિલકત નિકાલ નફો/(નુકસાન)</value></data>
+  <data name="Reports_FilterProduct" xml:space="preserve"><value>વસ્તુ ID</value></data>
+  <data name="Reports_FilterLot" xml:space="preserve"><value>લોટ ID</value></data>
+  <data name="Reports_FilterVendor" xml:space="preserve"><value>વેપારી ID</value></data>
+  <data name="Reports_FilterAsset" xml:space="preserve"><value>સમયપત્રક માટે મિલકત ID</value></data>
+  <data name="Reports_FilterSlowDays" xml:space="preserve"><value>ધીમા વેચાણના દિવસો</value></data>
+  <data name="Reports_FilterEntity" xml:space="preserve"><value>ઓડિટ એકમ</value></data>
+  <data name="Reports_FilterAction" xml:space="preserve"><value>ઓડિટ ક્રિયા</value></data>
 </root>

@@ -30,7 +30,7 @@ self-contained installer that needs no internet, no runtime installation and no 
 | Receipts & labels | Raw ESC/POS and TSPL over the Windows spooler (winspool) |
 | A4 documents | WPF `FixedDocument` → any printer or "Microsoft Print to PDF" |
 | Excel import/export | ClosedXML |
-| Charts | LiveCharts2 2.0.x (WPF) |
+| Charts | Native WPF `Canvas`/`Polyline` for the small dashboard trend |
 | Localization | `.resx` resources + runtime-switchable markup extension; English (default) and Gujarati; numbers always English digits |
 | Password hashing | Argon2id (Konscious.Security.Cryptography.Argon2) |
 | Logging | Serilog → rolling files |
@@ -107,8 +107,12 @@ completed in .NET 10. **WPF UI** (`WPF-UI` on NuGet, MIT) provides:
 
 ### 4.4 Charts
 
-**LiveCharts2** (`LiveChartsCore.SkiaSharpView.WPF`, 2.0.x stable) for the dashboard and report
-charts. Fallback if it ever becomes a problem: **ScottPlot 5** (`ScottPlot.WPF`).
+The v1 dashboard has one small 30-point line trend, rendered with native WPF `Canvas` and
+`Polyline`; this keeps startup and the offline package small. LiveCharts2 2.0.5 was evaluated in
+Phase 6, but its WPF dependency chain restored .NET Framework-only OpenTK/Skia assets for the
+`net10.0-windows` application and produced NU1701 compatibility warnings. Warnings are errors in
+this repository, so those warnings are not suppressed. Re-evaluate LiveCharts2 or ScottPlot only
+if a later phase adds interactive charting that cannot be expressed clearly with native WPF.
 
 ### 4.5 Fonts
 
@@ -306,7 +310,6 @@ for later phases remain unpinned until they are actually added.
 | `Microsoft.Extensions.DependencyInjection.Abstractions` | **10.0.12** | UI.Common, modules | MIT |
 | `Microsoft.Data.Sqlite` | 10.x | Data | MIT |
 | `Dapper` | 2.x | Data, modules | Apache-2.0 |
-| `LiveChartsCore.SkiaSharpView.WPF` | 2.0.x | Reports | MIT |
 | `ZXing.Net` | 0.16.x | Printing, Catalog | Apache-2.0 |
 | `ClosedXML` | 0.10x | Catalog (import), Reports (export) | MIT |
 | `Konscious.Security.Cryptography.Argon2` | 1.x | Settings (auth) | MIT |

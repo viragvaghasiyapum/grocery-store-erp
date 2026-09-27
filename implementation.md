@@ -3451,7 +3451,8 @@ Last updated: **27 September 2026**
 | 3 — Stock-in | **Functionally implemented; hardware verification remains** | Migration 004 adds durable stock-count snapshots and printed vendor-bill totals. Vendor CRUD, purchase drafts/posting/cancellation, landed cost, vendor payments/ledger, lot/stock views, FEFO, opening-stock Excel dry run/import, price/block controls, manual adjustments, durable stock counts, and printable count sheets are implemented with operation idempotency, period guards, audit and stock notifications. The localized shell provides vendor, GRN/posting, payment, opening-import, lot price/block, adjustment, ledger and count-entry workflows. Golden purchase, cancellation, payment, FEFO, opening-stock and concurrent-count reconciliation tests pass. Remaining exit work is physical lot-label verification inherited from Phase 2 and native Gujarati review. |
 | 4 — POS | **Functionally implemented; hardware verification remains** | Persistent draft bills, scanner bursts, quantity/price labels, FEFO, transactional repricing and completion, cash/UPI/split payments, hold/resume, void, exact pro-rata returns, non-resellable return damage, raster receipt printing, reprints, sales history and day-end are implemented. Operation IDs protect completion, void and return from duplicate submission. Golden completion, replay, return, damage, void-protection and day-end tests pass. Remaining exit work is physical receipt-printer/cash-drawer verification, a real power-pull test, performance measurement on store hardware and native Gujarati review. |
 | 5 — Money out | **Complete** | Migration 005 adds replay-safe bulk damage grouping, one regular salary per employee/month, expiry-view hardening and immutability guards for posted damages/depreciation. Searchable damage entry and bulk expiry write-off; active-lot expiry tabs, badge, daily popup, mark-down/block/vendor-list actions; complete expense drafts/categories/repeat-last-month; employees, adjustable salary runs and advances; asset register, exact WDV/SLM depreciation posting and disposal are implemented with period locks, operation idempotency and audit. Damages, salaries, depreciation, expense categories and disposal gains/losses flow through `v_pnl_entry`. The documented depreciation example and integration scenarios pass. Report presentation and the full native Gujarati review remain explicitly owned by Phases 6 and 7. |
-| 6–7 | **Not started** | Follow the phase scopes and exit criteria above. |
+| 6 — Insight | **Complete** | Typed P&amp;L statements for arbitrary periods, fiscal-period helpers, monthly and salary matrices, posted/projected asset schedules, independently loaded dashboard metrics, the full operational/accounting report catalog, numeric Excel export and paginated A4 preview/printing are implemented. The dashboard is the shell landing page and includes clickable summary tiles plus margin, trend, payment, expiry, low-stock, valuation, payable, backup and top-product insights. The golden P&amp;L scenario, matrix/schedule, complete query catalog, Excel numeric-format, A4 pagination and 20k-entry fiscal-year performance tests pass; the full Release suite has 57 passing tests. |
+| 7 — Hardening & release | **Not started** | Follow the phase scope and exit criteria above. |
 
 Phase 0 checklist:
 
@@ -3531,6 +3532,22 @@ Phase boundary verification: the salary matrix and projected asset schedule are 
 presentations owned by Phase 6 (Insight); the full native-speaker Gujarati review is owned by
 Phase 7 (Hardening). No Phase 5 implementation item remains open.
 
+Phase 6 checklist:
+
+- [x] Profit and loss statement for custom, month and fiscal-year ranges
+- [x] Net sales, COGS, gross profit/margin, expenses, other income and net profit/margin
+- [x] Monthly P&amp;L matrix with localized month headings and fiscal-year total column
+- [x] Dashboard with today/month sales, payments, 30-day trend, top products and attention metrics
+- [x] Sales, item/category/hourly, stock, expiry, damage, expense, salary and asset reports
+- [x] Employee-by-month salary matrix and posted/projected per-asset depreciation schedule
+- [x] Vendor, purchase, GST accountant summary and audit reports
+- [x] Shared report filtering, virtualized grids and totals
+- [x] Excel exports use numeric cells, three-decimal formats, real dates and bilingual name columns
+- [x] A4 fixed-document preview with repeated headings, page numbers and English digits
+- [x] English/Gujarati resource coverage; native-speaker review remains owned by Phase 7
+- [x] Golden P&amp;L, matrix, complete query-catalog and Excel-format integration tests
+- [x] Fiscal-year P&amp;L stays below 500 ms with 20,000 entries
+
 ### 21.2 Definition of done (every feature)
 
 - Strings in resources (English), Gujarati translation added (may lag within the phase, tracked).
@@ -3601,6 +3618,14 @@ Phase 7 (Hardening). No Phase 5 implementation item remains open.
 | Tab / Enter | Next cell |
 | Ctrl+D | Duplicate line (same product, new batch) |
 | Ctrl+Enter | Post purchase |
+
+**Dashboard and reports**
+
+| Keys | Action |
+|---|---|
+| F5 | Refresh the current dashboard/report |
+| Ctrl+E | Export the current report to Excel |
+| Ctrl+P | Preview and print the current report on A4 |
 
 ---
 

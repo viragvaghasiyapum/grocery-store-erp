@@ -15,6 +15,7 @@ using GroceryErp.Inventory;
 using GroceryErp.Inventory.Contracts;
 using GroceryErp.Localization;
 using GroceryErp.Purchasing;
+using GroceryErp.Reports;
 using GroceryErp.Sales;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -79,6 +80,9 @@ public partial class App : Application
             builder.Services.AddSingleton<ReceiptPrinter>();
             builder.Services.AddSingleton<MoneyOutService>();
             builder.Services.AddSingleton<AssetService>();
+            builder.Services.AddSingleton<ReportService>();
+            builder.Services.AddSingleton<ReportOutputService>();
+            builder.Services.AddSingleton<ReportNavigationState>();
             builder.Services.AddSingleton<ShellViewModel>();
             builder.Services.AddSingleton<ShellWindow>();
 

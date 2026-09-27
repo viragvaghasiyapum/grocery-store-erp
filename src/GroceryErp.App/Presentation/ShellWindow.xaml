@@ -49,6 +49,10 @@
         PaneDisplayMode="Left">
       <ui:NavigationView.MenuItems>
         <ui:NavigationViewItem
+            Content="{l:Tr Dashboard_Navigation}"
+            Icon="{ui:SymbolIcon Home24}"
+            TargetPageType="{x:Type local:DashboardPage}" />
+        <ui:NavigationViewItem
             Content="{l:Tr Sales_Pos_Navigation}"
             Icon="{ui:SymbolIcon Cart24}"
             TargetPageType="{x:Type local:BillingPage}" />
@@ -76,6 +80,10 @@
             Content="{l:Tr Assets_Navigation}"
             Icon="{ui:SymbolIcon Building24}"
             TargetPageType="{x:Type local:AssetsPage}" />
+        <ui:NavigationViewItem
+            Content="{l:Tr Reports_Navigation}"
+            Icon="{ui:SymbolIcon DataBarVertical24}"
+            TargetPageType="{x:Type local:ReportsPage}" />
         <ui:NavigationViewItem
             Content="{l:Tr Catalog_Navigation}"
             Icon="{ui:SymbolIcon Box24}"

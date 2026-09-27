@@ -13,4 +13,8 @@ public sealed class DisplayFormatter
 
     /// <summary>Formats a date with invariant English digits.</summary>
     public string Date(DateOnly value) => value.ToString("dd-MM-yyyy", _invariantCulture);
+
+    /// <summary>Formats a localized month name while keeping the year in English digits.</summary>
+    public string MonthYear(DateOnly value, CultureInfo uiCulture) =>
+        $"{uiCulture.DateTimeFormat.GetAbbreviatedMonthName(value.Month)} {value.Year.ToString(_invariantCulture)}";
 }

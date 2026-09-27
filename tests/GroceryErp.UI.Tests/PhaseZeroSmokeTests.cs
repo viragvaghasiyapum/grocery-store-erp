@@ -8,6 +8,7 @@ using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Security;
 using GroceryErp.Data.Services;
 using GroceryErp.Localization;
+using GroceryErp.Reports;
 using Shouldly;
 using Xunit;
 
@@ -15,6 +16,33 @@ namespace GroceryErp.UI.Tests;
 
 public sealed class PhaseZeroSmokeTests
 {
+    [Fact]
+    public async Task A4Report_PaginatesOnStaThread()
+    {
+        TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Thread thread = new(() =>
+        {
+            try
+            {
+                var output = new ReportOutputService(new TestSettings());
+                IReadOnlyList<ReportRow> rows = Enumerable.Range(1, 60)
+                    .Select(index => new ReportRow(new Dictionary<string, object?> { ["Name"] = $"Item {index}", ["Amount"] = index * 1000L }))
+                    .ToList();
+                var report = new TabularReport("A4 test", null,
+                    [new("Name", "Name", ReportValueKind.Text), new("Amount", "Amount", ReportValueKind.Money)],
+                    rows, new Dictionary<string, decimal> { ["Amount"] = 1830m });
+
+                output.CreateA4(report, new DateTime(2026, 9, 27, 12, 0, 0)).Pages.Count.ShouldBe(3);
+                completion.SetResult();
+            }
+            catch (Exception exception) { completion.SetException(exception); }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+
+        await completion.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+    }
+
     [Fact]
     public async Task Shell_LoadsAndSwitchesToGujarati()
     {
@@ -81,6 +109,11 @@ public sealed class PhaseZeroSmokeTests
         await completion.Task.WaitAsync(
             TimeSpan.FromSeconds(10),
             TestContext.Current.CancellationToken);
+    }
+
+    private sealed class TestSettings : ISettings
+    {
+        public AppSettings Current { get; } = new("Test Store", 4, 0, null, 15, 30, "");
     }
 }
 

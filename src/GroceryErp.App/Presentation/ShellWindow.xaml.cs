@@ -43,7 +43,7 @@ public partial class ShellWindow : FluentWindow
         }
         Loaded += async (_, _) =>
         {
-            RootNavigation.Navigate(typeof(DemoPage));
+            RootNavigation.Navigate(typeof(DashboardPage));
             if (moneyOut is not null)
             {
                 IReadOnlyList<ExpiryLot> actionable = await moneyOut.GetExpiryAsync();
@@ -64,6 +64,7 @@ public partial class ShellWindow : FluentWindow
     }
 
     internal void SetExpiryBadge(int count) => ExpiryInfoBadge.Value = count.ToString(CultureInfo.InvariantCulture);
+    internal void OpenReports() => RootNavigation.Navigate(typeof(ReportsPage));
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
