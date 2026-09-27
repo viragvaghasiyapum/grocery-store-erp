@@ -299,4 +299,63 @@
   <data name="Receipt_Savings" xml:space="preserve"><value>You saved</value></data>
   <data name="Receipt_Change" xml:space="preserve"><value>Change</value></data>
   <data name="Receipt_CompositionNotice" xml:space="preserve"><value>Composition taxable person, not eligible to collect tax on supplies</value></data>
+  <data name="MoneyOut_Navigation" xml:space="preserve"><value>Money out</value></data>
+  <data name="MoneyOut_Title" xml:space="preserve"><value>Money out, damages and payroll</value></data>
+  <data name="MoneyOut_Expiry" xml:space="preserve"><value>Expiry</value></data>
+  <data name="MoneyOut_Expired" xml:space="preserve"><value>Expired</value></data>
+  <data name="MoneyOut_Critical" xml:space="preserve"><value>Critical (7 days)</value></data>
+  <data name="MoneyOut_Soon" xml:space="preserve"><value>Soon</value></data>
+  <data name="MoneyOut_Damages" xml:space="preserve"><value>Damages</value></data>
+  <data name="MoneyOut_Expenses" xml:space="preserve"><value>Expenses</value></data>
+  <data name="MoneyOut_Payroll" xml:space="preserve"><value>Employees and payroll</value></data>
+  <data name="MoneyOut_RecordDamage" xml:space="preserve"><value>Record damage</value></data>
+  <data name="MoneyOut_WriteOff" xml:space="preserve"><value>Write off expired</value></data>
+  <data name="MoneyOut_BlockLot" xml:space="preserve"><value>Block lot</value></data>
+  <data name="MoneyOut_MarkDown" xml:space="preserve"><value>Mark down</value></data>
+  <data name="MoneyOut_PrintVendorList" xml:space="preserve"><value>Print vendor list</value></data>
+  <data name="MoneyOut_VendorListTitle" xml:space="preserve"><value>Expiry list for vendors</value></data>
+  <data name="MoneyOut_DaysLeft" xml:space="preserve"><value>Days left</value></data>
+  <data name="MoneyOut_Bucket" xml:space="preserve"><value>Status</value></data>
+  <data name="MoneyOut_Cost" xml:space="preserve"><value>Cost</value></data>
+  <data name="MoneyOut_Recovered" xml:space="preserve"><value>Recovered</value></data>
+  <data name="MoneyOut_Reason" xml:space="preserve"><value>Reason</value></data>
+  <data name="MoneyOut_SaveExpense" xml:space="preserve"><value>Save expense</value></data>
+  <data name="MoneyOut_RepeatLastMonth" xml:space="preserve"><value>Repeat last month</value></data>
+  <data name="MoneyOut_AddCategory" xml:space="preserve"><value>Add category</value></data>
+  <data name="MoneyOut_Amount" xml:space="preserve"><value>Amount</value></data>
+  <data name="MoneyOut_PaidTo" xml:space="preserve"><value>Paid to</value></data>
+  <data name="MoneyOut_Reference" xml:space="preserve"><value>Reference</value></data>
+  <data name="MoneyOut_OpenAssets" xml:space="preserve"><value>Open assets</value></data>
+  <data name="MoneyOut_AssetWarning" xml:space="preserve"><value>This looks like an asset purchase. Record it in Assets instead of expenses.</value></data>
+  <data name="MoneyOut_ExpiryAlertTitle" xml:space="preserve"><value>Expiry attention needed</value></data>
+  <data name="MoneyOut_ExpiryAlertBody" xml:space="preserve"><value>{0} expired or critical lot(s) need attention.</value></data>
+  <data name="MoneyOut_Later" xml:space="preserve"><value>Later</value></data>
+  <data name="MoneyOut_ViewExpiry" xml:space="preserve"><value>View expiry</value></data>
+  <data name="MoneyOut_AddEmployee" xml:space="preserve"><value>Add employee</value></data>
+  <data name="MoneyOut_PrepareSalary" xml:space="preserve"><value>Prepare run</value></data>
+  <data name="MoneyOut_PostSalary" xml:space="preserve"><value>Post salary</value></data>
+  <data name="MoneyOut_Role" xml:space="preserve"><value>Role</value></data>
+  <data name="MoneyOut_Phone" xml:space="preserve"><value>Phone</value></data>
+  <data name="MoneyOut_Advance" xml:space="preserve"><value>Advance amount</value></data>
+  <data name="MoneyOut_RecordAdvance" xml:space="preserve"><value>Record advance</value></data>
+  <data name="MoneyOut_Salary" xml:space="preserve"><value>Salary</value></data>
+  <data name="MoneyOut_LeaveDeduction" xml:space="preserve"><value>Leave deduction</value></data>
+  <data name="MoneyOut_Overtime" xml:space="preserve"><value>Overtime</value></data>
+  <data name="MoneyOut_Bonus" xml:space="preserve"><value>Bonus</value></data>
+  <data name="Assets_Navigation" xml:space="preserve"><value>Assets</value></data>
+  <data name="Assets_Title" xml:space="preserve"><value>Assets and depreciation</value></data>
+  <data name="Assets_Add" xml:space="preserve"><value>Add asset</value></data>
+  <data name="Assets_Cost" xml:space="preserve"><value>Cost</value></data>
+  <data name="Assets_Method" xml:space="preserve"><value>Method</value></data>
+  <data name="Assets_Rate" xml:space="preserve"><value>Rate %</value></data>
+  <data name="Assets_BookValue" xml:space="preserve"><value>Book value</value></data>
+  <data name="Assets_Disposed" xml:space="preserve"><value>Disposed</value></data>
+  <data name="Assets_Period" xml:space="preserve"><value>Period</value></data>
+  <data name="Assets_Opening" xml:space="preserve"><value>Opening</value></data>
+  <data name="Assets_Depreciation" xml:space="preserve"><value>Depreciation</value></data>
+  <data name="Assets_Closing" xml:space="preserve"><value>Closing</value></data>
+  <data name="Assets_Dispose" xml:space="preserve"><value>Dispose</value></data>
+  <data name="Assets_PostNow" xml:space="preserve"><value>Post depreciation now</value></data>
+  <data name="Assets_Salvage" xml:space="preserve"><value>Salvage value</value></data>
+  <data name="Assets_Proceeds" xml:space="preserve"><value>Disposal proceeds</value></data>
 </root>

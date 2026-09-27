@@ -17,10 +17,54 @@ public sealed class FoundationsTests
         using var fixture = new FoundationFixture();
 
         using var connection = fixture.Factory.Open();
-        connection.ExecuteScalar<long>("PRAGMA user_version").ShouldBe(4L);
+        connection.ExecuteScalar<long>("PRAGMA user_version").ShouldBe(5L);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM setting").ShouldBeGreaterThan(0);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM operation").ShouldBe(0L);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM uom").ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    public void ExistingVersionFourDatabase_UpgradesWithoutLosingMoneyOutData()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"grocery-erp-upgrade-{Guid.NewGuid():N}");
+        try
+        {
+            var factory = new SqliteConnectionFactory(new AppPaths(new SettingsBootstrap(root)));
+            string[] resources = typeof(MigrationRunner).Assembly.GetManifestResourceNames()
+                .Where(static name => name.Contains(".db.", StringComparison.Ordinal))
+                .Order(StringComparer.Ordinal)
+                .Take(4)
+                .ToArray();
+            resources.Length.ShouldBe(4);
+            using (var connection = factory.Open())
+            {
+                foreach (string resource in resources)
+                {
+                    using Stream stream = typeof(MigrationRunner).Assembly.GetManifestResourceStream(resource)
+                        ?? throw new InvalidOperationException(resource);
+                    using var reader = new StreamReader(stream);
+                    connection.Execute(reader.ReadToEnd());
+                }
+                long category = connection.ExecuteScalar<long>("SELECT id FROM expense_category ORDER BY id LIMIT 1");
+                connection.Execute("""
+                    INSERT INTO expense(expense_date,category_id,amount,mode,paid_to)
+                    VALUES ('2026-09-01',@category,100000,'CASH','Existing row')
+                    """, new { category });
+                connection.ExecuteScalar<long>("PRAGMA user_version").ShouldBe(4L);
+            }
+
+            new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
+
+            using var upgraded = factory.Open();
+            upgraded.ExecuteScalar<long>("PRAGMA user_version").ShouldBe(5L);
+            upgraded.ExecuteScalar<long>("SELECT COUNT(*) FROM expense").ShouldBe(1L);
+            upgraded.ExecuteScalar<long>("SELECT COUNT(*) FROM pragma_table_info('damage') WHERE name='bulk_operation_id'").ShouldBe(1L);
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]
@@ -57,7 +101,7 @@ public sealed class FoundationsTests
         backup.ApplyRestore(candidate);
         backup.FinishPendingRestore();
 
-        verified.SchemaVersion.ShouldBe(4L);
+        verified.SchemaVersion.ShouldBe(5L);
         candidate.Manifest.Database.Sha256.ShouldBe(verified.Database.Sha256);
         using var connection = fixture.Factory.Open();
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity = 'restore' AND action = 'RESTORE'")

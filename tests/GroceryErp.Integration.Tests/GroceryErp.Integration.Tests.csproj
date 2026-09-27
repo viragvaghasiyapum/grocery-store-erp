@@ -11,6 +11,8 @@
     <ProjectReference Include="../../src/Modules/GroceryErp.Inventory/GroceryErp.Inventory.csproj" />
     <ProjectReference Include="../../src/Modules/GroceryErp.Purchasing/GroceryErp.Purchasing.csproj" />
     <ProjectReference Include="../../src/Modules/GroceryErp.Sales/GroceryErp.Sales.csproj" />
+    <ProjectReference Include="../../src/Modules/GroceryErp.Expenses/GroceryErp.Expenses.csproj" />
+    <ProjectReference Include="../../src/Modules/GroceryErp.Assets/GroceryErp.Assets.csproj" />
     <ProjectReference Include="../../src/GroceryErp.Printing/GroceryErp.Printing.csproj" />
   </ItemGroup>
   <ItemGroup>

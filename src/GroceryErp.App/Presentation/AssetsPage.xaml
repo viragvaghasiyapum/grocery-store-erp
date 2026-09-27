@@ -1,0 +1,50 @@
+<Page
+    x:Class="GroceryErp.App.Presentation.AssetsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    Title="{l:Tr Assets_Title}">
+  <Grid Margin="24">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Assets_Title}"/>
+    <WrapPanel Grid.Row="1" Margin="0,16,0,12">
+      <TextBox x:Name="AssetName" Width="180" ToolTip="Name"/>
+      <ComboBox x:Name="AssetCategory" Width="130" Margin="8,0" SelectedIndex="0" SelectionChanged="AssetCategory_OnSelectionChanged"><ComboBoxItem Content="Furniture"/><ComboBoxItem Content="Equipment"/><ComboBoxItem Content="Electronics"/><ComboBoxItem Content="Vehicle"/><ComboBoxItem Content="Other"/></ComboBox>
+      <DatePicker x:Name="PurchaseDate" Width="135"/>
+      <DatePicker x:Name="InUseDate" Width="135" Margin="8,0"/>
+      <TextBox x:Name="AssetCost" Width="100" ToolTip="Cost"/>
+      <ComboBox x:Name="AssetMethod" Width="80" Margin="8,0" SelectedIndex="0"><ComboBoxItem Content="WDV"/><ComboBoxItem Content="SLM"/></ComboBox>
+      <TextBox x:Name="AssetRate" Width="80" Text="15" ToolTip="Rate %"/>
+      <TextBox x:Name="AssetSalvage" Width="95" Margin="8,0" Text="0" ToolTip="{l:Tr Assets_Salvage}"/>
+      <ComboBox x:Name="AssetVendor" Width="150" DisplayMemberPath="Name" SelectedValuePath="Id" ToolTip="{l:Tr Purchasing_Vendor}"/>
+      <TextBox x:Name="AssetNotes" Width="150" Margin="8,0" ToolTip="{l:Tr Purchasing_Notes}"/>
+      <Button Click="AddAsset_OnClick" Content="{l:Tr Assets_Add}"/>
+    </WrapPanel>
+    <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <DataGrid x:Name="AssetGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="AssetGrid_OnSelectionChanged">
+        <DataGrid.Columns>
+          <DataGridTextColumn Width="2*" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}"/>
+          <DataGridTextColumn Width="120" Header="{l:Tr Catalog_Category}" Binding="{Binding Category}"/>
+          <DataGridTextColumn Width="110" Header="{l:Tr Assets_Cost}" Binding="{Binding Cost}"/>
+          <DataGridTextColumn Width="90" Header="{l:Tr Assets_Method}" Binding="{Binding Method}"/>
+          <DataGridTextColumn Width="90" Header="{l:Tr Assets_Rate}" Binding="{Binding Rate}"/>
+          <DataGridTextColumn Width="120" Header="{l:Tr Assets_BookValue}" Binding="{Binding BookValue}"/>
+          <DataGridTextColumn Width="110" Header="{l:Tr Assets_Disposed}" Binding="{Binding DisposedDate}"/>
+        </DataGrid.Columns>
+      </DataGrid>
+      <DataGrid x:Name="ScheduleGrid" Grid.Column="1" Margin="12,0,0,0" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+        <DataGrid.Columns><DataGridTextColumn Width="90" Header="{l:Tr Assets_Period}" Binding="{Binding Period}"/><DataGridTextColumn Width="110" Header="{l:Tr Assets_Opening}" Binding="{Binding OpeningValue}"/><DataGridTextColumn Width="110" Header="{l:Tr Assets_Depreciation}" Binding="{Binding Amount}"/><DataGridTextColumn Width="110" Header="{l:Tr Assets_Closing}" Binding="{Binding ClosingValue}"/></DataGrid.Columns>
+      </DataGrid>
+    </Grid>
+    <DockPanel Grid.Row="3" Margin="0,12,0,0">
+      <TextBlock x:Name="StatusText" VerticalAlignment="Center"/>
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <DatePicker x:Name="DisposalDate" Width="135"/>
+        <TextBox x:Name="DisposalValue" Width="110" Margin="8,0" Text="0" ToolTip="{l:Tr Assets_Proceeds}"/>
+        <Button Margin="0,0,8,0" Click="Dispose_OnClick" Content="{l:Tr Assets_Dispose}"/>
+        <Button Margin="0,0,8,0" Click="Post_OnClick" Content="{l:Tr Assets_PostNow}"/>
+        <Button Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
+      </StackPanel>
+    </DockPanel>
+  </Grid>
+</Page>

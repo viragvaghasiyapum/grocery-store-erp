@@ -3,12 +3,14 @@ using System.IO;
 using System.Windows;
 using System.Windows.Markup;
 using GroceryErp.App.Presentation;
+using GroceryErp.Assets;
 using GroceryErp.Catalog;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Backup;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Security;
 using GroceryErp.Data.Services;
+using GroceryErp.Expenses;
 using GroceryErp.Inventory;
 using GroceryErp.Inventory.Contracts;
 using GroceryErp.Localization;
@@ -75,6 +77,8 @@ public partial class App : Application
             builder.Services.AddSingleton<PurchasingService>();
             builder.Services.AddSingleton<SalesService>();
             builder.Services.AddSingleton<ReceiptPrinter>();
+            builder.Services.AddSingleton<MoneyOutService>();
+            builder.Services.AddSingleton<AssetService>();
             builder.Services.AddSingleton<ShellViewModel>();
             builder.Services.AddSingleton<ShellWindow>();
 
@@ -179,7 +183,9 @@ public partial class App : Application
             ShellWindow shell = _host.Services.GetRequiredService<ShellWindow>();
             MainWindow = shell;
             shell.Show();
-            _maintenanceTask = maintenance.RunAfterShellAsync();
+            _maintenanceTask = Task.WhenAll(
+                maintenance.RunAfterShellAsync(),
+                _host.Services.GetRequiredService<AssetService>().PostDueDepreciationAsync());
             _ = _maintenanceTask.ContinueWith(
                 task => { if (task.IsFaulted) Log.Error(task.Exception, "Background startup maintenance failed"); },
                 TaskScheduler.FromCurrentSynchronizationContext());

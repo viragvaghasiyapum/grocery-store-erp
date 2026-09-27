@@ -3450,7 +3450,8 @@ Last updated: **27 September 2026**
 | 2 — Catalog & barcodes | **Functionally implemented; hardware verification remains** | Product/master CRUD, audit, FTS/prefix search, filters, category/brand/unit/tax management, EAN/internal/scale/GS1 barcode handling, scan resolution, Excel dry-run/import, bulk category/tax changes, label preview, TSPL generation, `.prn` export and RAW Windows spooling are implemented. The repeatable benchmark imports 20k products in 14.955 s and searches at 2.772 ms p95. Remaining exit work requires a physical label printer/scanner: calibrate the configured stock, verify Gujarati font/raster behavior on the model, and confirm scans from 30 cm. |
 | 3 — Stock-in | **Functionally implemented; hardware verification remains** | Migration 004 adds durable stock-count snapshots and printed vendor-bill totals. Vendor CRUD, purchase drafts/posting/cancellation, landed cost, vendor payments/ledger, lot/stock views, FEFO, opening-stock Excel dry run/import, price/block controls, manual adjustments, durable stock counts, and printable count sheets are implemented with operation idempotency, period guards, audit and stock notifications. The localized shell provides vendor, GRN/posting, payment, opening-import, lot price/block, adjustment, ledger and count-entry workflows. Golden purchase, cancellation, payment, FEFO, opening-stock and concurrent-count reconciliation tests pass. Remaining exit work is physical lot-label verification inherited from Phase 2 and native Gujarati review. |
 | 4 — POS | **Functionally implemented; hardware verification remains** | Persistent draft bills, scanner bursts, quantity/price labels, FEFO, transactional repricing and completion, cash/UPI/split payments, hold/resume, void, exact pro-rata returns, non-resellable return damage, raster receipt printing, reprints, sales history and day-end are implemented. Operation IDs protect completion, void and return from duplicate submission. Golden completion, replay, return, damage, void-protection and day-end tests pass. Remaining exit work is physical receipt-printer/cash-drawer verification, a real power-pull test, performance measurement on store hardware and native Gujarati review. |
-| 5–7 | **Not started** | Follow the phase scopes and exit criteria above. |
+| 5 — Money out | **Complete** | Migration 005 adds replay-safe bulk damage grouping, one regular salary per employee/month, expiry-view hardening and immutability guards for posted damages/depreciation. Searchable damage entry and bulk expiry write-off; active-lot expiry tabs, badge, daily popup, mark-down/block/vendor-list actions; complete expense drafts/categories/repeat-last-month; employees, adjustable salary runs and advances; asset register, exact WDV/SLM depreciation posting and disposal are implemented with period locks, operation idempotency and audit. Damages, salaries, depreciation, expense categories and disposal gains/losses flow through `v_pnl_entry`. The documented depreciation example and integration scenarios pass. Report presentation and the full native Gujarati review remain explicitly owned by Phases 6 and 7. |
+| 6–7 | **Not started** | Follow the phase scopes and exit criteria above. |
 
 Phase 0 checklist:
 
@@ -3509,6 +3510,26 @@ Phase 4 checklist:
 - [ ] Physical printer, cutter, drawer and bilingual receipt verification
 - [ ] Power-pull and scan-to-line performance verification on store hardware
 - [ ] Native Gujarati review of Phase 4 strings
+
+Phase 5 checklist:
+
+- [x] Damage entry uses lot cost snapshots, document numbers and append-only stock movements
+- [x] Replay-safe bulk write-off for selected expired lots in one transaction
+- [x] Expiry area with expired/critical/soon buckets, mark-down, block and vendor-list printing
+- [x] Audited expense categories and quick expense entry
+- [x] Repeat-last-month expense drafts preserve the target month's valid day
+- [x] Employee master and adjustable salary runs charged to the worked month
+- [x] Asset register with WDV/SLM, salvage value and vendor association
+- [x] Automatic and manual monthly depreciation posting with locked-period reporting
+- [x] Disposal posts partial-month depreciation before gain/loss calculation
+- [x] Damages, expenses, salary, depreciation and disposal entries reach P&amp;L
+- [x] English/Gujarati resources and English-digit numeric input/display
+- [x] Exact worked-example, replay, stock, P&amp;L, payroll and disposal tests
+- [x] Complete English/Gujarati resource coverage; native-speaker review is owned by Phase 7
+
+Phase boundary verification: the salary matrix and projected asset schedule are report
+presentations owned by Phase 6 (Insight); the full native-speaker Gujarati review is owned by
+Phase 7 (Hardening). No Phase 5 implementation item remains open.
 
 ### 21.2 Definition of done (every feature)
 

@@ -65,6 +65,18 @@
             Icon="{ui:SymbolIcon Box24}"
             TargetPageType="{x:Type local:StockPage}" />
         <ui:NavigationViewItem
+            Content="{l:Tr MoneyOut_Navigation}"
+            Icon="{ui:SymbolIcon Money24}"
+            TargetPageType="{x:Type local:MoneyOutPage}">
+          <ui:NavigationViewItem.InfoBadge>
+            <ui:InfoBadge x:Name="ExpiryInfoBadge" Severity="Caution" Value="0" />
+          </ui:NavigationViewItem.InfoBadge>
+        </ui:NavigationViewItem>
+        <ui:NavigationViewItem
+            Content="{l:Tr Assets_Navigation}"
+            Icon="{ui:SymbolIcon Building24}"
+            TargetPageType="{x:Type local:AssetsPage}" />
+        <ui:NavigationViewItem
             Content="{l:Tr Catalog_Navigation}"
             Icon="{ui:SymbolIcon Box24}"
             TargetPageType="{x:Type local:ProductsPage}" />

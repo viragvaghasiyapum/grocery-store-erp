@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
@@ -5,6 +6,7 @@ using GroceryErp.Core.Errors;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Security;
 using GroceryErp.Data.Services;
+using GroceryErp.Expenses;
 using GroceryErp.Localization;
 using Wpf.Ui.Controls;
 
@@ -22,7 +24,9 @@ public partial class ShellWindow : FluentWindow
         ShellViewModel viewModel,
         AuthenticationService? authentication = null,
         ISettings? settings = null,
-        IClock? clock = null)
+        IClock? clock = null,
+        MoneyOutService? moneyOut = null,
+        SettingsService? settingsService = null)
     {
         InitializeComponent();
         DataContext = viewModel;
@@ -37,9 +41,29 @@ public partial class ShellWindow : FluentWindow
             _idleTimer = new DispatcherTimer(TimeSpan.FromSeconds(30), DispatcherPriority.Background,
                 (_, _) => CheckIdle(), Dispatcher);
         }
-        Loaded += (_, _) => RootNavigation.Navigate(typeof(DemoPage));
+        Loaded += async (_, _) =>
+        {
+            RootNavigation.Navigate(typeof(DemoPage));
+            if (moneyOut is not null)
+            {
+                IReadOnlyList<ExpiryLot> actionable = await moneyOut.GetExpiryAsync();
+                int count = actionable.Count(static lot => lot.Bucket is "EXPIRED" or "CRITICAL");
+                ExpiryInfoBadge.Value = count.ToString(CultureInfo.InvariantCulture);
+                string today = clock?.BusinessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "";
+                string lastPopup = settings?.Current.Values.GetValueOrDefault("expiry.last_popup_date", "") ?? "";
+                if (count > 0 && settings?.Current.ExpiryPopupOnLogin == true && settingsService is not null && lastPopup != today)
+                {
+                    var alert = new ExpiryAlertWindow(count) { Owner = this };
+                    alert.ShowDialog();
+                    await settingsService.SaveAsync(new Dictionary<string, string> { ["expiry.last_popup_date"] = today });
+                    if (alert.ViewRequested) RootNavigation.Navigate(typeof(MoneyOutPage));
+                }
+            }
+        };
         Closed += (_, _) => _idleTimer?.Stop();
     }
+
+    internal void SetExpiryBadge(int count) => ExpiryInfoBadge.Value = count.ToString(CultureInfo.InvariantCulture);
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
