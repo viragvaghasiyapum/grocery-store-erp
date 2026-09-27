@@ -17,7 +17,7 @@ public sealed class FoundationsTests
         using var fixture = new FoundationFixture();
 
         using var connection = fixture.Factory.Open();
-        connection.ExecuteScalar<long>("PRAGMA user_version").ShouldBe(3L);
+        connection.ExecuteScalar<long>("PRAGMA user_version").ShouldBe(4L);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM setting").ShouldBeGreaterThan(0);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM operation").ShouldBe(0L);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM uom").ShouldBeGreaterThan(0);
@@ -57,11 +57,77 @@ public sealed class FoundationsTests
         backup.ApplyRestore(candidate);
         backup.FinishPendingRestore();
 
-        verified.SchemaVersion.ShouldBe(3L);
+        verified.SchemaVersion.ShouldBe(4L);
         candidate.Manifest.Database.Sha256.ShouldBe(verified.Database.Sha256);
         using var connection = fixture.Factory.Open();
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity = 'restore' AND action = 'RESTORE'")
             .ShouldBe(1L);
+    }
+
+    [Fact]
+    public async Task RestoreUndo_PutsBackDatabaseThatWasReplaced()
+    {
+        using var fixture = new FoundationFixture();
+        await fixture.Database.WriteAsync(transaction => transaction.Connection.Execute(
+            "UPDATE setting SET value = 'before-backup' WHERE key = 'store.name'",
+            transaction: transaction.Transaction), TestContext.Current.CancellationToken);
+        var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
+        await settings.LoadAsync(TestContext.Current.CancellationToken);
+        var backup = new BackupService(
+            fixture.Paths,
+            fixture.Factory,
+            new GroceryErp.Core.Time.SystemClock(settings),
+            settings);
+        BackupInfo created = backup.Create("manual");
+
+        await fixture.Database.WriteAsync(transaction => transaction.Connection.Execute(
+            "UPDATE setting SET value = 'current-data' WHERE key = 'store.name'",
+            transaction: transaction.Transaction), TestContext.Current.CancellationToken);
+        backup.ApplyRestore(backup.InspectRestore(created.Path));
+        backup.UndoPendingRestore();
+
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'store.name'")
+            .ShouldBe("current-data");
+        backup.HasPendingRestore.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Settings_ConcurrentSavesKeepCompleteSnapshot()
+    {
+        using var fixture = new FoundationFixture();
+        using var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
+        await settings.LoadAsync(TestContext.Current.CancellationToken);
+
+        await Task.WhenAll(
+            settings.SaveAsync(new Dictionary<string, string> { ["store.name"] = "Concurrent Store" }, TestContext.Current.CancellationToken),
+            settings.SaveAsync(new Dictionary<string, string> { ["ui.language"] = "gu-IN" }, TestContext.Current.CancellationToken));
+
+        settings.Current.StoreName.ShouldBe("Concurrent Store");
+        settings.Current.UiLanguage.ShouldBe("gu-IN");
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity = 'setting' AND action = 'UPDATE'")
+            .ShouldBe(2L);
+    }
+
+    [Fact]
+    public async Task StartupMaintenance_RunsIntegrityChecksAndPurgesExpiredRestoreData()
+    {
+        using var fixture = new FoundationFixture();
+        using var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
+        await settings.LoadAsync(TestContext.Current.CancellationToken);
+        var clock = new GroceryErp.Core.Time.SystemClock(settings);
+        var backups = new BackupService(fixture.Paths, fixture.Factory, clock, settings);
+        string expired = Path.Combine(fixture.Paths.DbDir, "replaced-expired");
+        Directory.CreateDirectory(expired);
+        Directory.SetLastWriteTime(expired, clock.Now.AddDays(-8));
+        var maintenance = new MaintenanceService(
+            fixture.Paths, fixture.Factory, fixture.Database, backups, clock, new AuditLog());
+
+        await maintenance.RunAfterShellAsync(TestContext.Current.CancellationToken);
+
+        Directory.Exists(expired).ShouldBeFalse();
+        Directory.EnumerateFiles(backups.BackupDirectory, "*_daily.zip").ShouldNotBeEmpty();
     }
 
     [Fact]

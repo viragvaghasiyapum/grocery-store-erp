@@ -1,0 +1,101 @@
+<Window
+    x:Class="GroceryErp.App.Presentation.ProductEditorWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    Title="{l:Tr Catalog_EditorTitle}" Width="760" Height="720" MinWidth="650" MinHeight="600"
+    WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <Grid Margin="22">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel>
+        <TextBlock FontSize="26" FontWeight="SemiBold" Text="{l:Tr Catalog_EditorTitle}" />
+        <TextBlock x:Name="ErrorText" Margin="0,8,0,0" Foreground="Crimson" TextWrapping="Wrap" />
+
+        <Grid Margin="0,16,0,0">
+          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
+          <StackPanel Margin="0,0,10,0">
+            <TextBlock Text="{l:Tr Catalog_Sku}" />
+            <TextBox x:Name="SkuBox" MaxLength="20" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Margin="10,0,0,0">
+            <TextBlock Text="{l:Tr Catalog_Name}" />
+            <TextBox x:Name="NameBox" MaxLength="120" />
+          </StackPanel>
+        </Grid>
+
+        <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_NameLocal}" />
+        <TextBox x:Name="LocalNameBox" MaxLength="120" />
+        <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_Aliases}" />
+        <TextBox x:Name="AliasesBox" MaxLength="500" />
+
+        <Grid Margin="0,12,0,0">
+          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
+          <StackPanel Margin="0,0,8,0">
+            <TextBlock Text="{l:Tr Catalog_Category}" />
+            <ComboBox x:Name="CategoryBox" DisplayMemberPath="Name" SelectedValuePath="Id" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Margin="8,0">
+            <TextBlock Text="{l:Tr Catalog_Brand}" />
+            <ComboBox x:Name="BrandBox" DisplayMemberPath="Name" SelectedValuePath="Id" />
+          </StackPanel>
+          <StackPanel Grid.Column="2" Margin="8,0,0,0">
+            <TextBlock Text="{l:Tr Catalog_Unit}" />
+            <ComboBox x:Name="UnitBox" DisplayMemberPath="Code" SelectedValuePath="Id" />
+          </StackPanel>
+        </Grid>
+
+        <Grid Margin="0,12,0,0">
+          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
+          <StackPanel Margin="0,0,8,0">
+            <TextBlock Text="{l:Tr Catalog_Hsn}" />
+            <TextBox x:Name="HsnBox" MaxLength="8" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Margin="8,0">
+            <TextBlock Text="{l:Tr Catalog_TaxRate}" />
+            <ComboBox x:Name="TaxRateBox" DisplayMemberPath="Name" SelectedValuePath="Id" />
+          </StackPanel>
+          <StackPanel Grid.Column="2" Margin="8,0,0,0">
+            <TextBlock Text="{l:Tr Catalog_ReorderLevel}" />
+            <TextBox x:Name="ReorderBox" Text="0" />
+          </StackPanel>
+        </Grid>
+
+        <Grid Margin="0,12,0,0">
+          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
+          <StackPanel Margin="0,0,8,0">
+            <TextBlock Text="{l:Tr Catalog_SellingPrice}" />
+            <TextBox x:Name="PriceBox" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Margin="8,0">
+            <TextBlock Text="{l:Tr Catalog_Mrp}" />
+            <TextBox x:Name="MrpBox" />
+          </StackPanel>
+          <StackPanel Grid.Column="2" Margin="8,0,0,0">
+            <TextBlock Text="{l:Tr Catalog_ShelfLife}" />
+            <TextBox x:Name="ShelfLifeBox" />
+          </StackPanel>
+        </Grid>
+
+        <WrapPanel Margin="0,14,0,0">
+          <CheckBox x:Name="PricesIncludeTaxBox" Margin="0,0,24,0" IsChecked="True" Content="{l:Tr Catalog_PricesIncludeTax}" />
+          <CheckBox x:Name="TrackExpiryBox" Margin="0,0,24,0" IsChecked="True" Content="{l:Tr Catalog_TrackExpiry}" />
+          <CheckBox x:Name="LooseBox" Checked="LooseBox_OnChanged" Unchecked="LooseBox_OnChanged" Content="{l:Tr Catalog_Loose}" />
+        </WrapPanel>
+        <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_Plu}" />
+        <TextBox x:Name="PluBox" IsEnabled="False" MaxLength="30" />
+
+        <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_Barcodes}" />
+        <TextBox x:Name="BarcodesBox" Height="70" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
+                 ToolTip="{l:Tr Catalog_BarcodesHint}" />
+      </StackPanel>
+    </ScrollViewer>
+    <StackPanel Grid.Row="1" Margin="0,18,0,0" HorizontalAlignment="Right" Orientation="Horizontal">
+      <Button Width="95" Margin="0,0,8,0" IsCancel="True" Content="{l:Tr Common_Cancel}" />
+      <Button x:Name="SaveButton" Width="110" IsDefault="True" Click="Save_OnClick" Content="{l:Tr Common_Save}" />
+    </StackPanel>
+  </Grid>
+</Window>

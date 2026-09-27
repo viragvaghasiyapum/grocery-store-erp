@@ -1,0 +1,12 @@
+<Window x:Class="GroceryErp.App.Presentation.LotPriceWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+        Title="{l:Tr Stock_ChangePrice}" Width="420" Height="300" WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="20">
+    <TextBlock x:Name="LotText" FontWeight="SemiBold" Margin="0,0,0,14"/>
+    <TextBlock Text="{l:Tr Catalog_Price}"/><TextBox x:Name="PriceBox" Margin="0,4,0,10"/>
+    <TextBlock Text="{l:Tr Catalog_Mrp}"/><TextBox x:Name="MrpBox" Margin="0,4,0,10"/>
+    <TextBlock x:Name="ErrorText" Foreground="Crimson"/>
+    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Margin="0,16,0,0"><Button Margin="0,0,8,0" Click="Save_OnClick" Content="{l:Tr Common_Save}"/><Button Click="Cancel_OnClick" Content="{l:Tr Common_Cancel}"/></StackPanel>
+  </StackPanel>
+</Window>

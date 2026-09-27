@@ -12,5 +12,6 @@
     <EmbeddedResource Include="../../grocery_erp_schema.sql" Link="db/001_initial.sql" />
     <EmbeddedResource Include="../../002_i18n_pricing_reporting.sql" Link="db/002_i18n_pricing_reporting.sql" />
     <EmbeddedResource Include="../../003_operations.sql" Link="db/003_operations.sql" />
+    <EmbeddedResource Include="../../004_stock_in.sql" Link="db/004_stock_in.sql" />
   </ItemGroup>
 </Project>

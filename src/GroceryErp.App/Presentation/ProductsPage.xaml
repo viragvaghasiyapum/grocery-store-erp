@@ -1,0 +1,61 @@
+<Page
+    x:Class="GroceryErp.App.Presentation.ProductsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    Title="{l:Tr Catalog_Title}">
+  <Grid Margin="24">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Catalog_Title}" />
+
+    <Grid Grid.Row="1" Margin="0,18,0,14">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <TextBox x:Name="SearchBox" Height="36" VerticalContentAlignment="Center"
+               ToolTip="{l:Tr Catalog_SearchHint}" TextChanged="SearchBox_OnTextChanged" />
+      <CheckBox x:Name="NoBarcodeFilter" Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center"
+                Checked="Filter_OnChanged" Unchecked="Filter_OnChanged" Content="{l:Tr Catalog_NoBarcode}" />
+      <CheckBox x:Name="MissingLocalFilter" Grid.Column="2" Margin="16,0,0,0" VerticalAlignment="Center"
+                Checked="Filter_OnChanged" Unchecked="Filter_OnChanged" Content="{l:Tr Catalog_MissingLocal}" />
+      <CheckBox x:Name="ArchivedFilter" Grid.Column="3" Margin="16,0,0,0" VerticalAlignment="Center"
+                Checked="Filter_OnChanged" Unchecked="Filter_OnChanged" Content="{l:Tr Catalog_Archived}" />
+    </Grid>
+
+    <DataGrid x:Name="ProductsGrid" Grid.Row="2" AutoGenerateColumns="False" IsReadOnly="True"
+              CanUserAddRows="False" SelectionMode="Extended">
+      <DataGrid.Columns>
+        <DataGridTextColumn Width="110" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}" />
+        <DataGridTextColumn Width="2*" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}" />
+        <DataGridTextColumn Width="*" Header="{l:Tr Catalog_NameLocal}" Binding="{Binding NameLocal}" />
+        <DataGridTextColumn Width="*" Header="{l:Tr Catalog_Category}" Binding="{Binding Category}" />
+        <DataGridTextColumn Width="90" Header="{l:Tr Catalog_Stock}" Binding="{Binding Stock}" />
+        <DataGridTextColumn Width="95" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}" />
+        <DataGridCheckBoxColumn Width="85" Header="{l:Tr Catalog_Active}" Binding="{Binding IsActive}" />
+      </DataGrid.Columns>
+    </DataGrid>
+
+    <Grid Grid.Row="3" Margin="0,14,0,0">
+      <TextBlock x:Name="StatusText" VerticalAlignment="Center" />
+      <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+        <Button Margin="0,0,8,0" Click="Masters_OnClick" Content="{l:Tr Catalog_Masters}" />
+        <Button Margin="0,0,8,0" Click="Import_OnClick" Content="{l:Tr Catalog_Import}" />
+        <Button Margin="0,0,8,0" Click="Bulk_OnClick" Content="{l:Tr Catalog_BulkEdit}" />
+        <Button Margin="0,0,8,0" Click="New_OnClick" Content="{l:Tr Catalog_New}" />
+        <Button Margin="0,0,8,0" Click="Edit_OnClick" Content="{l:Tr Catalog_Edit}" />
+        <Button Margin="0,0,8,0" Click="Labels_OnClick" Content="{l:Tr Catalog_PrintLabels}" />
+        <Button Margin="0,0,8,0" Click="GenerateBarcode_OnClick" Content="{l:Tr Catalog_GenerateBarcode}" />
+        <Button Click="Remove_OnClick" Content="{l:Tr Catalog_Remove}" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Page>

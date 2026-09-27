@@ -1,0 +1,19 @@
+<Window x:Class="GroceryErp.App.Presentation.StockCountWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+        Title="{l:Tr Stock_Count}" Width="900" Height="620" WindowStartupLocation="CenterOwner">
+  <Grid Margin="18">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <TextBlock Text="{l:Tr Stock_CountHint}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+    <DataGrid x:Name="CountGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False">
+      <DataGrid.Columns>
+        <DataGridTextColumn Width="2*" IsReadOnly="True" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
+        <DataGridTextColumn Width="120" IsReadOnly="True" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
+        <DataGridTextColumn Width="110" IsReadOnly="True" Header="{l:Tr Stock_Expected}" Binding="{Binding Expected}"/>
+        <DataGridTextColumn Width="110" Header="{l:Tr Stock_Counted}" Binding="{Binding Counted}"/>
+        <DataGridTextColumn Width="110" IsReadOnly="True" Header="{l:Tr Stock_Difference}" Binding="{Binding Difference}"/>
+      </DataGrid.Columns>
+    </DataGrid>
+    <Grid Grid.Row="2" Margin="0,12,0,0"><TextBlock x:Name="ErrorText" Foreground="Crimson" VerticalAlignment="Center"/><StackPanel HorizontalAlignment="Right" Orientation="Horizontal"><Button Margin="0,0,8,0" Click="Print_OnClick" Content="{l:Tr Stock_PrintCount}"/><Button Margin="0,0,8,0" Click="Post_OnClick" Content="{l:Tr Purchasing_Post}"/><Button Click="Cancel_OnClick" Content="{l:Tr Common_Cancel}"/></StackPanel></Grid>
+  </Grid>
+</Window>

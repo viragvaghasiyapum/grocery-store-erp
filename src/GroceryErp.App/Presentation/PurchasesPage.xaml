@@ -1,0 +1,46 @@
+<Page
+    x:Class="GroceryErp.App.Presentation.PurchasesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    Title="{l:Tr Purchasing_Title}">
+  <Grid Margin="24">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Purchasing_Title}" />
+    <TabControl Grid.Row="1" Margin="0,18,0,0">
+      <TabItem Header="{l:Tr Purchasing_Purchases}">
+        <DataGrid x:Name="PurchasesGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+          <DataGrid.Columns>
+            <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Grn}" Binding="{Binding DocumentNumber}" />
+            <DataGridTextColumn Width="2*" Header="{l:Tr Purchasing_Vendor}" Binding="{Binding VendorName}" />
+            <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Invoice}" Binding="{Binding VendorInvoiceNumber}" />
+            <DataGridTextColumn Width="110" Header="{l:Tr Purchasing_Received}" Binding="{Binding ReceivedDate}" />
+            <DataGridTextColumn Width="100" Header="{l:Tr Purchasing_Status}" Binding="{Binding Status}" />
+            <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Total}" Binding="{Binding GrandTotal}" />
+          </DataGrid.Columns>
+        </DataGrid>
+      </TabItem>
+      <TabItem Header="{l:Tr Purchasing_Vendors}">
+        <DataGrid x:Name="VendorsGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+          <DataGrid.Columns>
+            <DataGridTextColumn Width="2*" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}" />
+            <DataGridTextColumn Width="150" Header="{l:Tr Purchasing_Phone}" Binding="{Binding Phone}" />
+            <DataGridTextColumn Width="180" Header="GSTIN" Binding="{Binding Gstin}" />
+            <DataGridTextColumn Width="140" Header="{l:Tr Purchasing_Balance}" Binding="{Binding BalanceDue}" />
+            <DataGridCheckBoxColumn Width="90" Header="{l:Tr Catalog_Active}" Binding="{Binding IsActive}" />
+          </DataGrid.Columns>
+        </DataGrid>
+      </TabItem>
+    </TabControl>
+    <Grid Grid.Row="2" Margin="0,12,0,0">
+      <TextBlock x:Name="StatusText" VerticalAlignment="Center" />
+      <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+        <Button Margin="0,0,8,0" Click="NewVendor_OnClick" Content="{l:Tr Purchasing_NewVendor}" />
+        <Button Margin="0,0,8,0" Click="NewPurchase_OnClick" Content="{l:Tr Purchasing_NewPurchase}" />
+        <Button Margin="0,0,8,0" Click="Payment_OnClick" Content="{l:Tr Purchasing_Payment}" />
+        <Button Margin="0,0,8,0" Click="CancelPurchase_OnClick" Content="{l:Tr Purchasing_CancelPurchase}" />
+        <Button Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Page>

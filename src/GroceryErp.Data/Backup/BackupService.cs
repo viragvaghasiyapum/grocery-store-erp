@@ -132,20 +132,23 @@ public sealed class BackupService(
         string stamp = clock.Now.ToString("yyyy-MM-dd_HHmmss", CultureInfo.InvariantCulture);
         string replaced = Path.Combine(paths.DbDir, $"replaced-{stamp}");
         Directory.CreateDirectory(replaced);
-        foreach (string source in new[] { paths.DatabaseFile, paths.DatabaseFile + "-wal", paths.DatabaseFile + "-shm" })
-            if (File.Exists(source)) File.Move(source, Path.Combine(replaced, Path.GetFileName(source)));
+        string replacedDatabase = Path.Combine(replaced, Path.GetFileName(paths.DatabaseFile));
+        bool originalMoved = false;
+        bool candidateApplied = false;
 
         try
         {
+            MoveDatabaseSet(paths.DatabaseFile, replacedDatabase);
+            originalMoved = true;
             File.Move(candidate.StagedDatabase, paths.DatabaseFile);
+            candidateApplied = true;
             string marker = Path.Combine(paths.DbDir, "restore.pending.json");
             File.WriteAllText(marker, JsonSerializer.Serialize(new RestoreMarker(candidate.SourceZip, replaced, candidate.Manifest), JsonOptions));
         }
         catch
         {
-            if (File.Exists(paths.DatabaseFile)) File.Delete(paths.DatabaseFile);
-            string oldDatabase = Path.Combine(replaced, Path.GetFileName(paths.DatabaseFile));
-            if (File.Exists(oldDatabase)) File.Move(oldDatabase, paths.DatabaseFile);
+            if (candidateApplied) DeleteDatabaseSet(paths.DatabaseFile);
+            if (originalMoved) MoveDatabaseSet(replacedDatabase, paths.DatabaseFile);
             throw;
         }
         finally
@@ -175,7 +178,7 @@ public sealed class BackupService(
             transaction);
         transaction.Commit();
         File.Delete(marker);
-        PurgeReplacedDatabases();
+        PurgeExpiredRestoreData();
     }
 
     public void UndoPendingRestore()
@@ -188,15 +191,29 @@ public sealed class BackupService(
         string current = paths.DatabaseFile;
         string replaced = Path.Combine(pending.ReplacedDirectory, Path.GetFileName(current));
         if (!File.Exists(replaced)) throw new DomainException(ErrorCode.BackupInvalid, "replaced database is missing");
-        string failed = current + ".restore-failed";
-        if (File.Exists(failed)) File.Delete(failed);
-        if (File.Exists(current)) File.Move(current, failed);
-        File.Move(replaced, current);
-        File.Delete(marker);
-        try { File.Delete(failed); } catch (IOException) { }
+        string failedDirectory = Path.Combine(paths.TempDir, $"restore-failed-{Guid.NewGuid():N}");
+        string failedDatabase = Path.Combine(failedDirectory, Path.GetFileName(current));
+        Directory.CreateDirectory(failedDirectory);
+        bool currentMoved = false;
+        bool replacedMoved = false;
+        try
+        {
+            MoveDatabaseSet(current, failedDatabase);
+            currentMoved = true;
+            MoveDatabaseSet(replaced, current);
+            replacedMoved = true;
+            File.Delete(marker);
+            TryDeleteDirectory(failedDirectory);
+        }
+        catch
+        {
+            if (replacedMoved) MoveDatabaseSet(current, replaced);
+            if (currentMoved) MoveDatabaseSet(failedDatabase, current);
+            throw;
+        }
     }
 
-    private void PurgeReplacedDatabases()
+    public void PurgeExpiredRestoreData()
     {
         DateTime cutoff = clock.Now.AddDays(-7);
         foreach (string directory in Directory.EnumerateDirectories(paths.DbDir, "replaced-*"))
@@ -284,6 +301,34 @@ public sealed class BackupService(
         try { if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true); }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
+    }
+
+    private static void MoveDatabaseSet(string sourceDatabase, string destinationDatabase)
+    {
+        var moved = new List<(string Source, string Destination)>();
+        try
+        {
+            foreach (string suffix in new[] { "", "-wal", "-shm" })
+            {
+                string source = sourceDatabase + suffix;
+                if (!File.Exists(source)) continue;
+                string destination = destinationDatabase + suffix;
+                File.Move(source, destination);
+                moved.Add((source, destination));
+            }
+        }
+        catch
+        {
+            foreach ((string source, string destination) in moved.AsEnumerable().Reverse())
+                if (File.Exists(destination) && !File.Exists(source)) File.Move(destination, source);
+            throw;
+        }
+    }
+
+    private static void DeleteDatabaseSet(string database)
+    {
+        foreach (string suffix in new[] { "", "-wal", "-shm" })
+            if (File.Exists(database + suffix)) File.Delete(database + suffix);
     }
 
     private sealed record RestoreMarker(string SourceZip, string ReplacedDirectory, BackupManifest Manifest);

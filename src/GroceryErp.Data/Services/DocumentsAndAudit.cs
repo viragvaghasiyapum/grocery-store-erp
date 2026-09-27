@@ -29,13 +29,21 @@ public sealed class DocNumberService(ISettings settings)
 
     private static string Letter(DocType type) => type switch
     {
-        DocType.Sale => "S", DocType.SaleReturn => "R", DocType.Purchase => "P",
-        DocType.Damage => "D", DocType.Lot => "L", _ => throw new ArgumentOutOfRangeException(nameof(type)),
+        DocType.Sale => "S",
+        DocType.SaleReturn => "R",
+        DocType.Purchase => "P",
+        DocType.Damage => "D",
+        DocType.Lot => "L",
+        _ => throw new ArgumentOutOfRangeException(nameof(type)),
     };
     private static string Code(DocType type) => type switch
     {
-        DocType.Sale => "SALE", DocType.SaleReturn => "SALE_RETURN", DocType.Purchase => "PURCHASE",
-        DocType.Damage => "DAMAGE", DocType.Lot => "LOT", _ => throw new ArgumentOutOfRangeException(nameof(type)),
+        DocType.Sale => "SALE",
+        DocType.SaleReturn => "SALE_RETURN",
+        DocType.Purchase => "PURCHASE",
+        DocType.Damage => "DAMAGE",
+        DocType.Lot => "LOT",
+        _ => throw new ArgumentOutOfRangeException(nameof(type)),
     };
     private sealed class SequenceResult { public string Prefix { get; init; } = ""; public long Number { get; init; } }
 }

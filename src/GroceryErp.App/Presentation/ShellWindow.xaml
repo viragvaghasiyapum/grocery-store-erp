@@ -32,6 +32,7 @@
             FontWeight="SemiBold"
             Text="{l:Tr App_Title}" />
         <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+          <Button x:Name="LockButton" Margin="0,0,16,0" Click="Lock_OnClick" Content="{l:Tr Lock_Command}" />
           <TextBlock Margin="0,0,12,0" VerticalAlignment="Center" Text="{l:Tr Shell_Language}" />
           <Button Margin="0,0,8,0" Command="{Binding UseEnglishCommand}" Content="{l:Tr Shell_English}" />
           <Button Command="{Binding UseGujaratiCommand}" Content="{l:Tr Shell_Gujarati}" />
@@ -47,6 +48,18 @@
         OpenPaneLength="220"
         PaneDisplayMode="Left">
       <ui:NavigationView.MenuItems>
+        <ui:NavigationViewItem
+            Content="{l:Tr Purchasing_Navigation}"
+            Icon="{ui:SymbolIcon Cart24}"
+            TargetPageType="{x:Type local:PurchasesPage}" />
+        <ui:NavigationViewItem
+            Content="{l:Tr Stock_Navigation}"
+            Icon="{ui:SymbolIcon Box24}"
+            TargetPageType="{x:Type local:StockPage}" />
+        <ui:NavigationViewItem
+            Content="{l:Tr Catalog_Navigation}"
+            Icon="{ui:SymbolIcon Box24}"
+            TargetPageType="{x:Type local:ProductsPage}" />
         <ui:NavigationViewItem
             Content="{l:Tr Demo_Navigation}"
             Icon="{ui:SymbolIcon Home24}"

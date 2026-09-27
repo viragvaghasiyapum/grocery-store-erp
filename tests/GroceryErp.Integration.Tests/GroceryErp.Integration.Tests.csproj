@@ -7,9 +7,14 @@
     <ProjectReference Include="../../src/GroceryErp.Core/GroceryErp.Core.csproj" />
     <ProjectReference Include="../../src/GroceryErp.Data/GroceryErp.Data.csproj" />
     <ProjectReference Include="../../src/GroceryErp.Localization/GroceryErp.Localization.csproj" />
+    <ProjectReference Include="../../src/Modules/GroceryErp.Catalog/GroceryErp.Catalog.csproj" />
+    <ProjectReference Include="../../src/Modules/GroceryErp.Inventory/GroceryErp.Inventory.csproj" />
+    <ProjectReference Include="../../src/Modules/GroceryErp.Purchasing/GroceryErp.Purchasing.csproj" />
+    <ProjectReference Include="../../src/GroceryErp.Printing/GroceryErp.Printing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="ClosedXML" />
     <PackageReference Include="Shouldly" />
     <PackageReference Include="xunit.v3" />
   </ItemGroup>

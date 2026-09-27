@@ -202,3 +202,35 @@ Remaining Phase 1 presentation work is the actual printer test-page action and a
 confirmation/undo dialog; the printer choices are now stored and explicitly deferred to Settings,
 while catalog import itself remains a later module feature. Final XML documentation and native
 Gujarati review are still release-hardening work.
+
+## Checkpoint 7 — independent audit remediation — 26 September 2026
+
+The Phase 1 implementation was audited against this log and `implementation.md`. The audit found
+and corrected several issues that were not exercised by the earlier test suite:
+
+- Fixed two compile errors in Gujarati keyboard detection that prevented the Release solution from
+  building with the repository's analyzer settings.
+- Restore apply/undo now moves SQLite's database, WAL, and SHM files as one rollback-safe set;
+  interrupted move failures preserve recoverable files, and failed restored startups offer an undo.
+- Expired `replaced-*` restore directories are now purged during normal startup maintenance instead
+  of only immediately after another restore.
+- Concurrent settings saves are serialized so the database, audit log, and in-memory settings
+  snapshot cannot diverge. Shell language changes are now persisted and audited.
+- Unlock attempts use the same exponential failure delay as login attempts.
+- Startup integrity/FTS maintenance uses the serialized write executor, and shutdown waits for the
+  maintenance task before creating the close backup and checkpointing WAL.
+- The first-run backup folder is required and normalized to an absolute path. If the first backup
+  fails after setup commits, the wizard remains usable and offers a localized retry action.
+- The complete setup wizard, application error dialogs, and manual lock button now use live English
+  and Gujarati resources. Rendered WPF smoke coverage checks the wizard and lock control.
+- Added integration coverage for restore undo, concurrent settings saves, startup integrity checks,
+  daily backup creation, and expired restore-data cleanup.
+
+Verification after remediation:
+
+- `dotnet build GroceryErp.slnx -c Release --no-restore`: passed, 0 warnings, 0 errors.
+- `dotnet test GroceryErp.slnx -c Release --no-build --no-restore`: passed, 18 tests, 0 failures.
+
+Known specification gaps remain: printer test-page actions; data-root selection/move in the wizard;
+the full restore-selection/comparison/typed-confirmation UI; USB export and shell backup-status UI;
+complete public API XML documentation; and native-speaker review of Gujarati text.

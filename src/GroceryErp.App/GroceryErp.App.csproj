@@ -8,6 +8,10 @@
     <ProjectReference Include="../GroceryErp.Localization/GroceryErp.Localization.csproj" />
     <ProjectReference Include="../GroceryErp.Data/GroceryErp.Data.csproj" />
     <ProjectReference Include="../GroceryErp.UI.Common/GroceryErp.UI.Common.csproj" />
+    <ProjectReference Include="../GroceryErp.Printing/GroceryErp.Printing.csproj" />
+    <ProjectReference Include="../Modules/GroceryErp.Catalog/GroceryErp.Catalog.csproj" />
+    <ProjectReference Include="../Modules/GroceryErp.Inventory/GroceryErp.Inventory.csproj" />
+    <ProjectReference Include="../Modules/GroceryErp.Purchasing/GroceryErp.Purchasing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />

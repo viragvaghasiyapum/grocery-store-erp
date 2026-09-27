@@ -69,6 +69,8 @@ public partial class ShellWindow : FluentWindow
         Dispatcher.BeginInvoke(UnlockPassword.Focus);
     }
 
+    private void Lock_OnClick(object sender, RoutedEventArgs e) => Lock();
+
     private async void Unlock_OnClick(object sender, RoutedEventArgs e) => await UnlockAsync();
 
     private async void UnlockPassword_OnKeyDown(object sender, KeyEventArgs e)

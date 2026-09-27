@@ -1,0 +1,40 @@
+<Window
+    x:Class="GroceryErp.App.Presentation.ProductImportWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    Title="{l:Tr Catalog_ImportTitle}" Width="940" Height="640" MinWidth="760" MinHeight="520"
+    WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <Grid Margin="20">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <TextBlock FontSize="26" FontWeight="SemiBold" Text="{l:Tr Catalog_ImportTitle}" />
+    <Grid Grid.Row="1" Margin="0,16,0,12">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+      <TextBox x:Name="PathBox" Height="34" IsReadOnly="True" VerticalContentAlignment="Center" />
+      <Button Grid.Column="1" Margin="8,0,0,0" Click="Browse_OnClick" Content="{l:Tr Catalog_Browse}" />
+      <Button Grid.Column="2" Margin="8,0,0,0" Click="Template_OnClick" Content="{l:Tr Catalog_DownloadTemplate}" />
+    </Grid>
+    <DataGrid x:Name="PreviewGrid" Grid.Row="2" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+      <DataGrid.Columns>
+        <DataGridTextColumn Width="55" Header="{l:Tr Catalog_Row}" Binding="{Binding RowNumber}" />
+        <DataGridCheckBoxColumn Width="70" Header="{l:Tr Catalog_Valid}" Binding="{Binding CanImport}" />
+        <DataGridTextColumn Width="105" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}" />
+        <DataGridTextColumn Width="1.3*" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}" />
+        <DataGridTextColumn Width="*" Header="{l:Tr Catalog_Category}" Binding="{Binding Category}" />
+        <DataGridTextColumn Width="2*" Header="{l:Tr Catalog_ImportErrors}" Binding="{Binding ErrorText}" />
+      </DataGrid.Columns>
+    </DataGrid>
+    <Grid Grid.Row="3" Margin="0,14,0,0">
+      <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextWrapping="Wrap" />
+      <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+        <Button Width="90" Margin="0,0,8,0" IsCancel="True" Content="{l:Tr Common_Close}" />
+        <Button x:Name="ImportButton" Width="130" IsEnabled="False" Click="Import_OnClick" Content="{l:Tr Catalog_ImportValid}" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Window>

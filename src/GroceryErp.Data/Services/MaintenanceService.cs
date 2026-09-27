@@ -46,19 +46,22 @@ public sealed class MaintenanceService(
         }, cancellationToken).ConfigureAwait(false);
 
         CleanupTemporaryFiles();
+        backups.PurgeExpiredRestoreData();
         if (!HasBackupToday())
             backups.Create("daily");
 
-        await database.ReadAsync(connection =>
+        await database.WriteAsync(transaction =>
         {
-            connection.Execute("PRAGMA optimize;");
-            string integrity = connection.ExecuteScalar<string>("PRAGMA integrity_check;") ?? "";
+            transaction.Connection.Execute("PRAGMA optimize;", transaction: transaction.Transaction);
+            string integrity = transaction.Connection.ExecuteScalar<string>(
+                "PRAGMA integrity_check;", transaction: transaction.Transaction) ?? "";
             if (!string.Equals(integrity, "ok", StringComparison.OrdinalIgnoreCase))
                 throw new DomainException(ErrorCode.BackupInvalid, integrity);
             // FTS5 keeps a separate index; checking it with SQLite's supported command catches
             // stale or corrupt product search data before a user relies on search results.
-            connection.Execute("INSERT INTO product_fts(product_fts) VALUES ('integrity-check');");
-            return true;
+            transaction.Connection.Execute(
+                "INSERT INTO product_fts(product_fts) VALUES ('integrity-check');",
+                transaction: transaction.Transaction);
         }, cancellationToken).ConfigureAwait(false);
     }
 

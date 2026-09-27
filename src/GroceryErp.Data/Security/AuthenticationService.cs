@@ -20,12 +20,7 @@ public sealed class AuthenticationService(DbExecutor database, PasswordHasher ha
         bool valid = user is not null && string.Equals(user.Username, username, StringComparison.OrdinalIgnoreCase) && hasher.Verify(password, user.PasswordHash);
         if (!valid)
         {
-            int failures = Interlocked.Increment(ref _failures);
-            if (failures >= 3)
-            {
-                int seconds = Math.Min(30, 1 << Math.Min(failures - 3, 5));
-                await Task.Delay(TimeSpan.FromSeconds(seconds), cancellationToken);
-            }
+            await DelayAfterFailureAsync(cancellationToken).ConfigureAwait(false);
             throw new DomainException(ErrorCode.WrongPassword);
         }
 
@@ -50,12 +45,24 @@ public sealed class AuthenticationService(DbExecutor database, PasswordHasher ha
     {
         UserCredential user = await database.ReadAsync(connection => connection.QuerySingle<UserCredential>(
             "SELECT username AS Username, password_hash AS PasswordHash FROM app_user WHERE id = 1"), cancellationToken);
-        if (!hasher.Verify(password, user.PasswordHash)) throw new DomainException(ErrorCode.WrongPassword);
+        if (!hasher.Verify(password, user.PasswordHash))
+        {
+            await DelayAfterFailureAsync(cancellationToken).ConfigureAwait(false);
+            throw new DomainException(ErrorCode.WrongPassword);
+        }
         Interlocked.Exchange(ref _failures, 0);
         await database.WriteAsync(transaction => transaction.Connection.Execute(
             "UPDATE app_user SET last_login_at = @at WHERE id = 1",
             new { at = clock.Now.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture) },
             transaction.Transaction), cancellationToken);
+    }
+
+    private async Task DelayAfterFailureAsync(CancellationToken cancellationToken)
+    {
+        int failures = Interlocked.Increment(ref _failures);
+        if (failures < 3) return;
+        int seconds = Math.Min(30, 1 << Math.Min(failures - 3, 5));
+        await Task.Delay(TimeSpan.FromSeconds(seconds), cancellationToken).ConfigureAwait(false);
     }
 
     private sealed class UserCredential
@@ -89,11 +96,16 @@ public sealed class FirstRunService(DbExecutor database, PasswordHasher hasher)
                 new { request.Username, hash }, transaction.Transaction);
             var settings = new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["store.name"] = request.StoreName.Trim(), ["store.address"] = request.Address.Trim(),
-                ["store.phone"] = request.Phone.Trim(), ["store.gstin"] = request.Gstin.Trim().ToUpperInvariant(),
-                ["store.state"] = request.State.Trim(), ["tax.mode"] = request.TaxMode,
-                ["ui.language"] = request.Language, ["backup.dir"] = request.BackupDirectory.Trim(),
-                ["barcode.lot_prefix"] = request.LotPrefix, ["barcode.product_prefix"] = request.ProductPrefix,
+                ["store.name"] = request.StoreName.Trim(),
+                ["store.address"] = request.Address.Trim(),
+                ["store.phone"] = request.Phone.Trim(),
+                ["store.gstin"] = request.Gstin.Trim().ToUpperInvariant(),
+                ["store.state"] = request.State.Trim(),
+                ["tax.mode"] = request.TaxMode,
+                ["ui.language"] = request.Language,
+                ["backup.dir"] = Path.GetFullPath(request.BackupDirectory.Trim()),
+                ["barcode.lot_prefix"] = request.LotPrefix,
+                ["barcode.product_prefix"] = request.ProductPrefix,
                 ["security.idle_lock_minutes"] = "15",
             };
             settings["printer.receipt.name"] = request.ReceiptPrinterName.Trim();
@@ -130,6 +142,8 @@ public sealed class FirstRunService(DbExecutor database, PasswordHasher hasher)
         if (request.ReceiptWidthDots is not (384 or 576)) throw new DomainException(ErrorCode.Validation, "Receipt width must be 58 or 80 mm.");
         if (request.UsbReminderDays is < 1 or > 365) throw new DomainException(ErrorCode.Validation, "USB reminder must be between 1 and 365 days.");
         if (request.StartChoice is not ("EMPTY" or "IMPORT")) throw new DomainException(ErrorCode.Validation, "Invalid start choice.");
-        if (!string.IsNullOrWhiteSpace(request.BackupDirectory)) AppPaths.RejectCloudSynchronizedPath(request.BackupDirectory);
+        if (string.IsNullOrWhiteSpace(request.BackupDirectory))
+            throw new DomainException(ErrorCode.Validation, "Backup directory is required.");
+        AppPaths.RejectCloudSynchronizedPath(request.BackupDirectory);
     }
 }

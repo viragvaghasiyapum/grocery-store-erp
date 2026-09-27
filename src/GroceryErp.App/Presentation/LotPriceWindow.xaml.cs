@@ -1,0 +1,33 @@
+using System.Globalization;
+using System.Windows;
+using GroceryErp.Core.Numerics;
+using GroceryErp.Inventory;
+
+namespace GroceryErp.App.Presentation;
+
+public partial class LotPriceWindow : Window
+{
+    private readonly InventoryService _inventory;
+    private readonly LotItem _lot;
+    public LotPriceWindow(InventoryService inventory, LotItem lot)
+    {
+        InitializeComponent();
+        _inventory = inventory;
+        _lot = lot;
+        LotText.Text = $"{lot.ProductName} — {lot.LotCode}";
+        PriceBox.Text = lot.SellingPrice.Value.ToString("0.000", CultureInfo.InvariantCulture);
+        MrpBox.Text = lot.Mrp?.Value.ToString("0.000", CultureInfo.InvariantCulture) ?? "";
+    }
+    private async void Save_OnClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Money price = new(decimal.Parse(PriceBox.Text, CultureInfo.InvariantCulture));
+            Money? mrp = string.IsNullOrWhiteSpace(MrpBox.Text) ? null : new(decimal.Parse(MrpBox.Text, CultureInfo.InvariantCulture));
+            await _inventory.ChangeLotPriceAsync(_lot.Id, price, mrp);
+            DialogResult = true;
+        }
+        catch (Exception exception) { ErrorText.Text = exception.Message; }
+    }
+    private void Cancel_OnClick(object sender, RoutedEventArgs e) => DialogResult = false;
+}

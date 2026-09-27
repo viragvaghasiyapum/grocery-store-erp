@@ -3,12 +3,16 @@ using System.IO;
 using System.Windows;
 using System.Windows.Markup;
 using GroceryErp.App.Presentation;
+using GroceryErp.Catalog;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Backup;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Security;
 using GroceryErp.Data.Services;
+using GroceryErp.Inventory;
+using GroceryErp.Inventory.Contracts;
 using GroceryErp.Localization;
+using GroceryErp.Purchasing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
@@ -19,6 +23,7 @@ public partial class App : Application
 {
     private IHost? _host;
     private bool _databaseReady;
+    private Task? _maintenanceTask;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -53,10 +58,20 @@ public partial class App : Application
             builder.Services.AddSingleton<BackupService>();
             builder.Services.AddSingleton<IMigrationBackup>(static provider => provider.GetRequiredService<BackupService>());
             builder.Services.AddSingleton<IAuditLog, AuditLog>();
+            builder.Services.AddSingleton<DocNumberService>();
+            builder.Services.AddSingleton<PeriodGuard>();
             builder.Services.AddSingleton<MigrationRunner>();
             builder.Services.AddSingleton<MaintenanceService>();
             builder.Services.AddSingleton<StartupPipeline>();
             builder.Services.AddSingleton<ShutdownPipeline>();
+            builder.Services.AddSingleton<CatalogService>();
+            builder.Services.AddSingleton<ProductExcelImporter>();
+            builder.Services.AddSingleton<GroceryErp.Catalog.Barcodes.ScanResolver>();
+            builder.Services.AddSingleton<StockLedger>();
+            builder.Services.AddSingleton<IStockLedger>(static provider => provider.GetRequiredService<StockLedger>());
+            builder.Services.AddSingleton<InventoryService>();
+            builder.Services.AddSingleton<OpeningStockExcelImporter>();
+            builder.Services.AddSingleton<PurchasingService>();
             builder.Services.AddSingleton<ShellViewModel>();
             builder.Services.AddSingleton<ShellWindow>();
 
@@ -73,7 +88,11 @@ public partial class App : Application
             DispatcherUnhandledException += (_, args) =>
             {
                 Log.Error(args.Exception, "Unhandled UI exception");
-                MessageBox.Show("An unexpected error occurred. Details were written to the log.", "Grocery ERP", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(
+                    TranslationSource.Instance["App_UnexpectedError"],
+                    TranslationSource.Instance["App_Title"],
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
                 args.Handled = true;
             };
 
@@ -101,7 +120,7 @@ public partial class App : Application
             {
                 MessageBoxResult restoreChoice = MessageBox.Show(
                     TranslationSource.Instance["Startup_RestorePending"],
-                    "Grocery ERP", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+                    TranslationSource.Instance["App_Title"], MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
                 if (restoreChoice == MessageBoxResult.Yes)
                 {
                     backups.FinishPendingRestore();
@@ -109,7 +128,7 @@ public partial class App : Application
                 else if (restoreChoice == MessageBoxResult.No)
                 {
                     backups.UndoPendingRestore();
-                    MessageBox.Show(TranslationSource.Instance["Startup_RestoreUndone"], "Grocery ERP", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show(TranslationSource.Instance["Startup_RestoreUndone"], TranslationSource.Instance["App_Title"], MessageBoxButton.OK, MessageBoxImage.Information);
                     Shutdown();
                     return;
                 }
@@ -125,12 +144,19 @@ public partial class App : Application
             if (health.FreeDiskWarning)
             {
                 Log.Warning("Available disk space is below 1 GB");
-                MessageBox.Show(TranslationSource.Instance["Startup_LowDisk"], "Grocery ERP", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(TranslationSource.Instance["Startup_LowDisk"], TranslationSource.Instance["App_Title"], MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             if (!health.LotCacheHealthy)
             {
                 Log.Error("Lot cache integrity check failed");
-                MessageBox.Show(TranslationSource.Instance["Startup_LotCache"], "Grocery ERP", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBoxResult rebuild = MessageBox.Show(
+                    TranslationSource.Instance["Startup_LotCache"], TranslationSource.Instance["App_Title"],
+                    MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                if (rebuild == MessageBoxResult.Yes)
+                {
+                    int corrected = await _host.Services.GetRequiredService<InventoryService>().RebuildStockCacheAsync();
+                    Log.Warning("Rebuilt cached quantities for {LotCount} lots", corrected);
+                }
             }
             if (health.LastSaleDate is not null &&
                 DateOnly.TryParseExact(health.LastSaleDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly lastSale) &&
@@ -138,7 +164,7 @@ public partial class App : Application
             {
                 MessageBoxResult choice = MessageBox.Show(
                     string.Format(CultureInfo.CurrentCulture, TranslationSource.Instance["Startup_ClockWarning"], lastSale),
-                    "Grocery ERP", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                    TranslationSource.Instance["App_Title"], MessageBoxButton.YesNo, MessageBoxImage.Warning);
                 if (choice != MessageBoxResult.Yes)
                 {
                     Shutdown();
@@ -150,13 +176,46 @@ public partial class App : Application
             ShellWindow shell = _host.Services.GetRequiredService<ShellWindow>();
             MainWindow = shell;
             shell.Show();
-            _ = maintenance.RunAfterShellAsync().ContinueWith(
+            _maintenanceTask = maintenance.RunAfterShellAsync();
+            _ = _maintenanceTask.ContinueWith(
                 task => { if (task.IsFaulted) Log.Error(task.Exception, "Background startup maintenance failed"); },
                 TaskScheduler.FromCurrentSynchronizationContext());
         }
         catch (Exception exception)
         {
             Log.Fatal(exception, "Application startup failed");
+            if (_host?.Services.GetService<BackupService>() is { HasPendingRestore: true } backups)
+            {
+                MessageBoxResult undo = MessageBox.Show(
+                    TranslationSource.Instance["Startup_RestoreFailed"],
+                    TranslationSource.Instance["App_Title"],
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Error);
+                if (undo == MessageBoxResult.Yes)
+                {
+                    try
+                    {
+                        backups.UndoPendingRestore();
+                        MessageBox.Show(
+                            TranslationSource.Instance["Startup_RestoreUndone"],
+                            TranslationSource.Instance["App_Title"],
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Information);
+                    }
+                    catch (Exception undoException)
+                    {
+                        Log.Fatal(undoException, "Failed to undo restore after startup failure");
+                    }
+                }
+            }
+            else
+            {
+                MessageBox.Show(
+                    TranslationSource.Instance["Startup_Failed"],
+                    TranslationSource.Instance["App_Title"],
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
             Shutdown(1);
         }
     }
@@ -167,6 +226,12 @@ public partial class App : Application
         {
             if (_host is not null)
             {
+                if (_maintenanceTask is not null)
+                {
+                    try { await _maintenanceTask; }
+                    catch (OperationCanceledException) { }
+                    catch (Exception exception) { Log.Error(exception, "Background startup maintenance failed during shutdown"); }
+                }
                 if (_databaseReady)
                 {
                     try { await _host.Services.GetRequiredService<ShutdownPipeline>().RunAsync(); }
@@ -198,4 +263,7 @@ public partial class App : Application
             new FrameworkPropertyMetadata(XmlLanguage.GetLanguage(formatCulture.IetfLanguageTag)));
         TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("en-IN");
     }
+
+    internal IServiceProvider Services =>
+        _host?.Services ?? throw new InvalidOperationException("The application host is not ready.");
 }

@@ -52,7 +52,10 @@ public sealed class PasswordHasher : IPasswordHasher
             throw new FormatException("Unsafe Argon2 parameters.");
         using var argon = new Argon2id(Encoding.UTF8.GetBytes(password))
         {
-            Salt = salt, MemorySize = memory, Iterations = iterations, DegreeOfParallelism = lanes,
+            Salt = salt,
+            MemorySize = memory,
+            Iterations = iterations,
+            DegreeOfParallelism = lanes,
         };
         return argon.GetBytes(HashBytes);
     }

@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <UseWPF>true</UseWPF>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../GroceryErp.Core/GroceryErp.Core.csproj" />
     <ProjectReference Include="../GroceryErp.Localization/GroceryErp.Localization.csproj" />
   </ItemGroup>
 </Project>
-

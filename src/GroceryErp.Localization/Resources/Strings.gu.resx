@@ -5,6 +5,7 @@
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
   <data name="App_Title" xml:space="preserve"><value>ગ્રોસરી ERP</value><comment>MT – needs review</comment></data>
+  <data name="App_UnexpectedError" xml:space="preserve"><value>એક અનપેક્ષિત ભૂલ થઈ. વિગતો લૉગમાં લખવામાં આવી છે.</value></data>
   <data name="Shell_Language" xml:space="preserve"><value>ભાષા</value><comment>MT – needs review</comment></data>
   <data name="Shell_English" xml:space="preserve"><value>અંગ્રેજી</value><comment>MT – needs review</comment></data>
   <data name="Shell_Gujarati" xml:space="preserve"><value>ગુજરાતી</value><comment>MT – needs review</comment></data>
@@ -14,6 +15,74 @@
   <data name="Demo_AmountLabel" xml:space="preserve"><value>નમૂનાની રકમ</value><comment>MT – needs review</comment></data>
   <data name="Demo_DateLabel" xml:space="preserve"><value>નમૂનાની તારીખ</value><comment>MT – needs review</comment></data>
   <data name="Setup_Title" xml:space="preserve"><value>ગ્રોસરી ERP સેટ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Setup_StepLanguage" xml:space="preserve"><value>1  ભાષા</value></data>
+  <data name="Setup_Language" xml:space="preserve"><value>ભાષા</value></data>
+  <data name="Setup_English" xml:space="preserve"><value>અંગ્રેજી</value></data>
+  <data name="Setup_Gujarati" xml:space="preserve"><value>ગુજરાતી</value></data>
+  <data name="Setup_StepStore" xml:space="preserve"><value>2  દુકાન</value></data>
+  <data name="Setup_StoreDetails" xml:space="preserve"><value>દુકાનની વિગતો</value></data>
+  <data name="Setup_StoreName" xml:space="preserve"><value>દુકાનનું નામ *</value></data>
+  <data name="Setup_Address" xml:space="preserve"><value>સરનામું</value></data>
+  <data name="Setup_Phone" xml:space="preserve"><value>ફોન</value></data>
+  <data name="Setup_Gstin" xml:space="preserve"><value>GSTIN</value></data>
+  <data name="Setup_State" xml:space="preserve"><value>રાજ્ય</value></data>
+  <data name="Setup_TaxRegular" xml:space="preserve"><value>નિયમિત GST</value></data>
+  <data name="Setup_TaxComposition" xml:space="preserve"><value>કમ્પોઝિશન</value></data>
+  <data name="Setup_TaxNone" xml:space="preserve"><value>નોંધાયેલ નથી</value></data>
+  <data name="Setup_StepOwner" xml:space="preserve"><value>3  માલિક લૉગિન</value></data>
+  <data name="Setup_OwnerLogin" xml:space="preserve"><value>માલિક લૉગિન</value></data>
+  <data name="Setup_PasswordWarning" xml:space="preserve"><value>પાસવર્ડ પુનઃપ્રાપ્ત કરવાની સુવિધા નથી. તમારો પાસવર્ડ સુરક્ષિત જગ્યાએ રાખો.</value></data>
+  <data name="Setup_Username" xml:space="preserve"><value>વપરાશકર્તા નામ</value></data>
+  <data name="Setup_Password" xml:space="preserve"><value>પાસવર્ડ (8 કે વધુ અક્ષરો)</value></data>
+  <data name="Setup_ConfirmPassword" xml:space="preserve"><value>પાસવર્ડની પુષ્ટિ કરો</value></data>
+  <data name="Setup_StepData" xml:space="preserve"><value>4  ડેટા અને બેકઅપ</value></data>
+  <data name="Setup_DataBackups" xml:space="preserve"><value>ડેટા અને બેકઅપ</value></data>
+  <data name="Setup_DataFolder" xml:space="preserve"><value>ડેટા ફોલ્ડર</value></data>
+  <data name="Setup_BackupFolder" xml:space="preserve"><value>બેકઅપ ફોલ્ડર</value></data>
+  <data name="Setup_UsbReminder" xml:space="preserve"><value>USB બેકઅપ યાદ અપાવવું</value></data>
+  <data name="Setup_Every7Days" xml:space="preserve"><value>દર 7 દિવસે</value></data>
+  <data name="Setup_Every14Days" xml:space="preserve"><value>દર 14 દિવસે</value></data>
+  <data name="Setup_Every30Days" xml:space="preserve"><value>દર 30 દિવસે</value></data>
+  <data name="Setup_Every60Days" xml:space="preserve"><value>દર 60 દિવસે</value></data>
+  <data name="Setup_Every90Days" xml:space="preserve"><value>દર 90 દિવસે</value></data>
+  <data name="Setup_CloudWarning" xml:space="preserve"><value>OneDrive જેવા ક્લાઉડ સાથે સમન્વયિત ફોલ્ડરની મંજૂરી નથી.</value></data>
+  <data name="Setup_StepPrinters" xml:space="preserve"><value>5  પ્રિન્ટરો</value></data>
+  <data name="Setup_Printers" xml:space="preserve"><value>પ્રિન્ટરો</value></data>
+  <data name="Setup_ReceiptPrinter" xml:space="preserve"><value>રસીદ પ્રિન્ટર</value></data>
+  <data name="Setup_ReceiptWidth" xml:space="preserve"><value>રસીદની પહોળાઈ</value></data>
+  <data name="Setup_LabelPrinter" xml:space="preserve"><value>લેબલ પ્રિન્ટર</value></data>
+  <data name="Setup_LabelSize" xml:space="preserve"><value>લેબલનું માપ</value></data>
+  <data name="Setup_A4Printer" xml:space="preserve"><value>A4 પ્રિન્ટર</value></data>
+  <data name="Setup_PrinterHelp" xml:space="preserve"><value>સેટઅપ પહેલાં Windows પ્રિન્ટર ડ્રાઇવર ઇન્સ્ટોલ કરો. સેટઅપ પછી Settings માંથી ટેસ્ટ પેજ પ્રિન્ટ કરી શકાય છે.</value></data>
+  <data name="Setup_StepBarcodes" xml:space="preserve"><value>6  બારકોડ</value></data>
+  <data name="Setup_BarcodePrefixes" xml:space="preserve"><value>આંતરિક બારકોડ ઉપસર્ગ</value></data>
+  <data name="Setup_LotPrefix" xml:space="preserve"><value>લોટ ઉપસર્ગ</value></data>
+  <data name="Setup_ProductPrefix" xml:space="preserve"><value>ઉત્પાદન ઉપસર્ગ</value></data>
+  <data name="Setup_ScaleRule" xml:space="preserve"><value>વજનકાંટાનો નિયમ (વૈકલ્પિક)</value></data>
+  <data name="Setup_BarcodeHelp" xml:space="preserve"><value>ઉપસર્ગ અલગ બે અંકના હોવા જોઈએ. વજનકાંટો ન હોય તો તેનો નિયમ પછીથી ગોઠવી શકાય છે.</value></data>
+  <data name="Setup_StepKeyboard" xml:space="preserve"><value>7  કીબોર્ડ</value></data>
+  <data name="Setup_GujaratiKeyboard" xml:space="preserve"><value>ગુજરાતી કીબોર્ડ</value></data>
+  <data name="Setup_KeyboardFound" xml:space="preserve"><value>ગુજરાતી ફોનેટિક કીબોર્ડ મળ્યું.</value></data>
+  <data name="Setup_KeyboardMissing" xml:space="preserve"><value>આ કમ્પ્યુટરમાં ગુજરાતી ફોનેટિક કીબોર્ડ મળ્યું નથી.</value></data>
+  <data name="Setup_KeyboardHelp" xml:space="preserve"><value>ગુજરાતીમાં લખવા માટે Windows Settings → Time &amp; language → Language &amp; region માં ગુજરાતી ફોનેટિક કીબોર્ડ ઇન્સ્ટોલ કરો.</value></data>
+  <data name="Setup_StepStart" xml:space="preserve"><value>8  શરૂઆત</value></data>
+  <data name="Setup_Ready" xml:space="preserve"><value>શરૂ કરવા માટે તૈયાર</value></data>
+  <data name="Setup_StartHelp" xml:space="preserve"><value>કેવી રીતે શરૂ કરવું તે પસંદ કરો. સેટઅપ પછી Catalog મોડ્યુલમાંથી ઉત્પાદનો આયાત કરી શકાય છે.</value></data>
+  <data name="Setup_StartEmpty" xml:space="preserve"><value>ખાલી કેટલોગથી શરૂ કરો</value></data>
+  <data name="Setup_StartImport" xml:space="preserve"><value>સેટઅપ પછી Excel માંથી ઉત્પાદનો આયાત કરો</value></data>
+  <data name="Setup_OpeningStockHelp" xml:space="preserve"><value>શરૂઆતનો સ્ટોક પછીથી દાખલ કરી શકાય છે.</value></data>
+  <data name="Setup_Back" xml:space="preserve"><value>પાછળ</value></data>
+  <data name="Setup_Next" xml:space="preserve"><value>આગળ</value></data>
+  <data name="Setup_Finish" xml:space="preserve"><value>પૂર્ણ કરો</value></data>
+  <data name="Setup_RetryBackup" xml:space="preserve"><value>બેકઅપ ફરી કરો</value></data>
+  <data name="Setup_ErrorBackupFailed" xml:space="preserve"><value>સેટઅપ સાચવાયું, પરંતુ પ્રથમ બેકઅપ નિષ્ફળ ગયું. બેકઅપ ફોલ્ડર તપાસીને ફરી પ્રયાસ કરો.</value></data>
+  <data name="Setup_ErrorStoreRequired" xml:space="preserve"><value>દુકાનનું નામ જરૂરી છે.</value></data>
+  <data name="Setup_ErrorGstinInvalid" xml:space="preserve"><value>માન્ય GSTIN દાખલ કરો અથવા ખાલી રાખો.</value></data>
+  <data name="Setup_ErrorUsernameRequired" xml:space="preserve"><value>વપરાશકર્તા નામ જરૂરી છે.</value></data>
+  <data name="Setup_ErrorPasswordLength" xml:space="preserve"><value>પાસવર્ડમાં ઓછામાં ઓછા 8 અક્ષરો હોવા જોઈએ.</value></data>
+  <data name="Setup_ErrorPasswordMismatch" xml:space="preserve"><value>પાસવર્ડ મેળ ખાતા નથી.</value></data>
+  <data name="Setup_ErrorBackupRequired" xml:space="preserve"><value>બેકઅપ ફોલ્ડર જરૂરી છે.</value></data>
+  <data name="Setup_ErrorPrefixes" xml:space="preserve"><value>બારકોડ ઉપસર્ગ અલગ બે અંકના હોવા જોઈએ.</value></data>
   <data name="Login_Title" xml:space="preserve"><value>સાઇન ઇન કરો</value><comment>MT - needs review</comment></data>
   <data name="Login_Username" xml:space="preserve"><value>વપરાશકર્તા નામ</value><comment>MT - needs review</comment></data>
   <data name="Login_Password" xml:space="preserve"><value>પાસવર્ડ</value><comment>MT - needs review</comment></data>
@@ -22,9 +91,171 @@
   <data name="Lock_Title" xml:space="preserve"><value>સત્ર લૉક છે</value><comment>MT - needs review</comment></data>
   <data name="Lock_Body" xml:space="preserve"><value>ચાલુ રાખવા માટે માલિકનો પાસવર્ડ દાખલ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Lock_Action" xml:space="preserve"><value>અનલૉક</value><comment>MT - needs review</comment></data>
+  <data name="Lock_Command" xml:space="preserve"><value>લૉક</value><comment>MT - needs review</comment></data>
   <data name="Startup_LowDisk" xml:space="preserve"><value>ડિસ્કમાં 1 GB કરતાં ઓછી જગ્યા છે. ચાલુ રાખતા પહેલાં જગ્યા ખાલી કરો.</value><comment>MT - needs review</comment></data>
-  <data name="Startup_LotCache" xml:space="preserve"><value>ઇન્વેન્ટરી અખંડિતતા તપાસ જરૂરી છે. ચાલુ રાખતા પહેલાં બેકઅપ તપાસો.</value><comment>MT - needs review</comment></data>
+  <data name="Startup_LotCache" xml:space="preserve"><value>સાચવેલ સ્ટોક જથ્થો ખાતાવહી સાથે મેળ ખાતો નથી. ખાતાવહીમાંથી કેશ ફરી બનાવવો છે?</value><comment>MT - needs review</comment></data>
   <data name="Startup_ClockWarning" xml:space="preserve"><value>કમ્પ્યુટર ઘડિયાળ છેલ્લી બિલ તારીખ {0:d} કરતાં પાછળ છે. તારીખ તપાસ્યા પછી જ ચાલુ રાખો.</value><comment>MT - needs review</comment></data>
   <data name="Startup_RestorePending" xml:space="preserve"><value>પુનઃસ્થાપિત ડેટાબેઝ પુષ્ટિની રાહ જોઈ રહ્યો છે. પુનઃસ્થાપિત ડેટા રાખવા માટે હા, પાછું ફેરવવા માટે ના, અથવા તેને બાકી રાખીને એપ્લિકેશન બંધ કરવા માટે રદ કરો પસંદ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Startup_RestoreUndone" xml:space="preserve"><value>પુનઃસ્થાપન રદ કરવામાં આવ્યું છે. અગાઉનો ડેટાબેઝ પાછો મૂકવામાં આવ્યો છે.</value><comment>MT - needs review</comment></data>
+  <data name="Startup_RestoreFailed" xml:space="preserve"><value>પુનઃસ્થાપિત ડેટાબેઝ સુરક્ષિત રીતે શરૂ થઈ શક્યો નથી. પુનઃસ્થાપન રદ કરીને અગાઉનો ડેટાબેઝ પાછો મૂકવો છે?</value><comment>MT - needs review</comment></data>
+  <data name="Startup_Failed" xml:space="preserve"><value>ગ્રોસરી ERP શરૂ થઈ શક્યું નથી. વિગતો લૉગમાં લખવામાં આવી છે.</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Navigation" xml:space="preserve"><value>ઉત્પાદનો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Title" xml:space="preserve"><value>ઉત્પાદનો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_SearchHint" xml:space="preserve"><value>SKU, નામ, ગુજરાતી નામ, ઉપનામ અથવા બ્રાન્ડથી શોધો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_NoBarcode" xml:space="preserve"><value>બારકોડ નથી</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_MissingLocal" xml:space="preserve"><value>ગુજરાતી નામ બાકી</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Archived" xml:space="preserve"><value>આર્કાઇવ કરેલા સહિત</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Sku" xml:space="preserve"><value>SKU</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Name" xml:space="preserve"><value>નામ</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_NameLocal" xml:space="preserve"><value>ગુજરાતી નામ</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Category" xml:space="preserve"><value>શ્રેણી</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Stock" xml:space="preserve"><value>સ્ટોક</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Price" xml:space="preserve"><value>કિંમત</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Active" xml:space="preserve"><value>સક્રિય</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_GenerateBarcode" xml:space="preserve"><value>બારકોડ બનાવો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Remove" xml:space="preserve"><value>દૂર કરો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Count" xml:space="preserve"><value>{0} ઉત્પાદનો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_RemoveConfirm" xml:space="preserve"><value>“{0}” દૂર કરવું છે? ઇતિહાસ ધરાવતા ઉત્પાદનો આર્કાઇવ થશે.</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Deleted" xml:space="preserve"><value>ઉત્પાદન કાઢી નાખ્યું.</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_ArchivedResult" xml:space="preserve"><value>વ્યવહાર ઇતિહાસ હોવાથી ઉત્પાદન આર્કાઇવ થયું.</value><comment>MT - needs review</comment></data>
+  <data name="Error_NotFound" xml:space="preserve"><value>વિનંતી કરેલી વસ્તુ મળી નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Error_Validation" xml:space="preserve"><value>દાખલ કરેલી વિગતો તપાસીને ફરી પ્રયાસ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Error_BarcodeExists" xml:space="preserve"><value>આ બારકોડ પહેલેથી જ જોડાયેલો છે.</value><comment>MT - needs review</comment></data>
+  <data name="Error_InvalidBarcode" xml:space="preserve"><value>બારકોડ અથવા તેનો ચેક અંક અમાન્ય છે.</value><comment>MT - needs review</comment></data>
+  <data name="Error_PriceAboveMrp" xml:space="preserve"><value>વેચાણ કિંમત MRP કરતાં વધુ હોઈ શકતી નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Common_Save" xml:space="preserve"><value>સાચવો</value><comment>MT - needs review</comment></data>
+  <data name="Common_Cancel" xml:space="preserve"><value>રદ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Common_Close" xml:space="preserve"><value>બંધ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Masters" xml:space="preserve"><value>શ્રેણીઓ અને બ્રાન્ડ</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_New" xml:space="preserve"><value>નવું ઉત્પાદન</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Edit" xml:space="preserve"><value>ફેરફાર</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_EditorTitle" xml:space="preserve"><value>ઉત્પાદનની વિગતો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Aliases" xml:space="preserve"><value>ઉપનામ અને શોધ શબ્દો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Brand" xml:space="preserve"><value>બ્રાન્ડ</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Unit" xml:space="preserve"><value>એકમ</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Hsn" xml:space="preserve"><value>HSN કોડ</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_TaxRate" xml:space="preserve"><value>GST દર</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_ReorderLevel" xml:space="preserve"><value>ફરી ઓર્ડર સ્તર</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_SellingPrice" xml:space="preserve"><value>મૂળ વેચાણ કિંમત</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Mrp" xml:space="preserve"><value>મૂળ MRP</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_ShelfLife" xml:space="preserve"><value>શેલ્ફ લાઇફ (દિવસ)</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_PricesIncludeTax" xml:space="preserve"><value>કિંમતમાં કર સામેલ</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_TrackExpiry" xml:space="preserve"><value>સમાપ્તિ ટ્રૅક કરો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Loose" xml:space="preserve"><value>છૂટક ઉત્પાદન</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Plu" xml:space="preserve"><value>સ્કેલ PLU કોડ</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Barcodes" xml:space="preserve"><value>બારકોડ</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_BarcodesHint" xml:space="preserve"><value>દરેક લીટીમાં એક બારકોડ દાખલ કરો. પહેલો મુખ્ય રહેશે.</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_CategoryRequiredFirst" xml:space="preserve"><value>ઉત્પાદન ઉમેરતા પહેલાં ઓછામાં ઓછી એક શ્રેણી બનાવો.</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Categories" xml:space="preserve"><value>શ્રેણીઓ</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Brands" xml:space="preserve"><value>બ્રાન્ડ</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_ParentCategory" xml:space="preserve"><value>મૂળ શ્રેણી (વૈકલ્પિક)</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_ExpiryAlertDays" xml:space="preserve"><value>સમાપ્તિ ચેતવણી દિવસો (વૈકલ્પિક)</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Clear" xml:space="preserve"><value>નવું</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Import" xml:space="preserve"><value>Excel આયાત</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_ImportTitle" xml:space="preserve"><value>Excelમાંથી ઉત્પાદનો આયાત કરો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Browse" xml:space="preserve"><value>ફાઇલ પસંદ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_DownloadTemplate" xml:space="preserve"><value>ટેમ્પલેટ સાચવો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Row" xml:space="preserve"><value>પંક્તિ</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Valid" xml:space="preserve"><value>માન્ય</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_ImportErrors" xml:space="preserve"><value>ચકાસણી ભૂલો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_ImportValid" xml:space="preserve"><value>માન્ય પંક્તિઓ આયાત કરો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Analyzing" xml:space="preserve"><value>વર્કબુક તપાસી રહ્યું છે…</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_ImportPreview" xml:space="preserve"><value>{0} માન્ય પંક્તિઓ; {1} પંક્તિઓ સુધારવી જરૂરી.</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_TemplateSaved" xml:space="preserve"><value>આયાત ટેમ્પલેટ સાચવ્યું.</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_ImportComplete" xml:space="preserve"><value>આયાત પૂર્ણ: {0} બનાવ્યા, {1} અપડેટ કર્યા, {2} છોડ્યા.</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_PrintLabels" xml:space="preserve"><value>લેબલ છાપો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_LabelPreview" xml:space="preserve"><value>લેબલ પૂર્વદર્શન</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_PrinterName" xml:space="preserve"><value>Windows પ્રિન્ટર નામ</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Copies" xml:space="preserve"><value>નકલો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_SavePrintFile" xml:space="preserve"><value>.prn સાચવો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Print" xml:space="preserve"><value>છાપો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Units" xml:space="preserve"><value>એકમો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_UnitCode" xml:space="preserve"><value>એકમ કોડ</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_AllowFraction" xml:space="preserve"><value>અપૂર્ણાંક જથ્થો મંજૂર કરો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_TaxRates" xml:space="preserve"><value>કર દરો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_TaxPercent" xml:space="preserve"><value>કર ટકાવારી</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_BulkEdit" xml:space="preserve"><value>સમૂહ ફેરફાર</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_Apply" xml:space="preserve"><value>લાગુ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_SelectedCount" xml:space="preserve"><value>{0} ઉત્પાદનો પસંદ કર્યાં</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_BulkComplete" xml:space="preserve"><value>{0} ઉત્પાદનો અપડેટ થયા.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Navigation" xml:space="preserve"><value>ખરીદી</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Title" xml:space="preserve"><value>ખરીદી અને વિક્રેતાઓ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Purchases" xml:space="preserve"><value>ખરીદી</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Vendors" xml:space="preserve"><value>વિક્રેતાઓ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Grn" xml:space="preserve"><value>GRN નંબર</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Vendor" xml:space="preserve"><value>વિક્રેતા</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Invoice" xml:space="preserve"><value>વિક્રેતા ઇન્વોઇસ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Received" xml:space="preserve"><value>માલ મળ્યાની તારીખ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Status" xml:space="preserve"><value>સ્થિતિ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Total" xml:space="preserve"><value>કુલ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Phone" xml:space="preserve"><value>ફોન</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Balance" xml:space="preserve"><value>બાકી રકમ</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Navigation" xml:space="preserve"><value>સ્ટોક</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Title" xml:space="preserve"><value>સ્ટોક અને લોટ</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Overview" xml:space="preserve"><value>ઝાંખી</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Lots" xml:space="preserve"><value>લોટ</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Quantity" xml:space="preserve"><value>જથ્થો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_CostValue" xml:space="preserve"><value>ખરીદ કિંમત મુજબ મૂલ્ય</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Reorder" xml:space="preserve"><value>ફરી ઓર્ડર સ્તર</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Low" xml:space="preserve"><value>ઓછો સ્ટોક</value><comment>MT - needs review</comment></data>
+  <data name="Stock_LotCode" xml:space="preserve"><value>લોટ કોડ</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Batch" xml:space="preserve"><value>બેચ</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Expiry" xml:space="preserve"><value>સમાપ્તિ</value><comment>MT - needs review</comment></data>
+  <data name="Stock_OnHand" xml:space="preserve"><value>હાલનો જથ્થો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_UnitCost" xml:space="preserve"><value>એકમ કિંમત</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Refresh" xml:space="preserve"><value>તાજું કરો</value><comment>MT - needs review</comment></data>
+  <data name="Error_InsufficientStock" xml:space="preserve"><value>ઉપલબ્ધ લોટમાં પૂરતો સ્ટોક નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Error_NoLotForProduct" xml:space="preserve"><value>આ ઉત્પાદન માટે કોઈ સ્ટોક લોટ નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Error_FractionalQtyNotAllowed" xml:space="preserve"><value>આ ઉત્પાદન માટે પૂર્ણ જથ્થો જરૂરી છે.</value><comment>MT - needs review</comment></data>
+  <data name="Error_PurchaseFinalized" xml:space="preserve"><value>પોસ્ટ અથવા રદ કરેલી ખરીદી બદલી શકાતી નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Error_DuplicateVendorBill" xml:space="preserve"><value>આ વિક્રેતા ઇન્વોઇસ પહેલેથી દાખલ છે.</value><comment>MT - needs review</comment></data>
+  <data name="Error_PeriodLocked" xml:space="preserve"><value>આ તારીખ લોક કરેલા હિસાબી સમયગાળામાં છે.</value><comment>MT - needs review</comment></data>
+  <data name="Error_EmptyBill" xml:space="preserve"><value>પોસ્ટ કરતા પહેલાં ઓછામાં ઓછી એક લાઇન ઉમેરો.</value><comment>MT - needs review</comment></data>
+  <data name="Error_CancelNotAllowed" xml:space="preserve"><value>એક અથવા વધુ લોટનો સ્ટોક બદલાયો હોવાથી આ ખરીદી રદ કરી શકાતી નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_NewVendor" xml:space="preserve"><value>નવો વિક્રેતા</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Contact" xml:space="preserve"><value>સંપર્ક વ્યક્તિ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_AltPhone" xml:space="preserve"><value>વૈકલ્પિક ફોન</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Email" xml:space="preserve"><value>ઇમેઇલ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Pincode" xml:space="preserve"><value>પિનકોડ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_City" xml:space="preserve"><value>શહેર</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_State" xml:space="preserve"><value>રાજ્ય</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Address" xml:space="preserve"><value>સરનામું</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Upi" xml:space="preserve"><value>UPI ID</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Terms" xml:space="preserve"><value>ચુકવણી મુદત (દિવસ)</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Bank" xml:space="preserve"><value>બેંક વિગતો</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_OpeningBalance" xml:space="preserve"><value>શરૂઆતની બાકી રકમ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Notes" xml:space="preserve"><value>નોંધ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_NewPurchase" xml:space="preserve"><value>નવી ખરીદી</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Payment" xml:space="preserve"><value>વિક્રેતા ચુકવણી</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Amount" xml:space="preserve"><value>રકમ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Mode" xml:space="preserve"><value>ચુકવણી રીત</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Reference" xml:space="preserve"><value>સંદર્ભ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_InvoiceDate" xml:space="preserve"><value>ઇન્વોઇસ તારીખ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_FreeQty" xml:space="preserve"><value>મફત જથ્થો</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Rate" xml:space="preserve"><value>દર</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Discount" xml:space="preserve"><value>ડિસ્કાઉન્ટ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Gst" xml:space="preserve"><value>GST %</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_OtherCharges" xml:space="preserve"><value>અન્ય ખર્ચ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_BillTotal" xml:space="preserve"><value>વિક્રેતા બિલ કુલ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_SaveDraft" xml:space="preserve"><value>ડ્રાફ્ટ સાચવો</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Post" xml:space="preserve"><value>પોસ્ટ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_OpeningImport" xml:space="preserve"><value>શરૂઆતનો સ્ટોક આયાત</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Adjust" xml:space="preserve"><value>સ્ટોક સુધારો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Count" xml:space="preserve"><value>સ્ટોક ગણતરી</value><comment>MT - needs review</comment></data>
+  <data name="Stock_AdjustQuantity" xml:space="preserve"><value>જથ્થામાં ફેરફાર (+ અથવા −)</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Reason" xml:space="preserve"><value>કારણ</value><comment>MT - needs review</comment></data>
+  <data name="Stock_CountHint" xml:space="preserve"><value>દરેક લોટનો ભૌતિક જથ્થો દાખલ કરો. પોસ્ટ કરતી વખતે માત્ર તફાવત નોંધાશે.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Expected" xml:space="preserve"><value>અપેક્ષિત</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Counted" xml:space="preserve"><value>ગણેલ</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Difference" xml:space="preserve"><value>તફાવત</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_CancelPurchase" xml:space="preserve"><value>ખરીદી રદ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Ledger" xml:space="preserve"><value>સ્ટોક ખાતાવહી</value><comment>MT - needs review</comment></data>
+  <data name="Stock_ChangePrice" xml:space="preserve"><value>કિંમત બદલો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_BlockToggle" xml:space="preserve"><value>લોટ બ્લોક / અનબ્લોક</value><comment>MT - needs review</comment></data>
+  <data name="Stock_PrintCount" xml:space="preserve"><value>ગણતરી પત્રક છાપો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Valuation" xml:space="preserve"><value>મૂલ્યાંકન</value><comment>MT - needs review</comment></data>
+  <data name="Stock_SellingValue" xml:space="preserve"><value>વેચાણ કિંમતે મૂલ્ય</value><comment>MT - needs review</comment></data>
+  <data name="Stock_MrpValue" xml:space="preserve"><value>MRP મુજબ મૂલ્ય</value><comment>MT - needs review</comment></data>
+  <data name="Stock_OpeningTemplate" xml:space="preserve"><value>શરૂઆતનું નમૂનું સાચવો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_TemplateSaved" xml:space="preserve"><value>શરૂઆતના સ્ટોકનું નમૂનું સાચવ્યું.</value><comment>MT - needs review</comment></data>
 </root>

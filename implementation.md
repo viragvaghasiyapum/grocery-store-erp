@@ -1,8 +1,8 @@
 # Implementation Guide — Grocery ERP
 
 > How to build the Grocery ERP described in `techstack.md` on top of `grocery_erp_schema.sql`
-> (migration 001), `002_i18n_pricing_reporting.sql` (migration 002) and `003_operations.sql`
-> (migration 003).
+> (migration 001), `002_i18n_pricing_reporting.sql` (migration 002), `003_operations.sql`
+> (migration 003) and `004_stock_in.sql` (migration 004).
 > Audience: the developer. Read §1–§5 before writing code; §6–§16 are per-module specs;
 > §17–§21 cover quality, packaging and the delivery plan.
 
@@ -3441,13 +3441,15 @@ each phase).
 
 ### 21.1.1 Implementation status
 
-Last updated: **22 September 2026**
+Last updated: **27 September 2026**
 
 | Phase | Status | Evidence / remaining work |
 |---|---|---|
 | 0 — Skeleton | **Implemented locally; hosted CI pending** | Solution and all planned project boundaries created; centralized package pins and analyzers enabled; WPF UI `NavigationView` shell added; `{l:Tr}` switches English ↔ Gujarati at runtime; numeric display remains fixed to `en-IN`; Serilog rolling files configured; Release build has zero warnings; 6 tests pass, including a real STA WPF-window smoke test and Core BCL-only architecture test. GitHub Actions workflow is present, but its first hosted run requires publishing this workspace to a GitHub repository. Gujarati strings are machine-drafted and marked `MT – needs review`. |
-| 1 — Foundations | **Not started** | Next: paths, SQLite/Dapper foundation, migrations 001–003, numerics, errors, clock, settings, audit, backup/restore, first-run and authentication. |
-| 2–7 | **Not started** | Follow the phase scopes and exit criteria above. |
+| 1 — Foundations | **Foundation implemented; presentation hardening remains** | Paths, SQLite/Dapper infrastructure, migrations 001–003, fixed-point numerics, errors, clock/FY helpers, document numbers, typed settings, audit, operation guard, authentication, login/idle lock, localized first-run wizard, startup/shutdown maintenance, verified backup sets, restore apply/undo and recovery are implemented. Release build: 0 warnings/errors; 18 tests pass. Remaining work is tracked below. |
+| 2 — Catalog & barcodes | **Functionally implemented; hardware verification remains** | Product/master CRUD, audit, FTS/prefix search, filters, category/brand/unit/tax management, EAN/internal/scale/GS1 barcode handling, scan resolution, Excel dry-run/import, bulk category/tax changes, label preview, TSPL generation, `.prn` export and RAW Windows spooling are implemented. The repeatable benchmark imports 20k products in 14.955 s and searches at 2.772 ms p95. Remaining exit work requires a physical label printer/scanner: calibrate the configured stock, verify Gujarati font/raster behavior on the model, and confirm scans from 30 cm. |
+| 3 — Stock-in | **Functionally implemented; hardware verification remains** | Migration 004 adds durable stock-count snapshots and printed vendor-bill totals. Vendor CRUD, purchase drafts/posting/cancellation, landed cost, vendor payments/ledger, lot/stock views, FEFO, opening-stock Excel dry run/import, price/block controls, manual adjustments, durable stock counts, and printable count sheets are implemented with operation idempotency, period guards, audit and stock notifications. The localized shell provides vendor, GRN/posting, payment, opening-import, lot price/block, adjustment, ledger and count-entry workflows. Golden purchase, cancellation, payment, FEFO, opening-stock and concurrent-count reconciliation tests pass. Remaining exit work is physical lot-label verification inherited from Phase 2 and native Gujarati review. |
+| 4–7 | **Not started** | Follow the phase scopes and exit criteria above. |
 
 Phase 0 checklist:
 
@@ -3461,6 +3463,32 @@ Phase 0 checklist:
 - [x] GitHub Actions workflow for restore, format, Release build and tests
 - [ ] First successful hosted GitHub Actions run (requires a remote repository)
 - [ ] Native Gujarati review of Phase 0 strings
+
+Phase 1 checklist:
+
+- [x] Application paths, required directories and OneDrive-path rejection
+- [x] SQLite connection factory, WAL/pragmas and serialized `DbExecutor` writes
+- [x] Dapper handlers for fixed-point values and `DateOnly`
+- [x] Embedded, contiguous migrations 001–003 with schema and seed verification
+- [x] Fixed-point money/quantity/percent, tax, allocation, round-off and fiscal-year tests
+- [x] Domain errors, SQLite error mapping, clock boundary and fiscal-year helpers
+- [x] Document numbering, period guard, audit log and duplicate-operation guard
+- [x] Typed settings snapshot, audited saves, change notifications and concurrency protection
+- [x] Argon2id authentication, login throttling, password change and login/idle/manual lock
+- [x] Eight-step first-run wizard with validation and persisted setup choices
+- [x] Live English/Gujarati setup, login, lock and startup resources with English digits
+- [x] Verified backup ZIPs with manifest, SHA-256, integrity checks and retention rotation
+- [x] Restore inspection, apply, pending marker, startup validation, audit and rollback-safe undo
+- [x] Daily/close backups, operation/temp cleanup, integrity/FTS checks, WAL checkpoint and optimize
+- [x] Startup clock, free-space and lot-cache checks with visible warnings and audited override
+- [x] Backup/restore round-trip, restore undo, settings concurrency, maintenance and rendered WPF tests
+- [x] Release build succeeds with zero warnings and all 18 tests pass
+- [ ] Property-based numeric tests across the full documented range
+- [ ] Printer test-page actions in the first-run wizard
+- [ ] Data-root selection, bootstrap update and safe database move from the wizard/settings
+- [ ] Full restore picker with current-vs-backup comparison and typed `RESTORE` confirmation
+- [ ] USB export flow and shell backup-status indicator
+- [ ] Complete public Core/Data XML documentation and native-speaker Gujarati review
 
 ### 21.2 Definition of done (every feature)
 

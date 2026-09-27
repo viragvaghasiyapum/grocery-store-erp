@@ -1,0 +1,39 @@
+<Window x:Class="GroceryErp.App.Presentation.PurchaseEntryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+        Title="{l:Tr Purchasing_NewPurchase}" Width="1120" Height="700" WindowStartupLocation="CenterOwner">
+  <Grid Margin="18">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <StackPanel Margin="0,0,8,8"><TextBlock Text="{l:Tr Purchasing_Vendor}"/><ComboBox x:Name="VendorBox" DisplayMemberPath="Name" SelectedValuePath="Id"/></StackPanel>
+      <StackPanel Grid.Column="1" Margin="8,0,8,8"><TextBlock Text="{l:Tr Purchasing_Invoice}"/><TextBox x:Name="InvoiceBox"/></StackPanel>
+      <StackPanel Grid.Column="2" Margin="8,0,8,8"><TextBlock Text="{l:Tr Purchasing_InvoiceDate}"/><DatePicker x:Name="InvoiceDateBox"/></StackPanel>
+      <StackPanel Grid.Column="3" Margin="8,0,0,8"><TextBlock Text="{l:Tr Purchasing_Received}"/><DatePicker x:Name="ReceivedDateBox"/></StackPanel>
+    </Grid>
+    <DataGrid x:Name="LinesGrid" Grid.Row="1" ItemsSource="{Binding Lines}" AutoGenerateColumns="False" CanUserAddRows="True">
+      <DataGrid.Columns>
+        <DataGridComboBoxColumn Width="2*" Header="{l:Tr Catalog_Name}" SelectedValueBinding="{Binding ProductId}" SelectedValuePath="Id" DisplayMemberPath="Name" x:Name="ProductColumn"/>
+        <DataGridTextColumn Width="100" Header="{l:Tr Stock_Batch}" Binding="{Binding Batch}"/>
+        <DataGridTextColumn Width="110" Header="{l:Tr Stock_Expiry}" Binding="{Binding Expiry}"/>
+        <DataGridTextColumn Width="75" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
+        <DataGridTextColumn Width="75" Header="{l:Tr Purchasing_FreeQty}" Binding="{Binding FreeQuantity}"/>
+        <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_Rate}" Binding="{Binding Rate}"/>
+        <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_Discount}" Binding="{Binding Discount}"/>
+        <DataGridTextColumn Width="70" Header="{l:Tr Purchasing_Gst}" Binding="{Binding TaxRate}"/>
+        <DataGridTextColumn Width="85" Header="MRP" Binding="{Binding Mrp}"/>
+        <DataGridTextColumn Width="95" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}"/>
+      </DataGrid.Columns>
+    </DataGrid>
+    <Grid Grid.Row="2" Margin="0,10,0,0">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="160"/><ColumnDefinition Width="160"/></Grid.ColumnDefinitions>
+      <StackPanel><TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="NotesBox"/></StackPanel>
+      <StackPanel Grid.Column="1" Margin="12,0,0,0"><TextBlock Text="{l:Tr Purchasing_OtherCharges}"/><TextBox x:Name="ChargesBox" Text="0"/></StackPanel>
+      <StackPanel Grid.Column="2" Margin="12,0,0,0"><TextBlock Text="{l:Tr Purchasing_BillTotal}"/><TextBox x:Name="BillTotalBox"/></StackPanel>
+    </Grid>
+    <Grid Grid.Row="3" Margin="0,12,0,0">
+      <TextBlock x:Name="ErrorText" VerticalAlignment="Center" Foreground="Crimson" TextWrapping="Wrap"/>
+      <StackPanel HorizontalAlignment="Right" Orientation="Horizontal"><Button Margin="0,0,8,0" Click="Save_OnClick" Content="{l:Tr Purchasing_SaveDraft}"/><Button Margin="0,0,8,0" Click="Post_OnClick" Content="{l:Tr Purchasing_Post}"/><Button Click="Cancel_OnClick" Content="{l:Tr Common_Cancel}"/></StackPanel>
+    </Grid>
+  </Grid>
+</Window>

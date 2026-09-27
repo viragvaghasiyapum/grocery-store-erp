@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
-using Dapper;
 using CommunityToolkit.Mvvm.Messaging;
+using Dapper;
 using GroceryErp.Core.Errors;
 using GroceryErp.Core.Messages;
 using GroceryErp.Core.Time;
@@ -69,19 +69,28 @@ public interface ISettings
     AppSettings Current { get; }
 }
 
-public sealed class SettingsService(DbExecutor database, AppPaths paths, IAuditLog auditLog) : ISettings, IBusinessClockSettings
+public sealed class SettingsService(DbExecutor database, AppPaths paths, IAuditLog auditLog) : ISettings, IBusinessClockSettings, IDisposable
 {
+    private readonly SemaphoreSlim _mutationGate = new(1, 1);
     private ImmutableDictionary<string, string> _values = ImmutableDictionary<string, string>.Empty;
     public AppSettings Current { get; private set; } = Defaults(paths);
     public int BusinessDayStartHour => Current.BusinessDayStartHour;
 
     public async Task LoadAsync(CancellationToken cancellationToken = default)
     {
-        Dictionary<string, string> loaded = await database.ReadAsync(connection =>
-            connection.Query<(string Key, string Value)>("SELECT key AS Key, value AS Value FROM setting")
-                .ToDictionary(static row => row.Key, static row => row.Value, StringComparer.Ordinal), cancellationToken);
-        _values = loaded.ToImmutableDictionary(StringComparer.Ordinal);
-        Current = CreateSnapshot(_values, paths);
+        await _mutationGate.WaitAsync(cancellationToken);
+        try
+        {
+            Dictionary<string, string> loaded = await database.ReadAsync(connection =>
+                connection.Query<(string Key, string Value)>("SELECT key AS Key, value AS Value FROM setting")
+                    .ToDictionary(static row => row.Key, static row => row.Value, StringComparer.Ordinal), cancellationToken);
+            _values = loaded.ToImmutableDictionary(StringComparer.Ordinal);
+            Current = CreateSnapshot(_values, paths);
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
     }
 
     public async Task SaveAsync(IReadOnlyDictionary<string, string> changes, CancellationToken cancellationToken = default)
@@ -90,23 +99,33 @@ public sealed class SettingsService(DbExecutor database, AppPaths paths, IAuditL
         foreach ((string key, string value) in changes)
             if (string.IsNullOrWhiteSpace(key) || value is null) throw new DomainException(ErrorCode.Validation, key);
 
-        await database.WriteAsync(transaction =>
+        await _mutationGate.WaitAsync(cancellationToken);
+        try
         {
-            foreach ((string key, string value) in changes)
+            await database.WriteAsync(transaction =>
             {
-                string? oldValue = _values.TryGetValue(key, out string? previous) ? previous : null;
-                transaction.Connection.Execute("""
-                    INSERT INTO setting(key, value) VALUES (@key, @value)
-                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
-                    """, new { key, value }, transaction.Transaction);
-                auditLog.Write(transaction, "setting", 0, "UPDATE", new { old = oldValue, @new = value });
-            }
-        }, cancellationToken);
+                foreach ((string key, string value) in changes)
+                {
+                    string? oldValue = _values.TryGetValue(key, out string? previous) ? previous : null;
+                    transaction.Connection.Execute("""
+                        INSERT INTO setting(key, value) VALUES (@key, @value)
+                        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                        """, new { key, value }, transaction.Transaction);
+                    auditLog.Write(transaction, "setting", 0, "UPDATE", new { old = oldValue, @new = value });
+                }
+            }, cancellationToken);
 
-        _values = _values.SetItems(changes);
-        Current = CreateSnapshot(_values, paths);
+            _values = _values.SetItems(changes);
+            Current = CreateSnapshot(_values, paths);
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
         WeakReferenceMessenger.Default.Send(new SettingsChangedMessage(changes.Keys.ToArray()));
     }
+
+    public void Dispose() => _mutationGate.Dispose();
 
     private static AppSettings Defaults(AppPaths paths) => new("", 4, 0, null, 15, 30, paths.DefaultBackupDir);
 

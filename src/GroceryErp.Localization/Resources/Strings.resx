@@ -5,6 +5,7 @@
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
   <data name="App_Title" xml:space="preserve"><value>Grocery ERP</value></data>
+  <data name="App_UnexpectedError" xml:space="preserve"><value>An unexpected error occurred. Details were written to the log.</value></data>
   <data name="Shell_Language" xml:space="preserve"><value>Language</value></data>
   <data name="Shell_English" xml:space="preserve"><value>English</value></data>
   <data name="Shell_Gujarati" xml:space="preserve"><value>Gujarati</value></data>
@@ -14,6 +15,74 @@
   <data name="Demo_AmountLabel" xml:space="preserve"><value>Sample amount</value></data>
   <data name="Demo_DateLabel" xml:space="preserve"><value>Sample date</value></data>
   <data name="Setup_Title" xml:space="preserve"><value>Set up Grocery ERP</value></data>
+  <data name="Setup_StepLanguage" xml:space="preserve"><value>1  Language</value></data>
+  <data name="Setup_Language" xml:space="preserve"><value>Language</value></data>
+  <data name="Setup_English" xml:space="preserve"><value>English</value></data>
+  <data name="Setup_Gujarati" xml:space="preserve"><value>Gujarati</value></data>
+  <data name="Setup_StepStore" xml:space="preserve"><value>2  Store</value></data>
+  <data name="Setup_StoreDetails" xml:space="preserve"><value>Store details</value></data>
+  <data name="Setup_StoreName" xml:space="preserve"><value>Store name *</value></data>
+  <data name="Setup_Address" xml:space="preserve"><value>Address</value></data>
+  <data name="Setup_Phone" xml:space="preserve"><value>Phone</value></data>
+  <data name="Setup_Gstin" xml:space="preserve"><value>GSTIN</value></data>
+  <data name="Setup_State" xml:space="preserve"><value>State</value></data>
+  <data name="Setup_TaxRegular" xml:space="preserve"><value>Regular GST</value></data>
+  <data name="Setup_TaxComposition" xml:space="preserve"><value>Composition</value></data>
+  <data name="Setup_TaxNone" xml:space="preserve"><value>Not registered</value></data>
+  <data name="Setup_StepOwner" xml:space="preserve"><value>3  Owner login</value></data>
+  <data name="Setup_OwnerLogin" xml:space="preserve"><value>Owner login</value></data>
+  <data name="Setup_PasswordWarning" xml:space="preserve"><value>There is no password recovery. Keep your password somewhere safe.</value></data>
+  <data name="Setup_Username" xml:space="preserve"><value>Username</value></data>
+  <data name="Setup_Password" xml:space="preserve"><value>Password (8+ characters)</value></data>
+  <data name="Setup_ConfirmPassword" xml:space="preserve"><value>Confirm password</value></data>
+  <data name="Setup_StepData" xml:space="preserve"><value>4  Data &amp; backups</value></data>
+  <data name="Setup_DataBackups" xml:space="preserve"><value>Data and backups</value></data>
+  <data name="Setup_DataFolder" xml:space="preserve"><value>Data folder</value></data>
+  <data name="Setup_BackupFolder" xml:space="preserve"><value>Backup folder</value></data>
+  <data name="Setup_UsbReminder" xml:space="preserve"><value>USB backup reminder</value></data>
+  <data name="Setup_Every7Days" xml:space="preserve"><value>Every 7 days</value></data>
+  <data name="Setup_Every14Days" xml:space="preserve"><value>Every 14 days</value></data>
+  <data name="Setup_Every30Days" xml:space="preserve"><value>Every 30 days</value></data>
+  <data name="Setup_Every60Days" xml:space="preserve"><value>Every 60 days</value></data>
+  <data name="Setup_Every90Days" xml:space="preserve"><value>Every 90 days</value></data>
+  <data name="Setup_CloudWarning" xml:space="preserve"><value>Cloud-synchronized folders such as OneDrive are not allowed.</value></data>
+  <data name="Setup_StepPrinters" xml:space="preserve"><value>5  Printers</value></data>
+  <data name="Setup_Printers" xml:space="preserve"><value>Printers</value></data>
+  <data name="Setup_ReceiptPrinter" xml:space="preserve"><value>Receipt printer</value></data>
+  <data name="Setup_ReceiptWidth" xml:space="preserve"><value>Receipt width</value></data>
+  <data name="Setup_LabelPrinter" xml:space="preserve"><value>Label printer</value></data>
+  <data name="Setup_LabelSize" xml:space="preserve"><value>Label size</value></data>
+  <data name="Setup_A4Printer" xml:space="preserve"><value>A4 printer</value></data>
+  <data name="Setup_PrinterHelp" xml:space="preserve"><value>Install Windows printer drivers before setup. Printer test pages are available from Settings after setup.</value></data>
+  <data name="Setup_StepBarcodes" xml:space="preserve"><value>6  Barcodes</value></data>
+  <data name="Setup_BarcodePrefixes" xml:space="preserve"><value>Internal barcode prefixes</value></data>
+  <data name="Setup_LotPrefix" xml:space="preserve"><value>Lot prefix</value></data>
+  <data name="Setup_ProductPrefix" xml:space="preserve"><value>Product prefix</value></data>
+  <data name="Setup_ScaleRule" xml:space="preserve"><value>Weighing-scale rule (optional)</value></data>
+  <data name="Setup_BarcodeHelp" xml:space="preserve"><value>Prefixes must be different two-digit values. The scale rule can be configured later if no scale is used.</value></data>
+  <data name="Setup_StepKeyboard" xml:space="preserve"><value>7  Keyboard</value></data>
+  <data name="Setup_GujaratiKeyboard" xml:space="preserve"><value>Gujarati keyboard</value></data>
+  <data name="Setup_KeyboardFound" xml:space="preserve"><value>Gujarati Phonetic keyboard detected.</value></data>
+  <data name="Setup_KeyboardMissing" xml:space="preserve"><value>Gujarati Phonetic keyboard was not found on this computer.</value></data>
+  <data name="Setup_KeyboardHelp" xml:space="preserve"><value>For Gujarati entry, install the Gujarati Phonetic keyboard in Windows Settings → Time &amp; language → Language &amp; region.</value></data>
+  <data name="Setup_StepStart" xml:space="preserve"><value>8  Start</value></data>
+  <data name="Setup_Ready" xml:space="preserve"><value>Ready to start</value></data>
+  <data name="Setup_StartHelp" xml:space="preserve"><value>Choose how to begin. Product import can be completed after setup from the Catalog module.</value></data>
+  <data name="Setup_StartEmpty" xml:space="preserve"><value>Start with an empty catalog</value></data>
+  <data name="Setup_StartImport" xml:space="preserve"><value>Import products from Excel after setup</value></data>
+  <data name="Setup_OpeningStockHelp" xml:space="preserve"><value>Opening stock can be entered later.</value></data>
+  <data name="Setup_Back" xml:space="preserve"><value>Back</value></data>
+  <data name="Setup_Next" xml:space="preserve"><value>Next</value></data>
+  <data name="Setup_Finish" xml:space="preserve"><value>Finish</value></data>
+  <data name="Setup_RetryBackup" xml:space="preserve"><value>Retry backup</value></data>
+  <data name="Setup_ErrorBackupFailed" xml:space="preserve"><value>Setup was saved, but the first backup failed. Check the backup folder and retry.</value></data>
+  <data name="Setup_ErrorStoreRequired" xml:space="preserve"><value>Store name is required.</value></data>
+  <data name="Setup_ErrorGstinInvalid" xml:space="preserve"><value>Enter a valid GSTIN or leave it blank.</value></data>
+  <data name="Setup_ErrorUsernameRequired" xml:space="preserve"><value>Username is required.</value></data>
+  <data name="Setup_ErrorPasswordLength" xml:space="preserve"><value>Password must contain at least 8 characters.</value></data>
+  <data name="Setup_ErrorPasswordMismatch" xml:space="preserve"><value>Passwords do not match.</value></data>
+  <data name="Setup_ErrorBackupRequired" xml:space="preserve"><value>Backup folder is required.</value></data>
+  <data name="Setup_ErrorPrefixes" xml:space="preserve"><value>Barcode prefixes must be different two-digit values.</value></data>
   <data name="Login_Title" xml:space="preserve"><value>Sign in</value></data>
   <data name="Login_Username" xml:space="preserve"><value>Username</value></data>
   <data name="Login_Password" xml:space="preserve"><value>Password</value></data>
@@ -22,9 +91,171 @@
   <data name="Lock_Title" xml:space="preserve"><value>Session locked</value></data>
   <data name="Lock_Body" xml:space="preserve"><value>Enter the owner password to continue.</value></data>
   <data name="Lock_Action" xml:space="preserve"><value>Unlock</value></data>
+  <data name="Lock_Command" xml:space="preserve"><value>Lock</value></data>
   <data name="Startup_LowDisk" xml:space="preserve"><value>Less than 1 GB of free disk space is available. Make space before continuing.</value></data>
-  <data name="Startup_LotCache" xml:space="preserve"><value>Inventory integrity needs attention. Review your backups before continuing.</value></data>
+  <data name="Startup_LotCache" xml:space="preserve"><value>Cached stock quantities do not match the append-only ledger. Rebuild the cache from the ledger now?</value></data>
   <data name="Startup_ClockWarning" xml:space="preserve"><value>The computer clock is behind the last bill dated {0:d}. Continue only after confirming the date.</value></data>
   <data name="Startup_RestorePending" xml:space="preserve"><value>A restored database is waiting for confirmation. Choose Yes to keep the restored data, No to undo the restore, or Cancel to leave it pending and close the application.</value></data>
   <data name="Startup_RestoreUndone" xml:space="preserve"><value>The restore was undone. The previous database has been put back.</value></data>
+  <data name="Startup_RestoreFailed" xml:space="preserve"><value>The restored database could not start safely. Undo the restore and put the previous database back?</value></data>
+  <data name="Startup_Failed" xml:space="preserve"><value>Grocery ERP could not start. Details were written to the log.</value></data>
+  <data name="Catalog_Navigation" xml:space="preserve"><value>Products</value></data>
+  <data name="Catalog_Title" xml:space="preserve"><value>Products</value></data>
+  <data name="Catalog_SearchHint" xml:space="preserve"><value>Search by SKU, name, local name, alias, or brand</value></data>
+  <data name="Catalog_NoBarcode" xml:space="preserve"><value>No barcode</value></data>
+  <data name="Catalog_MissingLocal" xml:space="preserve"><value>Missing local name</value></data>
+  <data name="Catalog_Archived" xml:space="preserve"><value>Include archived</value></data>
+  <data name="Catalog_Sku" xml:space="preserve"><value>SKU</value></data>
+  <data name="Catalog_Name" xml:space="preserve"><value>Name</value></data>
+  <data name="Catalog_NameLocal" xml:space="preserve"><value>Gujarati name</value></data>
+  <data name="Catalog_Category" xml:space="preserve"><value>Category</value></data>
+  <data name="Catalog_Stock" xml:space="preserve"><value>Stock</value></data>
+  <data name="Catalog_Price" xml:space="preserve"><value>Price</value></data>
+  <data name="Catalog_Active" xml:space="preserve"><value>Active</value></data>
+  <data name="Catalog_GenerateBarcode" xml:space="preserve"><value>Generate barcode</value></data>
+  <data name="Catalog_Remove" xml:space="preserve"><value>Remove</value></data>
+  <data name="Catalog_Count" xml:space="preserve"><value>{0} products</value></data>
+  <data name="Catalog_RemoveConfirm" xml:space="preserve"><value>Remove “{0}”? Products with history will be archived.</value></data>
+  <data name="Catalog_Deleted" xml:space="preserve"><value>Product deleted.</value></data>
+  <data name="Catalog_ArchivedResult" xml:space="preserve"><value>Product archived because it has transaction history.</value></data>
+  <data name="Error_NotFound" xml:space="preserve"><value>The requested item was not found.</value></data>
+  <data name="Error_Validation" xml:space="preserve"><value>Check the entered values and try again.</value></data>
+  <data name="Error_BarcodeExists" xml:space="preserve"><value>This barcode is already assigned.</value></data>
+  <data name="Error_InvalidBarcode" xml:space="preserve"><value>The barcode or its check digit is invalid.</value></data>
+  <data name="Error_PriceAboveMrp" xml:space="preserve"><value>The selling price cannot exceed MRP.</value></data>
+  <data name="Common_Save" xml:space="preserve"><value>Save</value></data>
+  <data name="Common_Cancel" xml:space="preserve"><value>Cancel</value></data>
+  <data name="Common_Close" xml:space="preserve"><value>Close</value></data>
+  <data name="Catalog_Masters" xml:space="preserve"><value>Categories &amp; brands</value></data>
+  <data name="Catalog_New" xml:space="preserve"><value>New product</value></data>
+  <data name="Catalog_Edit" xml:space="preserve"><value>Edit</value></data>
+  <data name="Catalog_EditorTitle" xml:space="preserve"><value>Product details</value></data>
+  <data name="Catalog_Aliases" xml:space="preserve"><value>Aliases and search terms</value></data>
+  <data name="Catalog_Brand" xml:space="preserve"><value>Brand</value></data>
+  <data name="Catalog_Unit" xml:space="preserve"><value>Unit</value></data>
+  <data name="Catalog_Hsn" xml:space="preserve"><value>HSN code</value></data>
+  <data name="Catalog_TaxRate" xml:space="preserve"><value>GST rate</value></data>
+  <data name="Catalog_ReorderLevel" xml:space="preserve"><value>Reorder level</value></data>
+  <data name="Catalog_SellingPrice" xml:space="preserve"><value>Default selling price</value></data>
+  <data name="Catalog_Mrp" xml:space="preserve"><value>Default MRP</value></data>
+  <data name="Catalog_ShelfLife" xml:space="preserve"><value>Shelf life (days)</value></data>
+  <data name="Catalog_PricesIncludeTax" xml:space="preserve"><value>Prices include tax</value></data>
+  <data name="Catalog_TrackExpiry" xml:space="preserve"><value>Track expiry</value></data>
+  <data name="Catalog_Loose" xml:space="preserve"><value>Loose product</value></data>
+  <data name="Catalog_Plu" xml:space="preserve"><value>Scale PLU code</value></data>
+  <data name="Catalog_Barcodes" xml:space="preserve"><value>Barcodes</value></data>
+  <data name="Catalog_BarcodesHint" xml:space="preserve"><value>Enter one barcode per line. The first is primary.</value></data>
+  <data name="Catalog_CategoryRequiredFirst" xml:space="preserve"><value>Create at least one category before adding products.</value></data>
+  <data name="Catalog_Categories" xml:space="preserve"><value>Categories</value></data>
+  <data name="Catalog_Brands" xml:space="preserve"><value>Brands</value></data>
+  <data name="Catalog_ParentCategory" xml:space="preserve"><value>Parent category (optional)</value></data>
+  <data name="Catalog_ExpiryAlertDays" xml:space="preserve"><value>Expiry alert days (optional)</value></data>
+  <data name="Catalog_Clear" xml:space="preserve"><value>New</value></data>
+  <data name="Catalog_Import" xml:space="preserve"><value>Import Excel</value></data>
+  <data name="Catalog_ImportTitle" xml:space="preserve"><value>Import products from Excel</value></data>
+  <data name="Catalog_Browse" xml:space="preserve"><value>Choose file</value></data>
+  <data name="Catalog_DownloadTemplate" xml:space="preserve"><value>Save template</value></data>
+  <data name="Catalog_Row" xml:space="preserve"><value>Row</value></data>
+  <data name="Catalog_Valid" xml:space="preserve"><value>Valid</value></data>
+  <data name="Catalog_ImportErrors" xml:space="preserve"><value>Validation errors</value></data>
+  <data name="Catalog_ImportValid" xml:space="preserve"><value>Import valid rows</value></data>
+  <data name="Catalog_Analyzing" xml:space="preserve"><value>Checking workbook…</value></data>
+  <data name="Catalog_ImportPreview" xml:space="preserve"><value>{0} valid rows; {1} rows need correction.</value></data>
+  <data name="Catalog_TemplateSaved" xml:space="preserve"><value>Import template saved.</value></data>
+  <data name="Catalog_ImportComplete" xml:space="preserve"><value>Import complete: {0} created, {1} updated, {2} skipped.</value></data>
+  <data name="Catalog_PrintLabels" xml:space="preserve"><value>Print labels</value></data>
+  <data name="Catalog_LabelPreview" xml:space="preserve"><value>Label preview</value></data>
+  <data name="Catalog_PrinterName" xml:space="preserve"><value>Windows printer name</value></data>
+  <data name="Catalog_Copies" xml:space="preserve"><value>Copies</value></data>
+  <data name="Catalog_SavePrintFile" xml:space="preserve"><value>Save .prn</value></data>
+  <data name="Catalog_Print" xml:space="preserve"><value>Print</value></data>
+  <data name="Catalog_Units" xml:space="preserve"><value>Units</value></data>
+  <data name="Catalog_UnitCode" xml:space="preserve"><value>Unit code</value></data>
+  <data name="Catalog_AllowFraction" xml:space="preserve"><value>Allow fractional quantities</value></data>
+  <data name="Catalog_TaxRates" xml:space="preserve"><value>Tax rates</value></data>
+  <data name="Catalog_TaxPercent" xml:space="preserve"><value>Tax percentage</value></data>
+  <data name="Catalog_BulkEdit" xml:space="preserve"><value>Bulk edit</value></data>
+  <data name="Catalog_Apply" xml:space="preserve"><value>Apply</value></data>
+  <data name="Catalog_SelectedCount" xml:space="preserve"><value>{0} products selected</value></data>
+  <data name="Catalog_BulkComplete" xml:space="preserve"><value>{0} products updated.</value></data>
+  <data name="Purchasing_Navigation" xml:space="preserve"><value>Purchases</value></data>
+  <data name="Purchasing_Title" xml:space="preserve"><value>Purchases and vendors</value></data>
+  <data name="Purchasing_Purchases" xml:space="preserve"><value>Purchases</value></data>
+  <data name="Purchasing_Vendors" xml:space="preserve"><value>Vendors</value></data>
+  <data name="Purchasing_Grn" xml:space="preserve"><value>GRN number</value></data>
+  <data name="Purchasing_Vendor" xml:space="preserve"><value>Vendor</value></data>
+  <data name="Purchasing_Invoice" xml:space="preserve"><value>Vendor invoice</value></data>
+  <data name="Purchasing_Received" xml:space="preserve"><value>Received date</value></data>
+  <data name="Purchasing_Status" xml:space="preserve"><value>Status</value></data>
+  <data name="Purchasing_Total" xml:space="preserve"><value>Total</value></data>
+  <data name="Purchasing_Phone" xml:space="preserve"><value>Phone</value></data>
+  <data name="Purchasing_Balance" xml:space="preserve"><value>Balance due</value></data>
+  <data name="Stock_Navigation" xml:space="preserve"><value>Stock</value></data>
+  <data name="Stock_Title" xml:space="preserve"><value>Stock and lots</value></data>
+  <data name="Stock_Overview" xml:space="preserve"><value>Overview</value></data>
+  <data name="Stock_Lots" xml:space="preserve"><value>Lots</value></data>
+  <data name="Stock_Quantity" xml:space="preserve"><value>Quantity</value></data>
+  <data name="Stock_CostValue" xml:space="preserve"><value>Value at cost</value></data>
+  <data name="Stock_Reorder" xml:space="preserve"><value>Reorder level</value></data>
+  <data name="Stock_Low" xml:space="preserve"><value>Low stock</value></data>
+  <data name="Stock_LotCode" xml:space="preserve"><value>Lot code</value></data>
+  <data name="Stock_Batch" xml:space="preserve"><value>Batch</value></data>
+  <data name="Stock_Expiry" xml:space="preserve"><value>Expiry</value></data>
+  <data name="Stock_OnHand" xml:space="preserve"><value>On hand</value></data>
+  <data name="Stock_UnitCost" xml:space="preserve"><value>Unit cost</value></data>
+  <data name="Stock_Refresh" xml:space="preserve"><value>Refresh</value></data>
+  <data name="Error_InsufficientStock" xml:space="preserve"><value>There is not enough stock in the available lots.</value></data>
+  <data name="Error_NoLotForProduct" xml:space="preserve"><value>This product has no stock lot.</value></data>
+  <data name="Error_FractionalQtyNotAllowed" xml:space="preserve"><value>This product requires a whole quantity.</value></data>
+  <data name="Error_PurchaseFinalized" xml:space="preserve"><value>A posted or cancelled purchase cannot be edited.</value></data>
+  <data name="Error_DuplicateVendorBill" xml:space="preserve"><value>This vendor invoice has already been entered.</value></data>
+  <data name="Error_PeriodLocked" xml:space="preserve"><value>This date is in a locked accounting period.</value></data>
+  <data name="Error_EmptyBill" xml:space="preserve"><value>Add at least one line before posting.</value></data>
+  <data name="Error_CancelNotAllowed" xml:space="preserve"><value>This purchase cannot be cancelled because stock from one or more lots has changed.</value></data>
+  <data name="Purchasing_NewVendor" xml:space="preserve"><value>New vendor</value></data>
+  <data name="Purchasing_Contact" xml:space="preserve"><value>Contact person</value></data>
+  <data name="Purchasing_AltPhone" xml:space="preserve"><value>Alternate phone</value></data>
+  <data name="Purchasing_Email" xml:space="preserve"><value>Email</value></data>
+  <data name="Purchasing_Pincode" xml:space="preserve"><value>Pincode</value></data>
+  <data name="Purchasing_City" xml:space="preserve"><value>City</value></data>
+  <data name="Purchasing_State" xml:space="preserve"><value>State</value></data>
+  <data name="Purchasing_Address" xml:space="preserve"><value>Address</value></data>
+  <data name="Purchasing_Upi" xml:space="preserve"><value>UPI ID</value></data>
+  <data name="Purchasing_Terms" xml:space="preserve"><value>Payment terms (days)</value></data>
+  <data name="Purchasing_Bank" xml:space="preserve"><value>Bank details</value></data>
+  <data name="Purchasing_OpeningBalance" xml:space="preserve"><value>Opening balance</value></data>
+  <data name="Purchasing_Notes" xml:space="preserve"><value>Notes</value></data>
+  <data name="Purchasing_NewPurchase" xml:space="preserve"><value>New purchase</value></data>
+  <data name="Purchasing_Payment" xml:space="preserve"><value>Vendor payment</value></data>
+  <data name="Purchasing_Amount" xml:space="preserve"><value>Amount</value></data>
+  <data name="Purchasing_Mode" xml:space="preserve"><value>Payment mode</value></data>
+  <data name="Purchasing_Reference" xml:space="preserve"><value>Reference</value></data>
+  <data name="Purchasing_InvoiceDate" xml:space="preserve"><value>Invoice date</value></data>
+  <data name="Purchasing_FreeQty" xml:space="preserve"><value>Free qty</value></data>
+  <data name="Purchasing_Rate" xml:space="preserve"><value>Rate</value></data>
+  <data name="Purchasing_Discount" xml:space="preserve"><value>Discount</value></data>
+  <data name="Purchasing_Gst" xml:space="preserve"><value>GST %</value></data>
+  <data name="Purchasing_OtherCharges" xml:space="preserve"><value>Other charges</value></data>
+  <data name="Purchasing_BillTotal" xml:space="preserve"><value>Vendor bill total</value></data>
+  <data name="Purchasing_SaveDraft" xml:space="preserve"><value>Save draft</value></data>
+  <data name="Purchasing_Post" xml:space="preserve"><value>Post</value></data>
+  <data name="Stock_OpeningImport" xml:space="preserve"><value>Import opening stock</value></data>
+  <data name="Stock_Adjust" xml:space="preserve"><value>Adjust stock</value></data>
+  <data name="Stock_Count" xml:space="preserve"><value>Stock count</value></data>
+  <data name="Stock_AdjustQuantity" xml:space="preserve"><value>Quantity change (+ or −)</value></data>
+  <data name="Stock_Reason" xml:space="preserve"><value>Reason</value></data>
+  <data name="Stock_CountHint" xml:space="preserve"><value>Enter the physical quantity for every lot. Posting records only the differences.</value></data>
+  <data name="Stock_Expected" xml:space="preserve"><value>Expected</value></data>
+  <data name="Stock_Counted" xml:space="preserve"><value>Counted</value></data>
+  <data name="Stock_Difference" xml:space="preserve"><value>Difference</value></data>
+  <data name="Purchasing_CancelPurchase" xml:space="preserve"><value>Cancel purchase</value></data>
+  <data name="Stock_Ledger" xml:space="preserve"><value>Stock ledger</value></data>
+  <data name="Stock_ChangePrice" xml:space="preserve"><value>Change price</value></data>
+  <data name="Stock_BlockToggle" xml:space="preserve"><value>Block / unblock lot</value></data>
+  <data name="Stock_PrintCount" xml:space="preserve"><value>Print count sheet</value></data>
+  <data name="Stock_Valuation" xml:space="preserve"><value>Valuation</value></data>
+  <data name="Stock_SellingValue" xml:space="preserve"><value>Value at selling price</value></data>
+  <data name="Stock_MrpValue" xml:space="preserve"><value>Value at MRP</value></data>
+  <data name="Stock_OpeningTemplate" xml:space="preserve"><value>Save opening template</value></data>
+  <data name="Stock_TemplateSaved" xml:space="preserve"><value>Opening-stock template saved.</value></data>
 </root>
