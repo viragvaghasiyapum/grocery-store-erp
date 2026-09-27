@@ -3452,7 +3452,7 @@ Last updated: **27 September 2026**
 | 4 — POS | **Functionally implemented; hardware verification remains** | Persistent draft bills, scanner bursts, quantity/price labels, FEFO, transactional repricing and completion, cash/UPI/split payments, hold/resume, void, exact pro-rata returns, non-resellable return damage, raster receipt printing, reprints, sales history and day-end are implemented. Operation IDs protect completion, void and return from duplicate submission. Golden completion, replay, return, damage, void-protection and day-end tests pass. Remaining exit work is physical receipt-printer/cash-drawer verification, a real power-pull test, performance measurement on store hardware and native Gujarati review. |
 | 5 — Money out | **Complete** | Migration 005 adds replay-safe bulk damage grouping, one regular salary per employee/month, expiry-view hardening and immutability guards for posted damages/depreciation. Searchable damage entry and bulk expiry write-off; active-lot expiry tabs, badge, daily popup, mark-down/block/vendor-list actions; complete expense drafts/categories/repeat-last-month; employees, adjustable salary runs and advances; asset register, exact WDV/SLM depreciation posting and disposal are implemented with period locks, operation idempotency and audit. Damages, salaries, depreciation, expense categories and disposal gains/losses flow through `v_pnl_entry`. The documented depreciation example and integration scenarios pass. Report presentation and the full native Gujarati review remain explicitly owned by Phases 6 and 7. |
 | 6 — Insight | **Complete** | Typed P&amp;L statements for arbitrary periods, fiscal-period helpers, monthly and salary matrices, posted/projected asset schedules, independently loaded dashboard metrics, the full operational/accounting report catalog, numeric Excel export and paginated A4 preview/printing are implemented. The dashboard is the shell landing page and includes clickable summary tiles plus margin, trend, payment, expiry, low-stock, valuation, payable, backup and top-product insights. The golden P&amp;L scenario, matrix/schedule, complete query catalog, Excel numeric-format, A4 pagination and 20k-entry fiscal-year performance tests pass; the full Release suite has 57 passing tests. |
-| 7 — Hardening & release | **Not started** | Follow the phase scope and exit criteria above. |
+| 7 — Hardening & release | **Software scope implemented; external sign-offs remain** | Deterministic five-year data generation, pinned performance/UI tooling, pseudo-localization, weekly integrity/FTS/foreign-key checks, Velopack bootstrap and repeatable packaging, pre-backed-up USB updates, and a release/pilot checklist are implemented. The full-scale performance run, native Gujarati review, physical hardware/power-pull validation and live-store pilot require the target store environment. |
 
 Phase 0 checklist:
 
@@ -3547,6 +3547,22 @@ Phase 6 checklist:
 - [x] English/Gujarati resource coverage; native-speaker review remains owned by Phase 7
 - [x] Golden P&amp;L, matrix, complete query-catalog and Excel-format integration tests
 - [x] Fiscal-year P&amp;L stays below 500 ms with 20,000 entries
+
+Phase 7 checklist:
+
+- [x] Deterministic, scalable five-year synthetic data generator with documented full volumes
+- [x] Generated databases are verified for SQLite integrity, foreign keys and lot-cache reconciliation
+- [x] BenchmarkDotNet, Bogus and FlaUI dependencies pinned after package/license review
+- [x] Pseudo-localization mode available through `--pseudo`, with placeholder-preservation tests
+- [x] Weekly integrity, foreign-key and FTS checks are scheduled and audited
+- [x] Velopack runs before WPF startup; repeatable self-contained release script and pinned CLI added
+- [x] Local-folder/USB update flow takes a verified pre-update backup and remembers the folder
+- [x] Automated and store go-live checklists are versioned in `docs/release-checklist.md`
+- [ ] Full five-year performance run on the target mid-range store PC; results recorded per version
+- [ ] Full FlaUI operator-journey run against the packaged application
+- [ ] Native-speaker review of every Gujarati string and printed artifact
+- [ ] Scanner, printers, cutter, drawer, power-pull, display-scaling and second-PC restore sign-off
+- [ ] One-to-two-week store pilot and owner-approved cut-over
 
 ### 21.2 Definition of done (every feature)
 

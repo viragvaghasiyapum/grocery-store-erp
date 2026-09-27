@@ -21,4 +21,5 @@ jobs:
       - run: dotnet format GroceryErp.slnx --verify-no-changes --no-restore
       - run: dotnet build GroceryErp.slnx -c Release --no-restore
       - run: dotnet test GroceryErp.slnx -c Release --no-build
+      - run: dotnet run -c Release --no-build --project tools/GroceryErp.DataGen -- --scale=0.001 --output=artifacts/data/ci-smoke.db
 

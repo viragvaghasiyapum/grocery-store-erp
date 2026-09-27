@@ -394,4 +394,9 @@
   <data name="Reports_FilterSlowDays" xml:space="preserve"><value>ધીમા વેચાણના દિવસો</value></data>
   <data name="Reports_FilterEntity" xml:space="preserve"><value>ઓડિટ એકમ</value></data>
   <data name="Reports_FilterAction" xml:space="preserve"><value>ઓડિટ ક્રિયા</value></data>
+  <data name="Settings_Update_CheckFolder" xml:space="preserve"><value>USB માંથી અપડેટ કરો</value></data>
+  <data name="Settings_Update_SelectFolder" xml:space="preserve"><value>USB ડ્રાઇવ પર Releases ફોલ્ડર પસંદ કરો</value></data>
+  <data name="Settings_Update_None" xml:space="preserve"><value>આ ફોલ્ડરમાં નવું સંસ્કરણ મળ્યું નથી.</value></data>
+  <data name="Settings_Update_Confirm" xml:space="preserve"><value>સંસ્કરણ {0} ઇન્સ્ટોલ કરવું છે? એપ ફરી શરૂ થાય તે પહેલાં ચકાસાયેલ બેકઅપ બનશે.</value></data>
+  <data name="ReleaseNotes_Title" xml:space="preserve"><value>નવું શું છે</value></data>
 </root>

@@ -48,6 +48,17 @@ public sealed class LocalizationTests
         formatter.Date(new DateOnly(2026, 9, 22)).ShouldBe("22-09-2026");
     }
 
+    [Fact]
+    public void PseudoLocalization_ExpandsTextAndPreservesPlaceholders()
+    {
+        string transformed = PseudoLocalizer.Transform("Save {0}");
+
+        transformed.ShouldStartWith("[!! ");
+        transformed.ShouldContain("Šàvé");
+        transformed.ShouldContain("{0}");
+        transformed.Length.ShouldBeGreaterThan("Save {0}".Length);
+    }
+
     private static string[] GetKeys(ResourceSet resources) => resources
         .Cast<DictionaryEntry>()
         .Select(entry => entry.Key.ToString()!)

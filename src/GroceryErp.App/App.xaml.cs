@@ -83,6 +83,8 @@ public partial class App : Application
             builder.Services.AddSingleton<ReportService>();
             builder.Services.AddSingleton<ReportOutputService>();
             builder.Services.AddSingleton<ReportNavigationState>();
+            builder.Services.AddSingleton<UsbUpdateService>();
+            builder.Services.AddSingleton<ReleaseNotesService>();
             builder.Services.AddSingleton<ShellViewModel>();
             builder.Services.AddSingleton<ShellWindow>();
 
@@ -187,6 +189,13 @@ public partial class App : Application
             ShellWindow shell = _host.Services.GetRequiredService<ShellWindow>();
             MainWindow = shell;
             shell.Show();
+            ReleaseNotesService releaseNotesService = _host.Services.GetRequiredService<ReleaseNotesService>();
+            if (releaseNotesService.GetUnseen(TranslationSource.Instance.UiCulture) is { } releaseNotes)
+            {
+                MessageBox.Show(releaseNotes.Markdown, TranslationSource.Instance["ReleaseNotes_Title"],
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                await releaseNotesService.MarkSeenAsync(releaseNotes.Version);
+            }
             _maintenanceTask = Task.WhenAll(
                 maintenance.RunAfterShellAsync(),
                 _host.Services.GetRequiredService<AssetService>().PostDueDepreciationAsync());

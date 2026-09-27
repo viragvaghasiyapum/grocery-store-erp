@@ -50,18 +50,43 @@ public sealed class MaintenanceService(
         if (!HasBackupToday())
             backups.Create("daily");
 
-        await database.WriteAsync(transaction =>
+        if (await IsWeeklyIntegrityCheckDueAsync(cancellationToken).ConfigureAwait(false))
+            await RunWeeklyIntegrityChecksAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task<bool> IsWeeklyIntegrityCheckDueAsync(CancellationToken cancellationToken) =>
+        database.ReadAsync(connection =>
         {
-            transaction.Connection.Execute("PRAGMA optimize;", transaction: transaction.Transaction);
-            string integrity = transaction.Connection.ExecuteScalar<string>(
-                "PRAGMA integrity_check;", transaction: transaction.Transaction) ?? "";
+            string? raw = connection.ExecuteScalar<string?>(
+                "SELECT value FROM setting WHERE key = 'maintenance.integrity_last_run'");
+            return !DateOnly.TryParseExact(raw, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                       DateTimeStyles.None, out DateOnly previous) || previous > clock.BusinessDate ||
+                   previous.AddDays(7) <= clock.BusinessDate;
+        }, cancellationToken);
+
+    private async Task RunWeeklyIntegrityChecksAsync(CancellationToken cancellationToken)
+    {
+        await database.ReadAsync(connection =>
+        {
+            string integrity = connection.ExecuteScalar<string>("PRAGMA integrity_check;") ?? "";
             if (!string.Equals(integrity, "ok", StringComparison.OrdinalIgnoreCase))
                 throw new DomainException(ErrorCode.BackupInvalid, integrity);
+            if (connection.Query("PRAGMA foreign_key_check;").Any())
+                throw new DomainException(ErrorCode.BackupInvalid, "foreign key check failed");
             // FTS5 keeps a separate index; checking it with SQLite's supported command catches
             // stale or corrupt product search data before a user relies on search results.
-            transaction.Connection.Execute(
-                "INSERT INTO product_fts(product_fts) VALUES ('integrity-check');",
-                transaction: transaction.Transaction);
+            connection.Execute("INSERT INTO product_fts(product_fts) VALUES ('integrity-check');");
+            return true;
+        }, cancellationToken).ConfigureAwait(false);
+
+        await database.WriteAsync(transaction =>
+        {
+            string date = clock.BusinessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            transaction.Connection.Execute("""
+                INSERT INTO setting(key, value) VALUES ('maintenance.integrity_last_run', @date)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """, new { date }, transaction.Transaction);
+            auditLog.Write(transaction, "maintenance", 0, "INTEGRITY_CHECK", new { date, result = "ok" });
         }, cancellationToken).ConfigureAwait(false);
     }
 

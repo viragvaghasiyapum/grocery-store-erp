@@ -314,13 +314,13 @@ for later phases remain unpinned until they are actually added.
 | `ClosedXML` | 0.10x | Catalog (import), Reports (export) | MIT |
 | `Konscious.Security.Cryptography.Argon2` | 1.x | Settings (auth) | MIT |
 | `Serilog.Extensions.Hosting`, `Serilog.Sinks.File` | **10.0.0**, **7.0.0** | App | Apache-2.0 |
-| `Velopack` | latest | App | MIT |
+| `Velopack` | **1.2.158** | App | MIT |
 | `xunit.v3`, `Shouldly` | **4.0.1**, **4.3.0** | tests | Apache-2.0/BSD-3-Clause |
 | `Microsoft.NET.Test.Sdk` | **18.10.1** | tests | MIT |
 | `Microsoft.CodeAnalysis.BannedApiAnalyzers` | **5.6.0** | Core (build only) | MIT |
 | `Verify.XunitV3`, `FsCheck` (+ its xUnit v3 integration) | latest when introduced | tests | MIT/BSD |
-| `FlaUI.UIA3` | latest | UI tests | MIT |
-| `BenchmarkDotNet`, `Bogus` | latest | tools | MIT |
+| `FlaUI.UIA3` | **5.0.0** | UI tests | MIT |
+| `BenchmarkDotNet`, `Bogus` | **0.15.8**, **35.6.5** | tools | MIT |
 
 Check each license again at pin time; licenses of popular .NET packages have changed before.
 

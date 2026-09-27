@@ -16,6 +16,7 @@ public sealed class TranslationSource : INotifyPropertyChanged
 
     private readonly Dictionary<string, ResourceManager> _managers = new(StringComparer.Ordinal);
     private CultureInfo _uiCulture = CultureInfo.GetCultureInfo("en-IN");
+    private bool _pseudoLocalizationEnabled;
 
     private TranslationSource()
     {
@@ -30,6 +31,18 @@ public sealed class TranslationSource : INotifyPropertyChanged
 
     /// <inheritdoc />
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public bool PseudoLocalizationEnabled
+    {
+        get => _pseudoLocalizationEnabled;
+        set
+        {
+            if (_pseudoLocalizationEnabled == value) return;
+            _pseudoLocalizationEnabled = value;
+            OnPropertyChanged("Item[]");
+            OnPropertyChanged();
+        }
+    }
 
     /// <summary>Gets or sets the current supported UI culture.</summary>
     public CultureInfo UiCulture
@@ -63,7 +76,7 @@ public sealed class TranslationSource : INotifyPropertyChanged
     public void RegisterShared(ResourceManager manager)
     {
         ArgumentNullException.ThrowIfNull(manager);
-        foreach (string prefix in new[] { "Common", "Error", "Validation", "Enum", "Print", "Pnl", "App", "Shell", "Demo", "Setup", "Login", "Lock", "Startup", "Catalog", "Purchasing", "Stock", "Sales", "Receipt" })
+        foreach (string prefix in new[] { "Common", "Error", "Validation", "Enum", "Print", "Pnl", "App", "Shell", "Demo", "Setup", "Login", "Lock", "Startup", "Settings", "ReleaseNotes", "Catalog", "Purchasing", "Stock", "Sales", "Receipt" })
         {
             _managers[prefix] = manager;
         }
@@ -83,9 +96,10 @@ public sealed class TranslationSource : INotifyPropertyChanged
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentNullException.ThrowIfNull(culture);
         string prefix = key.Split('_', 2)[0];
-        return _managers.TryGetValue(prefix, out ResourceManager? manager)
+        string translated = _managers.TryGetValue(prefix, out ResourceManager? manager)
             ? manager.GetString(key, culture) ?? $"⟦{key}⟧"
             : $"⟦{key}⟧";
+        return _pseudoLocalizationEnabled ? PseudoLocalizer.Transform(translated) : translated;
     }
 
     /// <summary>Formats translated placeholders with the fixed English-number culture.</summary>

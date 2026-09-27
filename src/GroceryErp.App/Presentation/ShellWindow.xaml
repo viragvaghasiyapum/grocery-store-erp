@@ -32,6 +32,7 @@
             FontWeight="SemiBold"
             Text="{l:Tr App_Title}" />
         <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+          <Button x:Name="UpdateButton" Margin="0,0,16,0" Click="Update_OnClick" Content="{l:Tr Settings_Update_CheckFolder}" />
           <Button x:Name="LockButton" Margin="0,0,16,0" Click="Lock_OnClick" Content="{l:Tr Lock_Command}" />
           <TextBlock Margin="0,0,12,0" VerticalAlignment="Center" Text="{l:Tr Shell_Language}" />
           <Button Margin="0,0,8,0" Command="{Binding UseEnglishCommand}" Content="{l:Tr Shell_English}" />

@@ -172,6 +172,15 @@ public sealed class FoundationsTests
 
         Directory.Exists(expired).ShouldBeFalse();
         Directory.EnumerateFiles(backups.BackupDirectory, "*_daily.zip").ShouldNotBeEmpty();
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'maintenance.integrity_last_run'")
+            .ShouldNotBeNullOrWhiteSpace();
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity = 'maintenance' AND action = 'INTEGRITY_CHECK'")
+            .ShouldBe(1L);
+
+        await maintenance.RunAfterShellAsync(TestContext.Current.CancellationToken);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity = 'maintenance' AND action = 'INTEGRITY_CHECK'")
+            .ShouldBe(1L);
     }
 
     [Fact]

@@ -3,7 +3,14 @@
     <OutputType>WinExe</OutputType>
     <UseWPF>true</UseWPF>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <StartupObject>GroceryErp.App.Program</StartupObject>
   </PropertyGroup>
+  <ItemGroup>
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+    <EmbeddedResource Include="CHANGELOG.en.md" />
+    <EmbeddedResource Include="CHANGELOG.gu.md" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../GroceryErp.Localization/GroceryErp.Localization.csproj" />
     <ProjectReference Include="../GroceryErp.Data/GroceryErp.Data.csproj" />
@@ -23,5 +30,6 @@
     <PackageReference Include="Serilog.Extensions.Hosting" />
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="WPF-UI" />
+    <PackageReference Include="Velopack" />
   </ItemGroup>
 </Project>

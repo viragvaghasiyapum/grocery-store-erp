@@ -394,4 +394,9 @@
   <data name="Reports_FilterSlowDays" xml:space="preserve"><value>Slow-mover days</value></data>
   <data name="Reports_FilterEntity" xml:space="preserve"><value>Audit entity</value></data>
   <data name="Reports_FilterAction" xml:space="preserve"><value>Audit action</value></data>
+  <data name="Settings_Update_CheckFolder" xml:space="preserve"><value>Update from USB</value></data>
+  <data name="Settings_Update_SelectFolder" xml:space="preserve"><value>Select the Releases folder on the USB drive</value></data>
+  <data name="Settings_Update_None" xml:space="preserve"><value>No newer version was found in this folder.</value></data>
+  <data name="Settings_Update_Confirm" xml:space="preserve"><value>Install version {0}? A verified backup will be created before the app restarts.</value></data>
+  <data name="ReleaseNotes_Title" xml:space="preserve"><value>What's new</value></data>
 </root>
