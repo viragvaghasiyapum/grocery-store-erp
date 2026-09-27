@@ -258,4 +258,45 @@
   <data name="Stock_MrpValue" xml:space="preserve"><value>Value at MRP</value></data>
   <data name="Stock_OpeningTemplate" xml:space="preserve"><value>Save opening template</value></data>
   <data name="Stock_TemplateSaved" xml:space="preserve"><value>Opening-stock template saved.</value></data>
+  <data name="Sales_Pos_Navigation" xml:space="preserve"><value>Billing (POS)</value></data>
+  <data name="Sales_History_Navigation" xml:space="preserve"><value>Sales history</value></data>
+  <data name="Sales_Pos_Title" xml:space="preserve"><value>Billing</value></data>
+  <data name="Sales_History_Title" xml:space="preserve"><value>Sales history</value></data>
+  <data name="Sales_Scan_Hint" xml:space="preserve"><value>Scan barcode or search (F3)</value></data>
+  <data name="Sales_Gross" xml:space="preserve"><value>Gross</value></data>
+  <data name="Sales_Pay" xml:space="preserve"><value>Pay</value></data>
+  <data name="Sales_Cash" xml:space="preserve"><value>F9 Cash</value></data>
+  <data name="Sales_Upi" xml:space="preserve"><value>F10 UPI</value></data>
+  <data name="Sales_Split" xml:space="preserve"><value>F11 Split</value></data>
+  <data name="Sales_New" xml:space="preserve"><value>F2 New bill</value></data>
+  <data name="Sales_Quantity" xml:space="preserve"><value>F4 Quantity</value></data>
+  <data name="Sales_LineDiscount" xml:space="preserve"><value>F5 Line discount</value></data>
+  <data name="Sales_BillDiscount" xml:space="preserve"><value>F6 Bill discount</value></data>
+  <data name="Sales_Remove" xml:space="preserve"><value>Delete line</value></data>
+  <data name="Sales_Hold" xml:space="preserve"><value>F7 Hold</value></data>
+  <data name="Sales_Resume" xml:space="preserve"><value>F8 Resume</value></data>
+  <data name="Sales_Items" xml:space="preserve"><value>Items</value></data>
+  <data name="Sales_Reprint" xml:space="preserve"><value>Reprint</value></data>
+  <data name="Sales_Void" xml:space="preserve"><value>Void</value></data>
+  <data name="Sales_Return" xml:space="preserve"><value>Return</value></data>
+  <data name="Sales_DayEnd" xml:space="preserve"><value>Day-end summary</value></data>
+  <data name="Sales_Action" xml:space="preserve"><value>Sale action</value></data>
+  <data name="Sales_Resellable" xml:space="preserve"><value>Return to saleable stock</value></data>
+  <data name="Sales_Confirm" xml:space="preserve"><value>Confirm</value></data>
+  <data name="Error_PaymentShort" xml:space="preserve"><value>The payment does not cover the bill total.</value></data>
+  <data name="Error_OverpaymentNonCash" xml:space="preserve"><value>Change can only be returned when the payment includes cash.</value></data>
+  <data name="Error_ReturnQtyExceedsSold" xml:space="preserve"><value>The return quantity exceeds the remaining sold quantity.</value></data>
+  <data name="Error_VoidNotAllowed" xml:space="preserve"><value>This sale cannot be voided.</value></data>
+  <data name="Receipt_TaxInvoice" xml:space="preserve"><value>TAX INVOICE</value></data>
+  <data name="Receipt_BillOfSupply" xml:space="preserve"><value>BILL OF SUPPLY</value></data>
+  <data name="Receipt_Bill" xml:space="preserve"><value>BILL</value></data>
+  <data name="Receipt_Duplicate" xml:space="preserve"><value>DUPLICATE</value></data>
+  <data name="Receipt_Customer" xml:space="preserve"><value>Customer</value></data>
+  <data name="Receipt_Gross" xml:space="preserve"><value>Gross</value></data>
+  <data name="Receipt_Discount" xml:space="preserve"><value>Discount</value></data>
+  <data name="Receipt_RoundOff" xml:space="preserve"><value>Round off</value></data>
+  <data name="Receipt_Total" xml:space="preserve"><value>TOTAL</value></data>
+  <data name="Receipt_Savings" xml:space="preserve"><value>You saved</value></data>
+  <data name="Receipt_Change" xml:space="preserve"><value>Change</value></data>
+  <data name="Receipt_CompositionNotice" xml:space="preserve"><value>Composition taxable person, not eligible to collect tax on supplies</value></data>
 </root>

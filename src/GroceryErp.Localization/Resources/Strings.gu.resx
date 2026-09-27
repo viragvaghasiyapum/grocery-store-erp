@@ -258,4 +258,45 @@
   <data name="Stock_MrpValue" xml:space="preserve"><value>MRP મુજબ મૂલ્ય</value><comment>MT - needs review</comment></data>
   <data name="Stock_OpeningTemplate" xml:space="preserve"><value>શરૂઆતનું નમૂનું સાચવો</value><comment>MT - needs review</comment></data>
   <data name="Stock_TemplateSaved" xml:space="preserve"><value>શરૂઆતના સ્ટોકનું નમૂનું સાચવ્યું.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Pos_Navigation" xml:space="preserve"><value>બિલિંગ (POS)</value><comment>MT - needs review</comment></data>
+  <data name="Sales_History_Navigation" xml:space="preserve"><value>વેચાણ ઇતિહાસ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Pos_Title" xml:space="preserve"><value>બિલિંગ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_History_Title" xml:space="preserve"><value>વેચાણ ઇતિહાસ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Scan_Hint" xml:space="preserve"><value>બારકોડ સ્કેન કરો અથવા શોધો (F3)</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Gross" xml:space="preserve"><value>કુલ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Pay" xml:space="preserve"><value>ચૂકવો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Cash" xml:space="preserve"><value>F9 રોકડ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Upi" xml:space="preserve"><value>F10 UPI</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Split" xml:space="preserve"><value>F11 વિભાજિત</value><comment>MT - needs review</comment></data>
+  <data name="Sales_New" xml:space="preserve"><value>F2 નવું બિલ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Quantity" xml:space="preserve"><value>F4 જથ્થો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_LineDiscount" xml:space="preserve"><value>F5 લાઇન ડિસ્કાઉન્ટ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_BillDiscount" xml:space="preserve"><value>F6 બિલ ડિસ્કાઉન્ટ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Remove" xml:space="preserve"><value>લાઇન દૂર કરો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Hold" xml:space="preserve"><value>F7 હોલ્ડ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Resume" xml:space="preserve"><value>F8 ફરી શરૂ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Items" xml:space="preserve"><value>વસ્તુઓ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Reprint" xml:space="preserve"><value>ફરી છાપો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Void" xml:space="preserve"><value>રદ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Return" xml:space="preserve"><value>પરત</value><comment>MT - needs review</comment></data>
+  <data name="Sales_DayEnd" xml:space="preserve"><value>દિવસના અંતનો સારાંશ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Action" xml:space="preserve"><value>વેચાણ કાર્યવાહી</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Resellable" xml:space="preserve"><value>વેચાણયોગ્ય સ્ટોકમાં પરત કરો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Confirm" xml:space="preserve"><value>પુષ્ટિ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Error_PaymentShort" xml:space="preserve"><value>ચૂકવણી બિલની કુલ રકમ કરતાં ઓછી છે.</value><comment>MT - needs review</comment></data>
+  <data name="Error_OverpaymentNonCash" xml:space="preserve"><value>ચૂકવણીમાં રોકડ હોય ત્યારે જ બાકી રકમ પરત આપી શકાય.</value><comment>MT - needs review</comment></data>
+  <data name="Error_ReturnQtyExceedsSold" xml:space="preserve"><value>પરત જથ્થો બાકી વેચાયેલા જથ્થા કરતાં વધારે છે.</value><comment>MT - needs review</comment></data>
+  <data name="Error_VoidNotAllowed" xml:space="preserve"><value>આ વેચાણ રદ કરી શકાતું નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_TaxInvoice" xml:space="preserve"><value>કર ભરતિયું</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_BillOfSupply" xml:space="preserve"><value>પુરવઠાનું બિલ</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_Bill" xml:space="preserve"><value>બિલ</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_Duplicate" xml:space="preserve"><value>નકલ</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_Customer" xml:space="preserve"><value>ગ્રાહક</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_Gross" xml:space="preserve"><value>કુલ</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_Discount" xml:space="preserve"><value>ડિસ્કાઉન્ટ</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_RoundOff" xml:space="preserve"><value>રાઉન્ડ ઓફ</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_Total" xml:space="preserve"><value>ચૂકવવાપાત્ર</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_Savings" xml:space="preserve"><value>તમારી બચત</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_Change" xml:space="preserve"><value>પરત રકમ</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_CompositionNotice" xml:space="preserve"><value>કમ્પોઝિશન કરદાતા પુરવઠા પર કર વસૂલવા પાત્ર નથી</value><comment>MT - needs review</comment></data>
 </root>

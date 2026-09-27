@@ -1,0 +1,34 @@
+<Page x:Class="GroceryErp.App.Presentation.SalesHistoryPage"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+ Title="{l:Tr Sales_History_Title}">
+ <Grid Margin="24">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <StackPanel Orientation="Horizontal">
+   <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Sales_History_Title}"/>
+   <DatePicker x:Name="DatePicker" Width="150" Margin="24,0,0,0"/>
+   <Button Margin="8,0,0,0" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
+   <Button Margin="8,0,0,0" Click="DayEnd_OnClick" Content="{l:Tr Sales_DayEnd}"/>
+  </StackPanel>
+  <DataGrid x:Name="HistoryGrid" Grid.Row="1" Margin="0,16,0,12" AutoGenerateColumns="False"
+            IsReadOnly="True" CanUserAddRows="False" EnableRowVirtualization="True">
+   <DataGrid.Columns>
+    <DataGridTextColumn Width="160" Header="{l:Tr Purchasing_Invoice}" Binding="{Binding InvoiceNumber}"/>
+    <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Received}" Binding="{Binding SaleDate}"/>
+    <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Status}" Binding="{Binding Status}"/>
+    <DataGridTextColumn Width="100" Header="{l:Tr Sales_Items}" Binding="{Binding LineCount}"/>
+    <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Total}" Binding="{Binding GrandTotal}"/>
+    <DataGridTextColumn Width="*" Header="{l:Tr Purchasing_Mode}" Binding="{Binding PaymentModes}"/>
+   </DataGrid.Columns>
+  </DataGrid>
+  <Grid Grid.Row="2">
+   <TextBlock x:Name="StatusText" VerticalAlignment="Center"/>
+   <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+    <Button Margin="0,0,8,0" Click="Reprint_OnClick" Content="{l:Tr Sales_Reprint}"/>
+    <Button Margin="0,0,8,0" Click="Void_OnClick" Content="{l:Tr Sales_Void}"/>
+    <Button Click="Return_OnClick" Content="{l:Tr Sales_Return}"/>
+   </StackPanel>
+  </Grid>
+ </Grid>
+</Page>

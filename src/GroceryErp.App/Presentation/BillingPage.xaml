@@ -1,0 +1,58 @@
+<Page
+    x:Class="GroceryErp.App.Presentation.BillingPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    Title="{l:Tr Sales_Pos_Title}">
+  <Grid Margin="18">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <TextBox x:Name="ScanBox" Height="42" FontSize="20" KeyDown="ScanBox_OnKeyDown"
+               ToolTip="{l:Tr Sales_Scan_Hint}" />
+      <TextBlock Grid.Column="1" Margin="20,0,0,0" VerticalAlignment="Center"
+                 FontSize="18" Text="{Binding ElementName=BillGrid,Path=Items.Count,StringFormat={}{0} items}" />
+    </Grid>
+    <Grid Grid.Row="1" Margin="0,12,0,12">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="290"/></Grid.ColumnDefinitions>
+      <DataGrid x:Name="BillGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                SelectionMode="Single" RowHeight="52" EnableRowVirtualization="True">
+        <DataGrid.Columns>
+          <DataGridTextColumn Width="2*" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
+          <DataGridTextColumn Width="90" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
+          <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Price}" Binding="{Binding UnitPrice}"/>
+          <DataGridTextColumn Width="100" Header="{l:Tr Purchasing_Discount}" Binding="{Binding Discount}"/>
+          <DataGridTextColumn Width="110" Header="{l:Tr Purchasing_Total}" Binding="{Binding Total}"/>
+        </DataGrid.Columns>
+      </DataGrid>
+      <Border Grid.Column="1" Margin="14,0,0,0" Padding="18" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+        <StackPanel>
+          <TextBlock FontSize="18" Text="{l:Tr Sales_Gross}"/>
+          <TextBlock x:Name="GrossText" FontSize="22"/>
+          <TextBlock Margin="0,14,0,0" FontSize="18" Text="{l:Tr Purchasing_Discount}"/>
+          <TextBlock x:Name="DiscountText" FontSize="22"/>
+          <TextBlock Margin="0,14,0,0" FontSize="18" Text="{l:Tr Purchasing_Gst}"/>
+          <TextBlock x:Name="TaxText" FontSize="22"/>
+          <Separator Margin="0,16"/>
+          <TextBlock FontSize="20" FontWeight="SemiBold" Text="{l:Tr Sales_Pay}"/>
+          <TextBlock x:Name="TotalText" FontSize="36" FontWeight="Bold"/>
+          <Button Margin="0,18,0,0" Height="42" Click="Cash_OnClick" Content="{l:Tr Sales_Cash}"/>
+          <Button Margin="0,8,0,0" Height="42" Click="Upi_OnClick" Content="{l:Tr Sales_Upi}"/>
+          <Button Margin="0,8,0,0" Height="42" Click="Split_OnClick" Content="{l:Tr Sales_Split}"/>
+        </StackPanel>
+      </Border>
+    </Grid>
+    <Grid Grid.Row="2">
+      <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextWrapping="Wrap"/>
+      <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+        <Button Margin="0,0,8,0" Click="New_OnClick" Content="{l:Tr Sales_New}"/>
+        <Button Margin="0,0,8,0" Click="Quantity_OnClick" Content="{l:Tr Sales_Quantity}"/>
+        <Button Margin="0,0,8,0" Click="LineDiscount_OnClick" Content="{l:Tr Sales_LineDiscount}"/>
+        <Button Margin="0,0,8,0" Click="BillDiscount_OnClick" Content="{l:Tr Sales_BillDiscount}"/>
+        <Button Margin="0,0,8,0" Click="Delete_OnClick" Content="{l:Tr Sales_Remove}"/>
+        <Button Margin="0,0,8,0" Click="Hold_OnClick" Content="{l:Tr Sales_Hold}"/>
+        <Button Click="Resume_OnClick" Content="{l:Tr Sales_Resume}"/>
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Page>

@@ -3449,7 +3449,8 @@ Last updated: **27 September 2026**
 | 1 — Foundations | **Foundation implemented; presentation hardening remains** | Paths, SQLite/Dapper infrastructure, migrations 001–003, fixed-point numerics, errors, clock/FY helpers, document numbers, typed settings, audit, operation guard, authentication, login/idle lock, localized first-run wizard, startup/shutdown maintenance, verified backup sets, restore apply/undo and recovery are implemented. Release build: 0 warnings/errors; 18 tests pass. Remaining work is tracked below. |
 | 2 — Catalog & barcodes | **Functionally implemented; hardware verification remains** | Product/master CRUD, audit, FTS/prefix search, filters, category/brand/unit/tax management, EAN/internal/scale/GS1 barcode handling, scan resolution, Excel dry-run/import, bulk category/tax changes, label preview, TSPL generation, `.prn` export and RAW Windows spooling are implemented. The repeatable benchmark imports 20k products in 14.955 s and searches at 2.772 ms p95. Remaining exit work requires a physical label printer/scanner: calibrate the configured stock, verify Gujarati font/raster behavior on the model, and confirm scans from 30 cm. |
 | 3 — Stock-in | **Functionally implemented; hardware verification remains** | Migration 004 adds durable stock-count snapshots and printed vendor-bill totals. Vendor CRUD, purchase drafts/posting/cancellation, landed cost, vendor payments/ledger, lot/stock views, FEFO, opening-stock Excel dry run/import, price/block controls, manual adjustments, durable stock counts, and printable count sheets are implemented with operation idempotency, period guards, audit and stock notifications. The localized shell provides vendor, GRN/posting, payment, opening-import, lot price/block, adjustment, ledger and count-entry workflows. Golden purchase, cancellation, payment, FEFO, opening-stock and concurrent-count reconciliation tests pass. Remaining exit work is physical lot-label verification inherited from Phase 2 and native Gujarati review. |
-| 4–7 | **Not started** | Follow the phase scopes and exit criteria above. |
+| 4 — POS | **Functionally implemented; hardware verification remains** | Persistent draft bills, scanner bursts, quantity/price labels, FEFO, transactional repricing and completion, cash/UPI/split payments, hold/resume, void, exact pro-rata returns, non-resellable return damage, raster receipt printing, reprints, sales history and day-end are implemented. Operation IDs protect completion, void and return from duplicate submission. Golden completion, replay, return, damage, void-protection and day-end tests pass. Remaining exit work is physical receipt-printer/cash-drawer verification, a real power-pull test, performance measurement on store hardware and native Gujarati review. |
+| 5–7 | **Not started** | Follow the phase scopes and exit criteria above. |
 
 Phase 0 checklist:
 
@@ -3489,6 +3490,25 @@ Phase 1 checklist:
 - [ ] Full restore picker with current-vs-backup comparison and typed `RESTORE` confirmation
 - [ ] USB export flow and shell backup-status indicator
 - [ ] Complete public Core/Data XML documentation and native-speaker Gujarati review
+
+Phase 4 checklist:
+
+- [x] Persistent drafts with immediate line, quantity and discount repricing
+- [x] Scanner bursts, barcode/SKU search, quantity prefix and price-label quantity
+- [x] FEFO allocation with whole-unit, expiry, blocked-lot and stock validation
+- [x] Pure fx3 pricing with proportional bill discount, GST and round-off
+- [x] Cash, UPI and split payments with tender/change validation
+- [x] Idempotent completion, document numbering and stock movements
+- [x] Hold/resume with stock validation and refreshed lot prices
+- [x] Same-day void reversal with reason, audit and return protection
+- [x] Exact pro-rata returns with resellable and customer-return damage paths
+- [x] Raster ESC/POS receipts, duplicate reprints, cutter and drawer commands
+- [x] Keyset sales history and day-end payment/refund/cash totals
+- [x] English/Gujarati POS resources and English-digit receipt formatting
+- [x] Golden completion, replay, return, damage, void and day-end tests
+- [ ] Physical printer, cutter, drawer and bilingual receipt verification
+- [ ] Power-pull and scan-to-line performance verification on store hardware
+- [ ] Native Gujarati review of Phase 4 strings
 
 ### 21.2 Definition of done (every feature)
 

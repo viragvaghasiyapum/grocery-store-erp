@@ -13,6 +13,7 @@ using GroceryErp.Inventory;
 using GroceryErp.Inventory.Contracts;
 using GroceryErp.Localization;
 using GroceryErp.Purchasing;
+using GroceryErp.Sales;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
@@ -72,6 +73,8 @@ public partial class App : Application
             builder.Services.AddSingleton<InventoryService>();
             builder.Services.AddSingleton<OpeningStockExcelImporter>();
             builder.Services.AddSingleton<PurchasingService>();
+            builder.Services.AddSingleton<SalesService>();
+            builder.Services.AddSingleton<ReceiptPrinter>();
             builder.Services.AddSingleton<ShellViewModel>();
             builder.Services.AddSingleton<ShellWindow>();
 

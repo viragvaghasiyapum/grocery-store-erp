@@ -12,6 +12,7 @@
     <ProjectReference Include="../Modules/GroceryErp.Catalog/GroceryErp.Catalog.csproj" />
     <ProjectReference Include="../Modules/GroceryErp.Inventory/GroceryErp.Inventory.csproj" />
     <ProjectReference Include="../Modules/GroceryErp.Purchasing/GroceryErp.Purchasing.csproj" />
+    <ProjectReference Include="../Modules/GroceryErp.Sales/GroceryErp.Sales.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />

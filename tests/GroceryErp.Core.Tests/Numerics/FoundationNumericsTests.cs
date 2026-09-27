@@ -28,6 +28,24 @@ public sealed class FoundationNumericsTests
         shares.Select(static share => share.Scaled).ShouldBe([334L, 333L, 333L]);
     }
 
+    [Fact]
+    public void PricingEngine_AllocatesDiscountAndReconcilesInclusiveTax()
+    {
+        PricedBill bill = PricingEngine.Price(
+        [
+            new(1, 11, new Quantity(2), new Money(118), new Money(120), new Percent(18),
+                true, new Money(10), new Money(70)),
+            new(2, 12, Quantity.One, new Money(50), null, Percent.Zero,
+                true, Money.Zero, new Money(25)),
+        ], new Money(12), new Money(1));
+
+        bill.Gross.ShouldBe(new Money(286));
+        bill.Discount.ShouldBe(new Money(22));
+        bill.GrandTotal.ShouldBe(new Money(264));
+        (bill.Taxable + bill.Tax + bill.RoundOff).ShouldBe(bill.GrandTotal);
+        bill.Lines.Sum(static line => line.Discount.Scaled).ShouldBe(22000L);
+    }
+
     [Theory]
     [InlineData("2026-03-31", 4, "2025-26", "2526")]
     [InlineData("2026-04-01", 4, "2026-27", "2627")]
