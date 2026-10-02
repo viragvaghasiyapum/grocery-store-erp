@@ -10,11 +10,12 @@ public interface ISettingsBootstrap
 
 public sealed record SettingsBootstrap(string? DataRoot) : ISettingsBootstrap
 {
-    public static SettingsBootstrap Load()
+    public static string FilePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GroceryErp.boot.json");
+
+    public static SettingsBootstrap Load(string? filePath = null)
     {
-        string path = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "GroceryErp.boot.json");
+        string path = filePath ?? FilePath;
         if (!File.Exists(path)) return new SettingsBootstrap((string?)null);
         try
         {
@@ -24,6 +25,17 @@ public sealed record SettingsBootstrap(string? DataRoot) : ISettingsBootstrap
         {
             throw new DomainException(ErrorCode.Validation, "Invalid bootstrap file", exception.Message);
         }
+    }
+
+    public static void Save(string dataRoot, string? filePath = null)
+    {
+        string path = filePath ?? FilePath;
+        string fullRoot = Path.GetFullPath(dataRoot);
+        AppPaths.RejectCloudSynchronizedPath(fullRoot);
+        Directory.CreateDirectory(Path.GetDirectoryName(path) ?? throw new ArgumentException("Invalid bootstrap path."));
+        string partial = path + ".partial";
+        File.WriteAllText(partial, JsonSerializer.Serialize(new SettingsBootstrap(fullRoot)));
+        File.Move(partial, path, overwrite: true);
     }
 }
 

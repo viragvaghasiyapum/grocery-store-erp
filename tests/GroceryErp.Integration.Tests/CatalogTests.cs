@@ -41,6 +41,7 @@ public sealed class CatalogTests
     public void Gs1_ParsesGtinExpiryAndBatch()
     {
         Gs1.TryParse("]d201040063813339311726123110BATCH7", out Gs1Data parsed).ShouldBeTrue();
+        Gs1.TryParse("]x001040063813339311726123110BATCH7", out _).ShouldBeFalse();
         parsed.Gtin.ShouldBe("04006381333931");
         parsed.Expiry.ShouldBe(new DateOnly(2026, 12, 31));
         parsed.Batch.ShouldBe("BATCH7");
@@ -99,6 +100,23 @@ public sealed class CatalogTests
     }
 
     [Fact]
+    public async Task AttachBarcode_IsIdempotentAndReportsExistingOwner()
+    {
+        using var fixture = new CatalogFixture();
+        long first = await fixture.Service.CreateAsync(fixture.Product("First product", "first"), TestContext.Current.CancellationToken);
+        long second = await fixture.Service.CreateAsync(fixture.Product("Second product", "second"), TestContext.Current.CancellationToken);
+
+        (await fixture.Service.AttachBarcodeAsync(first, "4006381333931", TestContext.Current.CancellationToken)).ShouldBeNull();
+        (await fixture.Service.AttachBarcodeAsync(first, "4006381333931", TestContext.Current.CancellationToken)).ShouldBeNull();
+        BarcodeOwner? owner = await fixture.Service.AttachBarcodeAsync(second, "4006381333931", TestContext.Current.CancellationToken);
+        owner.ShouldNotBeNull();
+        owner.ProductId.ShouldBe(first);
+        owner.ProductName.ShouldBe("First product");
+        (await fixture.Service.GetAsync(second, TestContext.Current.CancellationToken)).Product.Barcodes.ShouldBeEmpty();
+        (await fixture.Service.GetAsync(first, TestContext.Current.CancellationToken)).Product.Barcodes.Count.ShouldBe(1);
+    }
+
+    [Fact]
     public async Task ScanResolver_ResolvesExactBarcodeAndTypedSku()
     {
         using var fixture = new CatalogFixture();
@@ -130,7 +148,48 @@ public sealed class CatalogTests
         command.ShouldContain("BARCODE 24,82");
         command.ShouldContain("Rs 27.50");
         command.ShouldContain("MRP 30.00");
+        command.ShouldContain("BITMAP 24,48,55,30,0,");
         command.ShouldEndWith("PRINT 1,3\r\n");
+    }
+
+    [Fact]
+    public void TsplLabel_BatchIncludesAllThreeTemplates()
+    {
+        byte[] bytes = TsplLabelBuilder.BuildBatch(
+        [new("Salt", null, "4006381333931", 27.5m, 30m, Copies: 2, Template: TsplLabelTemplate.Price),
+         new("Salt", null, "4006381333931", 27.5m, 30m, Template: TsplLabelTemplate.BarcodePrice),
+         new("Salt", null, "4006381333931", 27.5m, 30m, Template: TsplLabelTemplate.ShelfEdge)]);
+        string command = System.Text.Encoding.UTF8.GetString(bytes);
+        command.Split("SIZE 60 mm,40 mm", StringSplitOptions.None).Length.ShouldBe(4);
+        command.ShouldContain("BARCODE 24,82,\"128\",48");
+        command.ShouldContain("BARCODE 24,82,\"128\",72");
+        command.ShouldContain("BARCODE 24,130,\"128\",46");
+        command.ShouldContain("PRINT 1,2");
+        string largeBatch = System.Text.Encoding.UTF8.GetString(TsplLabelBuilder.BuildBatch(
+            [new("Salt", null, "4006381333931", 27.5m, 30m, Copies: 1200)]));
+        largeBatch.ShouldContain("PRINT 1,999");
+        largeBatch.ShouldContain("PRINT 1,201");
+    }
+
+    [Fact]
+    public async Task LotBarcode_GeneratedOnceAndScansToExactLot()
+    {
+        using var fixture = new CatalogFixture();
+        long productId = await fixture.Service.CreateAsync(fixture.Product("Lot label", "lot"), TestContext.Current.CancellationToken);
+        long lotId;
+        using (var connection = fixture.Factory.Open())
+            lotId = connection.ExecuteScalar<long>("""
+                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,mrp,selling_price)
+                VALUES (@productId,'L000001','2026-09-26',50000,60000,55000) RETURNING id
+                """, new { productId });
+
+        string barcode = await fixture.Service.EnsureLotBarcodeAsync(lotId, "20", TestContext.Current.CancellationToken);
+        (await fixture.Service.EnsureLotBarcodeAsync(lotId, "20", TestContext.Current.CancellationToken)).ShouldBe(barcode);
+        ScanResult result = await new ScanResolver(fixture.Database).ResolveAsync(barcode, TestContext.Current.CancellationToken);
+        result.ProductId.ShouldBe(productId);
+        result.LotId.ShouldBe(lotId);
+        using var check = fixture.Factory.Open();
+        check.ExecuteScalar<long>("SELECT COUNT(*) FROM product_barcode WHERE lot_id=@lotId", new { lotId }).ShouldBe(1);
     }
 
     [Fact]
@@ -158,10 +217,85 @@ public sealed class CatalogTests
     }
 
     [Fact]
+    public async Task Product_Update_PreservesBarcodePackAndInternalSource()
+    {
+        using var fixture = new CatalogFixture();
+        ProductInput input = fixture.Product("Pack Product", "pack") with
+        {
+            Barcodes = [new("4006381333931", new Quantity(6), "EAN13", true, "INTERNAL")],
+            ExpiryAlertDays = 0,
+        };
+        long id = await fixture.Service.CreateAsync(input, TestContext.Current.CancellationToken);
+        ProductDetails loaded = await fixture.Service.GetAsync(id, TestContext.Current.CancellationToken);
+        loaded.Product.Barcodes.Single().PackQuantity.ShouldBe(new Quantity(6));
+        loaded.Product.Barcodes.Single().Source.ShouldBe("INTERNAL");
+        loaded.Product.ExpiryAlertDays.ShouldBe(0);
+
+        await fixture.Service.UpdateAsync(id, loaded.Product with { Name = "Renamed Pack" }, TestContext.Current.CancellationToken);
+        ProductDetails updated = await fixture.Service.GetAsync(id, TestContext.Current.CancellationToken);
+        updated.Product.Barcodes.Single().PackQuantity.ShouldBe(new Quantity(6));
+        updated.Product.Barcodes.Single().Source.ShouldBe("INTERNAL");
+    }
+
+    [Fact]
+    public async Task Category_ReparentWithDescendants_RejectsFourthLevel()
+    {
+        using var fixture = new CatalogFixture();
+        long root = await fixture.Service.CreateCategoryAsync(new("Root A", null, null, null), TestContext.Current.CancellationToken);
+        long child = await fixture.Service.CreateCategoryAsync(new("Child A", null, root, null), TestContext.Current.CancellationToken);
+        long grandchild = await fixture.Service.CreateCategoryAsync(new("Grandchild A", null, child, null), TestContext.Current.CancellationToken);
+        long otherRoot = await fixture.Service.CreateCategoryAsync(new("Root B", null, null, null), TestContext.Current.CancellationToken);
+        long otherChild = await fixture.Service.CreateCategoryAsync(new("Child B", null, otherRoot, null), TestContext.Current.CancellationToken);
+        await Should.ThrowAsync<DomainException>(() => fixture.Service.UpdateCategoryAsync(
+            child, new("Child A", null, otherChild, null), TestContext.Current.CancellationToken));
+        (await fixture.Service.GetCategoriesAsync(TestContext.Current.CancellationToken)).Single(item => item.Id == grandchild).ParentId.ShouldBe(child);
+    }
+
+    [Fact]
+    public async Task Product_LooseRequiresFractionalUnit_AndLowStockExcludesZeroThreshold()
+    {
+        using var fixture = new CatalogFixture();
+        await Should.ThrowAsync<DomainException>(() => fixture.Service.CreateAsync(
+            fixture.Product("Loose PCS", "loose") with { IsLoose = true, PluCode = "77" }, TestContext.Current.CancellationToken));
+        long id = await fixture.Service.CreateAsync(fixture.Product("Normal PCS", "normal"), TestContext.Current.CancellationToken);
+        (await fixture.Service.SearchAsync(new ProductSearchFilter(LowStockOnly: true), TestContext.Current.CancellationToken))
+            .ShouldNotContain(item => item.Id == id);
+    }
+
+    [Fact]
+    public async Task InternalBarcode_RepeatedGenerate_ReturnsExistingCode()
+    {
+        using var fixture = new CatalogFixture();
+        long id = await fixture.Service.CreateAsync(fixture.Product("Internal Label", "label"), TestContext.Current.CancellationToken);
+        string first = await fixture.Service.GenerateInternalBarcodeAsync(id, "20", TestContext.Current.CancellationToken);
+        string second = await fixture.Service.GenerateInternalBarcodeAsync(id, "20", TestContext.Current.CancellationToken);
+        second.ShouldBe(first);
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product_barcode WHERE product_id=@id", new { id }).ShouldBe(1L);
+    }
+
+    [Fact]
+    public async Task CatalogSearch_GujaratiDigitsAndShortLocalPrefix_FindProduct()
+    {
+        using var fixture = new CatalogFixture();
+        long id = await fixture.Service.CreateAsync(fixture.Product("Salt 123", "salt") with
+        {
+            NameLocal = "મીઠું",
+            Sku = "SKU123",
+        }, TestContext.Current.CancellationToken);
+        (await fixture.Service.SearchAsync(new ProductSearchFilter("SKU૧૨૩"), TestContext.Current.CancellationToken))
+            .Single().Id.ShouldBe(id);
+        (await fixture.Service.SearchAsync(new ProductSearchFilter("મી"), TestContext.Current.CancellationToken))
+            .Single().Id.ShouldBe(id);
+    }
+
+    [Fact]
     public async Task CategoryHierarchy_RejectsMoreThanThreeLevelsAndAuditsMasters()
     {
         using var fixture = new CatalogFixture();
         long root = await fixture.Service.CreateCategoryAsync(new("Food", "ખોરાક", null, 30), TestContext.Current.CancellationToken);
+        (await fixture.Service.GetCategoriesAsync(TestContext.Current.CancellationToken))
+            .Single(item => item.Id == root).ExpiryAlertDays.ShouldBe(30);
         long child = await fixture.Service.CreateCategoryAsync(new("Dry Food", null, root, null), TestContext.Current.CancellationToken);
         long grandchild = await fixture.Service.CreateCategoryAsync(new("Flour", null, child, null), TestContext.Current.CancellationToken);
 
@@ -212,6 +346,13 @@ public sealed class CatalogTests
         preview.Rows[1].Errors.ShouldContain(static error => error.Contains("Unit", StringComparison.Ordinal));
         preview.Rows[1].Errors.ShouldContain(static error => error.Contains("check digit", StringComparison.Ordinal));
         preview.Rows[1].Errors.ShouldContain(static error => error.Contains("exceed MRP", StringComparison.Ordinal));
+        string errorsPath = Path.Combine(fixture.Root, "import-errors.xlsx");
+        ProductExcelImporter.WriteErrors(errorsPath, preview);
+        using (var errorsWorkbook = new XLWorkbook(errorsPath))
+        {
+            errorsWorkbook.Worksheet(1).Cell(2, 1).GetValue<int>().ShouldBe(3);
+            errorsWorkbook.Worksheet(1).Cell(2, 3).GetString().ShouldContain("Unit");
+        }
 
         string operationId = OperationGuard.NewId();
         ProductImportSummary summary = await importer.ImportAsync(preview, operationId, cancellationToken: TestContext.Current.CancellationToken);
@@ -224,6 +365,31 @@ public sealed class CatalogTests
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM category WHERE name IN ('Food','Flour')").ShouldBe(2L);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM brand WHERE name='Brand A'").ShouldBe(1L);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity='product_import'").ShouldBe(1L);
+    }
+
+    [Fact]
+    public async Task ExcelImport_DryRunFlagsOutOfRangeAndOverPreciseValues()
+    {
+        using var fixture = new CatalogFixture();
+        string path = Path.Combine(fixture.Root, "extreme-products.xlsx");
+        ProductExcelImporter.WriteTemplate(path);
+        using (var workbook = new XLWorkbook(path))
+        {
+            IXLWorksheet row = workbook.Worksheet(1);
+            row.Cell(2, 1).Value = "EXTREME";
+            row.Cell(2, 2).Value = "Extreme Item";
+            row.Cell(2, 5).Value = "Food";
+            row.Cell(2, 8).Value = "PCS";
+            row.Cell(2, 9).Value = "1001";
+            row.Cell(2, 10).Value = "999999999999999999999999";
+            row.Cell(2, 12).Value = "12.1234";
+            workbook.Save();
+        }
+        var importer = new ProductExcelImporter(fixture.Database, new AuditLog(), fixture.Settings);
+        ProductImportPreview preview = await importer.DryRunAsync(path, TestContext.Current.CancellationToken);
+        preview.ErrorCount.ShouldBe(1);
+        preview.Rows[0].Errors.ShouldContain(static error => error.Contains("between 0 and 100", StringComparison.Ordinal));
+        preview.Rows[0].Errors.ShouldContain(static error => error.Contains("three decimal", StringComparison.Ordinal));
     }
 
     [Fact]

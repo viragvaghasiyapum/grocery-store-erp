@@ -40,6 +40,20 @@ public sealed class LocalizationTests
     }
 
     [Fact]
+    public void EverySharedResourceKey_ResolvesThroughTranslationSource()
+    {
+        ResourceSet english = SharedStrings.ResourceManager.GetResourceSet(
+            CultureInfo.InvariantCulture, createIfNotExists: true, tryParents: true)!;
+        foreach (string key in GetKeys(english))
+        {
+            TranslationSource.Instance.Get(key, CultureInfo.GetCultureInfo("en-IN"))
+                .ShouldNotBe($"⟦{key}⟧");
+            TranslationSource.Instance.Get(key, CultureInfo.GetCultureInfo("gu-IN"))
+                .ShouldNotBe($"⟦{key}⟧");
+        }
+    }
+
+    [Fact]
     public void DisplayFormatter_UsesEnglishDigitsAndIndianGrouping()
     {
         DisplayFormatter formatter = new();

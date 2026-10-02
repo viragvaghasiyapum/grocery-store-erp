@@ -1715,6 +1715,9 @@ old hashes.)
   creates the product and any barcodes in one transaction. "Save & new" keeps category/brand/unit.
 - **Edit:** all fields except `uom_id` after lots exist. Changes are audited (§3.12). Renames do
   not change past bills (they snapshot names).
+  The editor preserves pack quantity, primary flag, symbology and source on unchanged barcodes,
+  and exposes the product expiry-alert override. Removing a primary barcode promotes the first
+  remaining barcode.
 - **Remove:**
   - If the product has **no** lots, purchase lines, sale lines or damages → hard delete allowed
     (FTS trigger cleans the index).
@@ -1732,6 +1735,8 @@ SELECT EXISTS(SELECT 1 FROM product_lot   WHERE product_id = @id)
 ### 7.3 Product list
 
 - Loads all active products (fast: ~20k rows) with stock from `v_product_stock`.
+  The shell list requests up to 20,000 rows and virtualizes the grid; a stale search response
+  cannot replace newer results. A zero reorder threshold does not count as low stock.
 - Filters: search box · category tree · brand · low stock · no barcode · missing local name ·
   archived · loose items.
 - Columns: SKU · Name (+ local) · Category · Stock · Price (current FEFO lot) · MRP · Status.
@@ -1764,6 +1769,8 @@ Process:
 2. **Dry run:** validate every row (required fields, unit exists, GST % matches a tax rate,
    barcode check digit, duplicates within file and against DB) → preview grid with per-row errors.
 3. User fixes the file or unticks bad rows; errors exportable as a sheet.
+   Invalid rows are deselected and cannot be checked for import. The importer rechecks unit
+   compatibility and barcode ownership inside the posting transaction after the dry run.
 4. **Import** in one transaction: create missing categories/brands, upsert by SKU (update if
    exists), add barcodes. Summary: created / updated / skipped.
 
@@ -1990,11 +1997,25 @@ the scanned value; otherwise FEFO applies.
   name and a link to it. (Two products can never share a barcode; re-packed manufacturer codes are
   resolved by attaching the code to the right product.)
 
+Implemented in the POS: unresolved scans open a localized dialog with a short, barcode-prefilled
+product form, optional opening quantity/cost/expiry, and searchable attachment to an active
+product. A conflicting attachment shows the barcode owner's name and opens that product. A new
+product with opening stock is added to the current bill; leaving stock blank saves the product
+without adding an unsellable line. The attachment and lot-barcode writes are idempotent.
+
 ### 8.8 Label printing flow
 
 From product list, purchase posting ("print labels for received lots") or lot screen:
 select items → quantity of labels each (default = received qty for lots) → template (price label /
 barcode + price / shelf-edge) → preview → print via TSPL (§15.4).
+The product-list action accepts multiple selected products. The batch dialog shows product and
+active in-stock lot rows, per-row copy counts (received quantity by default for lots), a real
+Code 128 preview, and price, barcode-plus-price and shelf-edge templates. Received lots are
+offered immediately after purchase posting, and the product's lot view can open the same dialog.
+Generated lot EAN-13 codes persist and resolve to the exact lot at POS. TSPL output embeds
+Gujarati names as monochrome `BITMAP` data for printer-independent text shaping; large copy
+counts are split into printer-sized commands. `.prn` export and RAW Windows printing share the
+same batch bytes. Physical printer calibration and scanning remain sign-offs.
 
 ---
 
@@ -3441,13 +3462,13 @@ each phase).
 
 ### 21.1.1 Implementation status
 
-Last updated: **27 September 2026**
+Last updated: **2 October 2026**
 
 | Phase | Status | Evidence / remaining work |
 |---|---|---|
 | 0 — Skeleton | **Implemented locally; hosted CI pending** | Solution and all planned project boundaries created; centralized package pins and analyzers enabled; WPF UI `NavigationView` shell added; `{l:Tr}` switches English ↔ Gujarati at runtime; numeric display remains fixed to `en-IN`; Serilog rolling files configured; Release build has zero warnings; 6 tests pass, including a real STA WPF-window smoke test and Core BCL-only architecture test. GitHub Actions workflow is present, but its first hosted run requires publishing this workspace to a GitHub repository. Gujarati strings are machine-drafted and marked `MT – needs review`. |
-| 1 — Foundations | **Foundation implemented; presentation hardening remains** | Paths, SQLite/Dapper infrastructure, migrations 001–003, fixed-point numerics, errors, clock/FY helpers, document numbers, typed settings, audit, operation guard, authentication, login/idle lock, localized first-run wizard, startup/shutdown maintenance, verified backup sets, restore apply/undo and recovery are implemented. Release build: 0 warnings/errors; 18 tests pass. Remaining work is tracked below. |
-| 2 — Catalog & barcodes | **Functionally implemented; hardware verification remains** | Product/master CRUD, audit, FTS/prefix search, filters, category/brand/unit/tax management, EAN/internal/scale/GS1 barcode handling, scan resolution, Excel dry-run/import, bulk category/tax changes, label preview, TSPL generation, `.prn` export and RAW Windows spooling are implemented. The repeatable benchmark imports 20k products in 14.955 s and searches at 2.772 ms p95. Remaining exit work requires a physical label printer/scanner: calibrate the configured stock, verify Gujarati font/raster behavior on the model, and confirm scans from 30 cm. |
+| 1 — Foundations | **Implemented; external review remains** | The first-run wizard now keeps the active form beside its step rail, validates visited steps before completion, seeds Gujarati names for units/expense categories, creates a usable optional weight-label rule, and offers printer test actions and data-root selection. Settings provides manual backup, verified USB export, data-root move, password change and a current-vs-backup restore comparison with typed confirmation. The shell shows backup/USB health and blocks a second instance. Numeric property tests, localization lookup tests, data-move and restore UI smoke tests pass. Native Gujarati review, physical printer/USB checks and complete public XML documentation remain open below. |
+| 2 — Catalog & barcodes | **Software workflows implemented; external sign-off remains** | Product/master CRUD, audit, FTS/prefix search, list filters, direct product lots/ledger views, category tree drag-reparent, EAN/internal/scale/GS1 handling, Excel dry-run/import with row selection and error export, bulk category/tax changes, multi-product/lot label batches with three TSPL templates, and POS unknown-barcode quick-add/attachment are implemented. The 29 September audit fixed metadata loss on edit, hierarchy validation, import unit/barcode guards and list UI gaps; the 2 October follow-up closed the two outstanding software workflows. The local synthetic 20k-product benchmark passed: 4.890 s import and 0.491 ms p95 search. Physical label-printer/scanner calibration, 30 cm scan verification, scaling/keyboard checks, and native Gujarati review remain. |
 | 3 — Stock-in | **Functionally implemented; hardware verification remains** | Migration 004 adds durable stock-count snapshots and printed vendor-bill totals. Vendor CRUD, purchase drafts/posting/cancellation, landed cost, vendor payments/ledger, lot/stock views, FEFO, opening-stock Excel dry run/import, price/block controls, manual adjustments, durable stock counts, and printable count sheets are implemented with operation idempotency, period guards, audit and stock notifications. The localized shell provides vendor, GRN/posting, payment, opening-import, lot price/block, adjustment, ledger and count-entry workflows. Golden purchase, cancellation, payment, FEFO, opening-stock and concurrent-count reconciliation tests pass. Remaining exit work is physical lot-label verification inherited from Phase 2 and native Gujarati review. |
 | 4 — POS | **Functionally implemented; hardware verification remains** | Persistent draft bills, scanner bursts, quantity/price labels, FEFO, transactional repricing and completion, cash/UPI/split payments, hold/resume, void, exact pro-rata returns, non-resellable return damage, raster receipt printing, reprints, sales history and day-end are implemented. Operation IDs protect completion, void and return from duplicate submission. Golden completion, replay, return, damage, void-protection and day-end tests pass. Remaining exit work is physical receipt-printer/cash-drawer verification, a real power-pull test, performance measurement on store hardware and native Gujarati review. |
 | 5 — Money out | **Complete** | Migration 005 adds replay-safe bulk damage grouping, one regular salary per employee/month, expiry-view hardening and immutability guards for posted damages/depreciation. Searchable damage entry and bulk expiry write-off; active-lot expiry tabs, badge, daily popup, mark-down/block/vendor-list actions; complete expense drafts/categories/repeat-last-month; employees, adjustable salary runs and advances; asset register, exact WDV/SLM depreciation posting and disposal are implemented with period locks, operation idempotency and audit. Damages, salaries, depreciation, expense categories and disposal gains/losses flow through `v_pnl_entry`. The documented depreciation example and integration scenarios pass. Report presentation and the full native Gujarati review remain explicitly owned by Phases 6 and 7. |
@@ -3486,11 +3507,12 @@ Phase 1 checklist:
 - [x] Startup clock, free-space and lot-cache checks with visible warnings and audited override
 - [x] Backup/restore round-trip, restore undo, settings concurrency, maintenance and rendered WPF tests
 - [x] Release build succeeds with zero warnings and all 18 tests pass
-- [ ] Property-based numeric tests across the full documented range
-- [ ] Printer test-page actions in the first-run wizard
-- [ ] Data-root selection, bootstrap update and safe database move from the wizard/settings
-- [ ] Full restore picker with current-vs-backup comparison and typed `RESTORE` confirmation
-- [ ] USB export flow and shell backup-status indicator
+- [x] Property-based numeric tests across the full documented scaled-long range
+- [x] Printer test-page actions in the first-run wizard (physical printer sign-off remains)
+- [x] Data-root selection, bootstrap update and verified database move from the wizard/settings
+- [x] Full restore picker with current-vs-backup comparison and typed `RESTORE` confirmation
+- [x] USB export flow and shell backup-status indicator (physical USB sign-off remains)
+- [x] Single-instance guard before startup database access
 - [ ] Complete public Core/Data XML documentation and native-speaker Gujarati review
 
 Phase 4 checklist:

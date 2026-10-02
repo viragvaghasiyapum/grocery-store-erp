@@ -3,6 +3,8 @@ using System.IO;
 using ClosedXML.Excel;
 using Dapper;
 using GroceryErp.Catalog.Barcodes;
+using GroceryErp.Core;
+using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
@@ -33,6 +35,7 @@ public sealed record ProductImportRow(
 {
     public bool CanImport => Errors.Count == 0;
     public string ErrorText => string.Join("; ", Errors);
+    public bool IsSelected { get; set; } = true;
 }
 
 public sealed record ProductImportPreview(IReadOnlyList<ProductImportRow> Rows)
@@ -59,6 +62,29 @@ public sealed class ProductExcelImporter(DbExecutor database, IAuditLog audit, I
         IXLWorksheet sheet = workbook.AddWorksheet("Products");
         for (int column = 0; column < Headers.Length; column++)
             sheet.Cell(1, column + 1).Value = Headers[column];
+        sheet.Row(1).Style.Font.Bold = true;
+        sheet.SheetView.FreezeRows(1);
+        sheet.Columns().AdjustToContents();
+        workbook.SaveAs(path);
+    }
+
+    public static void WriteErrors(string path, ProductImportPreview preview)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(preview);
+        using var workbook = new XLWorkbook();
+        IXLWorksheet sheet = workbook.AddWorksheet("Errors");
+        sheet.Cell(1, 1).Value = "Row";
+        sheet.Cell(1, 2).Value = "SKU";
+        sheet.Cell(1, 3).Value = "Validation errors";
+        int outputRow = 2;
+        foreach (ProductImportRow row in preview.Rows.Where(static item => !item.CanImport))
+        {
+            sheet.Cell(outputRow, 1).Value = row.RowNumber;
+            sheet.Cell(outputRow, 2).Value = row.Sku;
+            sheet.Cell(outputRow, 3).Value = row.ErrorText;
+            outputRow++;
+        }
         sheet.Row(1).Style.Font.Bold = true;
         sheet.SheetView.FreezeRows(1);
         sheet.Columns().AdjustToContents();
@@ -111,6 +137,14 @@ public sealed class ProductExcelImporter(DbExecutor database, IAuditLog audit, I
                     "SELECT id FROM tax_rate WHERE rate_pct=@rate", new { rate = Fx3.ToScaled(row.GstRate.Value) }, transaction.Transaction);
                 long? existingId = transaction.Connection.QuerySingleOrDefault<long?>(
                     "SELECT id FROM product WHERE sku=@Sku COLLATE NOCASE", row, transaction.Transaction);
+                CatalogService.ValidateUnit(transaction, existingId, unitId, row.IsLoose);
+                if (row.Barcode is not null)
+                {
+                    long? owner = transaction.Connection.QuerySingleOrDefault<long?>(
+                        "SELECT product_id FROM product_barcode WHERE barcode=@Barcode", row, transaction.Transaction);
+                    if (owner is not null && owner != existingId)
+                        throw new DomainException(ErrorCode.BarcodeExists, row.Barcode);
+                }
                 var values = new
                 {
                     row.Sku,
@@ -192,7 +226,7 @@ public sealed class ProductExcelImporter(DbExecutor database, IAuditLog audit, I
         for (int rowNumber = 2; rowNumber <= lastRow; rowNumber++)
         {
             string[] cells = Enumerable.Range(1, Headers.Length)
-                .Select(column => sheet.Cell(rowNumber, column).GetFormattedString().Trim()).ToArray();
+                .Select(column => InputNormalizer.Normalize(sheet.Cell(rowNumber, column).GetFormattedString()).Trim()).ToArray();
             if (cells.All(string.IsNullOrWhiteSpace)) continue;
             var errors = new List<string>();
             string sku = Required(cells[0], "SKU", errors);
@@ -201,10 +235,16 @@ public sealed class ProductExcelImporter(DbExecutor database, IAuditLog audit, I
             string unit = Required(cells[7], "Unit", errors);
             if (sku.Length > 20) errors.Add("SKU is longer than 20 characters.");
             if (name.Length > 120) errors.Add("Name is longer than 120 characters.");
+            if (category.Length > 80 || cells[5].Length > 80 || cells[6].Length > 80)
+                errors.Add("Category, subcategory, and brand names must be at most 80 characters.");
+            if (cells[2].Length > 120 || cells[3].Length > 500)
+                errors.Add("Local name or aliases are too long.");
             if (sku.Length > 0 && !fileSkus.Add(sku)) errors.Add("Duplicate SKU in this file.");
             if (unit.Length > 0 && !lookups.Units.ContainsKey(unit)) errors.Add($"Unit '{unit}' does not exist.");
             decimal? gst = DecimalValue(cells[9], "GST %", errors);
-            if (gst is not null && !lookups.Taxes.ContainsKey(Fx3.ToScaled(gst.Value))) errors.Add($"GST rate {gst:0.###}% does not exist.");
+            if (gst is < 0 or > 100) errors.Add("GST rate must be between 0 and 100.");
+            else if (gst is not null && !lookups.Taxes.ContainsKey(Fx3.ToScaled(gst.Value)))
+                errors.Add($"GST rate {gst:0.###}% does not exist.");
             string? hsn = NullIfEmpty(cells[8]);
             if (settings.Current.TaxMode == "REGULAR" && (hsn is null || gst is null)) errors.Add("HSN and GST % are required in regular GST mode.");
             if (hsn is not null && (hsn.Length is not (4 or 6 or 8) || hsn.Any(static character => !char.IsAsciiDigit(character)))) errors.Add("HSN must contain 4, 6, or 8 digits.");
@@ -224,11 +264,16 @@ public sealed class ProductExcelImporter(DbExecutor database, IAuditLog audit, I
             string? plu = NullIfEmpty(cells[16]);
             bool trackExpiry = YesNo(cells[17], "Track expiry", true, errors);
             if (loose && plu is null) errors.Add("Loose products require a PLU.");
+            if (barcode?.Length > 64 || plu?.Length > 30) errors.Add("Barcode or PLU is too long.");
             if (sellingPrice < 0 || mrp < 0 || reorder < 0) errors.Add("Prices and reorder level cannot be negative.");
+            decimal maximumScaled = long.MaxValue / (decimal)Fx3.Factor;
+            if (sellingPrice > maximumScaled || mrp > maximumScaled || reorder > maximumScaled)
+                errors.Add("Price or reorder level is too large.");
             if (sellingPrice is not null && mrp is not null && sellingPrice > mrp) errors.Add("Selling price cannot exceed MRP.");
             rows.Add(new(rowNumber, sku, name, NullIfEmpty(cells[2]), NullIfEmpty(cells[3]), category,
                 NullIfEmpty(cells[5]), NullIfEmpty(cells[6]), unit, hsn, gst, barcode, sellingPrice,
-                mrp, reorder, shelfLife, loose, plu, trackExpiry, errors));
+                mrp, reorder, shelfLife, loose, plu, trackExpiry, errors)
+            { IsSelected = errors.Count == 0 });
         }
         return new(rows);
     }
@@ -260,7 +305,11 @@ public sealed class ProductExcelImporter(DbExecutor database, IAuditLog audit, I
     private static decimal? DecimalValue(string value, string field, List<string> errors)
     {
         if (value.Length == 0) return null;
-        if (decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal parsed)) return parsed;
+        if (decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal parsed))
+        {
+            if (Fx3.Round(parsed) != parsed) errors.Add($"{field} can have at most three decimal places.");
+            return parsed;
+        }
         errors.Add($"{field} is not a valid number.");
         return null;
     }

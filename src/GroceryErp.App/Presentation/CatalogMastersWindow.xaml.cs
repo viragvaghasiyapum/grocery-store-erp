@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using GroceryErp.Catalog;
 using GroceryErp.Core.Errors;
 using GroceryErp.Localization;
@@ -10,31 +12,46 @@ namespace GroceryErp.App.Presentation;
 public partial class CatalogMastersWindow : Window
 {
     private readonly CatalogService _catalog;
+    private MasterItem? _editingCategory;
+    private CategoryTreeNode? _dragCategory;
+    private Point _dragStart;
 
-    public CatalogMastersWindow(CatalogService catalog)
+    public CatalogMastersWindow(CatalogService catalog, bool loadOnShow = true)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         _catalog = catalog;
         InitializeComponent();
-        Loaded += async (_, _) => await RefreshAsync();
+        if (loadOnShow) Loaded += async (_, _) => await RefreshAsync();
     }
 
     private async Task RefreshAsync()
     {
         IReadOnlyList<MasterItem> categories = await _catalog.GetCategoriesAsync();
-        CategoryList.ItemsSource = categories;
+        var nodes = categories.ToDictionary(static item => item.Id, static item => new CategoryTreeNode(item));
+        List<CategoryTreeNode> roots = [];
+        foreach (CategoryTreeNode node in nodes.Values)
+        {
+            if (node.Item.ParentId is { } parentId && nodes.TryGetValue(parentId, out CategoryTreeNode? parent))
+                parent.Children.Add(node);
+            else
+                roots.Add(node);
+        }
+        CategoryTree.ItemsSource = roots;
         ParentCategoryBox.ItemsSource = categories.Where(static item => item.IsActive).ToList();
         BrandList.ItemsSource = await _catalog.GetBrandsAsync();
         UnitList.ItemsSource = await _catalog.GetUnitDetailsAsync();
         TaxList.ItemsSource = await _catalog.GetTaxRatesAsync();
     }
 
-    private void CategoryList_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void CategoryTree_OnSelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
-        if (CategoryList.SelectedItem is not MasterItem item) return;
+        if (CategoryTree.SelectedItem is not CategoryTreeNode node) return;
+        MasterItem item = node.Item;
+        _editingCategory = item;
         CategoryNameBox.Text = item.Name;
         CategoryLocalBox.Text = item.NameLocal;
         ParentCategoryBox.SelectedValue = item.ParentId;
+        CategoryExpiryBox.Text = item.ExpiryAlertDays?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
     }
 
     private void BrandList_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -61,7 +78,9 @@ public partial class CatalogMastersWindow : Window
 
     private void NewCategory_OnClick(object sender, RoutedEventArgs e)
     {
-        CategoryList.SelectedIndex = -1;
+        if (CategoryTree.SelectedItem is CategoryTreeNode selected && FindContainer(CategoryTree, selected) is { } container)
+            container.IsSelected = false;
+        _editingCategory = null;
         CategoryNameBox.Clear();
         CategoryLocalBox.Clear();
         CategoryExpiryBox.Clear();
@@ -112,7 +131,7 @@ public partial class CatalogMastersWindow : Window
             }
             var input = new CategoryInput(CategoryNameBox.Text, CategoryLocalBox.Text,
                 ParentCategoryBox.SelectedValue as long?, expiryDays);
-            if (CategoryList.SelectedItem is MasterItem selected)
+            if (_editingCategory is { } selected)
                 await _catalog.UpdateCategoryAsync(selected.Id, input);
             else
                 await _catalog.CreateCategoryAsync(input);
@@ -181,4 +200,73 @@ public partial class CatalogMastersWindow : Window
     private void ShowError(Exception exception) => StatusText.Text = exception is DomainException domain
         ? TranslationSource.Instance[$"Error_{domain.Code}"]
         : exception.Message;
+
+    private void CategoryTree_OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _dragCategory = NodeAt(e.OriginalSource);
+        _dragStart = e.GetPosition(CategoryTree);
+    }
+
+    private void CategoryTree_OnMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || _dragCategory is null) return;
+        Point current = e.GetPosition(CategoryTree);
+        if (Math.Abs(current.X - _dragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(current.Y - _dragStart.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+        CategoryTreeNode dragged = _dragCategory;
+        _dragCategory = null;
+        DragDrop.DoDragDrop(CategoryTree, dragged, DragDropEffects.Move);
+    }
+
+    private void CategoryTree_OnDragOver(object sender, DragEventArgs e)
+    {
+        CategoryTreeNode? dragged = e.Data.GetData(typeof(CategoryTreeNode)) as CategoryTreeNode;
+        CategoryTreeNode? target = NodeAt(e.OriginalSource);
+        e.Effects = dragged is not null && target != dragged && (target is null || target.Item.IsActive)
+            ? DragDropEffects.Move : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void CategoryTree_OnDrop(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetData(typeof(CategoryTreeNode)) is not CategoryTreeNode dragged) return;
+        CategoryTreeNode? target = NodeAt(e.OriginalSource);
+        if (target == dragged || target is { Item: { IsActive: false } }) return;
+        try
+        {
+            MasterItem category = dragged.Item;
+            await _catalog.UpdateCategoryAsync(category.Id,
+                new CategoryInput(category.Name, category.NameLocal, target?.Item.Id, category.ExpiryAlertDays));
+            _editingCategory = null;
+            await RefreshAsync();
+            StatusText.Text = string.Empty;
+        }
+        catch (Exception exception) { ShowError(exception); }
+    }
+
+    private static CategoryTreeNode? NodeAt(object source)
+    {
+        for (DependencyObject? element = source as DependencyObject; element is not null;
+             element = element is Visual or System.Windows.Media.Media3D.Visual3D
+                 ? VisualTreeHelper.GetParent(element) : LogicalTreeHelper.GetParent(element))
+            if (element is TreeViewItem { DataContext: CategoryTreeNode node }) return node;
+        return null;
+    }
+
+    private static TreeViewItem? FindContainer(ItemsControl parent, CategoryTreeNode node)
+    {
+        foreach (object item in parent.Items)
+        {
+            if (parent.ItemContainerGenerator.ContainerFromItem(item) is not TreeViewItem container) continue;
+            if (item == node) return container;
+            if (FindContainer(container, node) is { } child) return child;
+        }
+        return null;
+    }
+
+    private sealed class CategoryTreeNode(MasterItem item)
+    {
+        public MasterItem Item { get; } = item;
+        public List<CategoryTreeNode> Children { get; } = [];
+    }
 }

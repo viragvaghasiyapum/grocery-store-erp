@@ -1,0 +1,55 @@
+<Page x:Class="GroceryErp.App.Presentation.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    Title="{l:Tr Settings_Title}">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="24" MaxWidth="880" HorizontalAlignment="Left">
+      <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Settings_Title}"/>
+      <TextBlock Margin="0,6,0,22" Opacity="0.75" Text="{l:Tr Settings_Description}" TextWrapping="Wrap"/>
+
+      <Border Padding="20" CornerRadius="8" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+        <StackPanel>
+          <TextBlock FontSize="20" FontWeight="SemiBold" Text="{l:Tr Settings_BackupTitle}"/>
+          <TextBlock x:Name="BackupStatus" Margin="0,10,0,4" TextWrapping="Wrap"/>
+          <TextBlock x:Name="UsbStatus" Margin="0,0,0,16" TextWrapping="Wrap"/>
+          <WrapPanel>
+            <Button x:Name="BackupButton" Margin="0,0,8,8" Click="Backup_OnClick" Content="{l:Tr Settings_BackupNow}"/>
+            <Button x:Name="ExportButton" Margin="0,0,8,8" Click="Export_OnClick" Content="{l:Tr Settings_ExportUsb}"/>
+            <Button Margin="0,0,8,8" Click="Restore_OnClick" Content="{l:Tr Settings_RestoreAction}"/>
+          </WrapPanel>
+          <TextBlock Margin="0,10,0,4" Text="{l:Tr Settings_RemovableDrive}"/>
+          <DockPanel><Button DockPanel.Dock="Right" Margin="8,0,0,0" Click="RefreshDrives_OnClick" Content="{l:Tr Stock_Refresh}"/>
+            <ComboBox x:Name="RemovableDrives" MinWidth="260"/>
+          </DockPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Margin="0,16,0,0" Padding="20" CornerRadius="8" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+        <StackPanel>
+          <TextBlock FontSize="20" FontWeight="SemiBold" Text="{l:Tr Settings_DataTitle}"/>
+          <TextBlock Margin="0,12,0,4" Text="{l:Tr Setup_DataFolder}"/>
+          <TextBox x:Name="DataRoot" IsReadOnly="True"/>
+          <Button x:Name="MoveDataButton" HorizontalAlignment="Left" Margin="0,10,0,2" Click="MoveData_OnClick" Content="{l:Tr Settings_MoveData}"/>
+          <TextBlock Text="{l:Tr Settings_MoveDataHelp}" TextWrapping="Wrap" Opacity="0.72"/>
+          <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_BackupFolder}"/>
+          <TextBox x:Name="BackupFolder" IsReadOnly="True"/>
+        </StackPanel>
+      </Border>
+
+      <Border Margin="0,16,0,0" Padding="20" CornerRadius="8" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+        <StackPanel>
+          <TextBlock FontSize="20" FontWeight="SemiBold" Text="{l:Tr Settings_ChangePassword}"/>
+          <TextBlock Margin="0,12,0,4" Text="{l:Tr Settings_CurrentPassword}"/>
+          <PasswordBox x:Name="CurrentPassword"/>
+          <TextBlock Margin="0,10,0,4" Text="{l:Tr Settings_NewPassword}"/>
+          <PasswordBox x:Name="NewPassword"/>
+          <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_ConfirmPassword}"/>
+          <PasswordBox x:Name="ConfirmPassword"/>
+          <Button x:Name="ChangePasswordButton" HorizontalAlignment="Left" Margin="0,16,0,0" Click="ChangePassword_OnClick" Content="{l:Tr Settings_SavePassword}"/>
+        </StackPanel>
+      </Border>
+      <TextBlock x:Name="StatusText" Margin="0,18,0,12" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+    </StackPanel>
+  </ScrollViewer>
+</Page>

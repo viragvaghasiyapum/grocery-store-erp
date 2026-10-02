@@ -1,15 +1,23 @@
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
+using System.Printing;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using GroceryErp.Core.Errors;
+using GroceryErp.Core.Numerics;
+using GroceryErp.Core.Time;
 using GroceryErp.Core.Validation;
 using GroceryErp.Data.Backup;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Security;
 using GroceryErp.Data.Services;
 using GroceryErp.Localization;
+using GroceryErp.Printing;
+using GroceryErp.Sales;
+using Microsoft.Win32;
 using Wpf.Ui.Controls;
 
 namespace GroceryErp.App.Presentation;
@@ -59,18 +67,24 @@ public partial class SetupWindow : FluentWindow
     };
 
     private readonly FirstRunService _setup;
+    private readonly AppPaths _paths;
     private readonly BackupService _backup;
     private readonly SettingsService _settings;
+    private readonly SystemClock _clock;
     private readonly bool _gujaratiKeyboardAvailable;
     private bool _setupCompleted;
+    private int _furthestStep;
+    private bool _changingStep;
 
     public SetupWindow(FirstRunService setup, AppPaths paths, BackupService backup, SettingsService settings)
     {
-        _setup = setup; _backup = backup; _settings = settings; InitializeComponent();
+        _setup = setup; _paths = paths; _backup = backup; _settings = settings; InitializeComponent();
+        _clock = new SystemClock(settings);
         DataFolder.Text = paths.Root; BackupFolder.Text = paths.DefaultBackupDir;
         _gujaratiKeyboardAvailable = InputLanguageManager.Current.AvailableInputLanguages.Cast<CultureInfo>()
             .Any(culture => culture.Name.StartsWith("gu", StringComparison.OrdinalIgnoreCase));
-        Steps.SelectionChanged += (_, _) => UpdateButtons();
+        TranslationSource.Instance.PropertyChanged += TranslationChanged;
+        Closed += (_, _) => TranslationSource.Instance.PropertyChanged -= TranslationChanged;
         UpdateLocalizedText();
     }
 
@@ -81,11 +95,13 @@ public partial class SetupWindow : FluentWindow
         ErrorText.Text = "";
         if (Steps.SelectedIndex < Steps.Items.Count - 1)
         {
-            if (!ValidateCurrentStep()) return;
+            if (!ValidateStep(Steps.SelectedIndex)) return;
+            _furthestStep = Math.Max(_furthestStep, Steps.SelectedIndex + 1);
             Steps.SelectedIndex++;
             return;
         }
-        if (Password.Password != ConfirmPassword.Password) { ErrorText.Text = Translate("Setup_ErrorPasswordMismatch"); Steps.SelectedIndex = 2; return; }
+        for (int step = 0; step < Steps.Items.Count; step++)
+            if (!ValidateStep(step)) { Steps.SelectedIndex = step; return; }
         try
         {
             IsEnabled = false;
@@ -100,18 +116,23 @@ public partial class SetupWindow : FluentWindow
                     State.Text, taxMode, Gujarati.IsChecked == true ? "gu-IN" : "en-IN", BackupFolder.Text,
                     LotPrefix.Text, ProductPrefix.Text, ReceiptPrinter.Text, receiptWidth,
                     LabelPrinter.Text, labelSize, A4Printer.Text, usbReminder, ScaleRule.Text,
-                    _gujaratiKeyboardAvailable, StartImport.IsChecked == true ? "IMPORT" : "EMPTY"));
+                    _gujaratiKeyboardAvailable, StartImport.IsChecked == true ? "IMPORT" : "EMPTY",
+                    FirstRunService.RequiredSeedKeys.ToDictionary(key => key, key =>
+                        SharedStrings.ResourceManager.GetString(key, CultureInfo.GetCultureInfo("gu-IN"))
+                        ?? throw new InvalidOperationException($"Missing Gujarati seed translation: {key}"))));
                 await _settings.LoadAsync();
                 _setupCompleted = true;
             }
-            _backup.Create("first-run");
+            await Task.Run(() => _backup.Create("first-run"));
+            if (!DataFolder.Text.Equals(_paths.Root, StringComparison.OrdinalIgnoreCase))
+                DataRootRelocator.Schedule(_paths.Root, DataFolder.Text);
             DialogResult = true;
         }
-        catch (DomainException exception)
+        catch (DomainException)
         {
             ErrorText.Text = _setupCompleted
                 ? Translate("Setup_ErrorBackupFailed")
-                : string.Join(" ", exception.Arguments);
+                : Translate("Error_Validation");
         }
         catch (ArgumentException exception) { ErrorText.Text = exception.Message; }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -128,6 +149,23 @@ public partial class SetupWindow : FluentWindow
         UpdateLocalizedText();
     }
 
+    private void TranslationChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == "Item[]") UpdateLocalizedText();
+    }
+
+    private void Steps_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_changingStep || !ReferenceEquals(e.Source, Steps)) return;
+        if (Steps.SelectedIndex > _furthestStep)
+        {
+            _changingStep = true;
+            Steps.SelectedIndex = _furthestStep;
+            _changingStep = false;
+        }
+        UpdateButtons();
+    }
+
     private void Gstin_OnTextChanged(object sender, TextChangedEventArgs e)
     {
         string normalized = Gstin.Text.Trim().ToUpperInvariant();
@@ -136,9 +174,15 @@ public partial class SetupWindow : FluentWindow
             State.Text = state;
     }
 
-    private bool ValidateCurrentStep()
+    private void ChooseData_OnClick(object sender, RoutedEventArgs e)
     {
-        switch (Steps.SelectedIndex)
+        var picker = new OpenFolderDialog { Title = Translate("Settings_ChooseFolder") };
+        if (picker.ShowDialog(this) == true) DataFolder.Text = picker.FolderName;
+    }
+
+    private bool ValidateStep(int step)
+    {
+        switch (step)
         {
             case 1:
                 if (string.IsNullOrWhiteSpace(StoreName.Text)) return SetError("Setup_ErrorStoreRequired");
@@ -153,16 +197,89 @@ public partial class SetupWindow : FluentWindow
             case 3:
                 if (string.IsNullOrWhiteSpace(BackupFolder.Text)) return SetError("Setup_ErrorBackupRequired");
                 try { AppPaths.RejectCloudSynchronizedPath(BackupFolder.Text); }
-                catch (DomainException exception) { return SetError(string.Join(" ", exception.Arguments)); }
+                catch (DomainException) { return SetError("Setup_ErrorCloudPath"); }
+                if (!DataFolder.Text.Equals(_paths.Root, StringComparison.OrdinalIgnoreCase))
+                    try { DataRootRelocator.ValidateCandidate(_paths.Root, DataFolder.Text); }
+                    catch (DomainException) { return SetError("Setup_ErrorDataFolder"); }
                 break;
             case 5:
                 if (LotPrefix.Text.Length != 2 || ProductPrefix.Text.Length != 2 ||
                     !LotPrefix.Text.All(char.IsAsciiDigit) || !ProductPrefix.Text.All(char.IsAsciiDigit) ||
                     LotPrefix.Text == ProductPrefix.Text)
                     return SetError("Setup_ErrorPrefixes");
+                string scalePrefix = ScaleRule.Text.Trim();
+                if (scalePrefix.Length != 0 && (scalePrefix.Length != 2 ||
+                    !scalePrefix.All(char.IsAsciiDigit) || scalePrefix == LotPrefix.Text ||
+                    scalePrefix == ProductPrefix.Text))
+                    return SetError("Setup_ErrorScalePrefix");
                 break;
         }
         return true;
+    }
+
+    private async void ReceiptTest_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(ReceiptPrinter.Text)) { SetError("Setup_ErrorPrinterRequired"); return; }
+        try
+        {
+            ErrorText.Text = "";
+            var receipt = new ReceiptData(StoreName.Text, Address.Text, Phone.Text, Gstin.Text,
+                "NONE", Translate("Setup_TestDocument"), _clock.Now, null, Array.Empty<ReceiptLine>(),
+                Money.Zero, Money.Zero, Money.Zero, Money.Zero, Money.Zero, Money.Zero, Money.Zero,
+                Array.Empty<PaymentInput>(), Money.Zero,
+                Gujarati.IsChecked == true ? "gu-IN" : "en-IN", Translate("Setup_TestDocument"), false);
+            byte[] bytes = GroceryErp.Sales.ReceiptPrinter.Render(receipt, ParseTag(ReceiptWidth, 576), false);
+            await Task.Run(() => RawPrinter.Send(ReceiptPrinter.Text.Trim(), bytes, Translate("Setup_TestDocument")));
+            ErrorText.Text = Translate("Setup_TestSent");
+        }
+        catch (Exception) { SetError("Setup_TestFailed"); }
+    }
+
+    private async void LabelTest_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(LabelPrinter.Text)) { SetError("Setup_ErrorPrinterRequired"); return; }
+        try
+        {
+            ErrorText.Text = "";
+            string[] size = (((ComboBoxItem)LabelSize.SelectedItem).Tag?.ToString() ?? "50x25").Split('x');
+            var label = new TsplLabel(Translate("Setup_TestDocument"), null, "210000000001", 1m, null,
+                int.Parse(size[0], CultureInfo.InvariantCulture), int.Parse(size[1], CultureInfo.InvariantCulture));
+            byte[] bytes = TsplLabelBuilder.Build(label);
+            await Task.Run(() => RawPrinter.Send(LabelPrinter.Text.Trim(), bytes, Translate("Setup_TestDocument")));
+            ErrorText.Text = Translate("Setup_TestSent");
+        }
+        catch (Exception) { SetError("Setup_TestFailed"); }
+    }
+
+    private void A4Test_OnClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            ErrorText.Text = "";
+            var dialog = new PrintDialog();
+            if (!string.IsNullOrWhiteSpace(A4Printer.Text))
+                dialog.PrintQueue = new LocalPrintServer().GetPrintQueue(A4Printer.Text.Trim());
+            if (dialog.ShowDialog() != true) return;
+            var page = new Border
+            {
+                Width = dialog.PrintableAreaWidth,
+                Height = dialog.PrintableAreaHeight,
+                Padding = new Thickness(48),
+                Background = Brushes.White,
+                Child = new System.Windows.Controls.TextBlock
+                {
+                    FontFamily = new FontFamily("Nirmala UI"),
+                    FontSize = 22,
+                    Text = StoreName.Text + "\n\n" + Translate("Setup_TestDocument") + "\n" +
+                        _clock.Now.ToString("dd MMM yyyy HH:mm", TranslationSource.FormatCulture),
+                },
+            };
+            page.Measure(new Size(page.Width, page.Height));
+            page.Arrange(new Rect(0, 0, page.Width, page.Height));
+            dialog.PrintVisual(page, Translate("Setup_TestDocument"));
+            ErrorText.Text = Translate("Setup_TestSent");
+        }
+        catch (Exception) { SetError("Setup_TestFailed"); }
     }
 
     private bool SetError(string key)

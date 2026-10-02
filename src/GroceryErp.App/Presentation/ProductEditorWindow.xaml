@@ -80,6 +80,8 @@
           </StackPanel>
         </Grid>
 
+        <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_ExpiryAlertDays}" />
+        <TextBox x:Name="ExpiryAlertBox" />
         <WrapPanel Margin="0,14,0,0">
           <CheckBox x:Name="PricesIncludeTaxBox" Margin="0,0,24,0" IsChecked="True" Content="{l:Tr Catalog_PricesIncludeTax}" />
           <CheckBox x:Name="TrackExpiryBox" Margin="0,0,24,0" IsChecked="True" Content="{l:Tr Catalog_TrackExpiry}" />

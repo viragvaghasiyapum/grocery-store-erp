@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
-    Title="{l:Tr Catalog_PrintLabels}" Width="620" Height="560" ResizeMode="NoResize"
+    Title="{l:Tr Catalog_PrintLabels}" Width="620" Height="640" ResizeMode="NoResize"
     WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
   <Grid Margin="22">
     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
@@ -15,7 +15,7 @@
         <TextBlock x:Name="ProductNameText" FontSize="22" FontWeight="SemiBold" Foreground="Black" TextWrapping="Wrap" />
         <TextBlock x:Name="LocalNameText" Grid.Row="1" Margin="0,4,0,0" FontSize="18" Foreground="#333" TextWrapping="Wrap" />
         <StackPanel Grid.Row="2" VerticalAlignment="Center">
-          <Border Height="58" Background="#111" Margin="20,0" />
+          <Image x:Name="BarcodeImage" Height="58" Margin="20,0" Stretch="Fill" SnapsToDevicePixels="True" />
           <TextBlock x:Name="BarcodeText" Margin="0,5,0,0" HorizontalAlignment="Center" FontFamily="Consolas" Foreground="Black" />
         </StackPanel>
         <Grid Grid.Row="3">
@@ -40,7 +40,7 @@
       <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
         <Button Margin="0,0,8,0" IsCancel="True" Content="{l:Tr Common_Close}" />
         <Button Margin="0,0,8,0" Click="Save_OnClick" Content="{l:Tr Catalog_SavePrintFile}" />
-        <Button Click="Print_OnClick" Content="{l:Tr Catalog_Print}" />
+        <Button x:Name="PrintButton" Click="Print_OnClick" Content="{l:Tr Catalog_Print}" />
       </StackPanel>
     </Grid>
   </Grid>

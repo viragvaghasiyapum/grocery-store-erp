@@ -4,12 +4,27 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-    Title="{l:Tr Setup_Title}" Width="720" Height="590" ResizeMode="NoResize"
-    WindowStartupLocation="CenterScreen" FontFamily="{StaticResource AppFont}">
+    Title="{l:Tr Setup_Title}" Width="760" Height="640" MinWidth="700" MinHeight="600"
+    WindowStartupLocation="CenterScreen" FontFamily="{StaticResource AppFont}"
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN"
+    NumberSubstitution.Substitution="European">
   <Grid Margin="28">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TextBlock FontSize="26" FontWeight="SemiBold" Text="{l:Tr Setup_Title}"/>
-    <TabControl x:Name="Steps" Grid.Row="1" Margin="0,20,0,16" TabStripPlacement="Left">
+    <TabControl x:Name="Steps" Grid.Row="1" Margin="0,20,0,16" TabStripPlacement="Left" SelectionChanged="Steps_OnSelectionChanged">
+      <TabControl.Template>
+        <ControlTemplate TargetType="TabControl">
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="174"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Padding="4,8,8,8" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" CornerRadius="8,0,0,8" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1,1,0,1">
+              <TabPanel IsItemsHost="True" KeyboardNavigation.TabIndex="1"/>
+            </Border>
+            <Border Grid.Column="1" Padding="4" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" CornerRadius="0,8,8,8" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,1,1">
+              <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent"/>
+            </Border>
+          </Grid>
+        </ControlTemplate>
+      </TabControl.Template>
       <TabItem Header="{l:Tr Setup_StepLanguage}">
         <StackPanel Margin="24"><TextBlock Style="{StaticResource SectionTitle}" Text="{l:Tr Setup_Language}"/>
           <RadioButton x:Name="English" Margin="0,16,0,8" Content="{l:Tr Setup_English}" IsChecked="True" Checked="Language_OnChecked"/>
@@ -36,18 +51,18 @@
       </TabItem>
       <TabItem Header="{l:Tr Setup_StepData}">
         <StackPanel Margin="24"><TextBlock Style="{StaticResource SectionTitle}" Text="{l:Tr Setup_DataBackups}"/>
-          <TextBlock Margin="0,12,0,4" Text="{l:Tr Setup_DataFolder}"/><TextBox x:Name="DataFolder" IsReadOnly="True"/>
+          <TextBlock Margin="0,12,0,4" Text="{l:Tr Setup_DataFolder}"/><DockPanel><Button DockPanel.Dock="Right" Margin="8,0,0,0" Click="ChooseData_OnClick" Content="{l:Tr Settings_ChooseFolder}"/><TextBox x:Name="DataFolder" IsReadOnly="True"/></DockPanel>
           <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_BackupFolder}"/><TextBox x:Name="BackupFolder"/>
           <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_UsbReminder}"/><ComboBox x:Name="UsbReminder" SelectedIndex="0"><ComboBoxItem Content="{l:Tr Setup_Every7Days}" Tag="7"/><ComboBoxItem Content="{l:Tr Setup_Every14Days}" Tag="14"/><ComboBoxItem Content="{l:Tr Setup_Every30Days}" Tag="30"/><ComboBoxItem Content="{l:Tr Setup_Every60Days}" Tag="60"/><ComboBoxItem Content="{l:Tr Setup_Every90Days}" Tag="90"/></ComboBox>
           <TextBlock Margin="0,12,0,0" Text="{l:Tr Setup_CloudWarning}" TextWrapping="Wrap"/>
         </StackPanel>
       </TabItem>
       <TabItem Header="{l:Tr Setup_StepPrinters}"><ScrollViewer><StackPanel Margin="24"><TextBlock Style="{StaticResource SectionTitle}" Text="{l:Tr Setup_Printers}"/>
-        <TextBlock Margin="0,14,0,4" Text="{l:Tr Setup_ReceiptPrinter}"/><TextBox x:Name="ReceiptPrinter"/>
+        <TextBlock Margin="0,14,0,4" Text="{l:Tr Setup_ReceiptPrinter}"/><DockPanel><Button DockPanel.Dock="Right" Margin="8,0,0,0" Click="ReceiptTest_OnClick" Content="{l:Tr Setup_PrintTest}"/><TextBox x:Name="ReceiptPrinter"/></DockPanel>
         <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_ReceiptWidth}"/><ComboBox x:Name="ReceiptWidth" SelectedIndex="1"><ComboBoxItem Content="58 mm" Tag="384"/><ComboBoxItem Content="80 mm" Tag="576"/></ComboBox>
-        <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_LabelPrinter}"/><TextBox x:Name="LabelPrinter"/>
+        <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_LabelPrinter}"/><DockPanel><Button DockPanel.Dock="Right" Margin="8,0,0,0" Click="LabelTest_OnClick" Content="{l:Tr Setup_PrintTest}"/><TextBox x:Name="LabelPrinter"/></DockPanel>
         <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_LabelSize}"/><ComboBox x:Name="LabelSize" SelectedIndex="0"><ComboBoxItem Content="50 × 25 mm" Tag="50x25"/><ComboBoxItem Content="60 × 40 mm" Tag="60x40"/><ComboBoxItem Content="100 × 150 mm" Tag="100x150"/></ComboBox>
-        <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_A4Printer}"/><TextBox x:Name="A4Printer"/>
+        <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_A4Printer}"/><DockPanel><Button DockPanel.Dock="Right" Margin="8,0,0,0" Click="A4Test_OnClick" Content="{l:Tr Setup_PrintTest}"/><TextBox x:Name="A4Printer"/></DockPanel>
         <TextBlock Margin="0,12,0,0" Text="{l:Tr Setup_PrinterHelp}" TextWrapping="Wrap"/>
       </StackPanel></ScrollViewer></TabItem>
       <TabItem Header="{l:Tr Setup_StepBarcodes}"><ScrollViewer><StackPanel Margin="24"><TextBlock Style="{StaticResource SectionTitle}" Text="{l:Tr Setup_BarcodePrefixes}"/><TextBlock Margin="0,14,0,4" Text="{l:Tr Setup_LotPrefix}"/><TextBox x:Name="LotPrefix" Text="20"/><TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_ProductPrefix}"/><TextBox x:Name="ProductPrefix" Text="21"/><TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_ScaleRule}"/><TextBox x:Name="ScaleRule"/><TextBlock Margin="0,12,0,0" Text="{l:Tr Setup_BarcodeHelp}" TextWrapping="Wrap"/></StackPanel></ScrollViewer></TabItem>

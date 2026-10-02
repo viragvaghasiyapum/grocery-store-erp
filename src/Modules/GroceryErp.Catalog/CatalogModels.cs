@@ -6,7 +6,8 @@ public sealed record ProductBarcodeInput(
     string Barcode,
     Quantity PackQuantity,
     string Symbology = "EAN13",
-    bool IsPrimary = false);
+    bool IsPrimary = false,
+    string Source = "MANUFACTURER");
 
 public sealed record ProductInput(
     string Sku,
@@ -68,6 +69,7 @@ public sealed class MasterItem
     public string? NameLocal { get; init; }
     public bool IsActive { get; init; }
     public long? ParentId { get; init; }
+    public int? ExpiryAlertDays { get; init; }
 }
 
 public sealed class UnitItem
@@ -82,6 +84,8 @@ public sealed class UnitItem
 public sealed record TaxRateItem(long Id, string Name, decimal Rate, bool IsActive);
 
 public sealed record ProductDetails(long Id, ProductInput Product, bool IsActive);
+
+public sealed record BarcodeOwner(long ProductId, string ProductName);
 
 public sealed record CategoryInput(string Name, string? NameLocal, long? ParentId, int? ExpiryAlertDays);
 

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using GroceryErp.Catalog;
+using GroceryErp.Core;
 using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Localization;
@@ -11,6 +12,7 @@ public partial class ProductEditorWindow : Window
 {
     private readonly CatalogService _catalog;
     private readonly long? _productId;
+    private IReadOnlyCollection<ProductBarcodeInput> _originalBarcodes = [];
 
     public ProductEditorWindow(CatalogService catalog, long? productId = null)
     {
@@ -42,6 +44,7 @@ public partial class ProductEditorWindow : Window
             else
             {
                 ProductInput product = (await _catalog.GetAsync(_productId.Value)).Product;
+                _originalBarcodes = product.Barcodes;
                 SkuBox.Text = product.Sku;
                 NameBox.Text = product.Name;
                 LocalNameBox.Text = product.NameLocal;
@@ -56,6 +59,7 @@ public partial class ProductEditorWindow : Window
                 PluBox.Text = product.PluCode;
                 TrackExpiryBox.IsChecked = product.TrackExpiry;
                 ShelfLifeBox.Text = product.DefaultShelfLifeDays?.ToString(CultureInfo.InvariantCulture);
+                ExpiryAlertBox.Text = product.ExpiryAlertDays?.ToString(CultureInfo.InvariantCulture);
                 ReorderBox.Text = product.ReorderLevel.ToString();
                 PriceBox.Text = product.DefaultSellingPrice?.ToString();
                 MrpBox.Text = product.DefaultMrp?.ToString();
@@ -82,17 +86,19 @@ public partial class ProductEditorWindow : Window
             SaveButton.IsEnabled = false;
             if (CategoryBox.SelectedValue is not long categoryId || UnitBox.SelectedValue is not long unitId)
                 throw new DomainException(ErrorCode.Validation, "Category and unit are required.");
-            IReadOnlyCollection<ProductBarcodeInput> barcodes = BarcodesBox.Text
+            List<ProductBarcodeInput> barcodes = InputNormalizer.Normalize(BarcodesBox.Text)
                 .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Distinct(StringComparer.Ordinal)
-                .Select(static (barcode, index) => new ProductBarcodeInput(barcode, Quantity.One,
+                .Select((barcode, index) => _originalBarcodes.FirstOrDefault(item => item.Barcode == barcode) ?? new ProductBarcodeInput(barcode, Quantity.One,
                     barcode.Length == 8 ? "EAN8" : barcode.Length == 12 ? "UPCA" : barcode.Length == 13 ? "EAN13" : "CODE128",
-                    index == 0)).ToList();
+                    index == 0 && !_originalBarcodes.Any(static item => item.IsPrimary))).ToList();
+            if (barcodes.Count > 0 && !barcodes.Any(static item => item.IsPrimary))
+                barcodes[0] = barcodes[0] with { IsPrimary = true };
             var input = new ProductInput(
                 SkuBox.Text, NameBox.Text, LocalNameBox.Text, AliasesBox.Text, categoryId,
                 BrandBox.SelectedValue as long?, unitId, HsnBox.Text, TaxRateBox.SelectedValue as long?,
                 PricesIncludeTaxBox.IsChecked == true, LooseBox.IsChecked == true, PluBox.Text,
-                TrackExpiryBox.IsChecked == true, ParseNullableInt(ShelfLifeBox.Text), null,
+                TrackExpiryBox.IsChecked == true, ParseNullableInt(ShelfLifeBox.Text), ParseNullableInt(ExpiryAlertBox.Text, allowZero: true),
                 new Quantity(ParseDecimal(ReorderBox.Text, required: true) ?? 0),
                 ParseMoney(PriceBox.Text), ParseMoney(MrpBox.Text), barcodes);
             if (_productId is null) await _catalog.CreateAsync(input);
@@ -117,15 +123,15 @@ public partial class ProductEditorWindow : Window
             if (required) throw new DomainException(ErrorCode.Validation, "Enter a number.");
             return null;
         }
-        if (!decimal.TryParse(text, NumberStyles.Number, TranslationSource.FormatCulture, out decimal value))
+        if (!decimal.TryParse(InputNormalizer.Normalize(text), NumberStyles.Number, TranslationSource.FormatCulture, out decimal value))
             throw new DomainException(ErrorCode.Validation, "Enter a valid number.");
         return value;
     }
 
-    private static int? ParseNullableInt(string text)
+    private static int? ParseNullableInt(string text, bool allowZero = false)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
-        if (!int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out int value) || value <= 0)
+        if (!int.TryParse(InputNormalizer.Normalize(text), NumberStyles.None, CultureInfo.InvariantCulture, out int value) || value < (allowZero ? 0 : 1))
             throw new DomainException(ErrorCode.Validation, "Enter a positive whole number.");
         return value;
     }

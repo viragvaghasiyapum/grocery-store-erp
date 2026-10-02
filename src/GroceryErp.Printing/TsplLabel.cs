@@ -1,7 +1,10 @@
 using System.Globalization;
+using System.IO;
 using System.Text;
 
 namespace GroceryErp.Printing;
+
+public enum TsplLabelTemplate { Price, BarcodePrice, ShelfEdge }
 
 public sealed record TsplLabel(
     string ProductName,
@@ -11,7 +14,8 @@ public sealed record TsplLabel(
     decimal? Mrp,
     int WidthMm = 60,
     int HeightMm = 40,
-    int Copies = 1);
+    int Copies = 1,
+    TsplLabelTemplate Template = TsplLabelTemplate.BarcodePrice);
 
 public static class TsplLabelBuilder
 {
@@ -31,14 +35,54 @@ public static class TsplLabelBuilder
             .Append("SIZE ").Append(label.WidthMm).Append(" mm,").Append(label.HeightMm).Append(" mm\r\n")
             .Append("GAP 2 mm,0 mm\r\nDIRECTION 1\r\nCLS\r\n")
             .Append("TEXT 24,18,\"0\",0,1,1,\"").Append(name).Append("\"\r\n");
-        if (localName.Length > 0)
-            command.Append("TEXT 24,48,\"0\",0,1,1,\"").Append(localName).Append("\"\r\n");
-        command.Append("BARCODE 24,82,\"128\",72,1,0,2,2,\"").Append(barcode).Append("\"\r\n")
-            .Append("TEXT 24,170,\"0\",0,2,2,\"Rs ").Append(price).Append("\"\r\n");
-        if (mrp.Length > 0)
-            command.Append("TEXT 260,176,\"0\",0,1,1,\"").Append(mrp).Append("\"\r\n");
+        using var output = new MemoryStream();
+        output.Write(Encoding.UTF8.GetBytes(command.ToString()));
+        if (localName.Length > 0) output.Write(TsplRasterText.Render(localName, 24, 48));
+        command.Clear();
+        switch (label.Template)
+        {
+            case TsplLabelTemplate.Price:
+                command.Append("BARCODE 24,82,\"128\",48,1,0,2,2,\"").Append(barcode).Append("\"\r\n")
+                    .Append("TEXT 24,145,\"0\",0,3,3,\"Rs ").Append(price).Append("\"\r\n");
+                if (mrp.Length > 0) command.Append("TEXT 260,182,\"0\",0,1,1,\"").Append(mrp).Append("\"\r\n");
+                break;
+            case TsplLabelTemplate.ShelfEdge:
+                command.Append("TEXT 24,88,\"0\",0,2,2,\"Rs ").Append(price).Append("\"\r\n")
+                    .Append("BARCODE 24,130,\"128\",46,1,0,2,2,\"").Append(barcode).Append("\"\r\n");
+                if (mrp.Length > 0) command.Append("TEXT 260,182,\"0\",0,1,1,\"").Append(mrp).Append("\"\r\n");
+                break;
+            case TsplLabelTemplate.BarcodePrice:
+                command.Append("BARCODE 24,82,\"128\",72,1,0,2,2,\"").Append(barcode).Append("\"\r\n")
+                    .Append("TEXT 24,170,\"0\",0,2,2,\"Rs ").Append(price).Append("\"\r\n");
+                if (mrp.Length > 0) command.Append("TEXT 260,176,\"0\",0,1,1,\"").Append(mrp).Append("\"\r\n");
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(label), "Unsupported label template.");
+        }
         command.Append("PRINT 1,").Append(label.Copies).Append("\r\n");
-        return Encoding.UTF8.GetBytes(command.ToString());
+        output.Write(Encoding.UTF8.GetBytes(command.ToString()));
+        return output.ToArray();
+    }
+
+    public static byte[] BuildBatch(IEnumerable<TsplLabel> labels)
+    {
+        ArgumentNullException.ThrowIfNull(labels);
+        using var output = new MemoryStream();
+        int count = 0;
+        foreach (TsplLabel label in labels)
+        {
+            int remaining = label.Copies;
+            if (remaining <= 0) throw new ArgumentOutOfRangeException(nameof(labels), "Copies must be positive.");
+            while (remaining > 0)
+            {
+                int copies = Math.Min(remaining, 999);
+                output.Write(Build(label with { Copies = copies }));
+                remaining -= copies;
+            }
+            count++;
+        }
+        if (count == 0) throw new ArgumentException("Select at least one label.", nameof(labels));
+        return output.ToArray();
     }
 
     private static string Safe(string? value, int maximum)

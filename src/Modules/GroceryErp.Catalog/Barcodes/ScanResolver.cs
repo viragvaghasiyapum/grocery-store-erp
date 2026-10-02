@@ -59,19 +59,22 @@ public sealed class ScanResolver(DbExecutor database)
                 hit = FindBarcode(connection, ean);
                 if (hit is not null)
                 {
-                    long? lotId = hit.LotId ?? connection.QueryFirstOrDefault<long?>("""
+                    long? lotId = hit.LotId;
+                    if (lotId is null && (gs1.Batch is not null || gs1.Expiry is not null))
+                        lotId = connection.QueryFirstOrDefault<long?>("""
                         SELECT id FROM product_lot
                         WHERE product_id=@ProductId
+                          AND qty_on_hand>0 AND is_active=1
                           AND (@Batch IS NULL OR batch_no=@Batch)
                           AND (@Expiry IS NULL OR expiry_date=@Expiry)
                         ORDER BY CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END, expiry_date, received_date, id
                         LIMIT 1
                         """, new
-                    {
-                        hit.ProductId,
-                        Batch = gs1.Batch,
-                        Expiry = gs1.Expiry?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                    });
+                        {
+                            hit.ProductId,
+                            Batch = gs1.Batch,
+                            Expiry = gs1.Expiry?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                        });
                     return new(ScanResultKind.Item, hit.ProductId, lotId, Quantity.FromScaled(hit.PackQuantity), null, code);
                 }
             }
@@ -86,7 +89,7 @@ public sealed class ScanResolver(DbExecutor database)
 
     private static string Normalize(string? raw) => string.IsNullOrWhiteSpace(raw)
         ? string.Empty
-        : raw.Trim().Normalize(System.Text.NormalizationForm.FormC);
+        : GroceryErp.Core.InputNormalizer.Normalize(raw.Trim());
 
     private static BarcodeHit? FindBarcode(System.Data.IDbConnection connection, string barcode) =>
         connection.QuerySingleOrDefault<BarcodeHit>("""

@@ -13,13 +13,15 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
         database.ReadAsync(connection =>
         {
             long next = connection.ExecuteScalar<long>("SELECT COALESCE(MAX(id), 0) + 1 FROM product");
+            while (connection.ExecuteScalar<long>("SELECT EXISTS(SELECT 1 FROM product WHERE sku=@sku COLLATE NOCASE)",
+                new { sku = $"P{next:D6}" }) != 0) next++;
             return $"P{next:D6}";
         }, cancellationToken);
 
     public Task<IReadOnlyList<MasterItem>> GetCategoriesAsync(CancellationToken cancellationToken = default) =>
         database.ReadAsync(connection => (IReadOnlyList<MasterItem>)connection.Query<MasterItem>("""
             SELECT id AS Id, '' AS Code, name AS Name, name_local AS NameLocal, is_active AS IsActive,
-                   parent_id AS ParentId
+                   parent_id AS ParentId, expiry_alert_days AS ExpiryAlertDays
             FROM category ORDER BY sort_order, name COLLATE NOCASE
             """).AsList(), cancellationToken);
 
@@ -66,10 +68,10 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             if (row is null) throw new DomainException(ErrorCode.NotFound, "product", id);
             IReadOnlyCollection<ProductBarcodeInput> barcodes = connection.Query<BarcodeEditRow>("""
                 SELECT barcode AS Barcode, pack_qty AS PackQuantity, symbology AS Symbology,
-                       is_primary AS IsPrimary
+                       is_primary AS IsPrimary, source AS Source
                 FROM product_barcode WHERE product_id=@id AND lot_id IS NULL ORDER BY is_primary DESC, id
                 """, new { id }).Select(static barcode => new ProductBarcodeInput(
-                    barcode.Barcode, Quantity.FromScaled(barcode.PackQuantity), barcode.Symbology, barcode.IsPrimary)).ToList();
+                    barcode.Barcode, Quantity.FromScaled(barcode.PackQuantity), barcode.Symbology, barcode.IsPrimary, barcode.Source)).ToList();
             return new ProductDetails(row.Id, new ProductInput(
                 row.Sku, row.Name, row.NameLocal, row.SearchTerms, row.CategoryId, row.BrandId,
                 row.UomId, row.HsnCode, row.TaxRateId, row.PriceIncludesTax, row.IsLoose, row.PluCode,
@@ -117,10 +119,17 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
         string name = CatalogText.Required(input.Name, 80, nameof(input.Name));
         string? localName = CatalogText.Optional(input.NameLocal, 80);
         if (id == input.ParentId) throw new DomainException(ErrorCode.Validation, "A category cannot be its own parent.");
+        if (input.ExpiryAlertDays < 0) throw new DomainException(ErrorCode.Validation, "Expiry alert days cannot be negative.");
         return database.WriteAsync(transaction =>
         {
             int depth = CategoryDepth(transaction, input.ParentId);
-            if (depth >= 3 || HasDescendant(transaction, id, input.ParentId))
+            int subtreeHeight = transaction.Connection.ExecuteScalar<int>("""
+                WITH RECURSIVE descendants(id,depth) AS (
+                    SELECT id,1 FROM category WHERE id=@id
+                    UNION ALL SELECT c.id,d.depth+1 FROM category c JOIN descendants d ON c.parent_id=d.id
+                ) SELECT COALESCE(MAX(depth),1) FROM descendants
+                """, new { id }, transaction.Transaction);
+            if (depth + subtreeHeight > 3 || HasDescendant(transaction, id, input.ParentId))
                 throw new DomainException(ErrorCode.Validation, "The category hierarchy is invalid or exceeds three levels.");
             int changed = transaction.Connection.Execute("""
                 UPDATE category SET parent_id=@ParentId,name=@name,name_local=@localName,
@@ -218,6 +227,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
         ValidatedProduct product = Validate(input);
         return database.WriteAsync(transaction =>
         {
+            ValidateUnit(transaction, null, input.UomId, input.IsLoose);
             long id = transaction.Connection.ExecuteScalar<long>("""
                 INSERT INTO product(
                     sku, name, name_local, search_terms, category_id, brand_id, uom_id, hsn_code,
@@ -237,18 +247,50 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
         }, cancellationToken);
     }
 
+    public Task<BarcodeOwner?> AttachBarcodeAsync(long productId, string rawBarcode, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(productId);
+        string barcode = CatalogText.Required(GroceryErp.Core.InputNormalizer.Normalize(rawBarcode), 64, nameof(rawBarcode));
+        if (barcode.All(char.IsAsciiDigit) && barcode.Length is 8 or 12 or 13 or 14 && !Ean.IsValid(barcode))
+            throw new DomainException(ErrorCode.InvalidBarcode, barcode);
+        return database.WriteAsync(transaction =>
+        {
+            long active = transaction.Connection.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM product WHERE id=@productId AND is_active=1", new { productId }, transaction.Transaction);
+            if (active == 0) throw new DomainException(ErrorCode.NotFound, "product", productId);
+            BarcodeOwner? owner = transaction.Connection.QuerySingleOrDefault<BarcodeOwner>("""
+                SELECT p.id AS ProductId, p.name AS ProductName
+                FROM product_barcode b JOIN product p ON p.id=b.product_id
+                WHERE b.barcode=@barcode
+                """, new { barcode }, transaction.Transaction);
+            if (owner is not null) return owner.ProductId == productId ? null : owner;
+            string symbology = barcode.Length switch
+            {
+                8 => "EAN8",
+                12 => "UPCA",
+                13 => "EAN13",
+                _ => "CODE128",
+            };
+            transaction.Connection.Execute("""
+                INSERT INTO product_barcode(barcode, product_id, pack_qty, symbology, source, is_primary)
+                VALUES (@barcode, @productId, 1000, @symbology, 'MANUFACTURER',
+                    CASE WHEN EXISTS(SELECT 1 FROM product_barcode WHERE product_id=@productId AND is_primary=1) THEN 0 ELSE 1 END)
+                """, new { barcode, productId, symbology }, transaction.Transaction);
+            audit.Write(transaction, "product", productId, "BARCODE_ADD", new { barcode });
+            return (BarcodeOwner?)null;
+        }, cancellationToken);
+    }
+
     public Task UpdateAsync(long id, ProductInput input, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(id);
         ValidatedProduct product = Validate(input);
         return database.WriteAsync(transaction =>
         {
+            ValidateUnit(transaction, id, input.UomId, input.IsLoose);
             long? currentUom = transaction.Connection.QuerySingleOrDefault<long?>(
                 "SELECT uom_id FROM product WHERE id = @id", new { id }, transaction.Transaction);
             if (currentUom is null) throw new DomainException(ErrorCode.NotFound, "product", id);
-            if (currentUom != product.UomId && transaction.Connection.ExecuteScalar<long>(
-                    "SELECT EXISTS(SELECT 1 FROM product_lot WHERE product_id = @id)", new { id }, transaction.Transaction) != 0)
-                throw new DomainException(ErrorCode.Validation, "A product's unit cannot change after stock lots exist.");
 
             transaction.Connection.Execute("""
                 UPDATE product SET
@@ -330,6 +372,10 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             long exists = transaction.Connection.ExecuteScalar<long>(
                 "SELECT COUNT(*) FROM product WHERE id=@productId", new { productId }, transaction.Transaction);
             if (exists == 0) throw new DomainException(ErrorCode.NotFound, "product", productId);
+            string? existingBarcode = transaction.Connection.QueryFirstOrDefault<string>(
+                "SELECT barcode FROM product_barcode WHERE product_id=@productId AND source='INTERNAL' ORDER BY id LIMIT 1",
+                new { productId }, transaction.Transaction);
+            if (existingBarcode is not null) return existingBarcode;
             string barcode = Ean.Internal(prefix, productId);
             transaction.Connection.Execute("""
                 INSERT INTO product_barcode(barcode, product_id, pack_qty, symbology, source, is_primary)
@@ -337,6 +383,25 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                     CASE WHEN EXISTS(SELECT 1 FROM product_barcode WHERE product_id=@productId AND is_primary=1) THEN 0 ELSE 1 END)
                 """, new { barcode, productId }, transaction.Transaction);
             audit.Write(transaction, "product", productId, "BARCODE_ADD", new { barcode });
+            return barcode;
+        }, cancellationToken);
+
+    public Task<string> EnsureLotBarcodeAsync(long lotId, string prefix, CancellationToken cancellationToken = default) =>
+        database.WriteAsync(transaction =>
+        {
+            long? productId = transaction.Connection.QuerySingleOrDefault<long?>(
+                "SELECT product_id FROM product_lot WHERE id=@lotId AND is_active=1", new { lotId }, transaction.Transaction);
+            if (productId is null) throw new DomainException(ErrorCode.NotFound, "lot", lotId);
+            string? existing = transaction.Connection.QueryFirstOrDefault<string>(
+                "SELECT barcode FROM product_barcode WHERE lot_id=@lotId AND source='INTERNAL' ORDER BY id LIMIT 1",
+                new { lotId }, transaction.Transaction);
+            if (existing is not null) return existing;
+            string barcode = Ean.Internal(prefix, lotId);
+            transaction.Connection.Execute("""
+                INSERT INTO product_barcode(barcode, product_id, lot_id, pack_qty, symbology, source, is_primary)
+                VALUES (@barcode, @productId, @lotId, 1000, 'EAN13', 'INTERNAL', 0)
+                """, new { barcode, productId, lotId }, transaction.Transaction);
+            audit.Write(transaction, "product_lot", lotId, "BARCODE_ADD", new { barcode });
             return barcode;
         }, cancellationToken);
 
@@ -350,7 +415,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             string join = string.Empty;
             string search = string.Empty;
             object parameters;
-            if (query.Length >= 3)
+            if (query.Length >= 3 && query.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(static term => term.Length >= 3))
             {
                 join = "JOIN product_fts f ON f.rowid=p.id";
                 search = "AND product_fts MATCH @match";
@@ -360,8 +425,9 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             }
             else
             {
-                search = query.Length == 0 ? string.Empty : "AND (p.sku LIKE @prefix OR p.name LIKE @prefix)";
-                parameters = new { prefix = query + "%", filter.CategoryId, filter.BrandId, filter.LowStockOnly, filter.NoBarcodeOnly, filter.MissingLocalNameOnly, filter.IncludeArchived, filter.LooseOnly, limit };
+                search = query.Length == 0 ? string.Empty : "AND (p.sku LIKE @prefix ESCAPE '\\' OR p.name LIKE @prefix ESCAPE '\\' OR p.name_local LIKE @prefix ESCAPE '\\' OR p.search_terms LIKE @prefix ESCAPE '\\')";
+                string escaped = query.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("%", "\\%", StringComparison.Ordinal).Replace("_", "\\_", StringComparison.Ordinal);
+                parameters = new { prefix = (query.Length >= 3 ? "%" : "") + escaped + "%", filter.CategoryId, filter.BrandId, filter.LowStockOnly, filter.NoBarcodeOnly, filter.MissingLocalNameOnly, filter.IncludeArchived, filter.LooseOnly, limit };
             }
 
             string sql = $$"""
@@ -377,13 +443,13 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                 JOIN uom u ON u.id=p.uom_id
                 LEFT JOIN brand b ON b.id=p.brand_id
                 LEFT JOIN product_lot l ON l.id=(
-                    SELECT pl.id FROM product_lot pl WHERE pl.product_id=p.id AND pl.qty_on_hand>0
+                    SELECT pl.id FROM product_lot pl WHERE pl.product_id=p.id AND pl.qty_on_hand>0 AND pl.is_active=1
                     ORDER BY CASE WHEN pl.expiry_date IS NULL THEN 1 ELSE 0 END, pl.expiry_date, pl.id LIMIT 1)
                 {{join}}
                 WHERE (@IncludeArchived=1 OR p.is_active=1)
                   AND (@CategoryId IS NULL OR p.category_id=@CategoryId)
                   AND (@BrandId IS NULL OR p.brand_id=@BrandId)
-                  AND (@LowStockOnly=0 OR COALESCE((SELECT SUM(ps.qty_on_hand) FROM product_lot ps WHERE ps.product_id=p.id),0)<=p.reorder_level)
+                  AND (@LowStockOnly=0 OR (p.reorder_level>0 AND COALESCE((SELECT SUM(ps.qty_on_hand) FROM product_lot ps WHERE ps.product_id=p.id),0)<=p.reorder_level))
                   AND (@NoBarcodeOnly=0 OR NOT EXISTS(SELECT 1 FROM product_barcode pb WHERE pb.product_id=p.id))
                   AND (@MissingLocalNameOnly=0 OR p.name_local IS NULL OR trim(p.name_local)='')
                   AND (@LooseOnly=0 OR p.is_loose=1)
@@ -411,6 +477,8 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             throw new DomainException(ErrorCode.Validation, "Prices and quantities cannot be negative.");
         if (input.IsLoose && string.IsNullOrWhiteSpace(input.PluCode))
             throw new DomainException(ErrorCode.Validation, "Loose products require a PLU code.");
+        if (input.DefaultShelfLifeDays <= 0 || input.ExpiryAlertDays < 0)
+            throw new DomainException(ErrorCode.Validation, "Shelf life must be positive and expiry alert days cannot be negative.");
 
         List<ValidatedBarcode> barcodes = [];
         var unique = new HashSet<string>(StringComparer.Ordinal);
@@ -424,7 +492,9 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             string symbology = barcodeInput.Symbology.ToUpperInvariant();
             if (symbology is not ("EAN13" or "EAN8" or "UPCA" or "CODE128" or "OTHER"))
                 throw new DomainException(ErrorCode.Validation, "Unsupported barcode symbology.");
-            barcodes.Add(new(barcode, barcodeInput.PackQuantity.Scaled, symbology, barcodeInput.IsPrimary));
+            if (barcodeInput.Source is not ("MANUFACTURER" or "INTERNAL"))
+                throw new DomainException(ErrorCode.Validation, "Unsupported barcode source.");
+            barcodes.Add(new(barcode, barcodeInput.PackQuantity.Scaled, symbology, barcodeInput.IsPrimary, barcodeInput.Source));
         }
         if (barcodes.Count(static item => item.IsPrimary) > 1)
             throw new DomainException(ErrorCode.Validation, "Only one barcode can be primary.");
@@ -442,8 +512,8 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
         foreach (ValidatedBarcode barcode in barcodes)
             transaction.Connection.Execute("""
                 INSERT INTO product_barcode(barcode, product_id, pack_qty, symbology, source, is_primary)
-                VALUES (@Barcode, @productId, @PackQuantity, @Symbology, 'MANUFACTURER', @IsPrimary)
-                """, new { barcode.Barcode, productId, barcode.PackQuantity, barcode.Symbology, barcode.IsPrimary }, transaction.Transaction);
+                VALUES (@Barcode, @productId, @PackQuantity, @Symbology, @Source, @IsPrimary)
+                """, new { barcode.Barcode, productId, barcode.PackQuantity, barcode.Symbology, barcode.IsPrimary, barcode.Source }, transaction.Transaction);
     }
 
     private Task<int> BulkChangeAsync(
@@ -496,7 +566,20 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             """, new { id, candidateParentId }, transaction.Transaction) != 0;
     }
 
-    private sealed record ValidatedBarcode(string Barcode, long PackQuantity, string Symbology, bool IsPrimary);
+    internal static void ValidateUnit(DbTx transaction, long? productId, long unitId, bool isLoose)
+    {
+        bool? fractional = transaction.Connection.QuerySingleOrDefault<bool?>(
+            "SELECT allow_fraction FROM uom WHERE id=@unitId", new { unitId }, transaction.Transaction);
+        if (fractional is null) throw new DomainException(ErrorCode.NotFound, "unit", unitId);
+        if (isLoose && !fractional.Value) throw new DomainException(ErrorCode.Validation, "Loose products require a fractional unit.");
+        if (productId is not null && transaction.Connection.ExecuteScalar<long>("""
+            SELECT EXISTS(SELECT 1 FROM product p WHERE p.id=@productId AND p.uom_id<>@unitId
+                AND EXISTS(SELECT 1 FROM product_lot l WHERE l.product_id=p.id))
+            """, new { productId, unitId }, transaction.Transaction) != 0)
+            throw new DomainException(ErrorCode.Validation, "A product's unit cannot change after stock lots exist.");
+    }
+
+    private sealed record ValidatedBarcode(string Barcode, long PackQuantity, string Symbology, bool IsPrimary, string Source);
     private sealed record ValidatedProduct(
         string Sku, string Name, string? NameLocal, string? SearchTerms, long CategoryId, long? BrandId,
         long UomId, string? HsnCode, long? TaxRateId, int PriceIncludesTax, int IsLoose, string? PluCode,
@@ -517,6 +600,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
         public long PackQuantity { get; init; }
         public string Symbology { get; init; } = string.Empty;
         public bool IsPrimary { get; init; }
+        public string Source { get; init; } = "MANUFACTURER";
     }
 
     private sealed class ProductRow

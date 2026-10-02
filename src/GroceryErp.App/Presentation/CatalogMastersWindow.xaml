@@ -11,7 +11,18 @@
       <TabItem Header="{l:Tr Catalog_Categories}">
         <Grid Margin="12">
           <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="1.2*" /></Grid.ColumnDefinitions>
-          <ListBox x:Name="CategoryList" DisplayMemberPath="Name" SelectionChanged="CategoryList_OnSelectionChanged" />
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Top" Margin="0,0,8,10" Opacity="0.7" TextWrapping="Wrap" Text="{l:Tr Catalog_DragCategoryHint}" />
+          <TreeView x:Name="CategoryTree" AllowDrop="True" SelectedItemChanged="CategoryTree_OnSelectedItemChanged"
+                    PreviewMouseLeftButtonDown="CategoryTree_OnPreviewMouseLeftButtonDown" MouseMove="CategoryTree_OnMouseMove"
+                    DragOver="CategoryTree_OnDragOver" Drop="CategoryTree_OnDrop">
+            <TreeView.ItemTemplate>
+              <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                <TextBlock Text="{Binding Item.Name}" ToolTip="{Binding Item.NameLocal}" />
+              </HierarchicalDataTemplate>
+            </TreeView.ItemTemplate>
+          </TreeView>
+          </DockPanel>
           <StackPanel Grid.Column="1" Margin="18,0,0,0">
             <TextBlock FontSize="18" FontWeight="SemiBold" Text="{l:Tr Catalog_Category}" />
             <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_Name}" />

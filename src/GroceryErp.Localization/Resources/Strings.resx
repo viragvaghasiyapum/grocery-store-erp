@@ -53,13 +53,13 @@
   <data name="Setup_LabelPrinter" xml:space="preserve"><value>Label printer</value></data>
   <data name="Setup_LabelSize" xml:space="preserve"><value>Label size</value></data>
   <data name="Setup_A4Printer" xml:space="preserve"><value>A4 printer</value></data>
-  <data name="Setup_PrinterHelp" xml:space="preserve"><value>Install Windows printer drivers before setup. Printer test pages are available from Settings after setup.</value></data>
+  <data name="Setup_PrinterHelp" xml:space="preserve"><value>Install Windows printer drivers before setup. Use Print test to check each selected printer.</value></data>
   <data name="Setup_StepBarcodes" xml:space="preserve"><value>6  Barcodes</value></data>
   <data name="Setup_BarcodePrefixes" xml:space="preserve"><value>Internal barcode prefixes</value></data>
   <data name="Setup_LotPrefix" xml:space="preserve"><value>Lot prefix</value></data>
   <data name="Setup_ProductPrefix" xml:space="preserve"><value>Product prefix</value></data>
-  <data name="Setup_ScaleRule" xml:space="preserve"><value>Weighing-scale rule (optional)</value></data>
-  <data name="Setup_BarcodeHelp" xml:space="preserve"><value>Prefixes must be different two-digit values. The scale rule can be configured later if no scale is used.</value></data>
+  <data name="Setup_ScaleRule" xml:space="preserve"><value>Scale label prefix (optional, 2 digits)</value></data>
+  <data name="Setup_BarcodeHelp" xml:space="preserve"><value>Use different two-digit prefixes. Scale labels use: prefix, 5-digit PLU, 5-digit weight in grams, check digit (for example, 27 00123 01250 5). Leave blank if your scale uses another format.</value></data>
   <data name="Setup_StepKeyboard" xml:space="preserve"><value>7  Keyboard</value></data>
   <data name="Setup_GujaratiKeyboard" xml:space="preserve"><value>Gujarati keyboard</value></data>
   <data name="Setup_KeyboardFound" xml:space="preserve"><value>Gujarati Phonetic keyboard detected.</value></data>
@@ -83,6 +83,25 @@
   <data name="Setup_ErrorPasswordMismatch" xml:space="preserve"><value>Passwords do not match.</value></data>
   <data name="Setup_ErrorBackupRequired" xml:space="preserve"><value>Backup folder is required.</value></data>
   <data name="Setup_ErrorPrefixes" xml:space="preserve"><value>Barcode prefixes must be different two-digit values.</value></data>
+  <data name="Setup_ErrorScalePrefix" xml:space="preserve"><value>Scale prefix must be two digits and different from the other prefixes.</value></data>
+  <data name="Seed_Uom_PCS" xml:space="preserve"><value>Piece</value></data>
+  <data name="Seed_Uom_KG" xml:space="preserve"><value>Kilogram</value></data>
+  <data name="Seed_Uom_G" xml:space="preserve"><value>Gram</value></data>
+  <data name="Seed_Uom_L" xml:space="preserve"><value>Litre</value></data>
+  <data name="Seed_Uom_ML" xml:space="preserve"><value>Millilitre</value></data>
+  <data name="Seed_Uom_DOZ" xml:space="preserve"><value>Dozen</value></data>
+  <data name="Seed_Uom_PKT" xml:space="preserve"><value>Packet</value></data>
+  <data name="Seed_Uom_BOX" xml:space="preserve"><value>Box</value></data>
+  <data name="Seed_ExpenseCategory_Rent" xml:space="preserve"><value>Rent</value></data>
+  <data name="Seed_ExpenseCategory_Electricity" xml:space="preserve"><value>Electricity</value></data>
+  <data name="Seed_ExpenseCategory_TransportDelivery" xml:space="preserve"><value>Transport &amp; Delivery</value></data>
+  <data name="Seed_ExpenseCategory_Packaging" xml:space="preserve"><value>Packaging</value></data>
+  <data name="Seed_ExpenseCategory_RepairsMaintenance" xml:space="preserve"><value>Repairs &amp; Maintenance</value></data>
+  <data name="Seed_ExpenseCategory_ShopSupplies" xml:space="preserve"><value>Shop Supplies</value></data>
+  <data name="Seed_ExpenseCategory_PhoneInternet" xml:space="preserve"><value>Phone &amp; Internet</value></data>
+  <data name="Seed_ExpenseCategory_BankUpiCharges" xml:space="preserve"><value>Bank &amp; UPI Charges</value></data>
+  <data name="Seed_ExpenseCategory_TaxesFees" xml:space="preserve"><value>Taxes &amp; Fees</value></data>
+  <data name="Seed_ExpenseCategory_Miscellaneous" xml:space="preserve"><value>Miscellaneous</value></data>
   <data name="Login_Title" xml:space="preserve"><value>Sign in</value></data>
   <data name="Login_Username" xml:space="preserve"><value>Username</value></data>
   <data name="Login_Password" xml:space="preserve"><value>Password</value></data>
@@ -101,6 +120,11 @@
   <data name="Startup_Failed" xml:space="preserve"><value>Grocery ERP could not start. Details were written to the log.</value></data>
   <data name="Catalog_Navigation" xml:space="preserve"><value>Products</value></data>
   <data name="Catalog_Title" xml:space="preserve"><value>Products</value></data>
+  <data name="Catalog_Subtitle" xml:space="preserve"><value>Find products, review stock, and manage labels.</value></data>
+  <data name="Catalog_LowStock" xml:space="preserve"><value>Low stock</value></data>
+  <data name="Catalog_IncludeArchived" xml:space="preserve"><value>Include archived</value></data>
+  <data name="Catalog_Empty" xml:space="preserve"><value>No products match these filters.</value></data>
+  <data name="Catalog_Restore" xml:space="preserve"><value>Restore product</value></data>
   <data name="Catalog_SearchHint" xml:space="preserve"><value>Search by SKU, name, local name, alias, or brand</value></data>
   <data name="Catalog_NoBarcode" xml:space="preserve"><value>No barcode</value></data>
   <data name="Catalog_MissingLocal" xml:space="preserve"><value>Missing local name</value></data>
@@ -114,7 +138,7 @@
   <data name="Catalog_Active" xml:space="preserve"><value>Active</value></data>
   <data name="Catalog_GenerateBarcode" xml:space="preserve"><value>Generate barcode</value></data>
   <data name="Catalog_Remove" xml:space="preserve"><value>Remove</value></data>
-  <data name="Catalog_Count" xml:space="preserve"><value>{0} products</value></data>
+  <data name="Catalog_Count" xml:space="preserve"><value>Products: {0}</value></data>
   <data name="Catalog_RemoveConfirm" xml:space="preserve"><value>Remove “{0}”? Products with history will be archived.</value></data>
   <data name="Catalog_Deleted" xml:space="preserve"><value>Product deleted.</value></data>
   <data name="Catalog_ArchivedResult" xml:space="preserve"><value>Product archived because it has transaction history.</value></data>
@@ -147,12 +171,28 @@
   <data name="Catalog_BarcodesHint" xml:space="preserve"><value>Enter one barcode per line. The first is primary.</value></data>
   <data name="Catalog_CategoryRequiredFirst" xml:space="preserve"><value>Create at least one category before adding products.</value></data>
   <data name="Catalog_Categories" xml:space="preserve"><value>Categories</value></data>
+  <data name="Catalog_LabelTemplate" xml:space="preserve"><value>Label template</value></data>
+  <data name="Catalog_TemplatePrice" xml:space="preserve"><value>Price label</value></data>
+  <data name="Catalog_TemplateBarcodePrice" xml:space="preserve"><value>Barcode + price</value></data>
+  <data name="Catalog_TemplateShelfEdge" xml:space="preserve"><value>Shelf edge</value></data>
+  <data name="Catalog_LabelSource" xml:space="preserve"><value>Source</value></data>
+  <data name="Catalog_LabelProduct" xml:space="preserve"><value>Product</value></data>
+  <data name="Catalog_LabelSelectionHint" xml:space="preserve"><value>Select rows and set copies for each. Lot rows start with the received quantity.</value></data>
+  <data name="Catalog_BatchCopiesRange" xml:space="preserve"><value>Each selected row needs 1 to 100,000 copies.</value></data>
+  <data name="Catalog_NoLabels" xml:space="preserve"><value>No printable products or lots were found.</value></data>
+  <data name="Catalog_SelectLabels" xml:space="preserve"><value>Select at least one label.</value></data>
+  <data name="Catalog_PrintReceivedLabels" xml:space="preserve"><value>Print labels for the received lots now?</value></data>
+  <data name="Catalog_DragCategoryHint" xml:space="preserve"><value>Drag a category onto another to change its parent; drop in blank space to move it to the top level.</value></data>
   <data name="Catalog_Brands" xml:space="preserve"><value>Brands</value></data>
   <data name="Catalog_ParentCategory" xml:space="preserve"><value>Parent category (optional)</value></data>
   <data name="Catalog_ExpiryAlertDays" xml:space="preserve"><value>Expiry alert days (optional)</value></data>
   <data name="Catalog_Clear" xml:space="preserve"><value>New</value></data>
   <data name="Catalog_Import" xml:space="preserve"><value>Import Excel</value></data>
   <data name="Catalog_ImportTitle" xml:space="preserve"><value>Import products from Excel</value></data>
+  <data name="Catalog_Select" xml:space="preserve"><value>Use</value></data>
+  <data name="Catalog_ExportErrors" xml:space="preserve"><value>Export errors</value></data>
+  <data name="Catalog_ErrorsSaved" xml:space="preserve"><value>Error workbook saved.</value></data>
+  <data name="Catalog_SelectForImport" xml:space="preserve"><value>Select at least one valid row to import.</value></data>
   <data name="Catalog_Browse" xml:space="preserve"><value>Choose file</value></data>
   <data name="Catalog_DownloadTemplate" xml:space="preserve"><value>Save template</value></data>
   <data name="Catalog_Row" xml:space="preserve"><value>Row</value></data>
@@ -165,6 +205,9 @@
   <data name="Catalog_ImportComplete" xml:space="preserve"><value>Import complete: {0} created, {1} updated, {2} skipped.</value></data>
   <data name="Catalog_PrintLabels" xml:space="preserve"><value>Print labels</value></data>
   <data name="Catalog_LabelPreview" xml:space="preserve"><value>Label preview</value></data>
+  <data name="Catalog_LabelBarcodeRequired" xml:space="preserve"><value>Add a barcode before printing labels.</value></data>
+  <data name="Catalog_LabelCopiesRange" xml:space="preserve"><value>Copies must be between 1 and 999.</value></data>
+  <data name="Catalog_LabelPriceRequired" xml:space="preserve"><value>Set a default selling price before printing labels.</value></data>
   <data name="Catalog_PrinterName" xml:space="preserve"><value>Windows printer name</value></data>
   <data name="Catalog_Copies" xml:space="preserve"><value>Copies</value></data>
   <data name="Catalog_SavePrintFile" xml:space="preserve"><value>Save .prn</value></data>
@@ -194,6 +237,9 @@
   <data name="Stock_Title" xml:space="preserve"><value>Stock and lots</value></data>
   <data name="Stock_Overview" xml:space="preserve"><value>Overview</value></data>
   <data name="Stock_Lots" xml:space="preserve"><value>Lots</value></data>
+  <data name="Stock_MoveDate" xml:space="preserve"><value>Date</value></data>
+  <data name="Stock_MovementType" xml:space="preserve"><value>Movement</value></data>
+  <data name="Stock_Mrp" xml:space="preserve"><value>MRP</value></data>
   <data name="Stock_Quantity" xml:space="preserve"><value>Quantity</value></data>
   <data name="Stock_CostValue" xml:space="preserve"><value>Value at cost</value></data>
   <data name="Stock_Reorder" xml:space="preserve"><value>Reorder level</value></data>
@@ -261,6 +307,22 @@
   <data name="Sales_Pos_Navigation" xml:space="preserve"><value>Billing (POS)</value></data>
   <data name="Sales_History_Navigation" xml:space="preserve"><value>Sales history</value></data>
   <data name="Sales_Pos_Title" xml:space="preserve"><value>Billing</value></data>
+  <data name="Pos_UnknownBarcodeTitle" xml:space="preserve"><value>Unknown barcode</value></data>
+  <data name="Pos_QuickAdd" xml:space="preserve"><value>Quick add product</value></data>
+  <data name="Pos_QuickProductHint" xml:space="preserve"><value>Enter the essentials to create this product. The scanned barcode and SKU are filled in.</value></data>
+  <data name="Pos_QuickAddHint" xml:space="preserve"><value>Create the product with this barcode filled in. Enter opening stock to add it to this bill now; leave quantity blank to save the product only.</value></data>
+  <data name="Pos_OpeningQuantity" xml:space="preserve"><value>Opening quantity (optional)</value></data>
+  <data name="Pos_OpeningExpiry" xml:space="preserve"><value>Expiry (YYYY-MM-DD)</value></data>
+  <data name="Pos_AttachExisting" xml:space="preserve"><value>Attach to existing product</value></data>
+  <data name="Pos_OpenBarcodeOwner" xml:space="preserve"><value>Open barcode owner</value></data>
+  <data name="Pos_BarcodeOwned" xml:space="preserve"><value>This barcode already belongs to {0}.</value></data>
+  <data name="Pos_QuickRequired" xml:space="preserve"><value>Selling price, MRP, and tax rate are required for quick add.</value></data>
+  <data name="Pos_OpeningQuantityRequired" xml:space="preserve"><value>Enter an opening quantity when cost or expiry is supplied.</value></data>
+  <data name="Pos_OpeningQuantityInvalid" xml:space="preserve"><value>Enter an opening quantity greater than zero.</value></data>
+  <data name="Pos_OpeningCostInvalid" xml:space="preserve"><value>Enter a valid nonnegative unit cost.</value></data>
+  <data name="Pos_OpeningExpiryInvalid" xml:space="preserve"><value>Enter expiry as YYYY-MM-DD.</value></data>
+  <data name="Pos_SaveOpeningStock" xml:space="preserve"><value>Save opening stock</value></data>
+  <data name="Pos_ProductSavedNoStock" xml:space="preserve"><value>Product saved. Add stock before selling it.</value></data>
   <data name="Sales_History_Title" xml:space="preserve"><value>Sales history</value></data>
   <data name="Sales_Scan_Hint" xml:space="preserve"><value>Scan barcode or search (F3)</value></data>
   <data name="Sales_Gross" xml:space="preserve"><value>Gross</value></data>
@@ -398,5 +460,66 @@
   <data name="Settings_Update_SelectFolder" xml:space="preserve"><value>Select the Releases folder on the USB drive</value></data>
   <data name="Settings_Update_None" xml:space="preserve"><value>No newer version was found in this folder.</value></data>
   <data name="Settings_Update_Confirm" xml:space="preserve"><value>Install version {0}? A verified backup will be created before the app restarts.</value></data>
+  <data name="Startup_AlreadyRunning" xml:space="preserve"><value>Grocery ERP is already open. Switch to the existing window.</value></data>
+  <data name="Purchasing_Date" xml:space="preserve"><value>Date</value></data>
+  <data name="Purchasing_Document" xml:space="preserve"><value>Document</value></data>
+  <data name="Settings_Title" xml:space="preserve"><value>Settings</value></data>
+  <data name="Settings_Description" xml:space="preserve"><value>Protect your store data and manage access.</value></data>
+  <data name="Settings_BackupTitle" xml:space="preserve"><value>Backups</value></data>
+  <data name="Settings_BackupNow" xml:space="preserve"><value>Backup now</value></data>
+  <data name="Settings_ExportUsb" xml:space="preserve"><value>Export to USB</value></data>
+  <data name="Settings_RemovableDrive" xml:space="preserve"><value>Removable drive</value></data>
+  <data name="Settings_NoBackup" xml:space="preserve"><value>No backup yet</value></data>
+  <data name="Settings_NoUsbExport" xml:space="preserve"><value>No USB export yet</value></data>
+  <data name="Settings_LastBackup" xml:space="preserve"><value>Last backup: {0}</value></data>
+  <data name="Settings_LastUsbExport" xml:space="preserve"><value>Last USB export: {0}</value></data>
+  <data name="Settings_StatusReady" xml:space="preserve"><value>Backup ready</value></data>
+  <data name="Settings_StatusDue" xml:space="preserve"><value>USB export due</value></data>
+  <data name="Settings_StatusUrgent" xml:space="preserve"><value>Backup attention</value></data>
+  <data name="Settings_BackupRunning" xml:space="preserve"><value>Creating and verifying the backup…</value></data>
+  <data name="Settings_BackupSuccess" xml:space="preserve"><value>Backup created and verified.</value></data>
+  <data name="Settings_ExportRunning" xml:space="preserve"><value>Copying and verifying backups on USB…</value></data>
+  <data name="Settings_ExportSuccess" xml:space="preserve"><value>{0} backup files copied and verified on USB.</value></data>
+  <data name="Settings_SelectUsb" xml:space="preserve"><value>Connect and select a removable drive.</value></data>
+  <data name="Settings_DataTitle" xml:space="preserve"><value>Data locations</value></data>
+  <data name="Settings_ChooseFolder" xml:space="preserve"><value>Choose an empty data folder</value></data>
+  <data name="Settings_MoveData" xml:space="preserve"><value>Move data folder</value></data>
+  <data name="Settings_MoveDataHelp" xml:space="preserve"><value>A verified backup is made first. The app closes and completes the move when you reopen it.</value></data>
+  <data name="Settings_DataMoveRestart" xml:space="preserve"><value>Data-folder move is ready. The app will close now. Open it again to complete the move.</value></data>
+  <data name="Settings_ChangePassword" xml:space="preserve"><value>Change owner password</value></data>
+  <data name="Settings_CurrentPassword" xml:space="preserve"><value>Current password</value></data>
+  <data name="Settings_NewPassword" xml:space="preserve"><value>New password (8+ characters)</value></data>
+  <data name="Settings_SavePassword" xml:space="preserve"><value>Save password</value></data>
+  <data name="Settings_PasswordSaved" xml:space="preserve"><value>Password changed.</value></data>
+  <data name="Settings_ActionFailed" xml:space="preserve"><value>The action failed. Check the folder or printer and try again.</value></data>
+  <data name="Settings_RestoreTitle" xml:space="preserve"><value>Restore a backup</value></data>
+  <data name="Settings_RestoreAction" xml:space="preserve"><value>Restore backup</value></data>
+  <data name="Settings_SelectBackup" xml:space="preserve"><value>Select a Grocery ERP backup</value></data>
+  <data name="Settings_SelectBackupFilter" xml:space="preserve"><value>Grocery ERP backup (*.zip)|*.zip</value></data>
+  <data name="Settings_InspectRunning" xml:space="preserve"><value>Checking the selected backup…</value></data>
+  <data name="Settings_RestoreWarning" xml:space="preserve"><value>Restoring replaces the current records. A verified safety backup is created first. Compare both sides before continuing.</value></data>
+  <data name="Settings_CurrentData" xml:space="preserve"><value>Current data</value></data>
+  <data name="Settings_BackupData" xml:space="preserve"><value>Selected backup</value></data>
+  <data name="Settings_CreatedAt" xml:space="preserve"><value>Created: {0}</value></data>
+  <data name="Settings_AppVersion" xml:space="preserve"><value>App version: {0}</value></data>
+  <data name="Settings_Reason" xml:space="preserve"><value>Backup reason: {0}</value></data>
+  <data name="Settings_SchemaVersion" xml:space="preserve"><value>Schema version: {0}</value></data>
+  <data name="Settings_ProductCount" xml:space="preserve"><value>Products: {0}</value></data>
+  <data name="Settings_BillCount" xml:space="preserve"><value>Completed bills: {0}</value></data>
+  <data name="Settings_LastInvoice" xml:space="preserve"><value>Last invoice: {0}</value></data>
+  <data name="Settings_LastSale" xml:space="preserve"><value>Last sale: {0}</value></data>
+  <data name="Settings_TypeRestore" xml:space="preserve"><value>Type RESTORE to confirm</value></data>
+  <data name="Settings_RestoreCancelled" xml:space="preserve"><value>Restore cancelled. Current data was not changed.</value></data>
+  <data name="Settings_RestoreRunning" xml:space="preserve"><value>Creating a safety backup and applying the restore…</value></data>
+  <data name="Settings_RestoreRestart" xml:space="preserve"><value>Restore applied. The app will close now. Open it again to check the restored data or undo the restore.</value></data>
+  <data name="Error_BackupInvalid" xml:space="preserve"><value>The backup is invalid or damaged.</value></data>
+  <data name="Error_DatabaseNewerThanApp" xml:space="preserve"><value>This backup needs a newer version of Grocery ERP.</value></data>
+  <data name="Setup_PrintTest" xml:space="preserve"><value>Print test</value></data>
+  <data name="Setup_TestDocument" xml:space="preserve"><value>Printer test</value></data>
+  <data name="Setup_TestSent" xml:space="preserve"><value>Test page sent to the printer.</value></data>
+  <data name="Setup_TestFailed" xml:space="preserve"><value>Could not print the test page. Check the printer name, driver, and connection.</value></data>
+  <data name="Setup_ErrorPrinterRequired" xml:space="preserve"><value>Enter a printer name first.</value></data>
+  <data name="Setup_ErrorCloudPath" xml:space="preserve"><value>Choose a folder outside OneDrive.</value></data>
+  <data name="Setup_ErrorDataFolder" xml:space="preserve"><value>Choose an empty data folder separate from the current folder.</value></data>
   <data name="ReleaseNotes_Title" xml:space="preserve"><value>What's new</value></data>
 </root>

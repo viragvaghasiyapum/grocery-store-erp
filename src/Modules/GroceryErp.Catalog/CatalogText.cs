@@ -1,4 +1,4 @@
-using System.Text;
+using GroceryErp.Core;
 
 namespace GroceryErp.Catalog;
 
@@ -14,7 +14,7 @@ internal static class CatalogText
     public static string? Optional(string? value, int maximum)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
-        string normalized = string.Join(' ', value.Normalize(NormalizationForm.FormC)
+        string normalized = string.Join(' ', InputNormalizer.Normalize(value)
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         if (normalized.Length > maximum) throw new ArgumentException($"Value cannot exceed {maximum} characters.");
         return normalized;

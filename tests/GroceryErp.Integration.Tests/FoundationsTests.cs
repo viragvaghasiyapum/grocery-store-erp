@@ -1,9 +1,12 @@
+using System.Security.Cryptography;
+using System.Text.Json;
 using Dapper;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Backup;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Security;
 using GroceryErp.Data.Services;
+using GroceryErp.Localization;
 using Shouldly;
 using Xunit;
 
@@ -203,13 +206,97 @@ public sealed class FoundationsTests
         await service.CompleteAsync(new FirstRunRequest(
             "owner", "correct horse battery staple", "Test Store", "Address", "9999999999", "", "Gujarat",
             "REGULAR", "en-IN", fixture.Paths.DefaultBackupDir, "20", "21", "Receipt", 384,
-            "Labels", "60x40", "A4", 14, "02{weight:5}", true, "IMPORT"), TestContext.Current.CancellationToken);
+            "Labels", "60x40", "A4", 14, "27", true, "IMPORT",
+            FirstRunService.RequiredSeedKeys.ToDictionary(key => key, key =>
+                SharedStrings.ResourceManager.GetString(key, System.Globalization.CultureInfo.GetCultureInfo("gu-IN"))!)),
+            TestContext.Current.CancellationToken);
 
         using var connection = fixture.Factory.Open();
         connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'printer.receipt.width_dots'").ShouldBe("384");
         connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'backup.usb_reminder_days'").ShouldBe("14");
         connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'setup.start_choice'").ShouldBe("IMPORT");
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM app_user").ShouldBe(1L);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM uom WHERE name_local IS NOT NULL").ShouldBe(8L);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM expense_category WHERE name_local IS NOT NULL").ShouldBe(10L);
+        connection.ExecuteScalar<string>("SELECT prefix FROM barcode_rule").ShouldBe("27");
+    }
+
+    [Fact]
+    public void DataRootMove_CopiesAndChecksDatabaseBeforeSwitchingBootstrap()
+    {
+        string sandbox = Path.Combine(Path.GetTempPath(), $"grocery-erp-move-{Guid.NewGuid():N}");
+        string source = Path.Combine(sandbox, "source");
+        string target = Path.Combine(sandbox, "target");
+        string bootstrap = Path.Combine(sandbox, "bootstrap.json");
+        try
+        {
+            var paths = new AppPaths(new SettingsBootstrap(source));
+            var factory = new SqliteConnectionFactory(paths);
+            new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
+            using (var connection = factory.Open())
+                connection.Execute("UPDATE setting SET value = @directory WHERE key = 'backup.dir'",
+                    new { directory = paths.DefaultBackupDir });
+            SettingsBootstrap.Save(source, bootstrap);
+            DataRootRelocator.Schedule(source, target);
+            SettingsBootstrap.Load(bootstrap).DataRoot.ShouldBe(source);
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+
+            DataRootRelocator.ApplyPending(bootstrap).ShouldBeTrue();
+
+            SettingsBootstrap.Load(bootstrap).DataRoot.ShouldBe(target);
+            File.Exists(Path.Combine(target, "db", "grocery.db")).ShouldBeTrue();
+            using var moved = new SqliteConnectionFactory(new AppPaths(SettingsBootstrap.Load(bootstrap))).Open();
+            moved.ExecuteScalar<string>("PRAGMA quick_check").ShouldBe("ok");
+            moved.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'backup.dir'")
+                .ShouldBe(Path.Combine(target, "backups"));
+            File.Exists(Path.Combine(source, "db", "grocery.db")).ShouldBeTrue();
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(sandbox)) Directory.Delete(sandbox, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void DataRootMove_FinishesAfterCopyWasCommittedBeforeBootstrapSwitch()
+    {
+        string sandbox = Path.Combine(Path.GetTempPath(), $"grocery-erp-move-recovery-{Guid.NewGuid():N}");
+        string source = Path.Combine(sandbox, "source");
+        string target = Path.Combine(sandbox, "target");
+        string bootstrap = Path.Combine(sandbox, "bootstrap.json");
+        try
+        {
+            var paths = new AppPaths(new SettingsBootstrap(source));
+            var factory = new SqliteConnectionFactory(paths);
+            new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
+            using (var connection = factory.Open()) connection.Execute("PRAGMA wal_checkpoint(TRUNCATE)");
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            SettingsBootstrap.Save(source, bootstrap);
+            DataRootRelocator.Schedule(source, target);
+            string copiedDb = Path.Combine(target, "db", "grocery.db");
+            Directory.CreateDirectory(Path.Combine(target, "db"));
+            File.Copy(paths.DatabaseFile, copiedDb);
+            string hash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(copiedDb)));
+            File.WriteAllText(Path.Combine(target, "data-move.ready.json"), JsonSerializer.Serialize(new
+            {
+                Source = source,
+                Target = target,
+                DatabaseHash = hash,
+            }));
+
+            DataRootRelocator.ApplyPending(bootstrap).ShouldBeTrue();
+
+            SettingsBootstrap.Load(bootstrap).DataRoot.ShouldBe(target);
+            File.Exists(Path.Combine(source, "data-move.pending.json")).ShouldBeFalse();
+            using var moved = new SqliteConnectionFactory(new AppPaths(SettingsBootstrap.Load(bootstrap))).Open();
+            moved.ExecuteScalar<string>("PRAGMA quick_check").ShouldBe("ok");
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(sandbox)) Directory.Delete(sandbox, recursive: true);
+        }
     }
 
     private sealed class FoundationFixture : IDisposable

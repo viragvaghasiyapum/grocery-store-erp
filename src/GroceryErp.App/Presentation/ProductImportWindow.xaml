@@ -16,22 +16,31 @@
     <Grid Grid.Row="1" Margin="0,16,0,12">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
       <TextBox x:Name="PathBox" Height="34" IsReadOnly="True" VerticalContentAlignment="Center" />
-      <Button Grid.Column="1" Margin="8,0,0,0" Click="Browse_OnClick" Content="{l:Tr Catalog_Browse}" />
+      <Button x:Name="BrowseButton" Grid.Column="1" Margin="8,0,0,0" Click="Browse_OnClick" Content="{l:Tr Catalog_Browse}" />
       <Button Grid.Column="2" Margin="8,0,0,0" Click="Template_OnClick" Content="{l:Tr Catalog_DownloadTemplate}" />
     </Grid>
-    <DataGrid x:Name="PreviewGrid" Grid.Row="2" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+    <DataGrid x:Name="PreviewGrid" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False" CurrentCellChanged="PreviewGrid_OnCurrentCellChanged">
+      <DataGrid.Resources>
+        <Style x:Key="ImportSelectionStyle" TargetType="CheckBox">
+          <EventSetter Event="Checked" Handler="PreviewSelection_OnChanged"/>
+          <EventSetter Event="Unchecked" Handler="PreviewSelection_OnChanged"/>
+          <Style.Triggers><DataTrigger Binding="{Binding CanImport}" Value="False"><Setter Property="IsEnabled" Value="False"/></DataTrigger></Style.Triggers>
+        </Style>
+      </DataGrid.Resources>
       <DataGrid.Columns>
-        <DataGridTextColumn Width="55" Header="{l:Tr Catalog_Row}" Binding="{Binding RowNumber}" />
-        <DataGridCheckBoxColumn Width="70" Header="{l:Tr Catalog_Valid}" Binding="{Binding CanImport}" />
-        <DataGridTextColumn Width="105" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}" />
-        <DataGridTextColumn Width="1.3*" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}" />
-        <DataGridTextColumn Width="*" Header="{l:Tr Catalog_Category}" Binding="{Binding Category}" />
-        <DataGridTextColumn Width="2*" Header="{l:Tr Catalog_ImportErrors}" Binding="{Binding ErrorText}" />
+        <DataGridCheckBoxColumn Width="65" Header="{l:Tr Catalog_Select}" Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" ElementStyle="{StaticResource ImportSelectionStyle}" EditingElementStyle="{StaticResource ImportSelectionStyle}" />
+        <DataGridTextColumn IsReadOnly="True" Width="55" Header="{l:Tr Catalog_Row}" Binding="{Binding RowNumber}" />
+        <DataGridCheckBoxColumn IsReadOnly="True" Width="70" Header="{l:Tr Catalog_Valid}" Binding="{Binding CanImport}" />
+        <DataGridTextColumn IsReadOnly="True" Width="105" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}" />
+        <DataGridTextColumn IsReadOnly="True" Width="1.3*" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}" />
+        <DataGridTextColumn IsReadOnly="True" Width="*" Header="{l:Tr Catalog_Category}" Binding="{Binding Category}" />
+        <DataGridTextColumn IsReadOnly="True" Width="2*" Header="{l:Tr Catalog_ImportErrors}" Binding="{Binding ErrorText}" />
       </DataGrid.Columns>
     </DataGrid>
     <Grid Grid.Row="3" Margin="0,14,0,0">
       <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextWrapping="Wrap" />
       <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+        <Button Width="130" Margin="0,0,8,0" Click="ExportErrors_OnClick" Content="{l:Tr Catalog_ExportErrors}" />
         <Button Width="90" Margin="0,0,8,0" IsCancel="True" Content="{l:Tr Common_Close}" />
         <Button x:Name="ImportButton" Width="130" IsEnabled="False" Click="Import_OnClick" Content="{l:Tr Catalog_ImportValid}" />
       </StackPanel>

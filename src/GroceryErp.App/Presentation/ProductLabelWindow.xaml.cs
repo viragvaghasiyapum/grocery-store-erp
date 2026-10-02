@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO;
 using System.Windows;
 using GroceryErp.Catalog;
+using GroceryErp.Localization;
 using GroceryErp.Printing;
 using Microsoft.Win32;
 
@@ -22,6 +23,7 @@ public partial class ProductLabelWindow : Window
         ProductNameText.Text = details.Product.Name;
         LocalNameText.Text = details.Product.NameLocal;
         BarcodeText.Text = details.Product.Barcodes.FirstOrDefault()?.Barcode ?? string.Empty;
+        if (BarcodeText.Text.Length > 0) BarcodeImage.Source = BarcodePreview.Create(BarcodeText.Text);
         PriceText.Text = $"₹{details.Product.DefaultSellingPrice?.Value.ToString("0.00", CultureInfo.InvariantCulture) ?? "—"}";
         MrpText.Text = details.Product.DefaultMrp is null ? string.Empty : $"MRP {details.Product.DefaultMrp.Value.Value.ToString("0.00", CultureInfo.InvariantCulture)}";
         PrinterBox.Text = printerName;
@@ -49,27 +51,31 @@ public partial class ProductLabelWindow : Window
         }
     }
 
-    private void Print_OnClick(object sender, RoutedEventArgs e)
+    private async void Print_OnClick(object sender, RoutedEventArgs e)
     {
         try
         {
-            RawPrinter.Send(PrinterBox.Text, BuildCommand(), $"{_details.Product.Sku} labels");
+            PrintButton.IsEnabled = false;
+            byte[] command = BuildCommand();
+            string printer = PrinterBox.Text;
+            await Task.Run(() => RawPrinter.Send(printer, command, $"{_details.Product.Sku} labels"));
             DialogResult = true;
         }
         catch (Exception exception)
         {
             StatusText.Text = exception.Message;
+            PrintButton.IsEnabled = true;
         }
     }
 
     private byte[] BuildCommand()
     {
         ProductBarcodeInput barcode = _details.Product.Barcodes.FirstOrDefault()
-            ?? throw new InvalidOperationException("Generate or attach a barcode before printing labels.");
+            ?? throw new InvalidOperationException(TranslationSource.Instance["Catalog_LabelBarcodeRequired"]);
         if (!int.TryParse(CopiesBox.Text, NumberStyles.None, CultureInfo.InvariantCulture, out int copies) || copies is < 1 or > 999)
-            throw new InvalidOperationException("Copies must be between 1 and 999.");
+            throw new InvalidOperationException(TranslationSource.Instance["Catalog_LabelCopiesRange"]);
         decimal price = _details.Product.DefaultSellingPrice?.Value
-            ?? throw new InvalidOperationException("Set a default selling price before printing labels.");
+            ?? throw new InvalidOperationException(TranslationSource.Instance["Catalog_LabelPriceRequired"]);
         return TsplLabelBuilder.Build(new(
             _details.Product.Name, _details.Product.NameLocal, barcode.Barcode, price,
             _details.Product.DefaultMrp?.Value, _width, _height, copies));

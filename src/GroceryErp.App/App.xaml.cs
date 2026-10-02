@@ -23,11 +23,16 @@ using Serilog;
 
 namespace GroceryErp.App;
 
+// WPF owns Application lifetime; OnExit releases the mutex on every shutdown path.
+#pragma warning disable CA1001
 public partial class App : Application
 {
     private IHost? _host;
     private bool _databaseReady;
+    private bool _skipCloseBackup;
     private Task? _maintenanceTask;
+    private Mutex? _instanceMutex;
+    private bool _ownsInstanceMutex;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -36,6 +41,17 @@ public partial class App : Application
         try
         {
             ConfigureCultures();
+            _instanceMutex = new Mutex(initiallyOwned: false, @"Local\GroceryErp.SingleInstance");
+            try { _ownsInstanceMutex = _instanceMutex.WaitOne(0); }
+            catch (AbandonedMutexException) { _ownsInstanceMutex = true; }
+            if (!_ownsInstanceMutex)
+            {
+                MessageBox.Show(TranslationSource.Instance["Startup_AlreadyRunning"],
+                    TranslationSource.Instance["App_Title"], MessageBoxButton.OK, MessageBoxImage.Information);
+                Shutdown();
+                return;
+            }
+            DataRootRelocator.ApplyPending();
             HostApplicationBuilder builder = Host.CreateApplicationBuilder(e.Args);
             var paths = new AppPaths(SettingsBootstrap.Load());
             string logDirectory = paths.LogsDir;
@@ -124,6 +140,13 @@ public partial class App : Application
                     settings);
                 if (setup.ShowDialog() != true) { Shutdown(); return; }
                 await settings.LoadAsync();
+                if (DataRootRelocator.HasPending(paths.Root))
+                {
+                    MessageBox.Show(TranslationSource.Instance["Settings_DataMoveRestart"],
+                        TranslationSource.Instance["App_Title"], MessageBoxButton.OK, MessageBoxImage.Information);
+                    Shutdown();
+                    return;
+                }
             }
 
             var login = new LoginWindow(authentication);
@@ -254,7 +277,7 @@ public partial class App : Application
                     catch (OperationCanceledException) { }
                     catch (Exception exception) { Log.Error(exception, "Background startup maintenance failed during shutdown"); }
                 }
-                if (_databaseReady)
+                if (_databaseReady && !_skipCloseBackup)
                 {
                     try { await _host.Services.GetRequiredService<ShutdownPipeline>().RunAsync(); }
                     catch (Exception exception) { Log.Error(exception, "Close backup failed"); }
@@ -271,6 +294,12 @@ public partial class App : Application
         }
         finally
         {
+            if (_ownsInstanceMutex)
+            {
+                _instanceMutex?.ReleaseMutex();
+                _ownsInstanceMutex = false;
+            }
+            _instanceMutex?.Dispose();
             base.OnExit(e);
         }
     }
@@ -288,4 +317,12 @@ public partial class App : Application
 
     internal IServiceProvider Services =>
         _host?.Services ?? throw new InvalidOperationException("The application host is not ready.");
+
+    internal async Task WaitForStartupMaintenanceAsync()
+    {
+        if (_maintenanceTask is not null) await _maintenanceTask;
+    }
+
+    internal void SkipCloseBackup() => _skipCloseBackup = true;
 }
+#pragma warning restore CA1001

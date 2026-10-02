@@ -17,6 +17,8 @@ public sealed record BackupManifest(int Format, string App, string AppVersion, l
     string CreatedAt, string Reason, string Machine, BackupDbInfo Database, BackupSummary Summary);
 public sealed record BackupInfo(string Path, long Bytes, BackupManifest Manifest);
 public sealed record RestoreCandidate(string SourceZip, string StagedDatabase, BackupManifest Manifest);
+public sealed record CurrentDatabaseInfo(long SchemaVersion, BackupSummary Summary);
+public sealed record BackupHealth(DateTime? LastBackup, DateTime? LastUsbExport, bool BackedUpToday, int UsbAgeDays);
 
 public sealed class BackupService(
     AppPaths paths,
@@ -28,6 +30,71 @@ public sealed class BackupService(
 
     public string BackupDirectory => settings.Current.BackupDirectory;
     public bool HasPendingRestore => File.Exists(Path.Combine(paths.DbDir, "restore.pending.json"));
+
+    public BackupHealth GetHealth()
+    {
+        DateTime? latest = Directory.Exists(BackupDirectory)
+            ? new DirectoryInfo(BackupDirectory).EnumerateFiles("GroceryErp_*.zip")
+                .OrderByDescending(static file => file.LastWriteTime).Select(static file => (DateTime?)file.LastWriteTime).FirstOrDefault()
+            : null;
+        string raw = settings.Current.LastUsbExport;
+        DateTime? usb = DateTime.TryParseExact(raw, "yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out DateTime parsed) ? parsed : null;
+        int age = usb is null ? int.MaxValue : Math.Max(0, (clock.BusinessDate.ToDateTime(TimeOnly.MinValue) - usb.Value.Date).Days);
+        return new(latest, usb, latest?.Date == clock.BusinessDate.ToDateTime(TimeOnly.MinValue), age);
+    }
+
+    public CurrentDatabaseInfo InspectCurrent()
+    {
+        (string check, long version, BackupSummary summary) = InspectDatabase(paths.DatabaseFile);
+        if (check != "ok") throw new DomainException(ErrorCode.BackupInvalid, check);
+        return new(version, summary);
+    }
+
+    public IReadOnlyList<string> ExportToUsb(string driveRoot)
+    {
+        string root = Path.GetFullPath(driveRoot);
+        var drive = new DriveInfo(Path.GetPathRoot(root) ?? root);
+        if (drive.DriveType != DriveType.Removable || !drive.IsReady ||
+            !root.Equals(Path.GetFullPath(drive.RootDirectory.FullName), StringComparison.OrdinalIgnoreCase))
+            throw new DomainException(ErrorCode.Validation, "Select a ready removable drive.");
+
+        string source = BackupDirectory;
+        if (!Directory.Exists(source)) Directory.CreateDirectory(source);
+        if (!Directory.EnumerateFiles(source, "GroceryErp_*.zip").Any()) Create("manual");
+        FileInfo[] backups = new DirectoryInfo(source).EnumerateFiles("GroceryErp_*.zip")
+            .OrderByDescending(static file => file.LastWriteTimeUtc).ToArray();
+        if (backups.Length == 0) throw new DomainException(ErrorCode.BackupInvalid, "No backup is available.");
+
+        var selected = new List<FileInfo> { backups[0] };
+        selected.AddRange(backups.GroupBy(static file => file.LastWriteTimeUtc.ToString("yyyy-MM", CultureInfo.InvariantCulture))
+            .Select(static group => group.First()).Where(file => file.FullName != backups[0].FullName));
+        string destination = Path.Combine(root, "GroceryErp-Backups");
+        Directory.CreateDirectory(destination);
+        var copied = new List<string>(selected.Count);
+        foreach (FileInfo file in selected)
+        {
+            BackupManifest original = Verify(file.FullName);
+            string target = Path.Combine(destination, file.Name);
+            bool matches = false;
+            if (File.Exists(target))
+            {
+                try { matches = Verify(target).Database.Sha256 == original.Database.Sha256; }
+                catch (DomainException) { }
+            }
+            if (!matches)
+            {
+                string partial = target + ".partial";
+                File.Copy(file.FullName, partial, overwrite: true);
+                Verify(partial);
+                File.Move(partial, target, overwrite: true);
+            }
+            copied.Add(target);
+        }
+        File.WriteAllText(Path.Combine(destination, "README.txt"),
+            "Grocery ERP backups\n\nIn the app, open Settings > Restore backup, select a .zip file here, compare the summary, and type RESTORE. Keep this drive away from the shop computer.\n");
+        return copied;
+    }
 
     public void CreateBeforeMigration(string reason) => Create(reason);
 
@@ -112,6 +179,8 @@ public sealed class BackupService(
             using ZipArchive archive = ZipFile.OpenRead(zipPath);
             (archive.GetEntry("grocery.db") ?? throw new DomainException(ErrorCode.BackupInvalid, "database missing"))
                 .ExtractToFile(staged);
+            if (!string.Equals(Sha256Hex(staged), verified.Database.Sha256, StringComparison.Ordinal))
+                throw new DomainException(ErrorCode.BackupInvalid, "staged database checksum mismatch");
             (string quickCheck, long version, _) = InspectDatabase(staged);
             if (quickCheck != "ok" || version != verified.SchemaVersion)
                 throw new DomainException(ErrorCode.BackupInvalid, "database integrity or schema mismatch");
@@ -122,6 +191,16 @@ public sealed class BackupService(
             TryDeleteDirectory(staging);
             throw;
         }
+    }
+
+    public void DiscardRestoreCandidate(RestoreCandidate candidate)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        string staging = Path.GetFullPath(Path.GetDirectoryName(candidate.StagedDatabase) ?? "");
+        string expectedParent = Path.GetFullPath(paths.TempDir);
+        if (Path.GetDirectoryName(staging)?.Equals(expectedParent, StringComparison.OrdinalIgnoreCase) == true &&
+            Path.GetFileName(staging).StartsWith("restore-", StringComparison.Ordinal))
+            TryDeleteDirectory(staging);
     }
 
     public void ApplyRestore(RestoreCandidate candidate)

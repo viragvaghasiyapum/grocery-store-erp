@@ -5,6 +5,8 @@ using GroceryErp.Catalog;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Services;
+using GroceryErp.Inventory;
+using GroceryErp.Localization;
 using GroceryErp.Purchasing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -46,7 +48,22 @@ public partial class PurchaseEntryWindow : Window
         try
         {
             _purchaseId = await SaveAsync();
-            await _purchasing.PostAsync(_purchaseId.Value, OperationGuard.NewId());
+            PostedPurchase posted = await _purchasing.PostAsync(_purchaseId.Value, OperationGuard.NewId());
+            if (!posted.WasReplay && posted.LotIds.Count > 0 && MessageBox.Show(
+                TranslationSource.Instance["Catalog_PrintReceivedLabels"],
+                TranslationSource.Instance["Catalog_PrintLabels"], MessageBoxButton.YesNo,
+                MessageBoxImage.Question) == MessageBoxResult.Yes)
+            {
+                IServiceProvider services = ((App)Application.Current).Services;
+                try
+                {
+                    new LabelBatchWindow(services.GetRequiredService<CatalogService>(),
+                        services.GetRequiredService<InventoryService>(), services.GetRequiredService<ISettings>(),
+                        lotIds: posted.LotIds)
+                    { Owner = this }.ShowDialog();
+                }
+                catch (Exception labelError) { MessageBox.Show(labelError.Message); }
+            }
             DialogResult = true;
         }
         catch (Exception exception) { ErrorText.Text = exception.Message; }

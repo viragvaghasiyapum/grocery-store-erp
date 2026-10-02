@@ -1,9 +1,12 @@
+using System.ComponentModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using GroceryErp.Core.Errors;
 using GroceryErp.Core.Time;
+using GroceryErp.Data.Backup;
 using GroceryErp.Data.Security;
 using GroceryErp.Data.Services;
 using GroceryErp.Expenses;
@@ -23,6 +26,7 @@ public partial class ShellWindow : FluentWindow
     private readonly IClock? _clock;
     private readonly DispatcherTimer? _idleTimer;
     private readonly UsbUpdateService? _updates;
+    private readonly BackupService? _backups;
     private DateTime _lastActivity;
 
     public ShellWindow(
@@ -32,7 +36,8 @@ public partial class ShellWindow : FluentWindow
         IClock? clock = null,
         MoneyOutService? moneyOut = null,
         SettingsService? settingsService = null,
-        UsbUpdateService? updates = null)
+        UsbUpdateService? updates = null,
+        BackupService? backups = null)
     {
         InitializeComponent();
         DataContext = viewModel;
@@ -40,6 +45,8 @@ public partial class ShellWindow : FluentWindow
         _settings = settings;
         _clock = clock;
         _updates = updates;
+        _backups = backups;
+        TranslationSource.Instance.PropertyChanged += TranslationChanged;
         _lastActivity = clock?.Now ?? DateTime.MinValue;
         PreviewKeyDown += OnPreviewKeyDown;
         PreviewMouseDown += (_, _) => TouchActivity();
@@ -50,6 +57,7 @@ public partial class ShellWindow : FluentWindow
         }
         Loaded += async (_, _) =>
         {
+            RefreshBackupStatus();
             RootNavigation.Navigate(typeof(DashboardPage));
             if (moneyOut is not null)
             {
@@ -67,8 +75,36 @@ public partial class ShellWindow : FluentWindow
                 }
             }
         };
-        Closed += (_, _) => _idleTimer?.Stop();
+        Closed += (_, _) =>
+        {
+            _idleTimer?.Stop();
+            TranslationSource.Instance.PropertyChanged -= TranslationChanged;
+        };
+        Activated += (_, _) => RefreshBackupStatus();
     }
+
+    private void TranslationChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == "Item[]") RefreshBackupStatus();
+    }
+
+    internal void RefreshBackupStatus()
+    {
+        if (_settings is not null) StoreHeading.Text = string.IsNullOrWhiteSpace(_settings.Current.StoreName)
+            ? TranslationSource.Instance["App_Title"] : _settings.Current.StoreName;
+        if (_clock is not null) BusinessDate.Text = _clock.BusinessDate.ToString("dd MMM yyyy", TranslationSource.FormatCulture);
+        if (_backups is null) return;
+        BackupHealth health = _backups.GetHealth();
+        bool current = health.BackedUpToday;
+        string key = current && health.UsbAgeDays < 7 ? "Settings_StatusReady"
+            : health.UsbAgeDays < 14 && current ? "Settings_StatusDue" : "Settings_StatusUrgent";
+        BackupStatusButton.Content = TranslationSource.Instance[key];
+        BackupStatusButton.Foreground = current && health.UsbAgeDays < 7 ? Brushes.ForestGreen
+            : health.UsbAgeDays < 14 && current ? Brushes.DarkGoldenrod : Brushes.Firebrick;
+        BackupStatusButton.ToolTip = TranslationSource.Instance["Settings_BackupTitle"];
+    }
+
+    private void BackupStatus_OnClick(object sender, RoutedEventArgs e) => RootNavigation.Navigate(typeof(SettingsPage));
 
     internal void SetExpiryBadge(int count) => ExpiryInfoBadge.Value = count.ToString(CultureInfo.InvariantCulture);
     internal void OpenReports() => RootNavigation.Navigate(typeof(ReportsPage));

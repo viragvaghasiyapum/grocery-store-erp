@@ -310,7 +310,7 @@ for later phases remain unpinned until they are actually added.
 | `Microsoft.Extensions.DependencyInjection.Abstractions` | **10.0.12** | UI.Common, modules | MIT |
 | `Microsoft.Data.Sqlite` | 10.x | Data | MIT |
 | `Dapper` | 2.x | Data, modules | Apache-2.0 |
-| `ZXing.Net` | 0.16.x | Printing, Catalog | Apache-2.0 |
+| `ZXing.Net` | **0.16.11** | Printing (barcode preview) | Apache-2.0 |
 | `ClosedXML` | 0.10x | Catalog (import), Reports (export) | MIT |
 | `Konscious.Security.Cryptography.Argon2` | 1.x | Settings (auth) | MIT |
 | `Serilog.Extensions.Hosting`, `Serilog.Sinks.File` | **10.0.0**, **7.0.0** | App | Apache-2.0 |

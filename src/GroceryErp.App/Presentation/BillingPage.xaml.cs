@@ -6,7 +6,10 @@ using GroceryErp.Catalog;
 using GroceryErp.Catalog.Barcodes;
 using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
+using GroceryErp.Core.Time;
 using GroceryErp.Data.Services;
+using GroceryErp.Inventory;
+using GroceryErp.Localization;
 using GroceryErp.Sales;
 using GroceryErp.UI.Common;
 using Microsoft.Extensions.DependencyInjection;
@@ -79,8 +82,24 @@ public partial class BillingPage : Page, IDisposable
             if (result.Kind == ScanResultKind.NotFound)
             {
                 IReadOnlyList<ProductListItem> matches = await _catalog.SearchAsync(new(Query: code, Limit: 2));
-                if (matches.Count != 1) throw new DomainException(ErrorCode.BarcodeNotFound, code);
-                productId = matches[0].Id;
+                bool looksLikeBarcode = code.Length >= 8 && code.All(char.IsAsciiDigit);
+                if (matches.Count == 1 && !looksLikeBarcode)
+                    productId = matches[0].Id;
+                else
+                {
+                    IServiceProvider services = ((App)Application.Current).Services;
+                    var dialog = new UnknownBarcodeWindow(_catalog,
+                        services.GetRequiredService<InventoryService>(), code,
+                        services.GetRequiredService<IClock>().BusinessDate)
+                    { Owner = Window.GetWindow(this) };
+                    if (dialog.ShowDialog() != true || dialog.ResolvedProductId is null) return;
+                    if (!dialog.CanAddToBill)
+                    {
+                        StatusText.Text = TranslationSource.Instance["Pos_ProductSavedNoStock"];
+                        return;
+                    }
+                    productId = dialog.ResolvedProductId.Value;
+                }
                 quantity = prefix;
                 lotId = null;
             }
@@ -248,7 +267,7 @@ public partial class BillingPage : Page, IDisposable
     }
 
     private static string Message(Exception exception) => exception is DomainException domain
-        ? domain.Code.ToString()
+        ? TranslationSource.Instance[$"Error_{domain.Code}"]
         : exception.Message;
 
     public void Dispose()

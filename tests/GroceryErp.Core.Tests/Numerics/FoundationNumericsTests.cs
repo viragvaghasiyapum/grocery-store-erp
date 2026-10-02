@@ -56,4 +56,40 @@ public sealed class FoundationNumericsTests
         FiscalYear.Label(date, startMonth).ShouldBe(label);
         FiscalYear.ShortCode(date, startMonth).ShouldBe(shortCode);
     }
+
+    [Fact]
+    public void Property_Fx3RoundTripsAcrossTheFullScaledLongRange()
+    {
+        var random = new Random(7219);
+        long[] edges = [long.MinValue, long.MinValue + 1, -1, 0, 1, long.MaxValue - 1, long.MaxValue];
+        foreach (long scaled in edges.Concat(Enumerable.Range(0, 10_000).Select(_ => random.NextInt64(long.MinValue, long.MaxValue))))
+        {
+            Fx3.ToScaled(Fx3.FromScaled(scaled)).ShouldBe(scaled);
+            Money.FromScaled(scaled).Scaled.ShouldBe(scaled);
+            Quantity.FromScaled(scaled).Scaled.ShouldBe(scaled);
+            Percent.FromScaled(scaled).Scaled.ShouldBe(scaled);
+        }
+    }
+
+    [Fact]
+    public void Property_AllocationAndTaxAlwaysReconcileToOneMilliunit()
+    {
+        var random = new Random(1947);
+        for (int run = 0; run < 2_000; run++)
+        {
+            long total = random.NextInt64(0, 1_000_000_000);
+            Money[] weights = Enumerable.Range(0, random.Next(1, 16))
+                .Select(_ => Money.FromScaled(random.NextInt64(0, 1_000_000_000))).ToArray();
+            IReadOnlyList<Money> allocated = MoneyMath.Allocate(Money.FromScaled(total), weights);
+            allocated.Sum(static part => part.Scaled).ShouldBe(weights.Sum(static weight => weight.Scaled) == 0 ? 0 : total);
+            allocated.All(static part => part >= Money.Zero).ShouldBeTrue();
+
+            Money gross = Money.FromScaled(total);
+            Percent rate = new(random.Next(0, 29));
+            (Money taxable, Money tax) = Tax.FromInclusive(gross, rate);
+            (taxable + tax).ShouldBe(gross);
+            (Money cgst, Money sgst) = Tax.SplitIntraState(tax);
+            (cgst + sgst).ShouldBe(tax);
+        }
+    }
 }

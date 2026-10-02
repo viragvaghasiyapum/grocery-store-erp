@@ -12,7 +12,14 @@ public static class Gs1
     {
         result = new(null, null, null, null);
         if (string.IsNullOrWhiteSpace(raw)) return false;
-        string value = StripAim(raw.Trim());
+        string value = raw.Trim();
+        if (value.StartsWith(']'))
+        {
+            if (!(value.StartsWith("]d2", StringComparison.Ordinal) ||
+                  value.StartsWith("]C1", StringComparison.Ordinal) ||
+                  value.StartsWith("]Q3", StringComparison.Ordinal))) return false;
+            value = value[3..];
+        }
         bool parenthesized = value.StartsWith("(01)", StringComparison.Ordinal);
         if (!parenthesized && (value.Length < 16 || !value.StartsWith("01", StringComparison.Ordinal))) return false;
 
@@ -50,9 +57,6 @@ public static class Gs1
         result = new(gtin, expiry, batch, serial);
         return true;
     }
-
-    private static string StripAim(string value) =>
-        value.Length >= 3 && value[0] == ']' ? value[3..] : value;
 
     private static string? ReadAi(string value, ref int position, bool parenthesized)
     {
