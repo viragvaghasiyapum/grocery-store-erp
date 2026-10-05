@@ -1,3 +1,4 @@
+using System.Data;
 using CommunityToolkit.Mvvm.Messaging;
 using Dapper;
 using GroceryErp.Core.Errors;
@@ -27,6 +28,22 @@ public sealed class PurchasingService(
             FROM vendor v JOIN v_vendor_balance b ON b.vendor_id=v.id
             WHERE @includeInactive=1 OR v.is_active=1 ORDER BY v.name COLLATE NOCASE
             """, new { includeInactive = includeInactive ? 1 : 0 }).Select(static row => row.ToModel()).ToList(), cancellationToken);
+
+    public Task<VendorInput> GetVendorAsync(long vendorId, CancellationToken cancellationToken = default) =>
+        database.ReadAsync(connection =>
+        {
+            VendorDetailsRow? row = connection.QuerySingleOrDefault<VendorDetailsRow>("""
+                SELECT name AS Name,contact_person AS ContactPerson,phone AS Phone,alt_phone AS AlternatePhone,
+                       email AS Email,address AS Address,city AS City,state AS State,pincode AS Pincode,
+                       gstin AS Gstin,pan AS Pan,upi_id AS UpiId,bank_details AS BankDetails,
+                       payment_terms_days AS PaymentTermsDays,opening_balance AS OpeningBalance,notes AS Notes
+                FROM vendor WHERE id=@vendorId
+                """, new { vendorId });
+            if (row is null) throw new DomainException(ErrorCode.NotFound, "vendor", vendorId);
+            return new VendorInput(row.Name, row.ContactPerson, row.Phone, row.AlternatePhone, row.Email,
+                row.Address, row.City, row.State, row.Pincode, row.Gstin, row.Pan, row.UpiId,
+                row.BankDetails, row.PaymentTermsDays, Money.FromScaled(row.OpeningBalance), row.Notes);
+        }, cancellationToken);
 
     public Task<IReadOnlyList<PurchaseListItem>> GetPurchasesAsync(int limit = 500, CancellationToken cancellationToken = default)
     {
@@ -126,6 +143,56 @@ public sealed class PurchasingService(
         }, cancellationToken);
     }
 
+    public Task<PurchaseDraft> GetDraftAsync(long purchaseId, CancellationToken cancellationToken = default) =>
+        database.ReadAsync(connection =>
+        {
+            DraftHeader? header = connection.QuerySingleOrDefault<DraftHeader>("""
+                SELECT id AS Id,vendor_id AS VendorId,vendor_invoice_no AS VendorInvoiceNumber,
+                       vendor_invoice_date AS VendorInvoiceDate,received_date AS ReceivedDate,
+                       vendor_bill_total AS VendorBillTotal,other_charges AS OtherCharges,notes AS Notes
+                FROM purchase WHERE id=@purchaseId AND status='DRAFT'
+                """, new { purchaseId });
+            if (header is null) throw new DomainException(ErrorCode.NotFound, "purchase draft", purchaseId);
+            IReadOnlyList<PurchaseLineInput> lines = connection.Query<PurchaseLineRow>("""
+                SELECT id AS Id,product_id AS ProductId,batch_no AS BatchNumber,mfg_date AS ManufacturingDate,
+                       expiry_date AS ExpiryDate,qty AS Quantity,free_qty AS FreeQuantity,
+                       unit_cost AS Rate,discount AS Discount,tax_rate_pct AS TaxRate,
+                       mrp AS Mrp,selling_price AS SellingPrice
+                FROM purchase_line WHERE purchase_id=@purchaseId ORDER BY line_no
+                """, new { purchaseId }).Select(static row => row.ToInput()).ToList();
+            return new PurchaseDraft(header.Id, new PurchaseDraftInput(header.VendorId, header.VendorInvoiceNumber,
+                header.VendorInvoiceDate, header.ReceivedDate,
+                header.VendorBillTotal is null ? null : Money.FromScaled(header.VendorBillTotal.Value),
+                Money.FromScaled(header.OtherCharges), header.Notes, lines));
+        }, cancellationToken);
+
+    public Task<PurchaseLineDefaults> GetLineDefaultsAsync(long vendorId, long productId, DateOnly receivedDate,
+        CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
+    {
+        LineDefaultsRow? row = connection.QuerySingleOrDefault<LineDefaultsRow>("""
+            SELECT p.track_expiry AS TrackExpiry,p.price_includes_tax AS PriceIncludesTax,
+                   p.default_shelf_life_days AS ShelfLifeDays,
+                   COALESCE(p.expiry_alert_days,c.expiry_alert_days,@globalAlert) AS ExpiryAlertDays,
+                   COALESCE(t.rate_pct,0) AS TaxRate,
+                   COALESCE((SELECT l.mrp FROM product_lot l WHERE l.product_id=p.id ORDER BY l.id DESC LIMIT 1),
+                            p.default_mrp) AS Mrp,
+                   COALESCE((SELECT l.selling_price FROM product_lot l WHERE l.product_id=p.id ORDER BY l.id DESC LIMIT 1),
+                            p.default_selling_price) AS SellingPrice,
+                   (SELECT pl.unit_cost FROM purchase_line pl JOIN purchase po ON po.id=pl.purchase_id
+                    WHERE pl.product_id=p.id AND po.vendor_id=@vendorId AND po.status='POSTED'
+                    ORDER BY po.received_date DESC,pl.id DESC LIMIT 1) AS LastRate
+            FROM product p JOIN category c ON c.id=p.category_id
+            LEFT JOIN tax_rate t ON t.id=p.tax_rate_id
+            WHERE p.id=@productId AND p.is_active=1
+            """, new { vendorId, productId, globalAlert = settings.Current.ExpiryDefaultAlertDays });
+        if (row is null) throw new DomainException(ErrorCode.NotFound, "product", productId);
+        return new PurchaseLineDefaults(row.LastRate is null ? null : Money.FromScaled(row.LastRate.Value),
+            Percent.FromScaled(row.TaxRate), row.Mrp is null ? null : Money.FromScaled(row.Mrp.Value),
+            row.SellingPrice is null ? null : Money.FromScaled(row.SellingPrice.Value),
+            row.TrackExpiry && row.ShelfLifeDays is int shelfLife ? receivedDate.AddDays(shelfLife) : null,
+            row.ExpiryAlertDays, row.PriceIncludesTax);
+    }, cancellationToken);
+
     public async Task<PostedPurchase> PostAsync(long purchaseId, string operationId, CancellationToken cancellationToken = default)
     {
         var changedProducts = new HashSet<long>();
@@ -222,7 +289,8 @@ public sealed class PurchasingService(
             }
             transaction.Connection.Execute("""
                 UPDATE purchase SET status='POSTED',doc_no=@docNo,subtotal=@subtotal,discount_total=@discounts,
-                    tax_total=@taxTotal,round_off=@roundOff,grand_total=@grandTotal,posted_at=datetime('now','localtime')
+                    tax_total=@taxTotal,round_off=@roundOff,grand_total=@grandTotal,tax_mode=@taxMode,
+                    posted_at=datetime('now','localtime')
                 WHERE id=@purchaseId
                 """, new
             {
@@ -233,6 +301,7 @@ public sealed class PurchasingService(
                 taxTotal = taxTotal.Scaled,
                 roundOff = roundOff.Scaled,
                 grandTotal = grandTotal.Scaled,
+                taxMode = settings.Current.TaxMode,
             }, transaction.Transaction);
             audit.Write(transaction, "purchase", purchaseId, "POST", new { docNo, grandTotal = grandTotal.Scaled, lots = lotIds.Count });
             OperationGuard.Complete(transaction, operationId, "purchase", purchaseId);
@@ -326,6 +395,10 @@ public sealed class PurchasingService(
                 UNION ALL
                 SELECT pay_date AS Date,'PAYMENT' AS Kind,reference AS Reference,0 AS Debit,amount AS Credit,id AS SortId
                   FROM vendor_payment WHERE vendor_id=@vendorId
+                UNION ALL
+                SELECT return_date AS Date,'VENDOR_RETURN' AS Kind,doc_no AS Reference,0 AS Debit,
+                       credit_total AS Credit,id AS SortId
+                  FROM vendor_return WHERE vendor_id=@vendorId
                 ORDER BY Date,Kind,SortId
                 """, new { vendorId }).ToList();
             Money balance = Money.FromScaled(opening);
@@ -342,6 +415,158 @@ public sealed class PurchasingService(
             }
             return (IReadOnlyList<VendorLedgerItem>)result;
         }, cancellationToken);
+
+    public Task<IReadOnlyList<VendorReturnLot>> GetVendorReturnLotsAsync(long purchaseId,
+        CancellationToken cancellationToken = default) => database.ReadAsync<IReadOnlyList<VendorReturnLot>>(connection =>
+    {
+        if (connection.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM purchase WHERE id=@purchaseId AND status='POSTED'", new { purchaseId }) != 1)
+            throw new DomainException(ErrorCode.NotFound, "posted purchase", purchaseId);
+        return LoadVendorReturnLots(connection, purchaseId)
+            .Where(static row => row.Received > row.Returned && row.OnHand > 0)
+            .Select(static row => row.ToModel()).ToArray();
+    }, cancellationToken);
+
+    public async Task<PostedVendorReturn> PostVendorReturnAsync(VendorReturnInput input, string operationId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        string creditNumber = Required(input.VendorCreditNumber, 120, nameof(input.VendorCreditNumber));
+        string reason = Required(input.Reason, 500, nameof(input.Reason));
+        if (input.Lines.Count == 0 || input.Lines.Select(static line => line.LotId).Distinct().Count() != input.Lines.Count)
+            throw new DomainException(ErrorCode.Validation, "Select distinct lots to return.");
+        var changedProducts = new HashSet<long>();
+        PostedVendorReturn result = await database.WriteAsync(transaction =>
+        {
+            OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.VendorReturn);
+            if (replay?.RefId is { } oldId)
+            {
+                var row = transaction.Connection.QuerySingle<VendorReturnPostedRow>("""
+                    SELECT id AS Id,doc_no AS DocumentNumber,credit_total AS CreditTotal,cost_total AS CostTotal
+                    FROM vendor_return WHERE id=@oldId
+                    """, new { oldId }, transaction.Transaction);
+                return new PostedVendorReturn(row.Id, row.DocumentNumber, Money.FromScaled(row.CreditTotal),
+                    Money.FromScaled(row.CostTotal), true);
+            }
+            periods.EnsureOpen(input.Date);
+            (long VendorId, string Status, string? TaxMode) purchase =
+                transaction.Connection.QuerySingleOrDefault<(long VendorId, string Status, string? TaxMode)>(
+                "SELECT vendor_id AS VendorId,status AS Status,tax_mode AS TaxMode FROM purchase WHERE id=@purchaseId",
+                new { purchaseId = input.PurchaseId }, transaction.Transaction);
+            if (purchase.VendorId == 0 || purchase.Status != "POSTED")
+                throw new DomainException(ErrorCode.NotFound, "posted purchase", input.PurchaseId);
+            Dictionary<long, VendorReturnLotRow> eligible = LoadVendorReturnLots(transaction.Connection,
+                input.PurchaseId, transaction.Transaction).ToDictionary(static row => row.LotId);
+            Money beforeTax = Money.Zero;
+            Money tax = Money.Zero;
+            Money cost = Money.Zero;
+            foreach (VendorReturnLineInput line in input.Lines)
+            {
+                if (!eligible.TryGetValue(line.LotId, out VendorReturnLotRow? lot) ||
+                    line.Quantity <= Quantity.Zero ||
+                    (!lot.AllowFraction && !line.Quantity.IsWhole) ||
+                    line.Quantity.Scaled > Math.Min(lot.OnHand, lot.Received - lot.Returned) ||
+                    line.CreditBeforeTax < Money.Zero || line.TaxCredit < Money.Zero ||
+                    line.CreditBeforeTax.Scaled > lot.OriginalBeforeTax - lot.CreditedBeforeTax ||
+                    line.TaxCredit.Scaled > lot.OriginalTax - lot.CreditedTax ||
+                    line.CreditBeforeTax + line.TaxCredit <= Money.Zero)
+                    throw new DomainException(ErrorCode.Validation, "Return quantity or credit exceeds the source lot.");
+                beforeTax += line.CreditBeforeTax;
+                tax += line.TaxCredit;
+                cost += Money.FromScaled(lot.UnitCost) * line.Quantity;
+                changedProducts.Add(lot.ProductId);
+            }
+            string document = numbers.Next(transaction, DocType.VendorReturn, input.Date);
+            long returnId = transaction.Connection.ExecuteScalar<long>("""
+                INSERT INTO vendor_return(doc_no,vendor_id,purchase_id,return_date,vendor_credit_no,
+                    reason,tax_mode,credit_before_tax,tax_credit,credit_total,cost_total)
+                VALUES (@document,@vendorId,@purchaseId,@date,@creditNumber,@reason,@taxMode,
+                    @beforeTax,@tax,@total,@cost) RETURNING id
+                """, new
+            {
+                document,
+                vendorId = purchase.VendorId,
+                purchaseId = input.PurchaseId,
+                date = Format(input.Date),
+                creditNumber,
+                reason,
+                taxMode = purchase.TaxMode ?? settings.Current.TaxMode,
+                beforeTax = beforeTax.Scaled,
+                tax = tax.Scaled,
+                total = (beforeTax + tax).Scaled,
+                cost = cost.Scaled,
+            }, transaction.Transaction);
+            foreach (VendorReturnLineInput line in input.Lines)
+            {
+                VendorReturnLotRow lot = eligible[line.LotId];
+                Money lineCost = Money.FromScaled(lot.UnitCost) * line.Quantity;
+                transaction.Connection.Execute("""
+                    INSERT INTO vendor_return_line(vendor_return_id,product_id,lot_id,qty,
+                        credit_before_tax,tax_credit,cost_value)
+                    VALUES (@returnId,@productId,@lotId,@qty,@beforeTax,@tax,@cost)
+                    """, new DynamicParameters(new
+                {
+                    returnId,
+                    productId = lot.ProductId,
+                    lotId = line.LotId,
+                    qty = line.Quantity.Scaled,
+                    beforeTax = line.CreditBeforeTax.Scaled,
+                    tax = line.TaxCredit.Scaled,
+                    cost = lineCost.Scaled,
+                }), transaction.Transaction);
+                ledger.Post(transaction, new(input.Date, lot.ProductId, lot.LotId, "VENDOR_RETURN",
+                    Quantity.FromScaled(-line.Quantity.Scaled), Money.FromScaled(lot.UnitCost),
+                    "vendor_return", returnId, reason));
+            }
+            audit.Write(transaction, "vendor_return", returnId, "POST", new
+            {
+                purchaseId = input.PurchaseId,
+                vendorId = purchase.VendorId,
+                credit = (beforeTax + tax).Scaled,
+                cost = cost.Scaled,
+            });
+            OperationGuard.Complete(transaction, operationId, "vendor_return", returnId);
+            return new PostedVendorReturn(returnId, document, beforeTax + tax, cost);
+        }, cancellationToken);
+        if (!result.WasReplay && changedProducts.Count > 0)
+            WeakReferenceMessenger.Default.Send(new StockChangedMessage(changedProducts.ToArray()));
+        return result;
+    }
+
+    private static VendorReturnLotRow[] LoadVendorReturnLots(IDbConnection connection, long purchaseId,
+        IDbTransaction? transaction = null) => connection.Query<VendorReturnLotRow>("""
+            SELECT l.id AS LotId,l.product_id AS ProductId,p.name AS ProductName,l.lot_code AS LotCode,
+                   l.qty_received AS Received,l.qty_on_hand AS OnHand,l.unit_cost AS UnitCost,
+                   pl.line_total-pl.tax_amount AS OriginalBeforeTax,pl.tax_amount AS OriginalTax,
+                   COALESCE((SELECT SUM(vrl.qty) FROM vendor_return_line vrl WHERE vrl.lot_id=l.id),0) AS Returned,
+                   COALESCE((SELECT SUM(vrl.credit_before_tax) FROM vendor_return_line vrl WHERE vrl.lot_id=l.id),0) AS CreditedBeforeTax,
+                   COALESCE((SELECT SUM(vrl.tax_credit) FROM vendor_return_line vrl WHERE vrl.lot_id=l.id),0) AS CreditedTax,
+                   u.allow_fraction AS AllowFraction
+            FROM purchase_line pl JOIN product_lot l ON l.purchase_line_id=pl.id
+            JOIN product p ON p.id=l.product_id JOIN uom u ON u.id=p.uom_id
+            WHERE pl.purchase_id=@purchaseId
+            ORDER BY pl.line_no
+            """, new { purchaseId }, transaction).ToArray();
+
+    public Task<IReadOnlyList<VendorPurchaseChoice>> GetVendorPurchaseChoicesAsync(long vendorId,
+        CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
+            (IReadOnlyList<VendorPurchaseChoice>)connection.Query<VendorPurchaseChoiceRow>("""
+                SELECT id AS Id,doc_no AS DocumentNumber,vendor_invoice_no AS InvoiceNumber
+                FROM purchase WHERE vendor_id=@vendorId AND status='POSTED'
+                ORDER BY received_date DESC,id DESC LIMIT 500
+                """, new { vendorId }).Select(static row => new VendorPurchaseChoice(row.Id,
+                string.IsNullOrWhiteSpace(row.InvoiceNumber) ? row.DocumentNumber : $"{row.DocumentNumber} · {row.InvoiceNumber}"))
+                .ToList(), cancellationToken);
+
+    public Task<IReadOnlyList<VendorLotItem>> GetVendorLotsAsync(long vendorId,
+        CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
+            (IReadOnlyList<VendorLotItem>)connection.Query<VendorLotRow>("""
+                SELECT p.name AS ProductName,l.lot_code AS LotCode,l.batch_no AS BatchNumber,
+                       l.received_date AS ReceivedDate,l.expiry_date AS ExpiryDate,l.qty_on_hand AS OnHand
+                FROM product_lot l JOIN product p ON p.id=l.product_id
+                WHERE l.vendor_id=@vendorId ORDER BY l.received_date DESC,l.id DESC
+                """, new { vendorId }).Select(static row => new VendorLotItem(row.ProductName, row.LotCode,
+                row.BatchNumber, row.ReceivedDate, row.ExpiryDate, Quantity.FromScaled(row.OnHand))).ToList(), cancellationToken);
 
     private static void InsertDraftLines(DbTx transaction, long purchaseId, IReadOnlyList<PurchaseLineInput> lines)
     {
@@ -497,11 +722,39 @@ public sealed class PurchasingService(
 
     private sealed record ValidVendor(string Name, string? ContactPerson, string? Phone, string? AlternatePhone, string? Email, string? Address, string? City, string? State, string? Pincode, string? Gstin, string? Pan, string? UpiId, string? BankDetails, int PaymentTermsDays, long OpeningBalance, string? Notes);
     private sealed class VendorRow { public long Id { get; init; } public string Name { get; init; } = ""; public string? Phone { get; init; } public string? Gstin { get; init; } public long BalanceDue { get; init; } public bool IsActive { get; init; } public VendorItem ToModel() => new(Id, Name, Phone, Gstin, Money.FromScaled(BalanceDue), IsActive); }
+    private sealed class VendorDetailsRow { public string Name { get; init; } = ""; public string? ContactPerson { get; init; } public string? Phone { get; init; } public string? AlternatePhone { get; init; } public string? Email { get; init; } public string? Address { get; init; } public string? City { get; init; } public string? State { get; init; } public string? Pincode { get; init; } public string? Gstin { get; init; } public string? Pan { get; init; } public string? UpiId { get; init; } public string? BankDetails { get; init; } public int PaymentTermsDays { get; init; } public long OpeningBalance { get; init; } public string? Notes { get; init; } }
     private sealed class ProductRule { public bool TrackExpiry { get; init; } public bool AllowFraction { get; init; } }
     private sealed class PurchaseHeader { public long Id { get; init; } public long VendorId { get; init; } public DateOnly ReceivedDate { get; init; } public string Status { get; init; } = ""; public long OtherCharges { get; init; } public long? VendorBillTotal { get; init; } }
+    private sealed class DraftHeader { public long Id { get; init; } public long VendorId { get; init; } public string? VendorInvoiceNumber { get; init; } public DateOnly? VendorInvoiceDate { get; init; } public DateOnly ReceivedDate { get; init; } public long? VendorBillTotal { get; init; } public long OtherCharges { get; init; } public string? Notes { get; init; } }
+    private sealed class LineDefaultsRow { public bool TrackExpiry { get; init; } public bool PriceIncludesTax { get; init; } public int? ShelfLifeDays { get; init; } public int ExpiryAlertDays { get; init; } public long TaxRate { get; init; } public long? Mrp { get; init; } public long? SellingPrice { get; init; } public long? LastRate { get; init; } }
     private sealed class PurchaseLineRow { public long Id { get; init; } public long ProductId { get; init; } public string? BatchNumber { get; init; } public DateOnly? ManufacturingDate { get; init; } public DateOnly? ExpiryDate { get; init; } public long Quantity { get; init; } public long FreeQuantity { get; init; } public long Rate { get; init; } public long Discount { get; init; } public long TaxRate { get; init; } public long? Mrp { get; init; } public long SellingPrice { get; init; } public bool TrackExpiry { get; init; } public bool AllowFraction { get; init; } public PurchaseLineInput ToInput() => new(ProductId, BatchNumber, ManufacturingDate, ExpiryDate, GroceryErp.Core.Numerics.Quantity.FromScaled(Quantity), GroceryErp.Core.Numerics.Quantity.FromScaled(FreeQuantity), Money.FromScaled(Rate), Money.FromScaled(Discount), Percent.FromScaled(TaxRate), Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(SellingPrice)); }
     private sealed class CancelLotRow { public long LotId { get; init; } public long ProductId { get; init; } public long Received { get; init; } public long OnHand { get; init; } public long UnitCost { get; init; } public long PurchaseLineId { get; init; } public long MovementCount { get; init; } }
     private sealed class PostedRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public long Subtotal { get; init; } public long Discount { get; init; } public long Tax { get; init; } public long OtherCharges { get; init; } public long RoundOff { get; init; } public long GrandTotal { get; init; } public long? VendorBillTotal { get; init; } }
     private sealed class LedgerRow { public DateOnly Date { get; init; } public string Kind { get; init; } = ""; public string? Reference { get; init; } public long Debit { get; init; } public long Credit { get; init; } public long SortId { get; init; } }
+    private sealed class VendorPurchaseChoiceRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public string? InvoiceNumber { get; init; } }
+    private sealed class VendorLotRow { public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public string? BatchNumber { get; init; } public DateOnly ReceivedDate { get; init; } public DateOnly? ExpiryDate { get; init; } public long OnHand { get; init; } }
+    private sealed class VendorReturnLotRow
+    {
+        public long LotId { get; init; }
+        public long ProductId { get; init; }
+        public string ProductName { get; init; } = "";
+        public string LotCode { get; init; } = "";
+        public long Received { get; init; }
+        public long OnHand { get; init; }
+        public long Returned { get; init; }
+        public long OriginalBeforeTax { get; init; }
+        public long OriginalTax { get; init; }
+        public long CreditedBeforeTax { get; init; }
+        public long CreditedTax { get; init; }
+        public long UnitCost { get; init; }
+        public bool AllowFraction { get; init; }
+        public VendorReturnLot ToModel() => new(LotId, ProductId, ProductName, LotCode,
+            Quantity.FromScaled(Received), Quantity.FromScaled(OnHand),
+            Quantity.FromScaled(Math.Min(OnHand, Received - Returned)),
+            Money.FromScaled(OriginalBeforeTax), Money.FromScaled(OriginalTax),
+            Money.FromScaled(CreditedBeforeTax), Money.FromScaled(CreditedTax),
+            Money.FromScaled(UnitCost), AllowFraction, Quantity.FromScaled(Returned));
+    }
+    private sealed class VendorReturnPostedRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public long CreditTotal { get; init; } public long CostTotal { get; init; } }
     private sealed class PurchaseListRow { public long Id { get; init; } public string? DocumentNumber { get; init; } public string VendorName { get; init; } = ""; public string? VendorInvoiceNumber { get; init; } public DateOnly ReceivedDate { get; init; } public string Status { get; init; } = ""; public long GrandTotal { get; init; } public long? VendorBillTotal { get; init; } public PurchaseListItem ToModel() => new(Id, DocumentNumber, VendorName, VendorInvoiceNumber, ReceivedDate, Status, Money.FromScaled(GrandTotal), VendorBillTotal is null ? null : Money.FromScaled(VendorBillTotal.Value)); }
 }

@@ -1,9 +1,11 @@
 using System.Globalization;
 using System.Windows;
+using GroceryErp.Core;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Services;
 using GroceryErp.Inventory;
+using GroceryErp.Localization;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GroceryErp.App.Presentation;
@@ -25,7 +27,8 @@ public partial class StockAdjustmentWindow : Window
         {
             DateOnly date = ((App)Application.Current).Services.GetRequiredService<IClock>().BusinessDate;
             await _inventory.AdjustAsync(_lot.Id, date,
-                new Quantity(decimal.Parse(QuantityBox.Text, CultureInfo.InvariantCulture)), ReasonBox.Text, OperationGuard.NewId());
+                new Quantity(decimal.Parse(InputNormalizer.Normalize(QuantityBox.Text),
+                    NumberStyles.Number, TranslationSource.FormatCulture)), ReasonBox.Text, OperationGuard.NewId());
             DialogResult = true;
         }
         catch (Exception exception) { ErrorText.Text = exception.Message; }

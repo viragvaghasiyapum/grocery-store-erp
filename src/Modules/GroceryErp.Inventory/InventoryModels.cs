@@ -24,7 +24,8 @@ public sealed record LotItem(
     Money SellingPrice,
     Quantity Received,
     Quantity OnHand,
-    bool IsActive);
+    bool IsActive,
+    string ExpiryBucketCode = "NONE");
 
 public sealed record LedgerItem(
     long Id,
@@ -38,6 +39,11 @@ public sealed record LedgerItem(
     string LotCode,
     Quantity LotBalance,
     string? Note);
+
+public sealed record StockSourceLine(string ProductName, string LotCode, Quantity Quantity, Money Amount);
+
+public sealed record StockSourceDocument(string Type, string Number, DateOnly Date,
+    string? Party, string? Status, string? Notes, IReadOnlyList<StockSourceLine> Lines);
 
 public sealed record OpeningStockLine(
     long ProductId,
@@ -63,6 +69,14 @@ public sealed record StockCountLine(
     Money DifferenceValue);
 
 public sealed record StockCountDetails(long Id, DateOnly Date, string Status, string? Notes, IReadOnlyList<StockCountLine> Lines);
+
+public sealed class StockCountSummary
+{
+    public long Id { get; init; }
+    public DateOnly Date { get; init; }
+    public long LotCount { get; init; }
+    public long CountedCount { get; init; }
+}
 
 public sealed record StockValuationItem(
     long CategoryId,

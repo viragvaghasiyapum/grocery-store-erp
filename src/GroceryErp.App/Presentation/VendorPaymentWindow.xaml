@@ -1,9 +1,10 @@
 <Window x:Class="GroceryErp.App.Presentation.VendorPaymentWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
-        Title="{l:Tr Purchasing_Payment}" Width="450" Height="440" WindowStartupLocation="CenterOwner">
+        Title="{l:Tr Purchasing_Payment}" Width="470" Height="510" MinHeight="480" WindowStartupLocation="CenterOwner">
   <StackPanel Margin="20">
-    <TextBlock Text="{l:Tr Purchasing_Vendor}"/><ComboBox x:Name="VendorBox" DisplayMemberPath="Name" SelectedValuePath="Id" Margin="0,4,0,10"/>
+    <TextBlock Text="{l:Tr Purchasing_Vendor}"/><ComboBox x:Name="VendorBox" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="VendorBox_OnSelectionChanged" Margin="0,4,0,10"/>
+    <TextBlock Text="{l:Tr Purchasing_OptionalPurchase}"/><ComboBox x:Name="PurchaseBox" DisplayMemberPath="Label" SelectedValuePath="Id" Margin="0,4,0,10"/>
     <TextBlock Text="{l:Tr Purchasing_Received}"/><DatePicker x:Name="DateBox" Margin="0,4,0,10"/>
     <TextBlock Text="{l:Tr Purchasing_Amount}"/><TextBox x:Name="AmountBox" Margin="0,4,0,10"/>
     <TextBlock Text="{l:Tr Purchasing_Mode}"/><ComboBox x:Name="ModeBox" Margin="0,4,0,10"><ComboBoxItem Content="CASH"/><ComboBoxItem Content="UPI"/><ComboBoxItem Content="BANK"/><ComboBoxItem Content="CHEQUE"/><ComboBoxItem Content="OTHER"/></ComboBox>

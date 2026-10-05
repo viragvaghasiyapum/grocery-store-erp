@@ -4,55 +4,105 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     Title="{l:Tr Sales_Pos_Title}">
-  <Grid Margin="18">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Grid Margin="20" NumberSubstitution.Substitution="European">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <Grid>
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <TextBox x:Name="ScanBox" Height="42" FontSize="20" KeyDown="ScanBox_OnKeyDown"
-               ToolTip="{l:Tr Sales_Scan_Hint}" />
-      <TextBlock Grid.Column="1" Margin="20,0,0,0" VerticalAlignment="Center"
-                 FontSize="18" Text="{Binding ElementName=BillGrid,Path=Items.Count,StringFormat={}{0} items}" />
+      <Grid>
+        <TextBox x:Name="ScanBox" Height="48" FontSize="20" KeyDown="ScanBox_OnKeyDown"
+                 ToolTip="{l:Tr Sales_Scan_Hint}" />
+        <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" Foreground="Gray"
+                   IsHitTestVisible="False" Text="{l:Tr Sales_Scan_Hint}">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock">
+              <Setter Property="Visibility" Value="Collapsed"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding ElementName=ScanBox,Path=Text}" Value="">
+                  <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
+      </Grid>
+      <StackPanel Grid.Column="1" Margin="20,0,0,0" VerticalAlignment="Center">
+        <StackPanel Orientation="Horizontal">
+          <TextBlock FontSize="17" FontWeight="SemiBold" Text="{l:Tr Sales_Items}"/>
+          <TextBlock x:Name="ItemCountText" Margin="8,0,0,0" FontSize="17" FontWeight="SemiBold"/>
+        </StackPanel>
+        <TextBlock x:Name="CustomerText" FontSize="12" TextTrimming="CharacterEllipsis"/>
+      </StackPanel>
     </Grid>
-    <Grid Grid.Row="1" Margin="0,12,0,12">
-      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="290"/></Grid.ColumnDefinitions>
-      <DataGrid x:Name="BillGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
-                SelectionMode="Single" RowHeight="52" EnableRowVirtualization="True">
+    <Grid Grid.Row="1" Margin="0,8,0,0">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <StackPanel>
+        <TextBlock x:Name="LastScanText" FontSize="12" TextTrimming="CharacterEllipsis"/>
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" MaxHeight="34">
+          <ItemsControl x:Name="HeldChips">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate><DataTemplate><Button Margin="0,2,6,2" Padding="8,1" MinHeight="24" MinWidth="50" Click="HeldChip_OnClick" Content="{Binding Label}"/></DataTemplate></ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </StackPanel>
+      <TextBlock x:Name="PrinterStatusText" Grid.Column="1" Margin="12,0,0,0" FontSize="12" VerticalAlignment="Top"/>
+    </Grid>
+    <Grid Grid.Row="2" Margin="0,8,0,12">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="300"/></Grid.ColumnDefinitions>
+      <DataGrid x:Name="BillGrid" Style="{StaticResource CatalogGrid}" SelectionMode="Single" RowHeight="60"
+                SelectionChanged="BillGrid_OnSelectionChanged">
         <DataGrid.Columns>
-          <DataGridTextColumn Width="2*" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
-          <DataGridTextColumn Width="90" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
-          <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Price}" Binding="{Binding UnitPrice}"/>
-          <DataGridTextColumn Width="100" Header="{l:Tr Purchasing_Discount}" Binding="{Binding Discount}"/>
-          <DataGridTextColumn Width="110" Header="{l:Tr Purchasing_Total}" Binding="{Binding Total}"/>
+          <DataGridTemplateColumn Width="280" Header="{l:Tr Catalog_Name}">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate>
+                <StackPanel Margin="5,4,0,0">
+                  <TextBlock FontWeight="SemiBold" Text="{Binding ProductName}" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock FontSize="11" Foreground="Gray" Text="{Binding ProductNameLocal}" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock FontSize="11" Foreground="Gray" Text="{Binding BatchNumber}"/>
+                </StackPanel>
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTextColumn Width="76" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
+          <DataGridTextColumn Width="94" Header="{l:Tr Catalog_Price}" Binding="{Binding UnitPrice}"/>
+          <DataGridTextColumn Width="86" Header="{l:Tr Purchasing_Discount}" Binding="{Binding Discount}"/>
+          <DataGridTextColumn Width="102" Header="{l:Tr Purchasing_Total}" Binding="{Binding Total}"/>
         </DataGrid.Columns>
       </DataGrid>
-      <Border Grid.Column="1" Margin="14,0,0,0" Padding="18" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+      <Border Grid.Column="1" Margin="14,0,0,0" Style="{StaticResource CatalogCard}">
         <StackPanel>
-          <TextBlock FontSize="18" Text="{l:Tr Sales_Gross}"/>
-          <TextBlock x:Name="GrossText" FontSize="22"/>
-          <TextBlock Margin="0,14,0,0" FontSize="18" Text="{l:Tr Purchasing_Discount}"/>
-          <TextBlock x:Name="DiscountText" FontSize="22"/>
-          <TextBlock Margin="0,14,0,0" FontSize="18" Text="{l:Tr Purchasing_Gst}"/>
-          <TextBlock x:Name="TaxText" FontSize="22"/>
-          <Separator Margin="0,16"/>
-          <TextBlock FontSize="20" FontWeight="SemiBold" Text="{l:Tr Sales_Pay}"/>
-          <TextBlock x:Name="TotalText" FontSize="36" FontWeight="Bold"/>
-          <Button Margin="0,18,0,0" Height="42" Click="Cash_OnClick" Content="{l:Tr Sales_Cash}"/>
-          <Button Margin="0,8,0,0" Height="42" Click="Upi_OnClick" Content="{l:Tr Sales_Upi}"/>
-          <Button Margin="0,8,0,0" Height="42" Click="Split_OnClick" Content="{l:Tr Sales_Split}"/>
+          <TextBlock FontSize="14" Text="{l:Tr Sales_Gross}"/>
+          <TextBlock x:Name="GrossText" FontSize="18" FontWeight="SemiBold"/>
+          <TextBlock Margin="0,2,0,0" FontSize="14" Text="{l:Tr Purchasing_Discount}"/>
+          <TextBlock x:Name="DiscountText" FontSize="18"/>
+          <TextBlock Margin="0,2,0,0" FontSize="14" Text="{l:Tr Purchasing_Gst}"/>
+          <TextBlock x:Name="TaxText" FontSize="18"/>
+          <TextBlock Margin="0,2,0,0" FontSize="14" Text="{l:Tr Sales_RoundOff}"/>
+          <TextBlock x:Name="RoundOffText" FontSize="18"/>
+          <Separator Margin="0,3"/>
+          <TextBlock FontSize="16" FontWeight="SemiBold" Text="{l:Tr Sales_Pay}"/>
+          <TextBlock x:Name="TotalText" FontSize="25" FontWeight="Bold"/>
+          <TextBlock x:Name="SavingsText" FontSize="13"/>
+          <Grid Margin="0,3,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Button Margin="0,0,4,0" Height="32" Click="Cash_OnClick" Content="{l:Tr Sales_Cash}"/>
+            <Button Grid.Column="1" Margin="4,0,0,0" Height="32" Click="Upi_OnClick" Content="{l:Tr Sales_Upi}"/>
+          </Grid>
+          <Button Margin="0,3,0,0" Height="32" Click="Split_OnClick" Content="{l:Tr Sales_Split}"/>
         </StackPanel>
       </Border>
     </Grid>
-    <Grid Grid.Row="2">
-      <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextWrapping="Wrap"/>
-      <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+    <TextBlock x:Name="StatusText" Grid.Row="3" Margin="0,0,0,8" TextWrapping="Wrap"/>
+    <WrapPanel Grid.Row="4">
         <Button Margin="0,0,8,0" Click="New_OnClick" Content="{l:Tr Sales_New}"/>
-        <Button Margin="0,0,8,0" Click="Quantity_OnClick" Content="{l:Tr Sales_Quantity}"/>
-        <Button Margin="0,0,8,0" Click="LineDiscount_OnClick" Content="{l:Tr Sales_LineDiscount}"/>
+        <Button x:Name="QuantityButton" Margin="0,0,8,0" Click="Quantity_OnClick" Content="{l:Tr Sales_Quantity}"/>
+        <Button x:Name="LotButton" Margin="0,0,8,0" Click="Lot_OnClick" Content="{l:Tr Sales_ChooseLotShortcut}"/>
+        <Button x:Name="PriceButton" Margin="0,0,8,0" Click="Price_OnClick" Content="{l:Tr Sales_PriceOverride}"/>
+        <Button x:Name="LineDiscountButton" Margin="0,0,8,0" Click="LineDiscount_OnClick" Content="{l:Tr Sales_LineDiscount}"/>
         <Button Margin="0,0,8,0" Click="BillDiscount_OnClick" Content="{l:Tr Sales_BillDiscount}"/>
-        <Button Margin="0,0,8,0" Click="Delete_OnClick" Content="{l:Tr Sales_Remove}"/>
+        <Button Margin="0,0,8,0" Click="Customer_OnClick" Content="{l:Tr Sales_CustomerShortcut}"/>
+        <Button x:Name="DeleteButton" Margin="0,0,8,0" Click="Delete_OnClick" Content="{l:Tr Sales_Remove}"/>
         <Button Margin="0,0,8,0" Click="Hold_OnClick" Content="{l:Tr Sales_Hold}"/>
         <Button Click="Resume_OnClick" Content="{l:Tr Sales_Resume}"/>
-      </StackPanel>
-    </Grid>
+    </WrapPanel>
   </Grid>
 </Page>

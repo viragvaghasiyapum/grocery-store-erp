@@ -1,4 +1,7 @@
+using System.Data;
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.Messaging;
 using Dapper;
 using GroceryErp.Core.Errors;
@@ -20,6 +23,10 @@ public sealed class SalesService(
     IAuditLog auditLog,
     IClock clock)
 {
+    private static readonly JsonSerializerOptions ReceiptJsonOptions = new()
+    {
+        Converters = { new MoneyJsonConverter(), new QuantityJsonConverter(), new PercentJsonConverter() },
+    };
     public Task<long> CreateDraftAsync(DateOnly? date = null, CancellationToken cancellationToken = default) =>
         database.WriteAsync(transaction => transaction.Connection.ExecuteScalar<long>("""
             INSERT INTO sale(sale_date,status) VALUES (@date,'DRAFT') RETURNING id
@@ -144,6 +151,81 @@ public sealed class SalesService(
         Reprice(transaction, saleId);
     }, cancellationToken);
 
+    public Task SetProductQuantityAsync(long saleId, long productId, Quantity quantity,
+        CancellationToken cancellationToken = default) => database.WriteAsync(transaction =>
+    {
+        EnsureEditable(transaction, saleId);
+        if (quantity < Quantity.Zero) throw new DomainException(ErrorCode.Validation, quantity);
+        DbLineRow[] previous = transaction.Connection.Query<DbLineRow>("""
+            SELECT id AS Id,product_id AS ProductId,lot_id AS LotId,qty AS Quantity,
+                   unit_price AS UnitPrice,line_discount AS LineDiscount,
+                   tax_rate_pct AS TaxRate,price_includes_tax AS PriceIncludesTax
+            FROM sale_line WHERE sale_id=@saleId AND product_id=@productId ORDER BY line_no
+            """, new { saleId, productId }, transaction.Transaction).ToArray();
+        if (previous.Length == 0) throw new DomainException(ErrorCode.NotFound, productId);
+        ProductRow product = transaction.Connection.QuerySingle<ProductRow>("""
+            SELECT p.name AS Name,p.name_local AS NameLocal,p.hsn_code AS HsnCode,
+                   p.price_includes_tax AS PriceIncludesTax,p.is_active AS IsActive,
+                   u.allow_fraction AS AllowFraction,COALESCE(t.rate_pct,0) AS TaxRate
+            FROM product p JOIN uom u ON u.id=p.uom_id
+            LEFT JOIN tax_rate t ON t.id=p.tax_rate_id WHERE p.id=@productId
+            """, new { productId }, transaction.Transaction);
+        if (!product.AllowFraction && !quantity.IsWhole)
+            throw new DomainException(ErrorCode.FractionalQtyNotAllowed, productId);
+        Dictionary<long, Quantity> reserved = transaction.Connection.Query<(long LotId, long Qty)>("""
+            SELECT lot_id AS LotId,SUM(qty) AS Qty FROM sale_line
+            WHERE sale_id=@saleId AND product_id<>@productId GROUP BY lot_id
+            """, new { saleId, productId }, transaction.Transaction)
+            .ToDictionary(static row => row.LotId, static row => Quantity.FromScaled(row.Qty));
+        IReadOnlyList<LotAllocation> allocations = quantity == Quantity.Zero ? [] :
+            stockLedger.AllocateFefo(transaction, productId, quantity, clock.BusinessDate, reserved);
+        Money oldGross = previous.Aggregate(Money.Zero, static (sum, row) =>
+            sum + Money.FromScaled(row.UnitPrice) * Quantity.FromScaled(row.Quantity));
+        Money oldLineDiscount = Money.FromScaled(previous.Sum(static row => row.LineDiscount));
+        Money[] weights = allocations.Select(static item => item.Lot.Price * item.Quantity).ToArray();
+        Money newGross = weights.Aggregate(Money.Zero, static (sum, item) => sum + item);
+        Money discount = oldGross > Money.Zero ? new Money(newGross.Value * oldLineDiscount.Value / oldGross.Value) : Money.Zero;
+        IReadOnlyList<Money> discounts = MoneyMath.Allocate(discount, weights);
+        string? barcode = transaction.Connection.QueryFirstOrDefault<string>("""
+            SELECT scanned_barcode FROM sale_line WHERE sale_id=@saleId AND product_id=@productId
+              AND scanned_barcode IS NOT NULL ORDER BY line_no LIMIT 1
+            """, new { saleId, productId }, transaction.Transaction);
+        transaction.Connection.Execute("DELETE FROM sale_line WHERE sale_id=@saleId AND product_id=@productId",
+            new { saleId, productId }, transaction.Transaction);
+        int lineNumber = transaction.Connection.ExecuteScalar<int>(
+            "SELECT COALESCE(MAX(line_no),0)+1 FROM sale_line WHERE sale_id=@saleId",
+            new { saleId }, transaction.Transaction);
+        for (int index = 0; index < allocations.Count; index++)
+        {
+            LotAllocation allocation = allocations[index];
+            transaction.Connection.Execute("""
+                INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,product_name_local,
+                    hsn_code,scanned_barcode,qty,unit_price,mrp,discount,line_discount,tax_rate_pct,
+                    price_includes_tax,taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+                VALUES (@saleId,@lineNumber,@productId,@lotId,@name,@localName,@hsn,@barcode,
+                    @qty,@price,@mrp,0,@lineDiscount,@taxRate,@includesTax,0,0,0,@cost,0)
+                """, new
+            {
+                saleId,
+                lineNumber = lineNumber++,
+                productId,
+                lotId = allocation.Lot.LotId,
+                name = product.Name,
+                localName = product.NameLocal,
+                hsn = product.HsnCode,
+                barcode,
+                qty = allocation.Quantity.Scaled,
+                price = allocation.Lot.Price.Scaled,
+                mrp = allocation.Lot.Mrp?.Scaled,
+                lineDiscount = discounts[index].Scaled,
+                taxRate = EffectiveTaxRate(product.TaxRate),
+                includesTax = product.PriceIncludesTax ? 1 : 0,
+                cost = allocation.Lot.Cost.Scaled,
+            }, transaction.Transaction);
+        }
+        Reprice(transaction, saleId);
+    }, cancellationToken);
+
     public Task SetLineDiscountAsync(long saleId, long lineId, Money discount,
         CancellationToken cancellationToken = default) => database.WriteAsync(transaction =>
     {
@@ -153,6 +235,67 @@ public sealed class SalesService(
             "UPDATE sale_line SET line_discount=@discount WHERE id=@lineId AND sale_id=@saleId",
             new { discount = discount.Scaled, lineId, saleId }, transaction.Transaction);
         Reprice(transaction, saleId);
+    }, cancellationToken);
+
+    public Task ChangeLineLotAsync(long saleId, long lineId, long lotId,
+        CancellationToken cancellationToken = default) => database.WriteAsync(transaction =>
+    {
+        EnsureEditable(transaction, saleId);
+        DbLineRow line = transaction.Connection.QuerySingleOrDefault<DbLineRow>("""
+            SELECT id AS Id,product_id AS ProductId,lot_id AS LotId,qty AS Quantity,
+                   line_discount AS LineDiscount FROM sale_line WHERE id=@lineId AND sale_id=@saleId
+            """, new { lineId, saleId }, transaction.Transaction)
+            ?? throw new DomainException(ErrorCode.NotFound, lineId);
+        if (line.LotId == lotId) return;
+        Dictionary<long, Quantity> reserved = transaction.Connection.Query<(long LotId, long Qty)>("""
+            SELECT lot_id AS LotId,SUM(qty) AS Qty FROM sale_line
+            WHERE sale_id=@saleId AND id<>@lineId GROUP BY lot_id
+            """, new { saleId, lineId }, transaction.Transaction)
+            .ToDictionary(static row => row.LotId, static row => Quantity.FromScaled(row.Qty));
+        LotAllocation selected = AllocatePreferred(transaction, line.ProductId, lotId,
+            Quantity.FromScaled(line.Quantity), reserved);
+        long? existingId = transaction.Connection.QuerySingleOrDefault<long?>("""
+            SELECT id FROM sale_line WHERE sale_id=@saleId AND lot_id=@lotId AND id<>@lineId
+            """, new { saleId, lotId, lineId }, transaction.Transaction);
+        if (existingId is { } targetId)
+        {
+            transaction.Connection.Execute("""
+                UPDATE sale_line SET qty=qty+@qty,line_discount=line_discount+@discount
+                WHERE id=@targetId
+                """, new { qty = line.Quantity, discount = line.LineDiscount, targetId }, transaction.Transaction);
+            transaction.Connection.Execute("DELETE FROM sale_line WHERE id=@lineId", new { lineId }, transaction.Transaction);
+        }
+        else
+            transaction.Connection.Execute("""
+                UPDATE sale_line SET lot_id=@lotId,unit_price=@price,mrp=@mrp,unit_cost=@cost
+                WHERE id=@lineId
+                """, new
+            {
+                lotId,
+                price = selected.Lot.Price.Scaled,
+                mrp = selected.Lot.Mrp?.Scaled,
+                cost = selected.Lot.Cost.Scaled,
+                lineId,
+            }, transaction.Transaction);
+        Reprice(transaction, saleId);
+    }, cancellationToken);
+
+    public Task SetLinePriceAsync(long saleId, long lineId, Money price,
+        CancellationToken cancellationToken = default) => database.WriteAsync(transaction =>
+    {
+        EnsureEditable(transaction, saleId);
+        if (price <= Money.Zero) throw new DomainException(ErrorCode.Validation, price);
+        (long Mrp, long ProductId)? line = transaction.Connection.QuerySingleOrDefault<(long Mrp, long ProductId)?>("""
+            SELECT COALESCE(mrp,0) AS Mrp,product_id AS ProductId
+            FROM sale_line WHERE id=@lineId AND sale_id=@saleId
+            """, new { lineId, saleId }, transaction.Transaction);
+        if (line is null) throw new DomainException(ErrorCode.NotFound, lineId);
+        if (line.Value.Mrp > 0 && price.Scaled > line.Value.Mrp)
+            throw new DomainException(ErrorCode.PriceAboveMrp, price);
+        transaction.Connection.Execute("UPDATE sale_line SET unit_price=@price WHERE id=@lineId",
+            new { price = price.Scaled, lineId }, transaction.Transaction);
+        Reprice(transaction, saleId);
+        auditLog.Write(transaction, "sale_line", lineId, "PRICE_OVERRIDE", new { saleId, price = price.Scaled });
     }, cancellationToken);
 
     public Task SetBillDiscountAsync(long saleId, Money discount,
@@ -165,6 +308,48 @@ public sealed class SalesService(
         Reprice(transaction, saleId);
     }, cancellationToken);
 
+    public Task<IReadOnlyList<CustomerItem>> SearchCustomersAsync(string? query = null,
+        CancellationToken cancellationToken = default) => database.ReadAsync<IReadOnlyList<CustomerItem>>(connection =>
+    {
+        string search = (query ?? string.Empty).Trim();
+        return connection.Query<CustomerItem>("""
+            SELECT id AS Id,name AS Name,phone AS Phone,gstin AS Gstin FROM customer
+            WHERE is_active=1 AND (@search='' OR name LIKE @pattern OR phone LIKE @pattern)
+            ORDER BY name,id LIMIT 100
+            """, new { search, pattern = $"%{search}%" }).ToArray();
+    }, cancellationToken);
+
+    public Task<long> CreateCustomerAsync(string name, string? phone, string? gstin,
+        CancellationToken cancellationToken = default) => database.WriteAsync(transaction =>
+    {
+        if (string.IsNullOrWhiteSpace(name)) throw new DomainException(ErrorCode.Validation, nameof(name));
+        string? cleanPhone = Clean(phone);
+        string? cleanGstin = Clean(gstin);
+        if (cleanPhone is not null && (cleanPhone.Length != 10 || !cleanPhone.All(char.IsAsciiDigit)))
+            throw new DomainException(ErrorCode.Validation, nameof(phone));
+        if (cleanGstin is not null && !GroceryErp.Core.Validation.IndianIds.IsGstin(cleanGstin))
+            throw new DomainException(ErrorCode.Validation, nameof(gstin));
+        if (cleanPhone is not null && transaction.Connection.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM customer WHERE phone=@phone", new { phone = cleanPhone }, transaction.Transaction) > 0)
+            throw new DomainException(ErrorCode.Validation, "A customer with this phone already exists.");
+        long id = transaction.Connection.ExecuteScalar<long>("""
+            INSERT INTO customer(name,phone,gstin) VALUES (@name,@phone,@gstin) RETURNING id
+            """, new { name = name.Trim(), phone = cleanPhone, gstin = cleanGstin }, transaction.Transaction);
+        auditLog.Write(transaction, "customer", id, "CREATE", new { name = name.Trim() });
+        return id;
+    }, cancellationToken);
+
+    public Task SetCustomerAsync(long saleId, long? customerId,
+        CancellationToken cancellationToken = default) => database.WriteAsync(transaction =>
+    {
+        EnsureEditable(transaction, saleId);
+        if (customerId is { } id && transaction.Connection.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM customer WHERE id=@id AND is_active=1", new { id }, transaction.Transaction) == 0)
+            throw new DomainException(ErrorCode.NotFound, id);
+        transaction.Connection.Execute("UPDATE sale SET customer_id=@customerId WHERE id=@saleId",
+            new { customerId, saleId }, transaction.Transaction);
+    }, cancellationToken);
+
     public Task HoldAsync(long saleId, string? label = null, CancellationToken cancellationToken = default) =>
         database.WriteAsync(transaction =>
         {
@@ -174,11 +359,29 @@ public sealed class SalesService(
         }, cancellationToken);
 
     public Task ResumeAsync(long saleId, CancellationToken cancellationToken = default) =>
-        database.WriteAsync(transaction =>
+        ResumeCoreAsync(saleId, null, cancellationToken);
+
+    public Task ResumeReviewedAsync(HeldBillReview review, CancellationToken cancellationToken = default) =>
+        ResumeCoreAsync(review.SaleId, review.Lines, cancellationToken);
+
+    public Task<HeldBillReview> GetHeldBillReviewAsync(long saleId, CancellationToken cancellationToken = default) =>
+        database.ReadAsync(connection =>
+        {
+            string? status = connection.QuerySingleOrDefault<string>(
+                "SELECT status FROM sale WHERE id=@saleId", new { saleId });
+            if (status != "HELD") throw new DomainException(ErrorCode.SaleFinalized, saleId);
+            return new HeldBillReview(saleId, LoadHeldReviewLines(connection, saleId));
+        }, cancellationToken);
+
+    private Task ResumeCoreAsync(long saleId, IReadOnlyList<HeldBillReviewLine>? accepted,
+        CancellationToken cancellationToken) => database.WriteAsync(transaction =>
         {
             string? status = transaction.Connection.QuerySingleOrDefault<string>(
                 "SELECT status FROM sale WHERE id=@saleId", new { saleId }, transaction.Transaction);
             if (status != "HELD") throw new DomainException(ErrorCode.SaleFinalized, saleId);
+            if (accepted is not null && !LoadHeldReviewLines(transaction.Connection, saleId)
+                    .SequenceEqual(accepted))
+                throw new DomainException(ErrorCode.Validation, "The held bill changed. Review it again.");
             RevalidateStock(transaction, saleId);
             transaction.Connection.Execute("""
                 UPDATE sale_line SET
@@ -192,12 +395,48 @@ public sealed class SalesService(
             Reprice(transaction, saleId);
         }, cancellationToken);
 
+    private static HeldBillReviewLine[] LoadHeldReviewLines(IDbConnection connection, long saleId) =>
+        connection.Query<HeldReviewRow>("""
+            SELECT sl.id AS LineId,sl.product_name AS ProductName,sl.qty AS Quantity,
+                   sl.unit_price AS PreviousPrice,l.selling_price AS CurrentPrice,
+                   sl.mrp AS PreviousMrp,l.mrp AS CurrentMrp,l.unit_cost AS CurrentCost,
+                   l.qty_on_hand AS Available,l.is_active AS IsActive,l.expiry_date AS ExpiryDate
+            FROM sale_line sl JOIN product_lot l ON l.id=sl.lot_id
+            WHERE sl.sale_id=@saleId ORDER BY sl.line_no
+            """, new { saleId }).Select(static row => new HeldBillReviewLine(row.LineId, row.ProductName,
+                Quantity.FromScaled(row.Quantity), Money.FromScaled(row.PreviousPrice),
+                Money.FromScaled(row.CurrentPrice), row.PreviousMrp is null ? null : Money.FromScaled(row.PreviousMrp.Value),
+                row.CurrentMrp is null ? null : Money.FromScaled(row.CurrentMrp.Value),
+                Money.FromScaled(row.CurrentCost), Quantity.FromScaled(row.Available), row.IsActive, row.ExpiryDate)).ToArray();
+
     public Task<IReadOnlyList<HeldSale>> GetHeldAsync(CancellationToken cancellationToken = default) =>
         database.ReadAsync<IReadOnlyList<HeldSale>>(connection => connection.Query<HeldRow>("""
             SELECT id AS Id,created_at AS CreatedAt,notes AS Label,line_count AS ItemCount,grand_total AS Total
             FROM sale WHERE status='HELD' ORDER BY created_at,id
             """).Select(static row => new HeldSale(row.Id, row.CreatedAt, row.Label, row.ItemCount,
                 Money.FromScaled(row.Total))).ToArray(), cancellationToken);
+
+    public Task<IReadOnlyList<HeldSale>> GetDraftsAsync(CancellationToken cancellationToken = default) =>
+        database.ReadAsync<IReadOnlyList<HeldSale>>(connection => connection.Query<HeldRow>("""
+            SELECT id AS Id,created_at AS CreatedAt,notes AS Label,line_count AS ItemCount,grand_total AS Total
+            FROM sale WHERE status='DRAFT' AND (line_count>0 OR customer_id IS NOT NULL)
+            ORDER BY created_at DESC,id DESC
+            """).Select(static row => new HeldSale(row.Id, row.CreatedAt, row.Label, row.ItemCount,
+                Money.FromScaled(row.Total))).ToArray(), cancellationToken);
+
+    public Task<IReadOnlyList<ReturnableSaleLine>> GetReturnableLinesAsync(long saleId,
+        CancellationToken cancellationToken = default) => database.ReadAsync<IReadOnlyList<ReturnableSaleLine>>(connection =>
+    {
+        SaleDetails sale = LoadDetails(connection, saleId);
+        Dictionary<long, long> returned = connection.Query<(long LineId, long Returned)>("""
+            SELECT rl.sale_line_id AS LineId,SUM(rl.qty) AS Returned
+            FROM sale_return_line rl JOIN sale_line sl ON sl.id=rl.sale_line_id
+            WHERE sl.sale_id=@saleId GROUP BY rl.sale_line_id
+            """, new { saleId }).ToDictionary(static row => row.LineId, static row => row.Returned);
+        return sale.Lines.Select(line => new ReturnableSaleLine(line,
+            Quantity.FromScaled(line.Quantity.Scaled - returned.GetValueOrDefault(line.Id))))
+            .Where(static line => line.Remaining > Quantity.Zero).ToArray();
+    }, cancellationToken);
 
     public async Task<CompletedSale> CompleteAsync(CompleteSaleCommand command,
         CancellationToken cancellationToken = default)
@@ -248,6 +487,9 @@ public sealed class SalesService(
                 completedAt = Timestamp(clock.Now),
                 saleId = command.SaleId,
             }, transaction.Transaction);
+            ReceiptData receipt = BuildSaleReceipt(transaction.Connection, command.SaleId, settings.Current, false);
+            transaction.Connection.Execute("UPDATE sale SET receipt_snapshot=@snapshot WHERE id=@saleId",
+                new { snapshot = JsonSerializer.Serialize(receipt, ReceiptJsonOptions), saleId = command.SaleId }, transaction.Transaction);
             OperationGuard.Complete(transaction, command.OperationId, "sale", command.SaleId);
             return new CompletedSale(command.SaleId, invoice, bill, change);
         }, cancellationToken);
@@ -284,7 +526,8 @@ public sealed class SalesService(
     {
         ArgumentNullException.ThrowIfNull(command);
         if (string.IsNullOrWhiteSpace(command.Reason) || command.Lines.Count == 0 ||
-            command.Lines.Any(static item => item.Quantity <= Quantity.Zero))
+            command.Lines.Any(static item => item.Quantity <= Quantity.Zero) ||
+            command.Lines.Select(static item => item.SaleLineId).Distinct().Count() != command.Lines.Count)
             throw new DomainException(ErrorCode.Validation, "A reason and return quantities are required.");
         OperationRef? replay = OperationGuard.Claim(transaction, command.OperationId, OpType.SaleReturn);
         if (replay?.RefId is { } oldId) return LoadReturn(transaction, oldId) with { WasReplay = true };
@@ -386,6 +629,9 @@ public sealed class SalesService(
             cost = costTotal.Scaled,
             returnId,
         }, transaction.Transaction);
+        ReceiptData receipt = BuildReturnReceipt(transaction.Connection, returnId, settings.Current);
+        transaction.Connection.Execute("UPDATE sale_return SET receipt_snapshot=@snapshot WHERE id=@returnId",
+            new { snapshot = JsonSerializer.Serialize(receipt, ReceiptJsonOptions), returnId }, transaction.Transaction);
         OperationGuard.Complete(transaction, command.OperationId, "sale_return", returnId);
         return new CompletedReturn(returnId, returnNumber, taxableTotal, taxTotal, refundTotal, costTotal);
     }, cancellationToken);
@@ -429,6 +675,34 @@ public sealed class SalesService(
             row.CompletedAt, row.VoidReason)).ToArray();
     }, cancellationToken);
 
+    public Task<SaleHistoryActivity> GetHistoryActivityAsync(long saleId,
+        CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
+    {
+        SaleReturnHistoryItem[] returns = connection.Query<ReturnActivityRow>("""
+            SELECT r.return_no AS ReturnNumber,r.return_date AS Date,
+                   sl.product_name AS ProductName,rl.qty AS Quantity,
+                   rl.refund_amount AS Refund,rl.resellable AS Resellable,r.reason AS Reason
+            FROM sale_return r JOIN sale_return_line rl ON rl.sale_return_id=r.id
+            JOIN sale_line sl ON sl.id=rl.sale_line_id
+            WHERE r.sale_id=@saleId ORDER BY r.id,rl.id
+            """, new { saleId }).Select(static row => new SaleReturnHistoryItem(row.ReturnNumber,
+                row.Date, row.ProductName, Quantity.FromScaled(row.Quantity),
+                Money.FromScaled(row.Refund), row.Resellable, row.Reason)).ToArray();
+        SaleMovementHistoryItem[] movements = connection.Query<MovementActivityRow>("""
+            SELECT m.move_date AS Date,p.name AS ProductName,l.lot_code AS LotCode,
+                   m.type_code AS Type,m.qty AS Quantity
+            FROM stock_movement m JOIN product p ON p.id=m.product_id
+            JOIN product_lot l ON l.id=m.lot_id
+            WHERE (m.ref_type='sale_line' AND m.ref_id IN
+                (SELECT id FROM sale_line WHERE sale_id=@saleId))
+               OR (m.ref_type='sale_return' AND m.ref_id IN
+                (SELECT id FROM sale_return WHERE sale_id=@saleId))
+            ORDER BY m.id
+            """, new { saleId }).Select(static row => new SaleMovementHistoryItem(row.Date,
+                row.ProductName, row.LotCode, row.Type, Quantity.FromScaled(row.Quantity))).ToArray();
+        return new SaleHistoryActivity(returns, movements);
+    }, cancellationToken);
+
     public Task<DayEndSummary> GetDayEndAsync(DateOnly date, CancellationToken cancellationToken = default) =>
         database.ReadAsync(connection =>
         {
@@ -436,7 +710,8 @@ public sealed class SalesService(
             DayRow sale = connection.QuerySingle<DayRow>("""
                 SELECT COUNT(*) AS BillCount,COALESCE(SUM(gross_total),0) AS Gross,
                        COALESCE(SUM(discount_total),0) AS Discounts,COALESCE(SUM(taxable_total),0) AS Net,
-                       COALESCE(SUM(tax_total),0) AS Tax,COALESCE(SUM(round_off),0) AS RoundOff
+                       COALESCE(SUM(tax_total),0) AS Tax,COALESCE(SUM(round_off),0) AS RoundOff,
+                       COALESCE(SUM(grand_total),0) AS Payable
                 FROM sale WHERE sale_date=@day AND status='COMPLETED'
                 """, new { day });
             PaymentTotal[] payments = connection.Query<PaymentRow>("""
@@ -458,22 +733,49 @@ public sealed class SalesService(
             long cashExpenses = connection.ExecuteScalar<long>("""
                 SELECT COALESCE(SUM(amount),0) FROM expense WHERE expense_date=@day AND mode='CASH'
                 """, new { day });
+            long cashChange = connection.ExecuteScalar<long>("""
+                SELECT COALESCE(SUM(change_returned),0) FROM sale
+                WHERE sale_date=@day AND status='COMPLETED'
+                  AND EXISTS(SELECT 1 FROM sale_payment p WHERE p.sale_id=sale.id AND p.mode='CASH')
+                """, new { day });
             Money cashSales = payments.FirstOrDefault(static item => item.Mode == PaymentMode.Cash)?.Amount ?? Money.Zero;
             return new DayEndSummary(date, sale.BillCount, Money.FromScaled(sale.Gross),
                 Money.FromScaled(sale.Discounts), Money.FromScaled(sale.Net), Money.FromScaled(sale.Tax),
                 Money.FromScaled(sale.RoundOff), payments, voids.Count, Money.FromScaled(voids.Value),
                 returns.Count, Money.FromScaled(returns.Value), Money.FromScaled(cashExpenses),
-                cashSales - Money.FromScaled(cashRefunds) - Money.FromScaled(cashExpenses));
+                cashSales - Money.FromScaled(cashChange) - Money.FromScaled(cashRefunds) - Money.FromScaled(cashExpenses),
+                Money.FromScaled(cashChange), Money.FromScaled(cashRefunds), Money.FromScaled(sale.Payable));
         }, cancellationToken);
 
     public Task<ReceiptData> GetReceiptAsync(long saleId, bool duplicate = false,
         CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
     {
+        string? snapshot = connection.QuerySingleOrDefault<string>(
+            "SELECT receipt_snapshot FROM sale WHERE id=@saleId", new { saleId });
+        if (snapshot is not null)
+            return JsonSerializer.Deserialize<ReceiptData>(snapshot, ReceiptJsonOptions) is { } stored
+                ? stored with { Duplicate = duplicate }
+                : throw new DomainException(ErrorCode.Validation, "The stored receipt is invalid.");
+        return BuildSaleReceipt(connection, saleId, settings.Current, duplicate);
+    }, cancellationToken);
+
+    public Task<ReceiptData> GetReturnReceiptAsync(long returnId,
+        CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
+    {
+        string? snapshot = connection.QuerySingleOrDefault<string>(
+            "SELECT receipt_snapshot FROM sale_return WHERE id=@returnId", new { returnId });
+        if (snapshot is not null)
+            return JsonSerializer.Deserialize<ReceiptData>(snapshot, ReceiptJsonOptions)
+                ?? throw new DomainException(ErrorCode.Validation, "The stored return receipt is invalid.");
+        return BuildReturnReceipt(connection, returnId, settings.Current);
+    }, cancellationToken);
+
+    private static ReceiptData BuildSaleReceipt(IDbConnection connection, long saleId, AppSettings current, bool duplicate)
+    {
         SaleDetails sale = LoadDetails(connection, saleId);
         if (sale.Status is not (SaleStatus.Completed or SaleStatus.Void) ||
             sale.InvoiceNumber is null || sale.CompletedAt is null)
             throw new DomainException(ErrorCode.SaleFinalized, saleId);
-        AppSettings current = settings.Current;
         long change = connection.ExecuteScalar<long>("SELECT change_returned FROM sale WHERE id=@saleId", new { saleId });
         return new ReceiptData(current.StoreName, current.StoreAddress, current.StorePhone, current.StoreGstin,
             current.TaxMode, sale.InvoiceNumber, sale.CompletedAt.Value, sale.CustomerName,
@@ -483,8 +785,40 @@ public sealed class SalesService(
             sale.Totals.Taxable, sale.Totals.Tax, sale.Totals.RoundOff, sale.Totals.GrandTotal,
             sale.Totals.MrpSavings, sale.Payments, Money.FromScaled(change),
             current.PrintLanguage,
-            current.PrintLanguage == "gu-IN" ? current.GujaratiReceiptFooter : current.ReceiptFooter, duplicate);
-    }, cancellationToken);
+            current.PrintLanguage == "gu-IN" ? current.GujaratiReceiptFooter : current.ReceiptFooter,
+            duplicate, WidthDots: current.ReceiptPrinterWidthDots, BilingualNames: current.PrintBilingualNames);
+    }
+
+    private static ReceiptData BuildReturnReceipt(IDbConnection connection, long returnId, AppSettings current)
+    {
+        ReturnReceiptRow header = connection.QuerySingleOrDefault<ReturnReceiptRow>("""
+            SELECT r.return_no AS ReturnNumber,r.created_at AS CreatedAt,r.reason AS Reason,
+                   r.refund_mode AS RefundMode,r.taxable_total AS Taxable,r.tax_total AS Tax,
+                   r.refund_total AS Refund,s.invoice_no AS OriginalInvoice,c.name AS CustomerName
+            FROM sale_return r JOIN sale s ON s.id=r.sale_id
+            LEFT JOIN customer c ON c.id=s.customer_id WHERE r.id=@returnId
+            """, new { returnId }) ?? throw new DomainException(ErrorCode.NotFound, returnId);
+        ReceiptLine[] lines = connection.Query<ReturnReceiptLineRow>("""
+            SELECT sl.product_name AS Name,sl.product_name_local AS LocalName,rl.qty AS Quantity,
+                   sl.unit_price AS UnitPrice,sl.mrp AS Mrp,rl.taxable_amount AS Taxable,
+                   rl.tax_amount AS Tax,rl.refund_amount AS Total,sl.tax_rate_pct AS TaxRate
+            FROM sale_return_line rl JOIN sale_line sl ON sl.id=rl.sale_line_id
+            WHERE rl.sale_return_id=@returnId ORDER BY rl.id
+            """, new { returnId }).Select(static row => new ReceiptLine(row.Name, row.LocalName,
+                Quantity.FromScaled(row.Quantity), Money.FromScaled(row.UnitPrice),
+                row.Mrp is null ? null : Money.FromScaled(row.Mrp.Value), Money.Zero,
+                Money.FromScaled(row.Taxable), Money.FromScaled(row.Tax), Money.FromScaled(row.Total),
+                Percent.FromScaled(row.TaxRate))).ToArray();
+        Money refund = Money.FromScaled(header.Refund);
+        return new ReceiptData(current.StoreName, current.StoreAddress, current.StorePhone, current.StoreGstin,
+            "RETURN", header.ReturnNumber, header.CreatedAt, header.CustomerName, lines,
+            refund, Money.Zero, Money.FromScaled(header.Taxable), Money.FromScaled(header.Tax),
+            refund - Money.FromScaled(header.Taxable) - Money.FromScaled(header.Tax), refund,
+            Money.Zero, [], Money.Zero, current.PrintLanguage,
+            current.PrintLanguage == "gu-IN" ? current.GujaratiReceiptFooter : current.ReceiptFooter,
+            false, header.OriginalInvoice, header.Reason, header.RefundMode,
+            current.ReceiptPrinterWidthDots, current.PrintBilingualNames);
+    }
 
     private PricedBill Reprice(DbTx transaction, long saleId)
     {
@@ -583,8 +917,9 @@ public sealed class SalesService(
         SaleLine[] lines = connection.Query<DetailLineRow>("""
             SELECT sl.id AS Id,sl.line_no AS LineNo,sl.product_id AS ProductId,sl.lot_id AS LotId,
                    sl.product_name AS ProductName,sl.product_name_local AS ProductNameLocal,
-                   l.batch_no AS BatchNumber,l.expiry_date AS ExpiryDate,sl.qty AS Qty,
+                   l.batch_no AS BatchNumber,l.expiry_date AS ExpiryDate,l.qty_on_hand AS StockOnHand,sl.qty AS Qty,
                    sl.unit_price AS UnitPrice,sl.mrp AS Mrp,sl.discount AS Discount,
+                   sl.line_discount AS LineDiscount,
                    sl.tax_rate_pct AS TaxRatePct,sl.taxable_amount AS TaxableAmount,
                    sl.tax_amount AS TaxAmount,sl.line_total AS LineTotal,sl.unit_cost AS UnitCost,
                    sl.cost_amount AS CostAmount,sl.scanned_barcode AS ScannedBarcode
@@ -672,6 +1007,30 @@ public sealed class SalesService(
     private static string DateText(DateOnly value) => value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
     private static DateOnly ParseDate(string value) => DateOnly.ParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture);
     private static string Timestamp(DateTime value) => value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+
+    private sealed class MoneyJsonConverter : JsonConverter<Money>
+    {
+        public override Money Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            Money.FromScaled(reader.GetInt64());
+        public override void Write(Utf8JsonWriter writer, Money value, JsonSerializerOptions options) =>
+            writer.WriteNumberValue(value.Scaled);
+    }
+
+    private sealed class QuantityJsonConverter : JsonConverter<Quantity>
+    {
+        public override Quantity Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            Quantity.FromScaled(reader.GetInt64());
+        public override void Write(Utf8JsonWriter writer, Quantity value, JsonSerializerOptions options) =>
+            writer.WriteNumberValue(value.Scaled);
+    }
+
+    private sealed class PercentJsonConverter : JsonConverter<Percent>
+    {
+        public override Percent Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            Percent.FromScaled(reader.GetInt64());
+        public override void Write(Utf8JsonWriter writer, Percent value, JsonSerializerOptions options) =>
+            writer.WriteNumberValue(value.Scaled);
+    }
     private static string PaymentCode(PaymentMode mode) => mode switch
     {
         PaymentMode.Cash => "CASH",
@@ -713,10 +1072,15 @@ public sealed class SalesService(
     private sealed class LineCheckRow { public long ProductId { get; init; } public long OnHand { get; init; } public bool AllowFraction { get; init; } }
     private sealed class StockRow { public long ProductId { get; init; } public long Quantity { get; init; } public long OnHand { get; init; } public DateOnly? Expiry { get; init; } public bool IsActive { get; init; } }
     private sealed class HeldRow { public long Id { get; init; } public DateTime CreatedAt { get; init; } public string? Label { get; init; } public int ItemCount { get; init; } public long Total { get; init; } }
+    private sealed class HeldReviewRow { public long LineId { get; init; } public string ProductName { get; init; } = ""; public long Quantity { get; init; } public long PreviousPrice { get; init; } public long CurrentPrice { get; init; } public long? PreviousMrp { get; init; } public long? CurrentMrp { get; init; } public long CurrentCost { get; init; } public long Available { get; init; } public bool IsActive { get; init; } public DateOnly? ExpiryDate { get; init; } }
     private sealed class HistoryRow { public long Id { get; init; } public string? InvoiceNumber { get; init; } public string SaleDate { get; init; } = ""; public string Status { get; init; } = ""; public int LineCount { get; init; } public long GrandTotal { get; init; } public string PaymentModes { get; init; } = ""; public DateTime? CompletedAt { get; init; } public string? VoidReason { get; init; } }
+    private sealed class ReturnActivityRow { public string ReturnNumber { get; init; } = ""; public DateOnly Date { get; init; } public string ProductName { get; init; } = ""; public long Quantity { get; init; } public long Refund { get; init; } public bool Resellable { get; init; } public string Reason { get; init; } = ""; }
+    private sealed class MovementActivityRow { public DateOnly Date { get; init; } public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public string Type { get; init; } = ""; public long Quantity { get; init; } }
     private sealed class ReturnableRow { public long Id { get; init; } public long ProductId { get; init; } public long LotId { get; init; } public long Quantity { get; init; } public long Taxable { get; init; } public long Tax { get; init; } public long Total { get; init; } public long Cost { get; init; } public long UnitCost { get; init; } public long ReturnedQuantity { get; init; } public long ReturnedTaxable { get; init; } public long ReturnedTax { get; init; } public long ReturnedTotal { get; init; } public long ReturnedCost { get; init; } }
     private sealed class ReturnSummaryRow { public long Id { get; init; } public string ReturnNo { get; init; } = ""; public long Taxable { get; init; } public long Tax { get; init; } public long Refund { get; init; } public long Cost { get; init; } }
-    private sealed class DayRow { public int BillCount { get; init; } public long Gross { get; init; } public long Discounts { get; init; } public long Net { get; init; } public long Tax { get; init; } public long RoundOff { get; init; } }
+    private sealed class ReturnReceiptRow { public string ReturnNumber { get; init; } = ""; public DateTime CreatedAt { get; init; } public string? Reason { get; init; } public string RefundMode { get; init; } = ""; public long Taxable { get; init; } public long Tax { get; init; } public long Refund { get; init; } public string? OriginalInvoice { get; init; } public string? CustomerName { get; init; } }
+    private sealed class ReturnReceiptLineRow { public string Name { get; init; } = ""; public string? LocalName { get; init; } public long Quantity { get; init; } public long UnitPrice { get; init; } public long? Mrp { get; init; } public long Taxable { get; init; } public long Tax { get; init; } public long Total { get; init; } public long TaxRate { get; init; } }
+    private sealed class DayRow { public int BillCount { get; init; } public long Gross { get; init; } public long Discounts { get; init; } public long Net { get; init; } public long Tax { get; init; } public long RoundOff { get; init; } public long Payable { get; init; } }
     private sealed class CountValueRow { public int Count { get; init; } public long Value { get; init; } }
     private sealed class PaymentRow { public string Mode { get; init; } = ""; public long Amount { get; init; } public string? Reference { get; init; } }
     private sealed class DetailHeaderRow { public long Id { get; init; } public string? InvoiceNo { get; init; } public string SaleDate { get; init; } = ""; public long? CustomerId { get; init; } public string Status { get; init; } = ""; public long GrossTotal { get; init; } public long DiscountTotal { get; init; } public long TaxableTotal { get; init; } public long TaxTotal { get; init; } public long RoundOff { get; init; } public long GrandTotal { get; init; } public long CostTotal { get; init; } public string? Notes { get; init; } public string? VoidReason { get; init; } public DateTime CreatedAt { get; init; } public DateTime? CompletedAt { get; init; } public long BillDiscount { get; init; } public string? CustomerName { get; init; } }
@@ -731,9 +1095,11 @@ public sealed class SalesService(
         public string? BatchNumber { get; init; }
         public DateOnly? ExpiryDate { get; init; }
         public long Qty { get; init; }
+        public long StockOnHand { get; init; }
         public long UnitPrice { get; init; }
         public long? Mrp { get; init; }
         public long Discount { get; init; }
+        public long LineDiscount { get; init; }
         public long TaxRatePct { get; init; }
         public long TaxableAmount { get; init; }
         public long TaxAmount { get; init; }
@@ -745,6 +1111,7 @@ public sealed class SalesService(
             BatchNumber, ExpiryDate, Quantity.FromScaled(Qty), Money.FromScaled(UnitPrice),
             Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(Discount),
             Percent.FromScaled(TaxRatePct), Money.FromScaled(TaxableAmount), Money.FromScaled(TaxAmount),
-            Money.FromScaled(LineTotal), Money.FromScaled(UnitCost), Money.FromScaled(CostAmount), ScannedBarcode);
+            Money.FromScaled(LineTotal), Money.FromScaled(UnitCost), Money.FromScaled(CostAmount), ScannedBarcode,
+            Money.FromScaled(LineDiscount), Quantity.FromScaled(StockOnHand));
     }
 }

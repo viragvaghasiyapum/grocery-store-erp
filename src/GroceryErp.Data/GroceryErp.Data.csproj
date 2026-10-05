@@ -14,5 +14,9 @@
     <EmbeddedResource Include="../../003_operations.sql" Link="db/003_operations.sql" />
     <EmbeddedResource Include="../../004_stock_in.sql" Link="db/004_stock_in.sql" />
     <EmbeddedResource Include="../../005_money_out.sql" Link="db/005_money_out.sql" />
+    <EmbeddedResource Include="../../006_receipt_snapshots.sql" Link="db/006_receipt_snapshots.sql" />
+    <EmbeddedResource Include="../../007_vendor_returns.sql" Link="db/007_vendor_returns.sql" />
+    <EmbeddedResource Include="../../008_stock_count_scope.sql" Link="db/008_stock_count_scope.sql" />
+    <EmbeddedResource Include="../../009_purchase_tax_mode.sql" Link="db/009_purchase_tax_mode.sql" />
   </ItemGroup>
 </Project>

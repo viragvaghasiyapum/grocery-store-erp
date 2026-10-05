@@ -41,6 +41,16 @@ public sealed class StockInTests
         string postOperation = OperationGuard.NewId();
         PostedPurchase posted = await fixture.Purchasing.PostAsync(purchaseId, postOperation, TestContext.Current.CancellationToken);
         PostedPurchase replay = await fixture.Purchasing.PostAsync(purchaseId, postOperation, TestContext.Current.CancellationToken);
+        PurchaseLineDefaults defaults = await fixture.Purchasing.GetLineDefaultsAsync(fixture.VendorId, fixture.ProductId,
+            fixture.Date, TestContext.Current.CancellationToken);
+        defaults.LastRate.ShouldBe(new Money(250));
+        defaults.TaxRate.ShouldBe(new Percent(5));
+        defaults.Mrp.ShouldBe(new Money(350));
+        defaults.SellingPrice.ShouldBe(new Money(300));
+        VendorLotItem suppliedLot = (await fixture.Purchasing.GetVendorLotsAsync(fixture.VendorId,
+            TestContext.Current.CancellationToken)).Single();
+        suppliedLot.OnHand.ShouldBe(new Quantity(11));
+        suppliedLot.BatchNumber.ShouldBe("BATCH");
 
         posted.DocumentNumber.ShouldStartWith("P2627-");
         posted.Totals.Subtotal.ShouldBe(new Money(2500));
@@ -92,6 +102,46 @@ public sealed class StockInTests
     }
 
     [Fact]
+    public async Task VendorReturn_PostsCreditStockAndVarianceOnce_AndCapsSourceLot()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long purchaseId = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("INV-RETURN"), ct);
+        PostedPurchase purchase = await fixture.Purchasing.PostAsync(purchaseId, OperationGuard.NewId(), ct);
+        await fixture.Inventory.SetLotActiveAsync(purchase.LotIds[0], false, ct);
+        await fixture.Settings.SaveAsync(new Dictionary<string, string> { ["tax.mode"] = "COMPOSITION" }, ct);
+        VendorReturnLot lot = (await fixture.Purchasing.GetVendorReturnLotsAsync(purchaseId, ct)).Single();
+        lot.Returnable.ShouldBe(new Quantity(11));
+        var input = new VendorReturnInput(purchaseId, fixture.Date, "CN-001", "Expired at receipt",
+            [new(lot.LotId, Quantity.One, new Money(200), new Money(10))]);
+        string operation = OperationGuard.NewId();
+        PostedVendorReturn posted = await fixture.Purchasing.PostVendorReturnAsync(input, operation, ct);
+        PostedVendorReturn replay = await fixture.Purchasing.PostVendorReturnAsync(input, operation, ct);
+        posted.DocumentNumber.ShouldStartWith("V2627-");
+        posted.CreditTotal.ShouldBe(new Money(210));
+        replay.WasReplay.ShouldBeTrue();
+        (await fixture.Purchasing.GetVendorLedgerAsync(fixture.VendorId, ct))[^1].Kind.ShouldBe("VENDOR_RETURN");
+        await Should.ThrowAsync<DomainException>(() => fixture.Purchasing.CancelAsync(
+            purchaseId, fixture.Date, OperationGuard.NewId(), ct));
+        await Should.ThrowAsync<DomainException>(() => fixture.Purchasing.PostVendorReturnAsync(
+            input with { VendorCreditNumber = "CN-002", Lines = [new(lot.LotId, new Quantity(11), new Money(100), Money.Zero)] },
+            OperationGuard.NewId(), ct));
+
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id",
+            new { id = purchase.LotIds[0] }).ShouldBe(10000L);
+        connection.ExecuteScalar<long>("SELECT balance_due FROM v_vendor_balance WHERE vendor_id=@id",
+            new { id = fixture.VendorId }).ShouldBe(2615000L);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement WHERE type_code='VENDOR_RETURN'")
+            .ShouldBe(1L);
+        connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='VENDOR_RETURN_VARIANCE'")
+            .ShouldBe(-36364L);
+        LedgerItem movement = (await fixture.Inventory.GetLedgerAsync(fixture.ProductId, fixture.Date, fixture.Date, ct))
+            .Single(item => item.Type == "VENDOR_RETURN");
+        (await fixture.Inventory.GetSourceDocumentAsync(movement, ct)).Number.ShouldBe(posted.DocumentNumber);
+    }
+
+    [Fact]
     public async Task StockCount_CompensatesForMovementsAfterSnapshot()
     {
         using var fixture = new StockInFixture();
@@ -107,10 +157,126 @@ public sealed class StockInTests
         review.Lines.Single().MovementSinceSnapshot.ShouldBe(new Quantity(-1));
         review.Lines.Single().Difference.ShouldBe(new Quantity(-2));
 
-        await fixture.Inventory.PostStockCountAsync(countId, OperationGuard.NewId(), TestContext.Current.CancellationToken);
+        DomainException changed = await Should.ThrowAsync<DomainException>(() => fixture.Inventory.PostStockCountAsync(
+            countId, OperationGuard.NewId(), new Dictionary<long, long> { [purchase.LotIds[0]] = 0 },
+            TestContext.Current.CancellationToken));
+        changed.Code.ShouldBe(ErrorCode.StockCountReviewChanged);
+        await fixture.Inventory.PostStockCountAsync(countId, OperationGuard.NewId(),
+            new Dictionary<long, long> { [purchase.LotIds[0]] = -1000 }, TestContext.Current.CancellationToken);
         using var connection = fixture.Factory.Open();
         connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = purchase.LotIds[0] }).ShouldBe(8000L);
         connection.ExecuteScalar<string>("SELECT status FROM stock_count WHERE id=@countId", new { countId }).ShouldBe("POSTED");
+        LedgerItem countMove = (await fixture.Inventory.GetLedgerAsync(fixture.ProductId, fixture.Date,
+            fixture.Date, TestContext.Current.CancellationToken)).Single(item => item.RefType == "stock_count");
+        (await fixture.Inventory.GetSourceDocumentAsync(countMove, TestContext.Current.CancellationToken))
+            .Lines.Single().Quantity.ShouldBe(new Quantity(-2));
+    }
+
+    [Fact]
+    public async Task StockCount_RefreshesLotsCreatedAfterSnapshotBeforePosting()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long firstId = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("COUNT-FIRST"), ct);
+        PostedPurchase first = await fixture.Purchasing.PostAsync(firstId, OperationGuard.NewId(), ct);
+        long categoryId;
+        using (var connection = fixture.Factory.Open())
+            categoryId = connection.ExecuteScalar<long>("SELECT category_id FROM product WHERE id=@id",
+                new { id = fixture.ProductId });
+        long countId = await fixture.Inventory.CreateStockCountAsync(fixture.Date, [categoryId], null, ct);
+        await fixture.Inventory.SetCountedQuantityAsync(countId, first.LotIds[0], new Quantity(11), ct);
+
+        long nextId = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("COUNT-NEXT"), ct);
+        PostedPurchase next = await fixture.Purchasing.PostAsync(nextId, OperationGuard.NewId(), ct);
+        DomainException stale = await Should.ThrowAsync<DomainException>(() => fixture.Inventory.PostStockCountAsync(
+            countId, OperationGuard.NewId(), cancellationToken: ct));
+        stale.Code.ShouldBe(ErrorCode.StockCountReviewChanged);
+        (await fixture.Inventory.RefreshStockCountLotsAsync(countId, ct)).ShouldBe(1);
+        (await fixture.Inventory.RefreshStockCountLotsAsync(countId, ct)).ShouldBe(0);
+        StockCountDetails refreshed = await fixture.Inventory.GetStockCountAsync(countId, ct);
+        StockCountLine added = refreshed.Lines.Single(line => line.LotId == next.LotIds[0]);
+        added.Expected.ShouldBe(Quantity.Zero);
+        added.MovementSinceSnapshot.ShouldBe(new Quantity(11));
+        await fixture.Inventory.SetCountedQuantityAsync(countId, added.LotId, new Quantity(11), ct);
+        await fixture.Inventory.PostStockCountAsync(countId, OperationGuard.NewId(),
+            refreshed.Lines.ToDictionary(static line => line.LotId,
+                static line => line.MovementSinceSnapshot.Scaled), ct);
+        (await fixture.Inventory.GetStockCountAsync(countId, ct)).Status.ShouldBe("POSTED");
+    }
+
+    [Fact]
+    public async Task PurchaseDraft_CanBeReopenedWithAllEditableFields()
+    {
+        using var fixture = new StockInFixture();
+        PurchaseDraftInput input = fixture.Purchase("SAVED-1");
+        long id = await fixture.Purchasing.SaveDraftAsync(null, input, TestContext.Current.CancellationToken);
+
+        PurchaseDraft reopened = await fixture.Purchasing.GetDraftAsync(id, TestContext.Current.CancellationToken);
+        reopened.Input.VendorId.ShouldBe(input.VendorId);
+        reopened.Input.VendorInvoiceNumber.ShouldBe("SAVED-1");
+        reopened.Input.VendorBillTotal.ShouldBe(new Money(2725));
+        reopened.Input.Lines.Single().ManufacturingDate.ShouldBe(fixture.Date.AddMonths(-1));
+        reopened.Input.Lines.Single().FreeQuantity.ShouldBe(Quantity.One);
+
+        await fixture.Purchasing.SaveDraftAsync(id, input with { VendorInvoiceNumber = "SAVED-2" },
+            TestContext.Current.CancellationToken);
+        (await fixture.Purchasing.GetDraftAsync(id, TestContext.Current.CancellationToken))
+            .Input.VendorInvoiceNumber.ShouldBe("SAVED-2");
+    }
+
+    [Fact]
+    public async Task VendorDetails_CanBeLoadedEditedAndShownInLedger()
+    {
+        using var fixture = new StockInFixture();
+        VendorInput vendor = await fixture.Purchasing.GetVendorAsync(fixture.VendorId, TestContext.Current.CancellationToken);
+        vendor.Name.ShouldBe("Supplier");
+        vendor.Pan.ShouldBe("ABCDE1234F");
+        vendor.OpeningBalance.ShouldBe(new Money(100));
+
+        await fixture.Purchasing.UpdateVendorAsync(fixture.VendorId,
+            vendor with { Name = "Supplier Updated", PaymentTermsDays = 45 },
+            cancellationToken: TestContext.Current.CancellationToken);
+        VendorInput updated = await fixture.Purchasing.GetVendorAsync(fixture.VendorId, TestContext.Current.CancellationToken);
+        updated.Name.ShouldBe("Supplier Updated");
+        updated.PaymentTermsDays.ShouldBe(45);
+        (await fixture.Purchasing.GetVendorLedgerAsync(fixture.VendorId, TestContext.Current.CancellationToken))[0]
+            .Balance.ShouldBe(new Money(100));
+    }
+
+    [Fact]
+    public async Task StockCount_RejectsEmptySheetAndLocksEnteredQuantitiesAfterPosting()
+    {
+        using var fixture = new StockInFixture();
+        await Should.ThrowAsync<DomainException>(() => fixture.Inventory.CreateStockCountAsync(
+            fixture.Date, null, null, TestContext.Current.CancellationToken));
+        long purchaseId = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("COUNT-LOCK"),
+            TestContext.Current.CancellationToken);
+        PostedPurchase purchase = await fixture.Purchasing.PostAsync(purchaseId, OperationGuard.NewId(),
+            TestContext.Current.CancellationToken);
+        long categoryId;
+        using (var connection = fixture.Factory.Open())
+            categoryId = connection.ExecuteScalar<long>("SELECT category_id FROM product WHERE id=@id", new { id = fixture.ProductId });
+        long countId = await fixture.Inventory.CreateStockCountAsync(fixture.Date, [categoryId], null,
+            TestContext.Current.CancellationToken);
+        StockCountSummary draft = (await fixture.Inventory.GetDraftCountsAsync(TestContext.Current.CancellationToken)).Single();
+        draft.Id.ShouldBe(countId);
+        draft.LotCount.ShouldBe(1);
+        draft.CountedCount.ShouldBe(0);
+        DomainException fractional = await Should.ThrowAsync<DomainException>(() => fixture.Inventory.SetCountedQuantityAsync(
+            countId, purchase.LotIds[0], new Quantity(10.5m), TestContext.Current.CancellationToken));
+        fractional.Code.ShouldBe(ErrorCode.FractionalQtyNotAllowed);
+        await Should.ThrowAsync<DomainException>(() => fixture.Inventory.SetCountedQuantitiesAsync(countId,
+            new Dictionary<long, Quantity> { [purchase.LotIds[0]] = new Quantity(11), [999999] = Quantity.One },
+            TestContext.Current.CancellationToken));
+        (await fixture.Inventory.GetDraftCountsAsync(TestContext.Current.CancellationToken)).Single().CountedCount.ShouldBe(0);
+        await fixture.Inventory.SetCountedQuantityAsync(countId, purchase.LotIds[0], new Quantity(11),
+            TestContext.Current.CancellationToken);
+        await fixture.Inventory.PostStockCountAsync(countId, OperationGuard.NewId(),
+            cancellationToken: TestContext.Current.CancellationToken);
+        DomainException error = await Should.ThrowAsync<DomainException>(() => fixture.Inventory.SetCountedQuantityAsync(
+            countId, purchase.LotIds[0], new Quantity(10), TestContext.Current.CancellationToken));
+        error.Code.ShouldBe(ErrorCode.Validation);
+        (await fixture.Inventory.GetDraftCountsAsync(TestContext.Current.CancellationToken)).ShouldBeEmpty();
     }
 
     [Fact]

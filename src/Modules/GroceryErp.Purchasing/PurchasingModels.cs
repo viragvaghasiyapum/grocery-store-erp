@@ -45,6 +45,11 @@ public sealed record PurchaseDraftInput(
     string? Notes,
     IReadOnlyList<PurchaseLineInput> Lines);
 
+public sealed record PurchaseDraft(long Id, PurchaseDraftInput Input);
+
+public sealed record PurchaseLineDefaults(Money? LastRate, Percent TaxRate, Money? Mrp,
+    Money? SellingPrice, DateOnly? SuggestedExpiry, int ExpiryAlertDays, bool PriceIncludesTax);
+
 public sealed record PurchaseTotals(
     Money Subtotal,
     Money Discount,
@@ -62,6 +67,24 @@ public sealed record PostedPurchase(long Id, string DocumentNumber, PurchaseTota
 public sealed record VendorLedgerItem(DateOnly Date, string Kind, string? Reference, Money Debit, Money Credit, Money Balance);
 
 public sealed record VendorPaymentInput(long VendorId, long? PurchaseId, DateOnly Date, Money Amount, string Mode, string? Reference, string? Notes);
+
+public sealed record VendorPurchaseChoice(long Id, string Label);
+
+public sealed record VendorLotItem(string ProductName, string LotCode, string? BatchNumber,
+    DateOnly ReceivedDate, DateOnly? ExpiryDate, Quantity OnHand);
+
+public sealed record VendorReturnLot(long LotId, long ProductId, string ProductName, string LotCode,
+    Quantity Received, Quantity OnHand, Quantity Returnable, Money OriginalBeforeTax,
+    Money OriginalTax, Money CreditedBeforeTax, Money CreditedTax, Money UnitCost,
+    bool AllowFraction, Quantity AlreadyReturned);
+
+public sealed record VendorReturnLineInput(long LotId, Quantity Quantity, Money CreditBeforeTax, Money TaxCredit);
+
+public sealed record VendorReturnInput(long PurchaseId, DateOnly Date, string VendorCreditNumber,
+    string Reason, IReadOnlyList<VendorReturnLineInput> Lines);
+
+public sealed record PostedVendorReturn(long Id, string DocumentNumber, Money CreditTotal,
+    Money CostTotal, bool WasReplay = false);
 
 public sealed record PurchaseListItem(
     long Id,

@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Windows;
+using GroceryErp.Core;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Inventory;
+using GroceryErp.Localization;
 
 namespace GroceryErp.App.Presentation;
 
@@ -22,8 +24,10 @@ public partial class LotPriceWindow : Window
     {
         try
         {
-            Money price = new(decimal.Parse(PriceBox.Text, CultureInfo.InvariantCulture));
-            Money? mrp = string.IsNullOrWhiteSpace(MrpBox.Text) ? null : new(decimal.Parse(MrpBox.Text, CultureInfo.InvariantCulture));
+            Money price = new(decimal.Parse(InputNormalizer.Normalize(PriceBox.Text),
+                NumberStyles.Number, TranslationSource.FormatCulture));
+            Money? mrp = string.IsNullOrWhiteSpace(MrpBox.Text) ? null : new(decimal.Parse(
+                InputNormalizer.Normalize(MrpBox.Text), NumberStyles.Number, TranslationSource.FormatCulture));
             await _inventory.ChangeLotPriceAsync(_lot.Id, price, mrp);
             DialogResult = true;
         }

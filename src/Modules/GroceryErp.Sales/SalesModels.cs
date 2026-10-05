@@ -39,7 +39,9 @@ public sealed record SaleLine(
     Money Total,
     Money UnitCost,
     Money Cost,
-    string? ScannedBarcode);
+    string? ScannedBarcode,
+    Money LineDiscount = default,
+    Quantity StockOnHand = default);
 
 public sealed record SaleDetails(
     long Id,
@@ -58,6 +60,19 @@ public sealed record SaleDetails(
     string? VoidReason);
 
 public sealed record HeldSale(long Id, DateTime CreatedAt, string? Label, int ItemCount, Money Total);
+
+public sealed record HeldBillReviewLine(long LineId, string ProductName, Quantity Quantity,
+    Money PreviousPrice, Money CurrentPrice, Money? PreviousMrp, Money? CurrentMrp,
+    Money CurrentCost, Quantity Available, bool IsActive, DateOnly? ExpiryDate)
+{
+    public bool PriceChanged => PreviousPrice != CurrentPrice || PreviousMrp != CurrentMrp;
+}
+
+public sealed record HeldBillReview(long SaleId, IReadOnlyList<HeldBillReviewLine> Lines);
+
+public sealed record ReturnableSaleLine(SaleLine Line, Quantity Remaining);
+
+public sealed record CustomerItem(long Id, string Name, string? Phone, string? Gstin);
 
 public sealed record SaleHistoryFilter(
     DateOnly? From = null,
@@ -81,6 +96,15 @@ public sealed record SaleHistoryItem(
     string PaymentModes,
     DateTime? CompletedAt,
     string? VoidReason);
+
+public sealed record SaleReturnHistoryItem(string ReturnNumber, DateOnly Date, string ProductName,
+    Quantity Quantity, Money Refund, bool Resellable, string Reason);
+
+public sealed record SaleMovementHistoryItem(DateOnly Date, string ProductName, string LotCode,
+    string Type, Quantity Quantity);
+
+public sealed record SaleHistoryActivity(IReadOnlyList<SaleReturnHistoryItem> Returns,
+    IReadOnlyList<SaleMovementHistoryItem> Movements);
 
 public sealed record ReturnLineInput(long SaleLineId, Quantity Quantity, bool Resellable);
 public sealed record CreateReturnCommand(
@@ -116,7 +140,10 @@ public sealed record DayEndSummary(
     int ReturnCount,
     Money ReturnValue,
     Money CashExpenses,
-    Money CashExpected);
+    Money CashExpected,
+    Money CashChange = default,
+    Money CashRefunds = default,
+    Money Payable = default);
 
 public sealed record ReceiptLine(
     string Name,
@@ -151,4 +178,9 @@ public sealed record ReceiptData(
     Money Change,
     string PrintLanguage,
     string Footer,
-    bool Duplicate);
+    bool Duplicate,
+    string? OriginalInvoiceNumber = null,
+    string? ReturnReason = null,
+    string? RefundMethod = null,
+    int WidthDots = 0,
+    bool? BilingualNames = null);

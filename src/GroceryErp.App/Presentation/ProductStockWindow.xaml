@@ -16,25 +16,27 @@
       <TabItem Header="{l:Tr Stock_Lots}">
         <DataGrid x:Name="LotsGrid" Style="{StaticResource CatalogGrid}" SelectionChanged="LotsGrid_OnSelectionChanged">
           <DataGrid.Columns>
-            <DataGridTextColumn Width="130" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
-            <DataGridTextColumn Width="120" Header="{l:Tr Stock_Batch}" Binding="{Binding BatchNumber}"/>
-            <DataGridTextColumn Width="120" Header="{l:Tr Stock_Expiry}" Binding="{Binding ExpiryDate, StringFormat=dd MMM yyyy}"/>
-            <DataGridTextColumn Width="110" Header="{l:Tr Stock_OnHand}" Binding="{Binding OnHand}"/>
-            <DataGridTextColumn Width="110" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}"/>
-            <DataGridTextColumn Width="110" Header="{l:Tr Stock_Mrp}" Binding="{Binding Mrp}"/>
-            <DataGridCheckBoxColumn Width="85" Header="{l:Tr Catalog_Active}" Binding="{Binding IsActive}"/>
+            <DataGridTextColumn Width="120" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
+            <DataGridTextColumn Width="100" Header="{l:Tr Stock_Batch}" Binding="{Binding BatchNumber}"/>
+            <DataGridTextColumn Width="115" Header="{l:Tr Stock_Expiry}" Binding="{Binding ExpiryDate, StringFormat=dd MMM yyyy}"/>
+            <DataGridTextColumn Width="95" Header="{l:Tr Stock_ExpiryStatus}" Binding="{Binding ExpiryBucketCode,Converter={StaticResource ExpiryBucketConverter}}" ElementStyle="{StaticResource ExpiryBucketStyle}"/>
+            <DataGridTextColumn Width="95" Header="{l:Tr Stock_OnHand}" Binding="{Binding OnHand}"/>
+            <DataGridTextColumn Width="95" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}"/>
+            <DataGridTextColumn Width="95" Header="{l:Tr Stock_Mrp}" Binding="{Binding Mrp}"/>
+            <DataGridCheckBoxColumn Width="70" Header="{l:Tr Catalog_Active}" Binding="{Binding IsActive}"/>
           </DataGrid.Columns>
         </DataGrid>
       </TabItem>
       <TabItem Header="{l:Tr Stock_Ledger}">
-        <DataGrid x:Name="LedgerGrid" Style="{StaticResource CatalogGrid}">
+        <DataGrid x:Name="LedgerGrid" Style="{StaticResource CatalogGrid}" SelectionChanged="LedgerGrid_OnSelectionChanged">
           <DataGrid.Columns>
-            <DataGridTextColumn Width="115" Header="{l:Tr Stock_MoveDate}" Binding="{Binding MoveDate, StringFormat=dd MMM yyyy}"/>
-            <DataGridTextColumn Width="135" Header="{l:Tr Stock_MovementType}" Binding="{Binding Type}"/>
-            <DataGridTextColumn Width="125" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
-            <DataGridTextColumn Width="110" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
-            <DataGridTextColumn Width="110" Header="{l:Tr Stock_OnHand}" Binding="{Binding LotBalance}"/>
+            <DataGridTextColumn Width="105" Header="{l:Tr Stock_MoveDate}" Binding="{Binding MoveDate, StringFormat=dd MMM yyyy}"/>
+            <DataGridTextColumn Width="115" Header="{l:Tr Stock_MovementType}" Binding="{Binding Type}"/>
+            <DataGridTextColumn Width="110" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
+            <DataGridTextColumn Width="95" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
+            <DataGridTextColumn Width="95" Header="{l:Tr Stock_OnHand}" Binding="{Binding LotBalance}"/>
             <DataGridTextColumn Width="*" MinWidth="180" Header="{l:Tr Purchasing_Notes}" Binding="{Binding Note}"/>
+            <DataGridTextColumn Width="110" Header="{l:Tr Stock_Source}" Binding="{Binding RefType}"/>
           </DataGrid.Columns>
         </DataGrid>
       </TabItem>
@@ -43,6 +45,8 @@
       <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextWrapping="Wrap"/>
       <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
         <Button x:Name="PrintLotButton" IsEnabled="False" Margin="0,0,8,0" Click="PrintLot_OnClick" Content="{l:Tr Catalog_PrintLabels}"/>
+        <Button x:Name="WriteOffButton" IsEnabled="False" Margin="0,0,8,0" Click="WriteOff_OnClick" Content="{l:Tr Stock_WriteOffExpired}"/>
+        <Button x:Name="OpenSourceButton" IsEnabled="False" Margin="0,0,8,0" Click="OpenSource_OnClick" Content="{l:Tr Stock_OpenSource}"/>
         <Button IsCancel="True" Content="{l:Tr Common_Close}"/>
       </StackPanel>
     </Grid>

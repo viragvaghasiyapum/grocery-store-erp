@@ -322,7 +322,7 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
     {
         List<PnlLine> lines = raw.Select(row => new PnlLine(row.Section, row.HeadCode, row.ReferenceId,
             Label(row.HeadCode, row.ReferenceId, categories), Money.FromScaled(row.Amount))).ToList();
-        List<PnlLine> other = lines.Where(static x => x.HeadCode == "ASSET_DISPOSAL").ToList();
+        List<PnlLine> other = lines.Where(static x => x.Section == "OTHER" || x.HeadCode == "ASSET_DISPOSAL").ToList();
         List<PnlLine> income = lines.Where(static x => x.Section == "INCOME" && x.HeadCode != "ASSET_DISPOSAL").ToList();
         List<PnlLine> cogs = lines.Where(static x => x.Section == "COGS").ToList();
         List<PnlLine> expenses = lines.Where(static x => x.Section == "EXPENSE").ToList();
@@ -347,6 +347,7 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         "SALARIES" => Text("Pnl_Head_Salaries", "Salaries"),
         "DEPRECIATION" => Text("Pnl_Head_Depreciation", "Depreciation"),
         "ASSET_DISPOSAL" => Text("Pnl_Head_AssetDisposal", "Asset disposal gain/(loss)"),
+        "VENDOR_RETURN_VARIANCE" => Text("Pnl_Head_VendorReturnVariance", "Vendor return variance"),
         "EXPENSE_CATEGORY" when referenceId is { } id => categories.GetValueOrDefault(id, $"Expense {id}"),
         _ => code
     };

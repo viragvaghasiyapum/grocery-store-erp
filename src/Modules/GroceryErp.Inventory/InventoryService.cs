@@ -30,8 +30,13 @@ public sealed class InventoryService(
             SELECT l.id AS Id,l.product_id AS ProductId,p.name AS ProductName,l.lot_code AS LotCode,
                    l.batch_no AS BatchNumber,l.received_date AS ReceivedDate,l.expiry_date AS ExpiryDate,
                    l.unit_cost AS UnitCost,l.mrp AS Mrp,l.selling_price AS SellingPrice,
-                   l.qty_received AS Received,l.qty_on_hand AS OnHand,l.is_active AS IsActive
+                   l.qty_received AS Received,l.qty_on_hand AS OnHand,l.is_active AS IsActive,
+                   CASE WHEN l.is_active=0 THEN 'BLOCKED'
+                        WHEN l.qty_on_hand<=0 THEN 'EMPTY'
+                        WHEN l.expiry_date IS NULL THEN 'NONE'
+                        ELSE COALESCE(e.bucket,'FRESH') END AS ExpiryBucketCode
             FROM product_lot l JOIN product p ON p.id=l.product_id
+            LEFT JOIN v_expiry_alert e ON e.lot_id=l.id
             WHERE @productId IS NULL OR l.product_id=@productId
             ORDER BY p.name COLLATE NOCASE,l.expiry_date IS NULL,l.expiry_date,l.id
             """, new { productId }).Select(static row => row.ToModel()).ToList(), cancellationToken);
@@ -65,14 +70,143 @@ public sealed class InventoryService(
         if (productId <= 0 || from > to) throw new DomainException(ErrorCode.Validation, "Invalid ledger filter.");
         return database.ReadAsync(connection => (IReadOnlyList<LedgerItem>)connection.Query<LedgerRow>("""
             WITH history AS (
-              SELECT m.id,m.moved_at,m.move_date,m.type_code,m.qty,m.unit_cost,m.ref_type,m.ref_id,m.note,
-                     l.lot_code,SUM(m.qty) OVER (PARTITION BY m.lot_id ORDER BY m.id) AS lot_balance
+              SELECT m.id AS Id,m.moved_at AS MovedAt,m.move_date AS MoveDate,
+                     m.type_code AS TypeCode,m.qty AS Qty,m.unit_cost AS UnitCost,
+                     m.ref_type AS RefType,m.ref_id AS RefId,m.note AS Note,
+                     l.lot_code AS LotCode,
+                     SUM(m.qty) OVER (PARTITION BY m.lot_id ORDER BY m.id) AS LotBalance
               FROM stock_movement m JOIN product_lot l ON l.id=m.lot_id
               WHERE m.product_id=@productId
             )
-            SELECT * FROM history WHERE move_date BETWEEN @from AND @to ORDER BY id
+            SELECT Id,MovedAt,MoveDate,TypeCode,Qty,UnitCost,RefType,RefId,Note,
+                   LotCode,LotBalance
+            FROM history WHERE MoveDate BETWEEN @from AND @to ORDER BY Id
             """, new { productId, from, to }).Select(static row => row.ToModel()).ToList(), cancellationToken);
     }
+
+    public Task<StockSourceDocument> GetSourceDocumentAsync(LedgerItem movement,
+        CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
+    {
+        ArgumentNullException.ThrowIfNull(movement);
+        SourceHeaderRow? header;
+        SourceLineRow[] lines;
+        string type;
+        switch (movement.RefType)
+        {
+            case "purchase_line" when movement.RefId is { } purchaseLineId:
+                type = "Purchase";
+                header = connection.QuerySingleOrDefault<SourceHeaderRow>("""
+                    SELECT po.doc_no AS Number,po.received_date AS Date,v.name AS Party,
+                           po.status AS Status,po.notes AS Notes
+                    FROM purchase_line pl JOIN purchase po ON po.id=pl.purchase_id
+                    JOIN vendor v ON v.id=po.vendor_id WHERE pl.id=@purchaseLineId
+                    """, new { purchaseLineId });
+                lines = connection.Query<SourceLineRow>("""
+                    SELECT p.name AS ProductName,COALESCE(l.lot_code,'') AS LotCode,
+                           pl.qty+pl.free_qty AS Quantity,pl.line_total AS Amount
+                    FROM purchase_line source JOIN purchase_line pl ON pl.purchase_id=source.purchase_id
+                    JOIN product p ON p.id=pl.product_id
+                    LEFT JOIN product_lot l ON l.purchase_line_id=pl.id
+                    WHERE source.id=@purchaseLineId ORDER BY pl.line_no
+                    """, new { purchaseLineId }).ToArray();
+                break;
+            case "sale_line" when movement.RefId is { } saleLineId:
+                type = "Sale";
+                header = connection.QuerySingleOrDefault<SourceHeaderRow>("""
+                    SELECT s.invoice_no AS Number,s.sale_date AS Date,c.name AS Party,
+                           s.status AS Status,s.void_reason AS Notes
+                    FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
+                    LEFT JOIN customer c ON c.id=s.customer_id WHERE sl.id=@saleLineId
+                    """, new { saleLineId });
+                lines = connection.Query<SourceLineRow>("""
+                    SELECT sl.product_name AS ProductName,l.lot_code AS LotCode,
+                           sl.qty AS Quantity,sl.line_total AS Amount
+                    FROM sale_line source JOIN sale_line sl ON sl.sale_id=source.sale_id
+                    JOIN product_lot l ON l.id=sl.lot_id WHERE source.id=@saleLineId
+                    ORDER BY sl.line_no
+                    """, new { saleLineId }).ToArray();
+                break;
+            case "sale_return" when movement.RefId is { } returnId:
+                type = "Return";
+                header = connection.QuerySingleOrDefault<SourceHeaderRow>("""
+                    SELECT r.return_no AS Number,r.return_date AS Date,s.invoice_no AS Party,
+                           r.refund_mode AS Status,r.reason AS Notes
+                    FROM sale_return r JOIN sale s ON s.id=r.sale_id WHERE r.id=@returnId
+                    """, new { returnId });
+                lines = connection.Query<SourceLineRow>("""
+                    SELECT sl.product_name AS ProductName,l.lot_code AS LotCode,
+                           rl.qty AS Quantity,rl.refund_amount AS Amount
+                    FROM sale_return_line rl JOIN sale_line sl ON sl.id=rl.sale_line_id
+                    JOIN product_lot l ON l.id=sl.lot_id
+                    WHERE rl.sale_return_id=@returnId ORDER BY rl.id
+                    """, new { returnId }).ToArray();
+                break;
+            case "vendor_return" when movement.RefId is { } vendorReturnId:
+                type = "VendorReturn";
+                header = connection.QuerySingleOrDefault<SourceHeaderRow>("""
+                    SELECT vr.doc_no AS Number,vr.return_date AS Date,v.name AS Party,
+                           vr.vendor_credit_no AS Status,vr.reason AS Notes
+                    FROM vendor_return vr JOIN vendor v ON v.id=vr.vendor_id WHERE vr.id=@vendorReturnId
+                    """, new { vendorReturnId });
+                lines = connection.Query<SourceLineRow>("""
+                    SELECT p.name AS ProductName,l.lot_code AS LotCode,vrl.qty AS Quantity,
+                           vrl.credit_before_tax+vrl.tax_credit AS Amount
+                    FROM vendor_return_line vrl JOIN product p ON p.id=vrl.product_id
+                    JOIN product_lot l ON l.id=vrl.lot_id
+                    WHERE vrl.vendor_return_id=@vendorReturnId ORDER BY vrl.id
+                    """, new { vendorReturnId }).ToArray();
+                break;
+            case "damage" when movement.RefId is { } damageId:
+                type = "Damage";
+                header = connection.QuerySingleOrDefault<SourceHeaderRow>("""
+                    SELECT doc_no AS Number,damage_date AS Date,reason AS Status,notes AS Notes
+                    FROM damage WHERE id=@damageId
+                    """, new { damageId });
+                lines = connection.Query<SourceLineRow>("""
+                    SELECT p.name AS ProductName,l.lot_code AS LotCode,
+                           d.qty AS Quantity,d.cost_value AS Amount
+                    FROM damage d JOIN product p ON p.id=d.product_id
+                    JOIN product_lot l ON l.id=d.lot_id WHERE d.id=@damageId
+                    """, new { damageId }).ToArray();
+                break;
+            case "stock_count" when movement.RefId is { } countId:
+                type = "Count";
+                header = connection.QuerySingleOrDefault<SourceHeaderRow>("""
+                    SELECT CAST(id AS TEXT) AS Number,count_date AS Date,status AS Status,notes AS Notes
+                    FROM stock_count WHERE id=@countId
+                    """, new { countId });
+                lines = connection.Query<SourceLineRow>("""
+                    SELECT p.name AS ProductName,l.lot_code AS LotCode,m.qty AS Quantity,
+                           CAST(ROUND(m.qty*m.unit_cost/1000.0) AS INTEGER) AS Amount
+                    FROM stock_movement m JOIN product p ON p.id=m.product_id
+                    JOIN product_lot l ON l.id=m.lot_id
+                    WHERE m.ref_type='stock_count' AND m.ref_id=@countId ORDER BY m.id
+                    """, new { countId }).ToArray();
+                break;
+            default:
+                type = movement.RefType is "opening_import" ? "Opening" : "Adjustment";
+                header = new SourceHeaderRow
+                {
+                    Number = movement.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    Date = movement.MoveDate,
+                    Status = movement.Type,
+                    Notes = movement.Note,
+                };
+                lines = connection.Query<SourceLineRow>("""
+                    SELECT p.name AS ProductName,l.lot_code AS LotCode,m.qty AS Quantity,
+                           CAST(ROUND(m.qty*m.unit_cost/1000.0) AS INTEGER) AS Amount
+                    FROM stock_movement m JOIN product p ON p.id=m.product_id
+                    JOIN product_lot l ON l.id=m.lot_id WHERE m.id=@id
+                    """, new { movement.Id }).ToArray();
+                break;
+        }
+        if (header is null) throw new DomainException(ErrorCode.NotFound,
+            movement.RefType ?? "stock_movement", movement.RefId ?? movement.Id);
+        return new StockSourceDocument(type, header.Number ?? movement.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            header.Date, header.Party, header.Status, header.Notes,
+            lines.Select(static row => new StockSourceLine(row.ProductName, row.LotCode,
+                Quantity.FromScaled(row.Quantity), Money.FromScaled(row.Amount))).ToArray());
+    }, cancellationToken);
 
     public async Task<long> ImportOpeningStockAsync(
         IReadOnlyList<OpeningStockLine> lines,
@@ -180,6 +314,10 @@ public sealed class InventoryService(
         long id = transaction.Connection.ExecuteScalar<long>("""
             INSERT INTO stock_count(count_date,snapshot_movement_id,notes) VALUES (@date,@snapshot,@notes) RETURNING id
             """, new { date = Format(date), snapshot, notes = Optional(notes, 500) }, transaction.Transaction);
+        if (categoryIds is { Count: > 0 })
+            transaction.Connection.Execute("""
+                INSERT INTO stock_count_scope(stock_count_id,category_id) VALUES (@id,@categoryId)
+                """, categoryIds.Distinct().Select(categoryId => new { id, categoryId }), transaction.Transaction);
         string filter = categoryIds is { Count: > 0 } ? "AND p.category_id IN @categoryIds" : string.Empty;
         int rows = transaction.Connection.Execute($"""
             INSERT INTO stock_count_line(stock_count_id,product_id,lot_id,expected_qty,unit_cost)
@@ -187,19 +325,72 @@ public sealed class InventoryService(
             FROM product_lot l JOIN product p ON p.id=l.product_id
             WHERE p.is_active=1 {filter}
             """, new { id, categoryIds }, transaction.Transaction);
+        if (rows == 0) throw new DomainException(ErrorCode.Validation, "No lots are available to count.");
         audit.Write(transaction, "stock_count", id, "CREATE", new { rows, snapshot });
         return id;
     }, cancellationToken);
 
-    public Task SetCountedQuantityAsync(long countId, long lotId, Quantity counted, CancellationToken cancellationToken = default)
+    public Task<int> RefreshStockCountLotsAsync(long countId, CancellationToken cancellationToken = default) =>
+        database.WriteAsync(transaction =>
+        {
+            string? status = transaction.Connection.ExecuteScalar<string?>(
+                "SELECT status FROM stock_count WHERE id=@countId", new { countId }, transaction.Transaction);
+            if (status != "DRAFT") throw new DomainException(ErrorCode.Validation, "Stock count is not an active draft.");
+            int added = transaction.Connection.Execute("""
+                INSERT INTO stock_count_line(stock_count_id,product_id,lot_id,expected_qty,unit_cost)
+                SELECT @countId,l.product_id,l.id,
+                       l.qty_on_hand-COALESCE((SELECT SUM(m.qty) FROM stock_movement m
+                           WHERE m.lot_id=l.id AND m.id>sc.snapshot_movement_id),0),l.unit_cost
+                FROM stock_count sc CROSS JOIN product_lot l JOIN product p ON p.id=l.product_id
+                WHERE sc.id=@countId AND p.is_active=1
+                  AND (NOT EXISTS (SELECT 1 FROM stock_count_scope s WHERE s.stock_count_id=sc.id)
+                       OR EXISTS (SELECT 1 FROM stock_count_scope s
+                                  WHERE s.stock_count_id=sc.id AND s.category_id=p.category_id))
+                  AND NOT EXISTS (SELECT 1 FROM stock_count_line scl
+                                  WHERE scl.stock_count_id=sc.id AND scl.lot_id=l.id)
+                """, new { countId }, transaction.Transaction);
+            if (added > 0) audit.Write(transaction, "stock_count", countId, "REFRESH_LOTS", new { added });
+            return added;
+        }, cancellationToken);
+
+    public Task<IReadOnlyList<StockCountSummary>> GetDraftCountsAsync(CancellationToken cancellationToken = default) =>
+        database.ReadAsync(connection => (IReadOnlyList<StockCountSummary>)connection.Query<StockCountSummary>("""
+            SELECT sc.id AS Id,sc.count_date AS Date,COUNT(scl.id) AS LotCount,
+                   SUM(CASE WHEN scl.counted_qty IS NOT NULL THEN 1 ELSE 0 END) AS CountedCount
+            FROM stock_count sc JOIN stock_count_line scl ON scl.stock_count_id=sc.id
+            WHERE sc.status='DRAFT' GROUP BY sc.id ORDER BY sc.id DESC
+            """).ToList(), cancellationToken);
+
+    public Task SetCountedQuantityAsync(long countId, long lotId, Quantity counted, CancellationToken cancellationToken = default) =>
+        SetCountedQuantitiesAsync(countId, new Dictionary<long, Quantity> { [lotId] = counted }, cancellationToken);
+
+    public Task SetCountedQuantitiesAsync(long countId, IReadOnlyDictionary<long, Quantity> quantities,
+        CancellationToken cancellationToken = default)
     {
-        if (counted < Quantity.Zero) throw new DomainException(ErrorCode.Validation, "Counted quantity cannot be negative.");
+        ArgumentNullException.ThrowIfNull(quantities);
+        if (countId <= 0 || quantities.Count == 0 || quantities.Values.Any(static quantity => quantity < Quantity.Zero))
+            throw new DomainException(ErrorCode.Validation, "Counted quantities must be non-negative.");
         return database.WriteAsync(transaction =>
         {
-            int changed = transaction.Connection.Execute("""
-                UPDATE stock_count_line SET counted_qty=@counted WHERE stock_count_id=@countId AND lot_id=@lotId
-                """, new { countId, lotId, counted = counted.Scaled }, transaction.Transaction);
-            if (changed == 0) throw new DomainException(ErrorCode.NotFound, "stock count line", lotId);
+            string? status = transaction.Connection.QuerySingleOrDefault<string>(
+                "SELECT status FROM stock_count WHERE id=@countId", new { countId }, transaction.Transaction);
+            if (status != "DRAFT") throw new DomainException(ErrorCode.Validation, "Stock count is not an active draft.");
+            var rules = transaction.Connection.Query<CountUnitRule>("""
+                SELECT scl.lot_id AS LotId,u.allow_fraction AS AllowFraction
+                FROM stock_count_line scl JOIN product p ON p.id=scl.product_id JOIN uom u ON u.id=p.uom_id
+                WHERE scl.stock_count_id=@countId
+                """, new { countId }, transaction.Transaction).ToDictionary(static rule => rule.LotId);
+            foreach ((long lotId, Quantity quantity) in quantities)
+            {
+                if (!rules.TryGetValue(lotId, out CountUnitRule? rule))
+                    throw new DomainException(ErrorCode.NotFound, "stock count line", lotId);
+                if (!rule.AllowFraction && !quantity.IsWhole)
+                    throw new DomainException(ErrorCode.FractionalQtyNotAllowed);
+            }
+            foreach ((long lotId, Quantity quantity) in quantities)
+                transaction.Connection.Execute("""
+                    UPDATE stock_count_line SET counted_qty=@counted WHERE stock_count_id=@countId AND lot_id=@lotId
+                    """, new { countId, lotId, counted = quantity.Scaled }, transaction.Transaction);
         }, cancellationToken);
     }
 
@@ -223,7 +414,8 @@ public sealed class InventoryService(
             return new StockCountDetails(header.Id, header.Date, header.Status, header.Notes, lines);
         }, cancellationToken);
 
-    public async Task PostStockCountAsync(long countId, string operationId, CancellationToken cancellationToken = default)
+    public async Task PostStockCountAsync(long countId, string operationId,
+        IReadOnlyDictionary<long, long>? reviewedMovements = null, CancellationToken cancellationToken = default)
     {
         var products = new HashSet<long>();
         await database.WriteAsync(transaction =>
@@ -237,6 +429,16 @@ public sealed class InventoryService(
             if (header is null) throw new DomainException(ErrorCode.NotFound, "stock count", countId);
             if (header.Status != "DRAFT") throw new DomainException(ErrorCode.Validation, "Stock count is already finalized.");
             periods.EnsureOpen(header.Date);
+            if (transaction.Connection.ExecuteScalar<long>("""
+                SELECT COUNT(*) FROM product_lot l JOIN product p ON p.id=l.product_id
+                WHERE p.is_active=1
+                  AND (NOT EXISTS (SELECT 1 FROM stock_count_scope s WHERE s.stock_count_id=@countId)
+                       OR EXISTS (SELECT 1 FROM stock_count_scope s
+                                  WHERE s.stock_count_id=@countId AND s.category_id=p.category_id))
+                  AND NOT EXISTS (SELECT 1 FROM stock_count_line scl
+                                  WHERE scl.stock_count_id=@countId AND scl.lot_id=l.id)
+                """, new { countId }, transaction.Transaction) > 0)
+                throw new DomainException(ErrorCode.StockCountReviewChanged);
             List<CountPostRow> lines = transaction.Connection.Query<CountPostRow>("""
                 SELECT scl.product_id AS ProductId,scl.lot_id AS LotId,scl.expected_qty AS Expected,
                        scl.counted_qty AS Counted,scl.unit_cost AS UnitCost,
@@ -246,6 +448,10 @@ public sealed class InventoryService(
                 """, new { countId, snapshot = header.Snapshot }, transaction.Transaction).ToList();
             if (lines.Count == 0 || lines.Any(static line => line.Counted is null))
                 throw new DomainException(ErrorCode.Validation, "Every stock-count line must be counted.");
+            if (reviewedMovements is not null && (reviewedMovements.Count != lines.Count ||
+                lines.Any(line => !reviewedMovements.TryGetValue(line.LotId, out long movement) ||
+                                  movement != line.Movement)))
+                throw new DomainException(ErrorCode.StockCountReviewChanged);
             foreach (CountPostRow line in lines)
             {
                 long difference = line.Counted!.Value - (line.Expected + line.Movement);
@@ -313,12 +519,15 @@ public sealed class InventoryService(
     private static string Format(DateOnly date) => date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
     private sealed class OverviewRow { public long ProductId { get; init; } public string Sku { get; init; } = ""; public string Name { get; init; } = ""; public long Quantity { get; init; } public long CostValue { get; init; } public long ReorderLevel { get; init; } public bool IsLow { get; init; } }
-    private sealed class LotRow { public long Id { get; init; } public long ProductId { get; init; } public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public string? BatchNumber { get; init; } public DateOnly ReceivedDate { get; init; } public DateOnly? ExpiryDate { get; init; } public long UnitCost { get; init; } public long? Mrp { get; init; } public long SellingPrice { get; init; } public long Received { get; init; } public long OnHand { get; init; } public bool IsActive { get; init; } public LotItem ToModel() => new(Id, ProductId, ProductName, LotCode, BatchNumber, ReceivedDate, ExpiryDate, Money.FromScaled(UnitCost), Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(SellingPrice), Quantity.FromScaled(Received), Quantity.FromScaled(OnHand), IsActive); }
+    private sealed class LotRow { public long Id { get; init; } public long ProductId { get; init; } public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public string? BatchNumber { get; init; } public DateOnly ReceivedDate { get; init; } public DateOnly? ExpiryDate { get; init; } public long UnitCost { get; init; } public long? Mrp { get; init; } public long SellingPrice { get; init; } public long Received { get; init; } public long OnHand { get; init; } public bool IsActive { get; init; } public string ExpiryBucketCode { get; init; } = "NONE"; public LotItem ToModel() => new(Id, ProductId, ProductName, LotCode, BatchNumber, ReceivedDate, ExpiryDate, Money.FromScaled(UnitCost), Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(SellingPrice), Quantity.FromScaled(Received), Quantity.FromScaled(OnHand), IsActive, ExpiryBucketCode); }
     private sealed class LedgerRow { public long Id { get; init; } public DateTime MovedAt { get; init; } public DateOnly MoveDate { get; init; } public string TypeCode { get; init; } = ""; public long Qty { get; init; } public long UnitCost { get; init; } public string? RefType { get; init; } public long? RefId { get; init; } public string LotCode { get; init; } = ""; public long LotBalance { get; init; } public string? Note { get; init; } public LedgerItem ToModel() => new(Id, MovedAt, MoveDate, TypeCode, Quantity.FromScaled(Qty), Money.FromScaled(UnitCost), RefType, RefId, LotCode, Quantity.FromScaled(LotBalance), Note); }
+    private sealed class SourceHeaderRow { public string? Number { get; init; } public DateOnly Date { get; init; } public string? Party { get; init; } public string? Status { get; init; } public string? Notes { get; init; } }
+    private sealed class SourceLineRow { public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public long Quantity { get; init; } public long Amount { get; init; } }
     private sealed class ProductRule { public bool TrackExpiry { get; init; } public bool AllowFraction { get; init; } }
     private sealed class LotIdentity { public long ProductId { get; init; } public long UnitCost { get; init; } }
     private sealed class CountHeader { public long Id { get; init; } public DateOnly Date { get; init; } public string Status { get; init; } = ""; public string? Notes { get; init; } public long Snapshot { get; init; } }
     private sealed class CountPostRow { public long ProductId { get; init; } public long LotId { get; init; } public long Expected { get; init; } public long? Counted { get; init; } public long UnitCost { get; init; } public long Movement { get; init; } }
+    private sealed class CountUnitRule { public long LotId { get; init; } public bool AllowFraction { get; init; } }
     private sealed class CountLineRow { public long Id { get; init; } public long ProductId { get; init; } public string ProductName { get; init; } = ""; public long LotId { get; init; } public string LotCode { get; init; } = ""; public long Expected { get; init; } public long? Counted { get; init; } public long UnitCost { get; init; } public long Movement { get; init; } public StockCountLine ToModel() { long difference = Counted is null ? 0 : Counted.Value - (Expected + Movement); return new(Id, ProductId, ProductName, LotId, LotCode, Quantity.FromScaled(Expected), Counted is null ? null : Quantity.FromScaled(Counted.Value), Money.FromScaled(UnitCost), Quantity.FromScaled(Movement), Quantity.FromScaled(difference), new Money(Fx3.FromScaled(difference) * Fx3.FromScaled(UnitCost))); } }
     private sealed class ValuationRow { public long CategoryId { get; init; } public string CategoryName { get; init; } = ""; public long Quantity { get; init; } public long CostValue { get; init; } public long SellingValue { get; init; } public long MrpValue { get; init; } public StockValuationItem ToModel() => new(CategoryId, CategoryName, GroceryErp.Core.Numerics.Quantity.FromScaled(Quantity), Money.FromScaled(CostValue), Money.FromScaled(SellingValue), Money.FromScaled(MrpValue)); }
 }

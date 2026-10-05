@@ -5,14 +5,29 @@
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     Title="{l:Tr Stock_Title}">
   <Grid Margin="24">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Stock_Title}" />
-    <TabControl Grid.Row="1" Margin="0,18,0,0">
+    <StackPanel Grid.Row="1" Margin="0,16,0,4">
+      <WrapPanel>
+        <Button Margin="0,0,8,8" Click="OpeningImport_OnClick" Content="{l:Tr Stock_OpeningImport}" />
+        <Button Margin="0,0,8,8" Click="OpeningTemplate_OnClick" Content="{l:Tr Stock_OpeningTemplate}" />
+        <Button Margin="0,0,8,8" Click="Count_OnClick" Content="{l:Tr Stock_ResumeCount}" />
+        <Button Margin="0,0,8,8" Click="NewCount_OnClick" Content="{l:Tr Stock_NewCount}" />
+        <Button Margin="0,0,8,8" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
+      </WrapPanel>
+      <WrapPanel>
+        <Button x:Name="AdjustButton" IsEnabled="False" Margin="0,0,8,8" Click="Adjust_OnClick" Content="{l:Tr Stock_Adjust}" />
+        <Button x:Name="PriceButton" IsEnabled="False" Margin="0,0,8,8" Click="Price_OnClick" Content="{l:Tr Stock_ChangePrice}" />
+        <Button x:Name="ToggleLotButton" IsEnabled="False" Margin="0,0,8,8" Click="ToggleLot_OnClick" Content="{l:Tr Stock_BlockToggle}" />
+        <Button x:Name="WriteOffButton" IsEnabled="False" Margin="0,0,8,8" Click="WriteOff_OnClick" Content="{l:Tr Stock_WriteOffExpired}" />
+      </WrapPanel>
+    </StackPanel>
+    <TabControl x:Name="StockTabs" Grid.Row="2" Margin="0,8,0,0">
       <TabItem Header="{l:Tr Stock_Overview}">
         <DataGrid x:Name="OverviewGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="OverviewGrid_OnSelectionChanged">
           <DataGrid.Columns>
             <DataGridTextColumn Width="120" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}" />
-            <DataGridTextColumn Width="2*" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}" />
+            <DataGridTextColumn Width="260" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}" />
             <DataGridTextColumn Width="110" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}" />
             <DataGridTextColumn Width="130" Header="{l:Tr Stock_CostValue}" Binding="{Binding CostValue}" />
             <DataGridTextColumn Width="110" Header="{l:Tr Stock_Reorder}" Binding="{Binding ReorderLevel}" />
@@ -21,35 +36,56 @@
         </DataGrid>
       </TabItem>
       <TabItem Header="{l:Tr Stock_Lots}">
-        <DataGrid x:Name="LotsGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+        <DataGrid x:Name="LotsGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="LotsGrid_OnSelectionChanged">
           <DataGrid.Columns>
-            <DataGridTextColumn Width="2*" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}" />
-            <DataGridTextColumn Width="110" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}" />
-            <DataGridTextColumn Width="100" Header="{l:Tr Stock_Batch}" Binding="{Binding BatchNumber}" />
-            <DataGridTextColumn Width="110" Header="{l:Tr Stock_Expiry}" Binding="{Binding ExpiryDate}" />
-            <DataGridTextColumn Width="100" Header="{l:Tr Stock_OnHand}" Binding="{Binding OnHand}" />
-            <DataGridTextColumn Width="100" Header="{l:Tr Stock_UnitCost}" Binding="{Binding UnitCost}" />
-            <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}" />
-            <DataGridCheckBoxColumn Width="80" Header="{l:Tr Catalog_Active}" Binding="{Binding IsActive}" />
+            <DataGridTextColumn Width="210" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}" />
+            <DataGridTextColumn Width="105" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}" />
+            <DataGridTextColumn Width="90" Header="{l:Tr Stock_Batch}" Binding="{Binding BatchNumber}" />
+            <DataGridTextColumn Width="100" Header="{l:Tr Stock_Expiry}" Binding="{Binding ExpiryDate}" />
+            <DataGridTextColumn Width="100" Header="{l:Tr Stock_ExpiryStatus}" Binding="{Binding ExpiryBucketCode,Converter={StaticResource ExpiryBucketConverter}}" ElementStyle="{StaticResource ExpiryBucketStyle}" />
+            <DataGridTextColumn Width="90" Header="{l:Tr Stock_OnHand}" Binding="{Binding OnHand}" />
+            <DataGridTextColumn Width="90" Header="{l:Tr Stock_UnitCost}" Binding="{Binding UnitCost}" />
+            <DataGridTextColumn Width="90" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}" />
+            <DataGridCheckBoxColumn Width="70" Header="{l:Tr Catalog_Active}" Binding="{Binding IsActive}" />
           </DataGrid.Columns>
         </DataGrid>
       </TabItem>
       <TabItem Header="{l:Tr Stock_Ledger}">
-        <DataGrid x:Name="LedgerGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+        <Grid>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <StackPanel Grid.Row="0" Margin="0,8,0,10">
+          <TextBlock x:Name="LedgerProductText" Text="{l:Tr Stock_LedgerSelectProduct}" Margin="0,0,0,8"
+                     Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+          <WrapPanel>
+            <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Stock_FilterFrom}"/>
+            <DatePicker x:Name="LedgerFromBox" Width="130" SelectedDateFormat="Short" Margin="0,0,12,0"/>
+            <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Stock_FilterTo}"/>
+            <DatePicker x:Name="LedgerToBox" Width="130" SelectedDateFormat="Short" Margin="0,0,12,0"/>
+            <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Stock_MovementType}"/>
+            <ComboBox x:Name="LedgerTypeBox" Width="160" Margin="0,0,8,0"/>
+            <Button Click="ApplyLedgerFilter_OnClick" Content="{l:Tr Stock_ApplyFilter}"/>
+          </WrapPanel>
+          </StackPanel>
+          <DataGrid x:Name="LedgerGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="LedgerGrid_OnSelectionChanged">
           <DataGrid.Columns>
-            <DataGridTextColumn Width="110" Header="{l:Tr Purchasing_Received}" Binding="{Binding MoveDate}"/>
-            <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Mode}" Binding="{Binding Type}"/>
+            <DataGridTextColumn Width="110" Header="{l:Tr Stock_MoveDate}" Binding="{Binding MoveDate}"/>
+            <DataGridTextColumn Width="130" Header="{l:Tr Stock_MovementType}" Binding="{Binding Type}"/>
             <DataGridTextColumn Width="110" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
             <DataGridTextColumn Width="110" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
             <DataGridTextColumn Width="110" Header="{l:Tr Stock_OnHand}" Binding="{Binding LotBalance}"/>
-            <DataGridTextColumn Width="2*" Header="{l:Tr Purchasing_Notes}" Binding="{Binding Note}"/>
+            <DataGridTextColumn Width="190" Header="{l:Tr Purchasing_Notes}" Binding="{Binding Note}"/>
+            <DataGridTextColumn Width="130" Header="{l:Tr Stock_Source}" Binding="{Binding RefType}"/>
+            <DataGridTextColumn Width="90" Header="{l:Tr Stock_SourceId}" Binding="{Binding RefId}"/>
           </DataGrid.Columns>
-        </DataGrid>
+          </DataGrid>
+          <Button x:Name="OpenSourceButton" Grid.Row="2" HorizontalAlignment="Right"
+                  Margin="0,8,0,0" IsEnabled="False" Click="OpenSource_OnClick" Content="{l:Tr Stock_OpenSource}"/>
+        </Grid>
       </TabItem>
       <TabItem Header="{l:Tr Stock_Valuation}">
         <DataGrid x:Name="ValuationGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
           <DataGrid.Columns>
-            <DataGridTextColumn Width="2*" Header="{l:Tr Catalog_Category}" Binding="{Binding CategoryName}"/>
+            <DataGridTextColumn Width="260" Header="{l:Tr Catalog_Category}" Binding="{Binding CategoryName}"/>
             <DataGridTextColumn Width="120" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
             <DataGridTextColumn Width="140" Header="{l:Tr Stock_CostValue}" Binding="{Binding CostValue}"/>
             <DataGridTextColumn Width="140" Header="{l:Tr Stock_SellingValue}" Binding="{Binding SellingValue}"/>
@@ -58,17 +94,6 @@
         </DataGrid>
       </TabItem>
     </TabControl>
-    <Grid Grid.Row="2" Margin="0,12,0,0">
-      <TextBlock x:Name="StatusText" VerticalAlignment="Center" />
-      <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
-        <Button Margin="0,0,8,0" Click="OpeningImport_OnClick" Content="{l:Tr Stock_OpeningImport}" />
-        <Button Margin="0,0,8,0" Click="OpeningTemplate_OnClick" Content="{l:Tr Stock_OpeningTemplate}" />
-        <Button Margin="0,0,8,0" Click="Adjust_OnClick" Content="{l:Tr Stock_Adjust}" />
-        <Button Margin="0,0,8,0" Click="Price_OnClick" Content="{l:Tr Stock_ChangePrice}" />
-        <Button Margin="0,0,8,0" Click="ToggleLot_OnClick" Content="{l:Tr Stock_BlockToggle}" />
-        <Button Margin="0,0,8,0" Click="Count_OnClick" Content="{l:Tr Stock_Count}" />
-        <Button Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
-      </StackPanel>
-    </Grid>
+    <TextBlock x:Name="StatusText" Grid.Row="3" Margin="0,10,0,0" VerticalAlignment="Center" />
   </Grid>
 </Page>

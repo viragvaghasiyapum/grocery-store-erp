@@ -2,16 +2,31 @@
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
- Title="{l:Tr Sales_Action}" Width="440" Height="320" WindowStartupLocation="CenterOwner">
+ Title="{l:Tr Sales_Action}" Width="720" Height="570" MinWidth="620" MinHeight="500" WindowStartupLocation="CenterOwner"
+ NumberSubstitution.Substitution="European">
  <Grid Margin="20">
-  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <TextBlock Text="{l:Tr Stock_Reason}"/>
-  <TextBox x:Name="ReasonBox" Grid.Row="1" Margin="0,6,0,12"/>
-  <StackPanel x:Name="ReturnFields" Grid.Row="2">
-   <ComboBox x:Name="LineBox" DisplayMemberPath="ProductName" SelectionChanged="LineBox_OnSelectionChanged"/>
-   <TextBox x:Name="QuantityBox" Margin="0,8,0,0"/>
-   <CheckBox x:Name="ResellableBox" Margin="0,8,0,0" IsChecked="True" Content="{l:Tr Sales_Resellable}"/>
-  </StackPanel>
+  <TextBox x:Name="ReasonBox" Grid.Row="1" Margin="0,6,0,16" Height="36"/>
+  <Grid x:Name="ReturnFields" Grid.Row="2">
+   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+   <TextBlock Text="{l:Tr Sales_ReturnLine}"/>
+   <DataGrid x:Name="ReturnGrid" Grid.Row="1" Margin="0,6,0,10" AutoGenerateColumns="False" CanUserAddRows="False" RowHeight="38">
+    <DataGrid.Columns>
+     <DataGridTextColumn Width="*" MinWidth="230" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}" IsReadOnly="True"/>
+     <DataGridTextColumn Width="100" Header="{l:Tr Sales_ReturnRemainingHeader}" Binding="{Binding Remaining}" IsReadOnly="True"/>
+     <DataGridTextColumn Width="120" Header="{l:Tr Sales_ReturnQtyHeader}" Binding="{Binding QuantityText,UpdateSourceTrigger=PropertyChanged}"/>
+     <DataGridCheckBoxColumn Width="110" Header="{l:Tr Sales_ResellableShort}" Binding="{Binding Resellable,UpdateSourceTrigger=PropertyChanged}"/>
+    </DataGrid.Columns>
+   </DataGrid>
+   <TextBlock Grid.Row="2" Margin="0,0,0,4" Text="{l:Tr Sales_RefundMode}"/>
+   <ComboBox x:Name="RefundModeBox" Grid.Row="3" Height="36" SelectedIndex="0">
+    <ComboBoxItem Content="{l:Tr Sales_CashLabel}" Tag="Cash"/>
+    <ComboBoxItem Content="{l:Tr Sales_UpiLabel}" Tag="Upi"/>
+    <ComboBoxItem Content="{l:Tr Sales_CardLabel}" Tag="Card"/>
+   </ComboBox>
+  </Grid>
+  <TextBlock x:Name="ErrorText" Grid.Row="3" Margin="0,10,0,0" Foreground="Firebrick" TextWrapping="Wrap"/>
   <StackPanel Grid.Row="4" VerticalAlignment="Bottom" HorizontalAlignment="Right" Orientation="Horizontal">
    <Button Width="90" IsCancel="True" Content="{l:Tr Common_Cancel}"/>
    <Button Width="90" Margin="8,0,0,0" IsDefault="True" Click="Save_OnClick" Content="{l:Tr Sales_Confirm}"/>

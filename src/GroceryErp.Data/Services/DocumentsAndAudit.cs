@@ -5,7 +5,7 @@ using GroceryErp.Data.Infrastructure;
 
 namespace GroceryErp.Data.Services;
 
-public enum DocType { Sale, SaleReturn, Purchase, Damage, Lot }
+public enum DocType { Sale, SaleReturn, Purchase, VendorReturn, Damage, Lot }
 
 public sealed class DocNumberService(ISettings settings)
 {
@@ -32,6 +32,7 @@ public sealed class DocNumberService(ISettings settings)
         DocType.Sale => "S",
         DocType.SaleReturn => "R",
         DocType.Purchase => "P",
+        DocType.VendorReturn => "V",
         DocType.Damage => "D",
         DocType.Lot => "L",
         _ => throw new ArgumentOutOfRangeException(nameof(type)),
@@ -41,6 +42,7 @@ public sealed class DocNumberService(ISettings settings)
         DocType.Sale => "SALE",
         DocType.SaleReturn => "SALE_RETURN",
         DocType.Purchase => "PURCHASE",
+        DocType.VendorReturn => "VENDOR_RETURN",
         DocType.Damage => "DAMAGE",
         DocType.Lot => "LOT",
         _ => throw new ArgumentOutOfRangeException(nameof(type)),

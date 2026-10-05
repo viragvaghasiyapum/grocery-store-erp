@@ -1,0 +1,28 @@
+<Window x:Class="GroceryErp.App.Presentation.HeldBillReviewWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+ Title="{l:Tr Sales_ReviewHeld}" Width="850" Height="520" MinWidth="700" MinHeight="420"
+ WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+ FontFamily="{StaticResource AppFont}" NumberSubstitution.Substitution="European">
+ <Grid Margin="20">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <TextBlock Style="{StaticResource SectionTitle}" Text="{l:Tr Sales_ReviewHeld}"/>
+  <TextBlock x:Name="SummaryText" Grid.Row="1" Margin="0,8,0,14" TextWrapping="Wrap"/>
+  <DataGrid x:Name="ReviewGrid" Grid.Row="2" Style="{StaticResource CatalogGrid}" RowHeight="42">
+   <DataGrid.Columns>
+    <DataGridTextColumn Width="*" MinWidth="180" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
+    <DataGridTextColumn Width="80" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
+    <DataGridTextColumn Width="95" Header="{l:Tr Sales_PreviousPrice}" Binding="{Binding PreviousPrice}"/>
+    <DataGridTextColumn Width="95" Header="{l:Tr Sales_CurrentPrice}" Binding="{Binding CurrentPrice}"/>
+    <DataGridTextColumn Width="90" Header="{l:Tr Stock_Mrp}" Binding="{Binding CurrentMrp}"/>
+    <DataGridTextColumn Width="90" Header="{l:Tr Stock_OnHand}" Binding="{Binding Available}"/>
+    <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Status}" Binding="{Binding Status}"/>
+   </DataGrid.Columns>
+  </DataGrid>
+  <StackPanel Grid.Row="3" Margin="0,14,0,0" HorizontalAlignment="Right" Orientation="Horizontal">
+   <Button Width="100" IsCancel="True" Content="{l:Tr Common_Cancel}"/>
+   <Button x:Name="AcceptButton" Width="145" Margin="8,0,0,0" IsDefault="True" Click="Accept_OnClick" Content="{l:Tr Sales_AcceptResume}"/>
+  </StackPanel>
+ </Grid>
+</Window>

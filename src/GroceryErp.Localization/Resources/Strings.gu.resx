@@ -259,6 +259,13 @@
   <data name="Error_EmptyBill" xml:space="preserve"><value>પોસ્ટ કરતા પહેલાં ઓછામાં ઓછી એક લાઇન ઉમેરો.</value><comment>MT - needs review</comment></data>
   <data name="Error_CancelNotAllowed" xml:space="preserve"><value>એક અથવા વધુ લોટનો સ્ટોક બદલાયો હોવાથી આ ખરીદી રદ કરી શકાતી નથી.</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_NewVendor" xml:space="preserve"><value>નવો વિક્રેતા</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_EditVendor" xml:space="preserve"><value>વિક્રેતા ફેરફાર</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_VendorLedger" xml:space="preserve"><value>વિક્રેતા ખાતાવહી</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Payments" xml:space="preserve"><value>ચૂકવણીઓ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_LotsSupplied" xml:space="preserve"><value>પૂરા પાડેલા લોટ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_LedgerHint" xml:space="preserve"><value>પ્રારંભિક બાકી, પોસ્ટ કરેલી ખરીદી અને ચૂકવણી તારીખ મુજબ.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Debit" xml:space="preserve"><value>ઉધાર</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Credit" xml:space="preserve"><value>જમા</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_Contact" xml:space="preserve"><value>સંપર્ક વ્યક્તિ</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_AltPhone" xml:space="preserve"><value>વૈકલ્પિક ફોન</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_Email" xml:space="preserve"><value>ઇમેઇલ</value><comment>MT - needs review</comment></data>
@@ -273,6 +280,7 @@
   <data name="Purchasing_Notes" xml:space="preserve"><value>નોંધ</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_NewPurchase" xml:space="preserve"><value>નવી ખરીદી</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_Payment" xml:space="preserve"><value>વિક્રેતા ચુકવણી</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_OptionalPurchase" xml:space="preserve"><value>ખરીદી સામે (વૈકલ્પિક)</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_Amount" xml:space="preserve"><value>રકમ</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_Mode" xml:space="preserve"><value>ચુકવણી રીત</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_Reference" xml:space="preserve"><value>સંદર્ભ</value><comment>MT - needs review</comment></data>
@@ -284,18 +292,72 @@
   <data name="Purchasing_OtherCharges" xml:space="preserve"><value>અન્ય ખર્ચ</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_BillTotal" xml:space="preserve"><value>વિક્રેતા બિલ કુલ</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_SaveDraft" xml:space="preserve"><value>ડ્રાફ્ટ સાચવો</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_DraftSaved" xml:space="preserve"><value>ડ્રાફ્ટ સાચવાયો. તમે તેને ખરીદીમાંથી ફરી ખોલી શકો છો.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_EditDraft" xml:space="preserve"><value>ડ્રાફ્ટ ખોલો</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_EntryHint" xml:space="preserve"><value>મળેલો જથ્થો અને દર દાખલ કરો. પોસ્ટ કરતા પહેલાં ગણેલી રકમ સપ્લાયરના બિલ સાથે સરખાવો.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_ProductSearchHint" xml:space="preserve"><value>બારકોડ સ્કેન કરો અથવા નામ કે SKU થી શોધો, પછી Enter દબાવો.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_FindProduct" xml:space="preserve"><value>વસ્તુ શોધો</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_NoProduct" xml:space="preserve"><value>મેળ ખાતી વસ્તુ મળી નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_MatchesFound" xml:space="preserve"><value>{0} વસ્તુઓ મળી. નામ કૉલમમાં પસંદ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_MfgDate" xml:space="preserve"><value>ઉત્પાદન તારીખ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Landed" xml:space="preserve"><value>એકમ દીઠ પડતર</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Margin" xml:space="preserve"><value>નફો %</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_RoundOff" xml:space="preserve"><value>ગોળાકાર તફાવત</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_WarningShortExpiry" xml:space="preserve"><value>{0}: સમાપ્તિ તારીખ નજીક છે</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_WarningBelowCost" xml:space="preserve"><value>{0}: વેચાણ કિંમત પડતર કરતાં ઓછી છે</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_WarningRateChanged" xml:space="preserve"><value>{0}: દર અગાઉની ખરીદીથી 10% થી વધુ અલગ છે</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Subtotal" xml:space="preserve"><value>પેટા સરવાળો</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_TaxTotal" xml:space="preserve"><value>જીએસટી</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_ComputedTotal" xml:space="preserve"><value>ગણેલી કુલ રકમ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_Difference" xml:space="preserve"><value>બિલનો તફાવત</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_Post" xml:space="preserve"><value>પોસ્ટ કરો</value><comment>MT - needs review</comment></data>
   <data name="Stock_OpeningImport" xml:space="preserve"><value>શરૂઆતનો સ્ટોક આયાત</value><comment>MT - needs review</comment></data>
+  <data name="Stock_OpeningPreview" xml:space="preserve"><value>શરૂઆતનો સ્ટોક તપાસો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_OpeningPreviewSummary" xml:space="preserve"><value>{0} માન્ય પંક્તિઓ; {1} ભૂલો. ભૂલ હોય તો વર્કબુક સુધારો.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_ImportReviewed" xml:space="preserve"><value>તપાસેલી પંક્તિઓ આયાત કરો</value><comment>MT - needs review</comment></data>
   <data name="Stock_Adjust" xml:space="preserve"><value>સ્ટોક સુધારો</value><comment>MT - needs review</comment></data>
   <data name="Stock_Count" xml:space="preserve"><value>સ્ટોક ગણતરી</value><comment>MT - needs review</comment></data>
   <data name="Stock_AdjustQuantity" xml:space="preserve"><value>જથ્થામાં ફેરફાર (+ અથવા −)</value><comment>MT - needs review</comment></data>
   <data name="Stock_Reason" xml:space="preserve"><value>કારણ</value><comment>MT - needs review</comment></data>
-  <data name="Stock_CountHint" xml:space="preserve"><value>દરેક લોટનો ભૌતિક જથ્થો દાખલ કરો. પોસ્ટ કરતી વખતે માત્ર તફાવત નોંધાશે.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_CountHint" xml:space="preserve"><value>દરેક લોટનો ભૌતિક જથ્થો દાખલ કરો. ગણતરી થાય ત્યાં સુધી ખાલી રાખો; પછી ચાલુ રાખવા ડ્રાફ્ટ સાચવો.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_CountSearchHint" xml:space="preserve"><value>લોટ સ્કેન કરો અથવા વસ્તુ કે લોટ કોડથી શોધો.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_FindLot" xml:space="preserve"><value>લોટ શોધો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_CountLotNotFound" xml:space="preserve"><value>આ ગણતરી પત્રકમાં મેળ ખાતો લોટ નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_NewCount" xml:space="preserve"><value>નવી ગણતરી</value><comment>MT - needs review</comment></data>
+  <data name="Stock_ScopeHint" xml:space="preserve"><value>ગણવા માટે શ્રેણીઓ પસંદ કરો. પત્રક તે શ્રેણીના દરેક લોટનો જથ્થો નોંધે છે.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_AllCategories" xml:space="preserve"><value>બધી શ્રેણીઓ</value><comment>MT - needs review</comment></data>
+  <data name="Stock_SelectCategory" xml:space="preserve"><value>ઓછામાં ઓછી એક શ્રેણી પસંદ કરો અથવા બધી શ્રેણીઓ પસંદ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_CreateSheet" xml:space="preserve"><value>પત્રક બનાવો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_ResumeCount" xml:space="preserve"><value>ગણતરી ચાલુ રાખો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_NoDraftCount" xml:space="preserve"><value>સાચવેલી સ્ટોક ગણતરી ઉપલબ્ધ નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_SaveCount" xml:space="preserve"><value>ડ્રાફ્ટ સાચવો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_ReviewCount" xml:space="preserve"><value>તફાવત તપાસો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_RefreshLots" xml:space="preserve"><value>લોટ ફરી તપાસો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_NewLotsAdded" xml:space="preserve"><value>{0} નવા લોટ ઉમેરાયા. સમીક્ષા પહેલાં તેમની ગણતરી કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_ReviewFirst" xml:space="preserve"><value>પોસ્ટ કરતા પહેલાં હાલનો તફાવત તપાસો.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_MovementsChanged" xml:space="preserve"><value>તપાસ પછી સ્ટોક બદલાયો છે. નવો તફાવત તપાસી ફરી સમીક્ષા કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_ReviewSummary" xml:space="preserve"><value>{0} લોટમાં તફાવત; ચોખ્ખું મૂલ્ય {1}</value><comment>MT - needs review</comment></data>
+  <data name="Stock_DiscardCount" xml:space="preserve"><value>ગણતરી રદ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_DiscardConfirm" xml:space="preserve"><value>આ ગણતરી પત્રક અને દાખલ કરેલા જથ્થા રદ કરવા છે?</value><comment>MT - needs review</comment></data>
+  <data name="Stock_CountProgress" xml:space="preserve"><value>{1} માંથી {0} લોટ ગણાયા</value><comment>MT - needs review</comment></data>
+  <data name="Stock_CompleteEveryLot" xml:space="preserve"><value>પોસ્ટ કરતા પહેલાં દરેક લોટનો ભૌતિક જથ્થો દાખલ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_InvalidCount" xml:space="preserve"><value>ગણેલો જથ્થો માન્ય અને ઋણ ન હોય એવો હોવો જોઈએ.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_SinceSnapshot" xml:space="preserve"><value>પત્રક પછી</value><comment>MT - needs review</comment></data>
+  <data name="Stock_DifferenceValue" xml:space="preserve"><value>તફાવતનું મૂલ્ય</value><comment>MT - needs review</comment></data>
   <data name="Stock_Expected" xml:space="preserve"><value>અપેક્ષિત</value><comment>MT - needs review</comment></data>
   <data name="Stock_Counted" xml:space="preserve"><value>ગણેલ</value><comment>MT - needs review</comment></data>
   <data name="Stock_Difference" xml:space="preserve"><value>તફાવત</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_CancelPurchase" xml:space="preserve"><value>ખરીદી રદ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_CancelConfirm" xml:space="preserve"><value>આ ખરીદી રદ કરીને બાકી રહેલો અસ્પર્શિત સ્ટોક પાછો ફેરવવો છે?</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_CancelBlocked" xml:space="preserve"><value>આ ખરીદી પછી સ્ટોકમાં હિલચાલ થઈ છે, તેથી તેને રદ કરી શકાતી નથી. સુધારા માટે સ્ટોક એડજસ્ટમેન્ટ વાપરો; વિક્રેતાને પરત કરવાની સુવિધા હજુ ઉપલબ્ધ નથી.</value><comment>MT - needs review</comment></data>
   <data name="Stock_Ledger" xml:space="preserve"><value>સ્ટોક ખાતાવહી</value><comment>MT - needs review</comment></data>
+  <data name="Stock_FilterFrom" xml:space="preserve"><value>થી</value><comment>MT - needs review</comment></data>
+  <data name="Stock_FilterTo" xml:space="preserve"><value>સુધી</value><comment>MT - needs review</comment></data>
+  <data name="Stock_ApplyFilter" xml:space="preserve"><value>ફિલ્ટર લાગુ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_AllMovements" xml:space="preserve"><value>બધી હિલચાલ</value><comment>MT - needs review</comment></data>
+  <data name="Stock_LedgerSelectProduct" xml:space="preserve"><value>સ્ટોક હિલચાલ જોવા માટે સારાંશમાં વસ્તુ પસંદ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Source" xml:space="preserve"><value>સ્ત્રોત</value><comment>MT - needs review</comment></data>
+  <data name="Stock_SourceId" xml:space="preserve"><value>સ્ત્રોત ID</value><comment>MT - needs review</comment></data>
   <data name="Stock_ChangePrice" xml:space="preserve"><value>કિંમત બદલો</value><comment>MT - needs review</comment></data>
   <data name="Stock_BlockToggle" xml:space="preserve"><value>લોટ બ્લોક / અનબ્લોક</value><comment>MT - needs review</comment></data>
   <data name="Stock_PrintCount" xml:space="preserve"><value>ગણતરી પત્રક છાપો</value><comment>MT - needs review</comment></data>
@@ -522,4 +584,156 @@
   <data name="Setup_ErrorCloudPath" xml:space="preserve"><value>OneDriveની બહારનો ફોલ્ડર પસંદ કરો.</value><comment>MT – needs review</comment></data>
   <data name="Setup_ErrorDataFolder" xml:space="preserve"><value>હાલના ફોલ્ડરથી અલગ ખાલી ડેટા ફોલ્ડર પસંદ કરો.</value><comment>MT – needs review</comment></data>
   <data name="ReleaseNotes_Title" xml:space="preserve"><value>નવું શું છે</value></data>
+  <data name="Sales_PaymentTitle" xml:space="preserve"><value>ચુકવણી લો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_CashLabel" xml:space="preserve"><value>મળેલી રોકડ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_UpiLabel" xml:space="preserve"><value>UPI</value></data>
+  <data name="Sales_CardLabel" xml:space="preserve"><value>કાર્ડ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_UpiReference" xml:space="preserve"><value>UPI વ્યવહાર સંદર્ભ (વૈકલ્પિક)</value><comment>MT - needs review</comment></data>
+  <data name="Sales_CardReference" xml:space="preserve"><value>કાર્ડના છેલ્લા ચાર અંક (વૈકલ્પિક)</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ConfirmPayment" xml:space="preserve"><value>બિલ પૂર્ણ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_InvalidPayment" xml:space="preserve"><value>માન્ય ચુકવણી રકમ દાખલ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Remaining" xml:space="preserve"><value>બાકી ₹{0}</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Change" xml:space="preserve"><value>પરત આપવાના ₹{0}</value><comment>MT - needs review</comment></data>
+  <data name="Sales_PaymentShort" xml:space="preserve"><value>ચુકવણી બિલની કુલ રકમ કરતાં ઓછી છે.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_NonCashOverpayment" xml:space="preserve"><value>માત્ર રોકડ ચુકવણી બિલની રકમ કરતાં વધુ હોઈ શકે.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Completed" xml:space="preserve"><value>બિલ {0} પૂર્ણ થયું.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_PrintFailed" xml:space="preserve"><value>બિલ {0} પૂર્ણ થયું. છાપવામાં ભૂલ: {1}. ફરી છાપવા Ctrl+P દબાવો.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_SavedBills" xml:space="preserve"><value>સાચવેલા બિલ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_SelectSavedBill" xml:space="preserve"><value>આગળ વધવા માટે બિલ પસંદ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_HoldLabel" xml:space="preserve"><value>લેબલ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_OpenBill" xml:space="preserve"><value>બિલ ખોલો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_RoundOff" xml:space="preserve"><value>રાઉન્ડ ઓફ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Savings" xml:space="preserve"><value>તમે ₹{0} બચાવ્યા</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnLine" xml:space="preserve"><value>પરત કરવાની વસ્તુ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnQuantity" xml:space="preserve"><value>પરત જથ્થો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnQtyHeader" xml:space="preserve"><value>પરત જથ્થો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ResellableShort" xml:space="preserve"><value>ફરી વેચી શકાય</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnRemaining" xml:space="preserve"><value>પરત કરી શકાય: {0}</value><comment>MT - needs review</comment></data>
+  <data name="Sales_RefundMode" xml:space="preserve"><value>રિફંડ માધ્યમ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReasonRequired" xml:space="preserve"><value>કારણ દાખલ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnQuantityInvalid" xml:space="preserve"><value>પરત કરી શકાય તેટલો માન્ય જથ્થો દાખલ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_From" xml:space="preserve"><value>થી</value><comment>MT - needs review</comment></data>
+  <data name="Sales_To" xml:space="preserve"><value>સુધી</value><comment>MT - needs review</comment></data>
+  <data name="Sales_All" xml:space="preserve"><value>બધા</value><comment>MT - needs review</comment></data>
+  <data name="Sales_CompletedStatus" xml:space="preserve"><value>પૂર્ણ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Minimum" xml:space="preserve"><value>ઓછામાં ઓછું ₹</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Maximum" xml:space="preserve"><value>વધુમાં વધુ ₹</value><comment>MT - needs review</comment></data>
+  <data name="Sales_InvalidRange" xml:space="preserve"><value>માન્ય રકમની મર્યાદા દાખલ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ResultCount" xml:space="preserve"><value>{0} બિલ બતાવ્યાં</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Previous" xml:space="preserve"><value>પાછળ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Next" xml:space="preserve"><value>આગળ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_SelectHistory" xml:space="preserve"><value>વસ્તુઓ જોવા બિલ પસંદ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_DetailHeading" xml:space="preserve"><value>{0}  ·  {1}</value></data>
+  <data name="Sales_Reprinted" xml:space="preserve"><value>{0} ફરી છાપ્યું.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_NothingToReturn" xml:space="preserve"><value>આ બિલની બધી વસ્તુઓ પહેલેથી પરત થઈ ગઈ છે.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_DayEndResult" xml:space="preserve"><value>{0} બિલ · ₹{1} ચોખ્ખું · ₹{2} અપેક્ષિત રોકડ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Invoice" xml:space="preserve"><value>ઇન્વૉઇસ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Date" xml:space="preserve"><value>તારીખ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ChooseLot" xml:space="preserve"><value>લોટ પસંદ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ChooseLotShortcut" xml:space="preserve"><value>Ctrl+L લોટ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_UseLot" xml:space="preserve"><value>લોટ વાપરો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_HoldBill" xml:space="preserve"><value>બિલ રોકો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_HoldHint" xml:space="preserve"><value>પછી બિલ શોધવા માટે વૈકલ્પિક લેબલ</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_Return" xml:space="preserve"><value>પરત રસીદ</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_OriginalInvoice" xml:space="preserve"><value>મૂળ ઇન્વૉઇસ</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_ReturnReason" xml:space="preserve"><value>કારણ</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_Taxable" xml:space="preserve"><value>કરપાત્ર</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_Gst" xml:space="preserve"><value>GST</value></data>
+  <data name="Receipt_RefundBy" xml:space="preserve"><value>રિફંડ માધ્યમ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnPrintFailed" xml:space="preserve"><value>પરત {0} સાચવ્યું. છાપવામાં ભૂલ: {1}.</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_RefundTotal" xml:space="preserve"><value>રિફંડ</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_RefundModeCash" xml:space="preserve"><value>રોકડ</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_RefundModeUpi" xml:space="preserve"><value>UPI</value></data>
+  <data name="Receipt_RefundModeCard" xml:space="preserve"><value>કાર્ડ</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_RefundModeCreditNote" xml:space="preserve"><value>ક્રેડિટ નોટ</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_RefundModeOther" xml:space="preserve"><value>અન્ય</value><comment>MT - needs review</comment></data>
+  <data name="Sales_PriceOverride" xml:space="preserve"><value>કિંમત બદલો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReadyToScan" xml:space="preserve"><value>સ્કૅન અથવા શોધ માટે તૈયાર</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Status_Draft" xml:space="preserve"><value>ડ્રાફ્ટ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Status_Held" xml:space="preserve"><value>રોકેલું</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Status_Completed" xml:space="preserve"><value>પૂર્ણ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Status_Void" xml:space="preserve"><value>રદ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Customer" xml:space="preserve"><value>ગ્રાહક</value><comment>MT - needs review</comment></data>
+  <data name="Sales_CustomerShortcut" xml:space="preserve"><value>Ctrl+U ગ્રાહક</value><comment>MT - needs review</comment></data>
+  <data name="Sales_WalkIn" xml:space="preserve"><value>સીધા આવેલા ગ્રાહક</value><comment>MT - needs review</comment></data>
+  <data name="Sales_FindCustomer" xml:space="preserve"><value>નામ અથવા ફોનથી ગ્રાહક શોધો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Search" xml:space="preserve"><value>શોધો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_NewCustomer" xml:space="preserve"><value>નવો ગ્રાહક</value><comment>MT - needs review</comment></data>
+  <data name="Sales_CreateCustomer" xml:space="preserve"><value>બનાવો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_UseCustomer" xml:space="preserve"><value>પસંદ કરેલો વાપરો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_SelectCustomer" xml:space="preserve"><value>ગ્રાહક પસંદ કરો અથવા સીધા આવેલા પસંદ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnRemainingHeader" xml:space="preserve"><value>બાકી</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReviewHeld" xml:space="preserve"><value>રોકેલું બિલ તપાસો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_PreviousPrice" xml:space="preserve"><value>જૂની કિંમત</value><comment>MT - needs review</comment></data>
+  <data name="Sales_CurrentPrice" xml:space="preserve"><value>હાલની કિંમત</value><comment>MT - needs review</comment></data>
+  <data name="Sales_AcceptResume" xml:space="preserve"><value>સ્વીકારીને ચાલુ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_HeldUnavailable" xml:space="preserve"><value>આ બિલનો સ્ટોક અવરોધિત, મુદત વીતી ગયેલો અથવા અપૂરતો છે. ચાલુ કરતા પહેલાં સુધારો.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_HeldPriceChanged" xml:space="preserve"><value>કિંમત અથવા MRP બદલાઈ છે. નવું બિલ સ્વીકારતા પહેલાં પંક્તિઓ તપાસો.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_HeldNoChanges" xml:space="preserve"><value>સ્ટોક ઉપલબ્ધ છે અને કિંમત બદલાઈ નથી. તપાસીને બિલ ચાલુ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_HeldStockIssue" xml:space="preserve"><value>સ્ટોકની સમસ્યા</value><comment>MT - needs review</comment></data>
+  <data name="Sales_HeldChanged" xml:space="preserve"><value>કિંમત બદલાઈ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_HeldUnchanged" xml:space="preserve"><value>તૈયાર</value><comment>MT - needs review</comment></data>
+  <data name="Sales_DiscountEntry" xml:space="preserve"><value>છૂટ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Amount" xml:space="preserve"><value>રકમ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Percent" xml:space="preserve"><value>ટકા</value><comment>MT - needs review</comment></data>
+  <data name="Sales_DiscountBase" xml:space="preserve"><value>છૂટ માટેની રકમ: ₹{0}</value><comment>MT - needs review</comment></data>
+  <data name="Sales_DiscountPreview" xml:space="preserve"><value>છૂટ: ₹{0}</value><comment>MT - needs review</comment></data>
+  <data name="Sales_DiscountInvalid" xml:space="preserve"><value>કુલ રકમ સુધીની છૂટ અથવા 0 થી 100 ટકા દાખલ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnsTab" xml:space="preserve"><value>પરત</value><comment>MT - needs review</comment></data>
+  <data name="Sales_MovementsTab" xml:space="preserve"><value>સ્ટોકની હિલચાલ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Export" xml:space="preserve"><value>Excel નિકાસ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Exported" xml:space="preserve"><value>{0} બિલ નિકાસ થયા.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Bills" xml:space="preserve"><value>બિલ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Payable" xml:space="preserve"><value>ચૂકવવાની રકમ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Voids" xml:space="preserve"><value>રદ થયેલા</value><comment>MT - needs review</comment></data>
+  <data name="Sales_VoidValue" xml:space="preserve"><value>રદ રકમ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnValue" xml:space="preserve"><value>પરત રકમ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_CashSales" xml:space="preserve"><value>મળેલી રોકડ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_CashChange" xml:space="preserve"><value>પાછા આપેલા પૈસા</value><comment>MT - needs review</comment></data>
+  <data name="Sales_CashRefunds" xml:space="preserve"><value>રોકડ પરત</value><comment>MT - needs review</comment></data>
+  <data name="Sales_CashExpenses" xml:space="preserve"><value>રોકડ ખર્ચ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_CashExpected" xml:space="preserve"><value>અપેક્ષિત રોકડ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Particular" xml:space="preserve"><value>વિગત</value><comment>MT - needs review</comment></data>
+  <data name="Sales_PrintDayEnd" xml:space="preserve"><value>છાપો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_DayEndPrinted" xml:space="preserve"><value>દિવસના અંતનો અહેવાલ રસીદ પ્રિન્ટરને મોકલ્યો.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_ExpiryStatus" xml:space="preserve"><value>મુદત</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Expiry_EXPIRED" xml:space="preserve"><value>મુદત વીતી</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Expiry_CRITICAL" xml:space="preserve"><value>0–7 દિવસ</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Expiry_SOON" xml:space="preserve"><value>ટૂંક સમયમાં</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Expiry_FRESH" xml:space="preserve"><value>તાજું</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Expiry_NONE" xml:space="preserve"><value>મુદત નથી</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Expiry_BLOCKED" xml:space="preserve"><value>અવરોધિત</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Expiry_EMPTY" xml:space="preserve"><value>ખાલી</value><comment>MT - needs review</comment></data>
+  <data name="Stock_WriteOffExpired" xml:space="preserve"><value>મુદત વીતેલો સ્ટોક કાઢો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_WriteOffConfirm" xml:space="preserve"><value>લોટ {0} ના બધા {1} એકમ કાઢી નાખવા? આ નુકસાનનો દસ્તાવેજ બનાવશે અને પાછું ફેરવી શકાશે નહીં.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_SourceDocument" xml:space="preserve"><value>મૂળ દસ્તાવેજ</value><comment>MT - needs review</comment></data>
+  <data name="Stock_OpenSource" xml:space="preserve"><value>મૂળ દસ્તાવેજ ખોલો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_SourceDoc_Purchase" xml:space="preserve"><value>ખરીદી</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Status_Posted" xml:space="preserve"><value>નોંધાયેલ</value><comment>MT - needs review</comment></data>
+  <data name="Stock_Status_Cancelled" xml:space="preserve"><value>રદ થયેલ</value><comment>MT - needs review</comment></data>
+  <data name="Stock_SourceDoc_Sale" xml:space="preserve"><value>વેચાણ</value><comment>MT - needs review</comment></data>
+  <data name="Stock_SourceDoc_Return" xml:space="preserve"><value>વેચાણ પરત</value><comment>MT - needs review</comment></data>
+  <data name="Stock_SourceDoc_Damage" xml:space="preserve"><value>નુકસાન</value><comment>MT - needs review</comment></data>
+  <data name="Stock_SourceDoc_Count" xml:space="preserve"><value>સ્ટોક ગણતરી</value><comment>MT - needs review</comment></data>
+  <data name="Stock_SourceDoc_Opening" xml:space="preserve"><value>શરૂઆતનો સ્ટોક</value><comment>MT - needs review</comment></data>
+  <data name="Stock_SourceDoc_Adjustment" xml:space="preserve"><value>સ્ટોક સુધારો</value><comment>MT - needs review</comment></data>
+  <data name="Sales_LastScan" xml:space="preserve"><value>છેલ્લું: {0} · સ્ટોક {1} · MRP ₹{2}</value><comment>MT - needs review</comment></data>
+  <data name="Sales_HeldChip" xml:space="preserve"><value>રોકેલું #{0}</value><comment>MT - needs review</comment></data>
+  <data name="Sales_PrinterReady" xml:space="preserve"><value>રસીદ પ્રિન્ટર તૈયાર છે</value><comment>MT - needs review</comment></data>
+  <data name="Sales_PrinterUnavailable" xml:space="preserve"><value>રસીદ પ્રિન્ટર ઉપલબ્ધ નથી</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_VendorReturn" xml:space="preserve"><value>વિક્રેતાને પરત</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_VendorReturns" xml:space="preserve"><value>વિક્રેતાને પરત કરેલા માલ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_CreditNumber" xml:space="preserve"><value>વિક્રેતા ક્રેડિટ નોટ નંબર</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_ReturnHint" xml:space="preserve"><value>દરેક લોટ માટે પરત જથ્થો દાખલ કરો. ખરીદીમાંથી ક્રેડિટ અને GST સૂચવાય છે; વિક્રેતાની ક્રેડિટ નોટ મુજબ સુધારો.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_CreditBeforeTax" xml:space="preserve"><value>GST પહેલાંની ક્રેડિટ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_TaxCredit" xml:space="preserve"><value>GST ક્રેડિટ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_PostReturn" xml:space="preserve"><value>પરત નોંધો</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_NoReturnableLots" xml:space="preserve"><value>આ ખરીદીમાંથી પરત કરવા માટે સ્ટોક નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_ReturnTotal" xml:space="preserve"><value>{0} લોટ · ક્રેડિટ ₹{1}</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_ReturnEnterLines" xml:space="preserve"><value>ઓછામાં ઓછા એક લોટ માટે જથ્થો અને ક્રેડિટ દાખલ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_ReturnInvalid" xml:space="preserve"><value>પરત તારીખ, જથ્થો અને ક્રેડિટ રકમ તપાસો.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_ReturnConfirm" xml:space="preserve"><value>{0} લોટ ₹{1} ક્રેડિટ માટે પરત નોંધવા? સ્ટોક અને વિક્રેતાનું બાકી બદલાશે.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_ReturnPosted" xml:space="preserve"><value>વિક્રેતા પરત {0} નોંધાયું.</value><comment>MT - needs review</comment></data>
+  <data name="Pnl_Head_VendorReturnVariance" xml:space="preserve"><value>વિક્રેતા પરત તફાવત</value><comment>MT - needs review</comment></data>
+  <data name="Stock_SourceDoc_VendorReturn" xml:space="preserve"><value>વિક્રેતા પરત</value><comment>MT - needs review</comment></data>
 </root>

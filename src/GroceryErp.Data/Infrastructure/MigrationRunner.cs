@@ -21,7 +21,7 @@ public sealed class NullMigrationBackup : IMigrationBackup
 
 public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMigrationBackup backup)
 {
-    public const int LatestVersion = 5;
+    public const int LatestVersion = 9;
 
     public void Run()
     {

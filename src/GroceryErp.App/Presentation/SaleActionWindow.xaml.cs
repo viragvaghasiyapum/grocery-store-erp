@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using GroceryErp.Core;
 using GroceryErp.Core.Numerics;
+using GroceryErp.Localization;
 using GroceryErp.Sales;
 
 namespace GroceryErp.App.Presentation;
@@ -9,32 +11,65 @@ namespace GroceryErp.App.Presentation;
 public partial class SaleActionWindow : Window
 {
     private readonly bool _isReturn;
+    private readonly IReadOnlyList<ReturnEntry> _entries;
 
-    public SaleActionWindow(bool isReturn, IReadOnlyList<SaleLine>? lines = null)
+    public SaleActionWindow(bool isReturn, IReadOnlyList<ReturnableSaleLine>? lines = null)
     {
         InitializeComponent();
         _isReturn = isReturn;
         ReturnFields.Visibility = isReturn ? Visibility.Visible : Visibility.Collapsed;
-        LineBox.ItemsSource = lines;
-        LineBox.SelectedIndex = lines?.Count > 0 ? 0 : -1;
+        _entries = lines?.Select(static line => new ReturnEntry(line)).ToArray() ?? [];
+        ReturnGrid.ItemsSource = _entries;
     }
 
     public string Reason => ReasonBox.Text.Trim();
-    public SaleLine? SelectedLine => LineBox.SelectedItem as SaleLine;
-    public Quantity Quantity { get; private set; }
-    public bool Resellable => ResellableBox.IsChecked == true;
-
-    private void LineBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    public IReadOnlyList<ReturnLineInput> ReturnLines { get; private set; } = [];
+    public RefundMode SelectedRefundMode => ((ComboBoxItem)RefundModeBox.SelectedItem).Tag?.ToString() switch
     {
-        if (SelectedLine is { } line) QuantityBox.Text = line.Quantity.Value.ToString("0.###", CultureInfo.GetCultureInfo("en-IN"));
-    }
+        "Upi" => RefundMode.Upi,
+        "Card" => RefundMode.Card,
+        _ => RefundMode.Cash,
+    };
 
     private void Save_OnClick(object sender, RoutedEventArgs e)
     {
-        if (Reason.Length == 0) return;
-        if (_isReturn && (!decimal.TryParse(QuantityBox.Text, NumberStyles.Number,
-                CultureInfo.GetCultureInfo("en-IN"), out decimal value) || value <= 0 || SelectedLine is null)) return;
-        if (_isReturn) Quantity = new Quantity(decimal.Parse(QuantityBox.Text, CultureInfo.GetCultureInfo("en-IN")));
+        ErrorText.Text = "";
+        if (Reason.Length == 0)
+        {
+            ErrorText.Text = TranslationSource.Instance["Sales_ReasonRequired"];
+            return;
+        }
+        if (_isReturn)
+        {
+            var selected = new List<ReturnLineInput>();
+            foreach (ReturnEntry entry in _entries)
+            {
+                string text = InputNormalizer.Normalize(entry.QuantityText).Trim();
+                if (text.Length == 0) continue;
+                if (!decimal.TryParse(text, NumberStyles.Number, CultureInfo.GetCultureInfo("en-IN"), out decimal value) ||
+                    value <= 0 || new Quantity(value) > entry.Line.Remaining)
+                {
+                    ErrorText.Text = TranslationSource.Instance["Sales_ReturnQuantityInvalid"];
+                    return;
+                }
+                selected.Add(new(entry.Line.Line.Id, new Quantity(value), entry.Resellable));
+            }
+            if (selected.Count == 0)
+            {
+                ErrorText.Text = TranslationSource.Instance["Sales_ReturnQuantityInvalid"];
+                return;
+            }
+            ReturnLines = selected;
+        }
         DialogResult = true;
+    }
+
+    private sealed class ReturnEntry(ReturnableSaleLine line)
+    {
+        public ReturnableSaleLine Line { get; } = line;
+        public string Name => Line.Line.ProductName;
+        public string Remaining => Line.Remaining.Value.ToString("0.###", CultureInfo.GetCultureInfo("en-IN"));
+        public string QuantityText { get; set; } = "";
+        public bool Resellable { get; set; } = true;
     }
 }

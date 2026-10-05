@@ -259,6 +259,13 @@
   <data name="Error_EmptyBill" xml:space="preserve"><value>Add at least one line before posting.</value></data>
   <data name="Error_CancelNotAllowed" xml:space="preserve"><value>This purchase cannot be cancelled because stock from one or more lots has changed.</value></data>
   <data name="Purchasing_NewVendor" xml:space="preserve"><value>New vendor</value></data>
+  <data name="Purchasing_EditVendor" xml:space="preserve"><value>Edit vendor</value></data>
+  <data name="Purchasing_VendorLedger" xml:space="preserve"><value>Vendor ledger</value></data>
+  <data name="Purchasing_Payments" xml:space="preserve"><value>Payments</value></data>
+  <data name="Purchasing_LotsSupplied" xml:space="preserve"><value>Lots supplied</value></data>
+  <data name="Purchasing_LedgerHint" xml:space="preserve"><value>Opening balance, posted purchases and payments in date order.</value></data>
+  <data name="Purchasing_Debit" xml:space="preserve"><value>Debit</value></data>
+  <data name="Purchasing_Credit" xml:space="preserve"><value>Credit</value></data>
   <data name="Purchasing_Contact" xml:space="preserve"><value>Contact person</value></data>
   <data name="Purchasing_AltPhone" xml:space="preserve"><value>Alternate phone</value></data>
   <data name="Purchasing_Email" xml:space="preserve"><value>Email</value></data>
@@ -273,6 +280,7 @@
   <data name="Purchasing_Notes" xml:space="preserve"><value>Notes</value></data>
   <data name="Purchasing_NewPurchase" xml:space="preserve"><value>New purchase</value></data>
   <data name="Purchasing_Payment" xml:space="preserve"><value>Vendor payment</value></data>
+  <data name="Purchasing_OptionalPurchase" xml:space="preserve"><value>Against purchase (optional)</value></data>
   <data name="Purchasing_Amount" xml:space="preserve"><value>Amount</value></data>
   <data name="Purchasing_Mode" xml:space="preserve"><value>Payment mode</value></data>
   <data name="Purchasing_Reference" xml:space="preserve"><value>Reference</value></data>
@@ -284,18 +292,72 @@
   <data name="Purchasing_OtherCharges" xml:space="preserve"><value>Other charges</value></data>
   <data name="Purchasing_BillTotal" xml:space="preserve"><value>Vendor bill total</value></data>
   <data name="Purchasing_SaveDraft" xml:space="preserve"><value>Save draft</value></data>
+  <data name="Purchasing_DraftSaved" xml:space="preserve"><value>Draft saved. You can reopen it from Purchases.</value></data>
+  <data name="Purchasing_EditDraft" xml:space="preserve"><value>Open draft</value></data>
+  <data name="Purchasing_EntryHint" xml:space="preserve"><value>Enter received quantities and rates. Compare the calculated amount with the supplier bill before posting.</value></data>
+  <data name="Purchasing_ProductSearchHint" xml:space="preserve"><value>Scan a barcode or search by name or SKU, then press Enter.</value></data>
+  <data name="Purchasing_FindProduct" xml:space="preserve"><value>Find product</value></data>
+  <data name="Purchasing_NoProduct" xml:space="preserve"><value>No matching product was found.</value></data>
+  <data name="Purchasing_MatchesFound" xml:space="preserve"><value>{0} products found. Choose one in the Name column.</value></data>
+  <data name="Purchasing_MfgDate" xml:space="preserve"><value>Mfg date</value></data>
+  <data name="Purchasing_Landed" xml:space="preserve"><value>Landed / unit</value></data>
+  <data name="Purchasing_Margin" xml:space="preserve"><value>Margin %</value></data>
+  <data name="Purchasing_RoundOff" xml:space="preserve"><value>Round off</value></data>
+  <data name="Purchasing_WarningShortExpiry" xml:space="preserve"><value>{0}: short expiry</value></data>
+  <data name="Purchasing_WarningBelowCost" xml:space="preserve"><value>{0}: selling below landed cost</value></data>
+  <data name="Purchasing_WarningRateChanged" xml:space="preserve"><value>{0}: rate differs over 10% from last purchase</value></data>
+  <data name="Purchasing_Subtotal" xml:space="preserve"><value>Subtotal</value></data>
+  <data name="Purchasing_TaxTotal" xml:space="preserve"><value>GST</value></data>
+  <data name="Purchasing_ComputedTotal" xml:space="preserve"><value>Calculated total</value></data>
+  <data name="Purchasing_Difference" xml:space="preserve"><value>Bill difference</value></data>
   <data name="Purchasing_Post" xml:space="preserve"><value>Post</value></data>
   <data name="Stock_OpeningImport" xml:space="preserve"><value>Import opening stock</value></data>
+  <data name="Stock_OpeningPreview" xml:space="preserve"><value>Review opening stock</value></data>
+  <data name="Stock_OpeningPreviewSummary" xml:space="preserve"><value>{0} valid rows; {1} errors. Correct the workbook if any row has an error.</value></data>
+  <data name="Stock_ImportReviewed" xml:space="preserve"><value>Import reviewed rows</value></data>
   <data name="Stock_Adjust" xml:space="preserve"><value>Adjust stock</value></data>
   <data name="Stock_Count" xml:space="preserve"><value>Stock count</value></data>
   <data name="Stock_AdjustQuantity" xml:space="preserve"><value>Quantity change (+ or −)</value></data>
   <data name="Stock_Reason" xml:space="preserve"><value>Reason</value></data>
-  <data name="Stock_CountHint" xml:space="preserve"><value>Enter the physical quantity for every lot. Posting records only the differences.</value></data>
+  <data name="Stock_CountHint" xml:space="preserve"><value>Enter the physical quantity for every lot. Leave a row blank until counted; save the draft to continue later.</value></data>
+  <data name="Stock_CountSearchHint" xml:space="preserve"><value>Scan a lot or search by product or lot code.</value></data>
+  <data name="Stock_FindLot" xml:space="preserve"><value>Find lot</value></data>
+  <data name="Stock_CountLotNotFound" xml:space="preserve"><value>No matching lot is on this count sheet.</value></data>
+  <data name="Stock_NewCount" xml:space="preserve"><value>New count</value></data>
+  <data name="Stock_ScopeHint" xml:space="preserve"><value>Choose which categories to count. The sheet snapshots every lot in that scope.</value></data>
+  <data name="Stock_AllCategories" xml:space="preserve"><value>All categories</value></data>
+  <data name="Stock_SelectCategory" xml:space="preserve"><value>Select at least one category, or choose all categories.</value></data>
+  <data name="Stock_CreateSheet" xml:space="preserve"><value>Create sheet</value></data>
+  <data name="Stock_ResumeCount" xml:space="preserve"><value>Resume count</value></data>
+  <data name="Stock_NoDraftCount" xml:space="preserve"><value>No saved stock count is available.</value></data>
+  <data name="Stock_SaveCount" xml:space="preserve"><value>Save draft</value></data>
+  <data name="Stock_ReviewCount" xml:space="preserve"><value>Review differences</value></data>
+  <data name="Stock_RefreshLots" xml:space="preserve"><value>Refresh lots</value></data>
+  <data name="Stock_NewLotsAdded" xml:space="preserve"><value>{0} new lots added. Count them before review.</value></data>
+  <data name="Stock_ReviewFirst" xml:space="preserve"><value>Review the current differences before posting.</value></data>
+  <data name="Stock_MovementsChanged" xml:space="preserve"><value>Stock moved after your review. Check the refreshed differences and review again.</value></data>
+  <data name="Stock_ReviewSummary" xml:space="preserve"><value>{0} lots differ; net value {1}</value></data>
+  <data name="Stock_DiscardCount" xml:space="preserve"><value>Discard count</value></data>
+  <data name="Stock_DiscardConfirm" xml:space="preserve"><value>Discard this count sheet and its entered quantities?</value></data>
+  <data name="Stock_CountProgress" xml:space="preserve"><value>{0} of {1} lots counted</value></data>
+  <data name="Stock_CompleteEveryLot" xml:space="preserve"><value>Enter a physical quantity for every lot before posting.</value></data>
+  <data name="Stock_InvalidCount" xml:space="preserve"><value>Counted quantities must be valid non-negative numbers.</value></data>
+  <data name="Stock_SinceSnapshot" xml:space="preserve"><value>Since sheet</value></data>
+  <data name="Stock_DifferenceValue" xml:space="preserve"><value>Difference value</value></data>
   <data name="Stock_Expected" xml:space="preserve"><value>Expected</value></data>
   <data name="Stock_Counted" xml:space="preserve"><value>Counted</value></data>
   <data name="Stock_Difference" xml:space="preserve"><value>Difference</value></data>
   <data name="Purchasing_CancelPurchase" xml:space="preserve"><value>Cancel purchase</value></data>
+  <data name="Purchasing_CancelConfirm" xml:space="preserve"><value>Cancel this purchase and reverse its untouched stock?</value></data>
+  <data name="Purchasing_CancelBlocked" xml:space="preserve"><value>This purchase has stock movements after receipt, so it cannot be cancelled. Use a stock adjustment for a correction; vendor returns are not yet available.</value></data>
   <data name="Stock_Ledger" xml:space="preserve"><value>Stock ledger</value></data>
+  <data name="Stock_FilterFrom" xml:space="preserve"><value>From</value></data>
+  <data name="Stock_FilterTo" xml:space="preserve"><value>To</value></data>
+  <data name="Stock_ApplyFilter" xml:space="preserve"><value>Apply filter</value></data>
+  <data name="Stock_AllMovements" xml:space="preserve"><value>All movements</value></data>
+  <data name="Stock_LedgerSelectProduct" xml:space="preserve"><value>Select a product in Overview to view its stock movements.</value></data>
+  <data name="Stock_Source" xml:space="preserve"><value>Source</value></data>
+  <data name="Stock_SourceId" xml:space="preserve"><value>Source ID</value></data>
   <data name="Stock_ChangePrice" xml:space="preserve"><value>Change price</value></data>
   <data name="Stock_BlockToggle" xml:space="preserve"><value>Block / unblock lot</value></data>
   <data name="Stock_PrintCount" xml:space="preserve"><value>Print count sheet</value></data>
@@ -522,4 +584,156 @@
   <data name="Setup_ErrorCloudPath" xml:space="preserve"><value>Choose a folder outside OneDrive.</value></data>
   <data name="Setup_ErrorDataFolder" xml:space="preserve"><value>Choose an empty data folder separate from the current folder.</value></data>
   <data name="ReleaseNotes_Title" xml:space="preserve"><value>What's new</value></data>
+  <data name="Sales_PaymentTitle" xml:space="preserve"><value>Take payment</value></data>
+  <data name="Sales_CashLabel" xml:space="preserve"><value>Cash tendered</value></data>
+  <data name="Sales_UpiLabel" xml:space="preserve"><value>UPI</value></data>
+  <data name="Sales_CardLabel" xml:space="preserve"><value>Card</value></data>
+  <data name="Sales_UpiReference" xml:space="preserve"><value>UPI transaction reference (optional)</value></data>
+  <data name="Sales_CardReference" xml:space="preserve"><value>Card last four digits (optional)</value></data>
+  <data name="Sales_ConfirmPayment" xml:space="preserve"><value>Complete bill</value></data>
+  <data name="Sales_InvalidPayment" xml:space="preserve"><value>Enter valid payment amounts.</value></data>
+  <data name="Sales_Remaining" xml:space="preserve"><value>Remaining ₹{0}</value></data>
+  <data name="Sales_Change" xml:space="preserve"><value>Change ₹{0}</value></data>
+  <data name="Sales_PaymentShort" xml:space="preserve"><value>Payment is less than the bill total.</value></data>
+  <data name="Sales_NonCashOverpayment" xml:space="preserve"><value>Only cash can exceed the bill total.</value></data>
+  <data name="Sales_Completed" xml:space="preserve"><value>Bill {0} completed.</value></data>
+  <data name="Sales_PrintFailed" xml:space="preserve"><value>Bill {0} completed. Printing failed: {1}. Press Ctrl+P to retry.</value></data>
+  <data name="Sales_SavedBills" xml:space="preserve"><value>Saved bills</value></data>
+  <data name="Sales_SelectSavedBill" xml:space="preserve"><value>Select a bill to continue</value></data>
+  <data name="Sales_HoldLabel" xml:space="preserve"><value>Label</value></data>
+  <data name="Sales_OpenBill" xml:space="preserve"><value>Open bill</value></data>
+  <data name="Sales_RoundOff" xml:space="preserve"><value>Round off</value></data>
+  <data name="Sales_Savings" xml:space="preserve"><value>You saved ₹{0}</value></data>
+  <data name="Sales_ReturnLine" xml:space="preserve"><value>Item to return</value></data>
+  <data name="Sales_ReturnQuantity" xml:space="preserve"><value>Return quantity</value></data>
+  <data name="Sales_ReturnQtyHeader" xml:space="preserve"><value>Return qty</value></data>
+  <data name="Sales_ResellableShort" xml:space="preserve"><value>Resellable</value></data>
+  <data name="Sales_ReturnRemaining" xml:space="preserve"><value>Available to return: {0}</value></data>
+  <data name="Sales_RefundMode" xml:space="preserve"><value>Refund by</value></data>
+  <data name="Sales_ReasonRequired" xml:space="preserve"><value>Enter a reason.</value></data>
+  <data name="Sales_ReturnQuantityInvalid" xml:space="preserve"><value>Enter a quantity within the amount available to return.</value></data>
+  <data name="Sales_From" xml:space="preserve"><value>From</value></data>
+  <data name="Sales_To" xml:space="preserve"><value>To</value></data>
+  <data name="Sales_All" xml:space="preserve"><value>All</value></data>
+  <data name="Sales_CompletedStatus" xml:space="preserve"><value>Completed</value></data>
+  <data name="Sales_Minimum" xml:space="preserve"><value>Minimum ₹</value></data>
+  <data name="Sales_Maximum" xml:space="preserve"><value>Maximum ₹</value></data>
+  <data name="Sales_InvalidRange" xml:space="preserve"><value>Enter a valid amount range.</value></data>
+  <data name="Sales_ResultCount" xml:space="preserve"><value>{0} bills shown</value></data>
+  <data name="Sales_Previous" xml:space="preserve"><value>Previous</value></data>
+  <data name="Sales_Next" xml:space="preserve"><value>Next</value></data>
+  <data name="Sales_SelectHistory" xml:space="preserve"><value>Select a bill to see its lines</value></data>
+  <data name="Sales_DetailHeading" xml:space="preserve"><value>{0}  ·  {1}</value></data>
+  <data name="Sales_Reprinted" xml:space="preserve"><value>Reprinted {0}.</value></data>
+  <data name="Sales_NothingToReturn" xml:space="preserve"><value>All items on this bill have already been returned.</value></data>
+  <data name="Sales_DayEndResult" xml:space="preserve"><value>{0} bills · ₹{1} net · ₹{2} cash expected</value></data>
+  <data name="Sales_Invoice" xml:space="preserve"><value>Invoice</value></data>
+  <data name="Sales_Date" xml:space="preserve"><value>Date</value></data>
+  <data name="Sales_ChooseLot" xml:space="preserve"><value>Choose lot</value></data>
+  <data name="Sales_ChooseLotShortcut" xml:space="preserve"><value>Ctrl+L Lot</value></data>
+  <data name="Sales_UseLot" xml:space="preserve"><value>Use lot</value></data>
+  <data name="Sales_HoldBill" xml:space="preserve"><value>Hold bill</value></data>
+  <data name="Sales_HoldHint" xml:space="preserve"><value>Optional label to find this bill later</value></data>
+  <data name="Receipt_Return" xml:space="preserve"><value>RETURN RECEIPT</value></data>
+  <data name="Receipt_OriginalInvoice" xml:space="preserve"><value>Original invoice</value></data>
+  <data name="Receipt_ReturnReason" xml:space="preserve"><value>Reason</value></data>
+  <data name="Receipt_Taxable" xml:space="preserve"><value>Taxable</value></data>
+  <data name="Receipt_Gst" xml:space="preserve"><value>GST</value></data>
+  <data name="Receipt_RefundBy" xml:space="preserve"><value>Refund by</value></data>
+  <data name="Sales_ReturnPrintFailed" xml:space="preserve"><value>Return {0} saved. Printing failed: {1}.</value></data>
+  <data name="Receipt_RefundTotal" xml:space="preserve"><value>REFUND</value></data>
+  <data name="Receipt_RefundModeCash" xml:space="preserve"><value>Cash</value></data>
+  <data name="Receipt_RefundModeUpi" xml:space="preserve"><value>UPI</value></data>
+  <data name="Receipt_RefundModeCard" xml:space="preserve"><value>Card</value></data>
+  <data name="Receipt_RefundModeCreditNote" xml:space="preserve"><value>Credit note</value></data>
+  <data name="Receipt_RefundModeOther" xml:space="preserve"><value>Other</value></data>
+  <data name="Sales_PriceOverride" xml:space="preserve"><value>Change price</value></data>
+  <data name="Sales_ReadyToScan" xml:space="preserve"><value>Ready to scan or search</value></data>
+  <data name="Sales_Status_Draft" xml:space="preserve"><value>Draft</value></data>
+  <data name="Sales_Status_Held" xml:space="preserve"><value>Held</value></data>
+  <data name="Sales_Status_Completed" xml:space="preserve"><value>Completed</value></data>
+  <data name="Sales_Status_Void" xml:space="preserve"><value>Void</value></data>
+  <data name="Sales_Customer" xml:space="preserve"><value>Customer</value></data>
+  <data name="Sales_CustomerShortcut" xml:space="preserve"><value>Ctrl+U Customer</value></data>
+  <data name="Sales_WalkIn" xml:space="preserve"><value>Walk-in customer</value></data>
+  <data name="Sales_FindCustomer" xml:space="preserve"><value>Search customer by name or phone</value></data>
+  <data name="Sales_Search" xml:space="preserve"><value>Search</value></data>
+  <data name="Sales_NewCustomer" xml:space="preserve"><value>New customer</value></data>
+  <data name="Sales_CreateCustomer" xml:space="preserve"><value>Create</value></data>
+  <data name="Sales_UseCustomer" xml:space="preserve"><value>Use selected</value></data>
+  <data name="Sales_SelectCustomer" xml:space="preserve"><value>Select a customer or choose walk-in.</value></data>
+  <data name="Sales_ReturnRemainingHeader" xml:space="preserve"><value>Remaining</value></data>
+  <data name="Sales_ReviewHeld" xml:space="preserve"><value>Review held bill</value></data>
+  <data name="Sales_PreviousPrice" xml:space="preserve"><value>Previous price</value></data>
+  <data name="Sales_CurrentPrice" xml:space="preserve"><value>Current price</value></data>
+  <data name="Sales_AcceptResume" xml:space="preserve"><value>Accept and resume</value></data>
+  <data name="Sales_HeldUnavailable" xml:space="preserve"><value>Stock on this bill is blocked, expired or insufficient. Resolve it before resuming.</value></data>
+  <data name="Sales_HeldPriceChanged" xml:space="preserve"><value>Prices or MRP have changed. Review the rows before accepting the updated bill.</value></data>
+  <data name="Sales_HeldNoChanges" xml:space="preserve"><value>Stock is available and prices are unchanged. Review and resume the bill.</value></data>
+  <data name="Sales_HeldStockIssue" xml:space="preserve"><value>Stock issue</value></data>
+  <data name="Sales_HeldChanged" xml:space="preserve"><value>Price changed</value></data>
+  <data name="Sales_HeldUnchanged" xml:space="preserve"><value>Ready</value></data>
+  <data name="Sales_DiscountEntry" xml:space="preserve"><value>Discount</value></data>
+  <data name="Sales_Amount" xml:space="preserve"><value>Amount</value></data>
+  <data name="Sales_Percent" xml:space="preserve"><value>Percent</value></data>
+  <data name="Sales_DiscountBase" xml:space="preserve"><value>Discountable amount: ₹{0}</value></data>
+  <data name="Sales_DiscountPreview" xml:space="preserve"><value>Discount: ₹{0}</value></data>
+  <data name="Sales_DiscountInvalid" xml:space="preserve"><value>Enter an amount within the subtotal or a percent from 0 to 100.</value></data>
+  <data name="Sales_ReturnsTab" xml:space="preserve"><value>Returns</value></data>
+  <data name="Sales_MovementsTab" xml:space="preserve"><value>Stock movements</value></data>
+  <data name="Sales_Export" xml:space="preserve"><value>Export Excel</value></data>
+  <data name="Sales_Exported" xml:space="preserve"><value>Exported {0} bills.</value></data>
+  <data name="Sales_Bills" xml:space="preserve"><value>Bills</value></data>
+  <data name="Sales_Payable" xml:space="preserve"><value>Payable</value></data>
+  <data name="Sales_Voids" xml:space="preserve"><value>Voids</value></data>
+  <data name="Sales_VoidValue" xml:space="preserve"><value>Void value</value></data>
+  <data name="Sales_ReturnValue" xml:space="preserve"><value>Return value</value></data>
+  <data name="Sales_CashSales" xml:space="preserve"><value>Cash tendered</value></data>
+  <data name="Sales_CashChange" xml:space="preserve"><value>Change given</value></data>
+  <data name="Sales_CashRefunds" xml:space="preserve"><value>Cash refunds</value></data>
+  <data name="Sales_CashExpenses" xml:space="preserve"><value>Cash expenses</value></data>
+  <data name="Sales_CashExpected" xml:space="preserve"><value>Cash expected</value></data>
+  <data name="Sales_Particular" xml:space="preserve"><value>Particular</value></data>
+  <data name="Sales_PrintDayEnd" xml:space="preserve"><value>Print</value></data>
+  <data name="Sales_DayEndPrinted" xml:space="preserve"><value>Day-end report sent to the receipt printer.</value></data>
+  <data name="Stock_ExpiryStatus" xml:space="preserve"><value>Expiry</value></data>
+  <data name="Stock_Expiry_EXPIRED" xml:space="preserve"><value>Expired</value></data>
+  <data name="Stock_Expiry_CRITICAL" xml:space="preserve"><value>0–7 days</value></data>
+  <data name="Stock_Expiry_SOON" xml:space="preserve"><value>Soon</value></data>
+  <data name="Stock_Expiry_FRESH" xml:space="preserve"><value>Fresh</value></data>
+  <data name="Stock_Expiry_NONE" xml:space="preserve"><value>No expiry</value></data>
+  <data name="Stock_Expiry_BLOCKED" xml:space="preserve"><value>Blocked</value></data>
+  <data name="Stock_Expiry_EMPTY" xml:space="preserve"><value>Empty</value></data>
+  <data name="Stock_WriteOffExpired" xml:space="preserve"><value>Write off expired</value></data>
+  <data name="Stock_WriteOffConfirm" xml:space="preserve"><value>Write off all {1} units in lot {0}? This records a damage document and cannot be undone.</value></data>
+  <data name="Stock_SourceDocument" xml:space="preserve"><value>Source document</value></data>
+  <data name="Stock_OpenSource" xml:space="preserve"><value>Open source</value></data>
+  <data name="Stock_SourceDoc_Purchase" xml:space="preserve"><value>Purchase</value></data>
+  <data name="Stock_Status_Posted" xml:space="preserve"><value>Posted</value></data>
+  <data name="Stock_Status_Cancelled" xml:space="preserve"><value>Cancelled</value></data>
+  <data name="Stock_SourceDoc_Sale" xml:space="preserve"><value>Sale</value></data>
+  <data name="Stock_SourceDoc_Return" xml:space="preserve"><value>Sale return</value></data>
+  <data name="Stock_SourceDoc_Damage" xml:space="preserve"><value>Damage</value></data>
+  <data name="Stock_SourceDoc_Count" xml:space="preserve"><value>Stock count</value></data>
+  <data name="Stock_SourceDoc_Opening" xml:space="preserve"><value>Opening stock</value></data>
+  <data name="Stock_SourceDoc_Adjustment" xml:space="preserve"><value>Stock adjustment</value></data>
+  <data name="Sales_LastScan" xml:space="preserve"><value>Last: {0} · Stock {1} · MRP ₹{2}</value></data>
+  <data name="Sales_HeldChip" xml:space="preserve"><value>Held #{0}</value></data>
+  <data name="Sales_PrinterReady" xml:space="preserve"><value>Receipt printer ready</value></data>
+  <data name="Sales_PrinterUnavailable" xml:space="preserve"><value>Receipt printer unavailable</value></data>
+  <data name="Purchasing_VendorReturn" xml:space="preserve"><value>Vendor return</value></data>
+  <data name="Purchasing_VendorReturns" xml:space="preserve"><value>Vendor returns</value></data>
+  <data name="Purchasing_CreditNumber" xml:space="preserve"><value>Vendor credit note no.</value></data>
+  <data name="Purchasing_ReturnHint" xml:space="preserve"><value>Enter a return quantity for each lot. Credit and GST are suggested from the purchase; adjust them to match the supplier credit note.</value></data>
+  <data name="Purchasing_CreditBeforeTax" xml:space="preserve"><value>Credit before GST</value></data>
+  <data name="Purchasing_TaxCredit" xml:space="preserve"><value>GST credit</value></data>
+  <data name="Purchasing_PostReturn" xml:space="preserve"><value>Post return</value></data>
+  <data name="Purchasing_NoReturnableLots" xml:space="preserve"><value>No stock from this purchase is available to return.</value></data>
+  <data name="Purchasing_ReturnTotal" xml:space="preserve"><value>{0} lots · credit ₹{1}</value></data>
+  <data name="Purchasing_ReturnEnterLines" xml:space="preserve"><value>Enter a quantity and credit for at least one lot.</value></data>
+  <data name="Purchasing_ReturnInvalid" xml:space="preserve"><value>Check the return date, quantities and credit amounts.</value></data>
+  <data name="Purchasing_ReturnConfirm" xml:space="preserve"><value>Post the return of {0} lots for credit ₹{1}? Stock and vendor balance will change.</value></data>
+  <data name="Purchasing_ReturnPosted" xml:space="preserve"><value>Vendor return {0} posted.</value></data>
+  <data name="Pnl_Head_VendorReturnVariance" xml:space="preserve"><value>Vendor return variance</value></data>
+  <data name="Stock_SourceDoc_VendorReturn" xml:space="preserve"><value>Vendor return</value></data>
 </root>

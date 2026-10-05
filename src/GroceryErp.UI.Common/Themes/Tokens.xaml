@@ -7,6 +7,10 @@
   <sys:Double x:Key="SpaceMd" xmlns:sys="clr-namespace:System;assembly=System.Runtime">16</sys:Double>
   <sys:Double x:Key="SpaceLg" xmlns:sys="clr-namespace:System;assembly=System.Runtime">24</sys:Double>
   <Thickness x:Key="PagePadding">24</Thickness>
+  <SolidColorBrush x:Key="ExpiryExpiredBrush" Color="#B42318"/>
+  <SolidColorBrush x:Key="ExpiryCriticalBrush" Color="#B54708"/>
+  <SolidColorBrush x:Key="ExpirySoonBrush" Color="#9A6700"/>
+  <SolidColorBrush x:Key="ExpiryReadyBrush" Color="#067647"/>
   <Style TargetType="Button">
     <Setter Property="MinHeight" Value="36" />
     <Setter Property="MinWidth" Value="88" />

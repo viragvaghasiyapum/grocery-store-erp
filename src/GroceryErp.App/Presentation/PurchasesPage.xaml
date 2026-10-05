@@ -5,14 +5,25 @@
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     Title="{l:Tr Purchasing_Title}">
   <Grid Margin="24">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Purchasing_Title}" />
-    <TabControl Grid.Row="1" Margin="0,18,0,0">
+    <WrapPanel Grid.Row="1" Margin="0,16,0,4">
+      <Button Margin="0,0,8,8" Click="NewPurchase_OnClick" Content="{l:Tr Purchasing_NewPurchase}" />
+      <Button Margin="0,0,8,8" Click="NewVendor_OnClick" Content="{l:Tr Purchasing_NewVendor}" />
+      <Button Margin="0,0,8,8" Click="Payment_OnClick" Content="{l:Tr Purchasing_Payment}" />
+      <Button x:Name="OpenDraftButton" IsEnabled="False" Margin="0,0,8,8" Click="OpenDraft_OnClick" Content="{l:Tr Purchasing_EditDraft}" />
+      <Button x:Name="EditVendorButton" IsEnabled="False" Margin="0,0,8,8" Click="EditVendor_OnClick" Content="{l:Tr Purchasing_EditVendor}" />
+      <Button x:Name="VendorLedgerButton" IsEnabled="False" Margin="0,0,8,8" Click="VendorLedger_OnClick" Content="{l:Tr Purchasing_VendorLedger}" />
+      <Button x:Name="CancelPurchaseButton" IsEnabled="False" Margin="0,0,8,8" Click="CancelPurchase_OnClick" Content="{l:Tr Purchasing_CancelPurchase}" />
+      <Button x:Name="VendorReturnButton" IsEnabled="False" Margin="0,0,8,8" Click="VendorReturn_OnClick" Content="{l:Tr Purchasing_VendorReturn}" />
+      <Button Margin="0,0,8,8" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
+    </WrapPanel>
+    <TabControl Grid.Row="2" Margin="0,8,0,0">
       <TabItem Header="{l:Tr Purchasing_Purchases}">
-        <DataGrid x:Name="PurchasesGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+        <DataGrid x:Name="PurchasesGrid" Style="{StaticResource CatalogGrid}" SelectionChanged="PurchasesGrid_OnSelectionChanged">
           <DataGrid.Columns>
             <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Grn}" Binding="{Binding DocumentNumber}" />
-            <DataGridTextColumn Width="2*" Header="{l:Tr Purchasing_Vendor}" Binding="{Binding VendorName}" />
+            <DataGridTextColumn Width="250" Header="{l:Tr Purchasing_Vendor}" Binding="{Binding VendorName}" />
             <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Invoice}" Binding="{Binding VendorInvoiceNumber}" />
             <DataGridTextColumn Width="110" Header="{l:Tr Purchasing_Received}" Binding="{Binding ReceivedDate}" />
             <DataGridTextColumn Width="100" Header="{l:Tr Purchasing_Status}" Binding="{Binding Status}" />
@@ -21,9 +32,9 @@
         </DataGrid>
       </TabItem>
       <TabItem Header="{l:Tr Purchasing_Vendors}">
-        <DataGrid x:Name="VendorsGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+        <DataGrid x:Name="VendorsGrid" Style="{StaticResource CatalogGrid}" SelectionChanged="VendorsGrid_OnSelectionChanged">
           <DataGrid.Columns>
-            <DataGridTextColumn Width="2*" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}" />
+            <DataGridTextColumn Width="280" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}" />
             <DataGridTextColumn Width="150" Header="{l:Tr Purchasing_Phone}" Binding="{Binding Phone}" />
             <DataGridTextColumn Width="180" Header="GSTIN" Binding="{Binding Gstin}" />
             <DataGridTextColumn Width="140" Header="{l:Tr Purchasing_Balance}" Binding="{Binding BalanceDue}" />
@@ -32,15 +43,6 @@
         </DataGrid>
       </TabItem>
     </TabControl>
-    <Grid Grid.Row="2" Margin="0,12,0,0">
-      <TextBlock x:Name="StatusText" VerticalAlignment="Center" />
-      <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
-        <Button Margin="0,0,8,0" Click="NewVendor_OnClick" Content="{l:Tr Purchasing_NewVendor}" />
-        <Button Margin="0,0,8,0" Click="NewPurchase_OnClick" Content="{l:Tr Purchasing_NewPurchase}" />
-        <Button Margin="0,0,8,0" Click="Payment_OnClick" Content="{l:Tr Purchasing_Payment}" />
-        <Button Margin="0,0,8,0" Click="CancelPurchase_OnClick" Content="{l:Tr Purchasing_CancelPurchase}" />
-        <Button Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
-      </StackPanel>
-    </Grid>
+    <TextBlock x:Name="StatusText" Grid.Row="3" Margin="0,10,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
   </Grid>
 </Page>
