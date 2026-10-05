@@ -482,6 +482,44 @@
   <data name="Assets_PostNow" xml:space="preserve"><value>ઘસારો હમણાં પોસ્ટ કરો</value></data>
   <data name="Assets_Salvage" xml:space="preserve"><value>બચત કિંમત</value></data>
   <data name="Assets_Proceeds" xml:space="preserve"><value>નિકાલની રકમ</value></data>
+  <data name="Assets_New" xml:space="preserve"><value>નવી મિલકત</value></data>
+  <data name="Assets_PurchaseDate" xml:space="preserve"><value>ખરીદી તારીખ</value></data>
+  <data name="Assets_InUseDate" xml:space="preserve"><value>ઉપયોગ શરૂ</value></data>
+  <data name="Assets_Furniture" xml:space="preserve"><value>ફર્નિચર</value></data>
+  <data name="Assets_Equipment" xml:space="preserve"><value>સાધનો</value></data>
+  <data name="Assets_Electronics" xml:space="preserve"><value>ઇલેક્ટ્રોનિક્સ</value></data>
+  <data name="Assets_Vehicle" xml:space="preserve"><value>વાહન</value></data>
+  <data name="Assets_Other" xml:space="preserve"><value>અન્ય</value></data>
+  <data name="Assets_DisposeConfirm" xml:space="preserve"><value>“{0}”નો નિકાલ કરવો? ઘસારો પોસ્ટ થશે અને મળેલી રકમ નોંધાશે.</value></data>
+  <data name="Assets_PostResult" xml:space="preserve"><value>{0} મહિના પોસ્ટ થયા; {1} મહિના બંધ છે.</value></data>
+  <data name="MoneyOut_New" xml:space="preserve"><value>નવું</value></data>
+  <data name="MoneyOut_Active" xml:space="preserve"><value>સક્રિય</value></data>
+  <data name="MoneyOut_ChooseCategory" xml:space="preserve"><value>ફેરફાર માટે વર્ગ પસંદ કરો</value></data>
+  <data name="MoneyOut_RepeatCategories" xml:space="preserve"><value>દોહરાવવા માટે વર્ગો પસંદ કરો (કંઈ ન પસંદ હોય તો હાલનો વર્ગ વપરાશે)</value></data>
+  <data name="MoneyOut_CategoryName" xml:space="preserve"><value>વર્ગનું નામ</value></data>
+  <data name="MoneyOut_LocalName" xml:space="preserve"><value>ગુજરાતી નામ</value></data>
+  <data name="MoneyOut_EmployeeName" xml:space="preserve"><value>કર્મચારીનું નામ</value></data>
+  <data name="MoneyOut_EmployeeId" xml:space="preserve"><value>કર્મચારી ID</value></data>
+  <data name="MoneyOut_JoinDate" xml:space="preserve"><value>જોડાવાની તારીખ</value></data>
+  <data name="MoneyOut_LeaveDate" xml:space="preserve"><value>છોડવાની તારીખ</value></data>
+  <data name="MoneyOut_PayDate" xml:space="preserve"><value>ચુકવણી તારીખ</value></data>
+  <data name="MoneyOut_ModeCash" xml:space="preserve"><value>રોકડ</value></data>
+  <data name="MoneyOut_ModeBank" xml:space="preserve"><value>બેંક</value></data>
+  <data name="MoneyOut_ModeCard" xml:space="preserve"><value>કાર્ડ</value></data>
+  <data name="MoneyOut_ReasonExpired" xml:space="preserve"><value>સમાપ્ત</value></data>
+  <data name="MoneyOut_ReasonBroken" xml:space="preserve"><value>તૂટેલું</value></data>
+  <data name="MoneyOut_ReasonSpoiled" xml:space="preserve"><value>બગડેલું</value></data>
+  <data name="MoneyOut_ReasonPest" xml:space="preserve"><value>જીવાતથી નુકસાન</value></data>
+  <data name="MoneyOut_ReasonLost" xml:space="preserve"><value>ગુમ</value></data>
+  <data name="MoneyOut_ReasonReturn" xml:space="preserve"><value>ગ્રાહક પરત</value></data>
+  <data name="MoneyOut_ReasonOther" xml:space="preserve"><value>અન્ય</value></data>
+  <data name="MoneyOut_BulkConfirm" xml:space="preserve"><value>પસંદ કરેલા {0} સમાપ્ત લોટ કાઢવા? સ્ટોક અને નફામાં ફેરફાર થશે.</value></data>
+  <data name="MoneyOut_DamageConfirm" xml:space="preserve"><value>લોટ {1}માંથી {0} એકમ નુકસાન તરીકે નોંધવા? સ્ટોક અને નફામાં ફેરફાર થશે.</value></data>
+  <data name="MoneyOut_ValidNumber" xml:space="preserve"><value>અંગ્રેજી અંકોમાં માન્ય સંખ્યા લખો.</value></data>
+  <data name="MoneyOut_BlockConfirm" xml:space="preserve"><value>લોટ {0}નું વેચાણ રોકવું?</value></data>
+  <data name="MoneyOut_DraftsFound" xml:space="preserve"><value>સમીક્ષા માટે {0} ડ્રાફ્ટ તૈયાર છે.</value></data>
+  <data name="MoneyOut_Saved" xml:space="preserve"><value>સાચવ્યું.</value></data>
+  <data name="MoneyOut_Ready" xml:space="preserve"><value>તૈયાર.</value></data>
   <data name="Dashboard_Navigation" xml:space="preserve"><value>ડેશબોર્ડ</value></data>
   <data name="Dashboard_Title" xml:space="preserve"><value>વ્યવસાય ડેશબોર્ડ</value></data>
   <data name="Dashboard_TodaySales" xml:space="preserve"><value>આજનું વેચાણ</value></data>

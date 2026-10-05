@@ -482,6 +482,44 @@
   <data name="Assets_PostNow" xml:space="preserve"><value>Post depreciation now</value></data>
   <data name="Assets_Salvage" xml:space="preserve"><value>Salvage value</value></data>
   <data name="Assets_Proceeds" xml:space="preserve"><value>Disposal proceeds</value></data>
+  <data name="Assets_New" xml:space="preserve"><value>New asset</value></data>
+  <data name="Assets_PurchaseDate" xml:space="preserve"><value>Purchase date</value></data>
+  <data name="Assets_InUseDate" xml:space="preserve"><value>In use from</value></data>
+  <data name="Assets_Furniture" xml:space="preserve"><value>Furniture</value></data>
+  <data name="Assets_Equipment" xml:space="preserve"><value>Equipment</value></data>
+  <data name="Assets_Electronics" xml:space="preserve"><value>Electronics</value></data>
+  <data name="Assets_Vehicle" xml:space="preserve"><value>Vehicle</value></data>
+  <data name="Assets_Other" xml:space="preserve"><value>Other</value></data>
+  <data name="Assets_DisposeConfirm" xml:space="preserve"><value>Dispose “{0}”? This posts depreciation and records the proceeds.</value></data>
+  <data name="Assets_PostResult" xml:space="preserve"><value>{0} month(s) posted; {1} locked month(s).</value></data>
+  <data name="MoneyOut_New" xml:space="preserve"><value>New</value></data>
+  <data name="MoneyOut_Active" xml:space="preserve"><value>Active</value></data>
+  <data name="MoneyOut_ChooseCategory" xml:space="preserve"><value>Choose category to edit</value></data>
+  <data name="MoneyOut_RepeatCategories" xml:space="preserve"><value>Choose categories to repeat (uses current category when none are selected)</value></data>
+  <data name="MoneyOut_CategoryName" xml:space="preserve"><value>Category name</value></data>
+  <data name="MoneyOut_LocalName" xml:space="preserve"><value>Gujarati name</value></data>
+  <data name="MoneyOut_EmployeeName" xml:space="preserve"><value>Employee name</value></data>
+  <data name="MoneyOut_EmployeeId" xml:space="preserve"><value>Employee ID</value></data>
+  <data name="MoneyOut_JoinDate" xml:space="preserve"><value>Join date</value></data>
+  <data name="MoneyOut_LeaveDate" xml:space="preserve"><value>Leave date</value></data>
+  <data name="MoneyOut_PayDate" xml:space="preserve"><value>Pay date</value></data>
+  <data name="MoneyOut_ModeCash" xml:space="preserve"><value>Cash</value></data>
+  <data name="MoneyOut_ModeBank" xml:space="preserve"><value>Bank</value></data>
+  <data name="MoneyOut_ModeCard" xml:space="preserve"><value>Card</value></data>
+  <data name="MoneyOut_ReasonExpired" xml:space="preserve"><value>Expired</value></data>
+  <data name="MoneyOut_ReasonBroken" xml:space="preserve"><value>Broken</value></data>
+  <data name="MoneyOut_ReasonSpoiled" xml:space="preserve"><value>Spoiled</value></data>
+  <data name="MoneyOut_ReasonPest" xml:space="preserve"><value>Pest damage</value></data>
+  <data name="MoneyOut_ReasonLost" xml:space="preserve"><value>Lost</value></data>
+  <data name="MoneyOut_ReasonReturn" xml:space="preserve"><value>Customer return</value></data>
+  <data name="MoneyOut_ReasonOther" xml:space="preserve"><value>Other</value></data>
+  <data name="MoneyOut_BulkConfirm" xml:space="preserve"><value>Write off {0} selected expired lots? Stock and profit will change.</value></data>
+  <data name="MoneyOut_DamageConfirm" xml:space="preserve"><value>Record {0} units as damage from lot {1}? Stock and profit will change.</value></data>
+  <data name="MoneyOut_ValidNumber" xml:space="preserve"><value>Enter a valid number using English digits.</value></data>
+  <data name="MoneyOut_BlockConfirm" xml:space="preserve"><value>Block lot {0} from sale?</value></data>
+  <data name="MoneyOut_DraftsFound" xml:space="preserve"><value>{0} draft(s) ready for review.</value></data>
+  <data name="MoneyOut_Saved" xml:space="preserve"><value>Saved.</value></data>
+  <data name="MoneyOut_Ready" xml:space="preserve"><value>Ready.</value></data>
   <data name="Dashboard_Navigation" xml:space="preserve"><value>Dashboard</value></data>
   <data name="Dashboard_Title" xml:space="preserve"><value>Business dashboard</value></data>
   <data name="Dashboard_TodaySales" xml:space="preserve"><value>Today's sales</value></data>

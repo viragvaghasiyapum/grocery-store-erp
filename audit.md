@@ -159,3 +159,34 @@ The WPF UI runner regenerated the Phase 3 and 4 PNGs from actual rendered contro
 Physical receipt/label/count-sheet printers, cutter, drawer, scanner and USB operation need testing on the store equipment. A real power-pull recovery and scan-to-line timing run remain. The UI needs target-PC checks at 1366 × 768 with 125%/150% scaling and keyboard-only use, and a native Gujarati reviewer must approve the machine-drafted wording. The earlier Phase 1 public XML documentation item remains open.
 
 Legacy sales and returns created before migration 006 have no saved receipt snapshot and still reconstruct a reprint from current settings. Likewise, purchases posted before migration 009 have no tax-mode snapshot, so a later vendor return uses the current tax mode. These historical values cannot be reconstructed reliably from the old schema.
+
+# Phase 5 audit — 5 October 2026
+
+Scope: [implementation.md](implementation.md) §§12–13 and the Phase 5 checklist, checked against [PLANS.md](PLANS.md) and [techstack.md](techstack.md). I inspected the money-out and asset services, their WPF pages, the Phase 5 migration and the SQLite integration tests. This section records the follow-up audit; earlier entries above remain dated history.
+
+## Findings and completed fixes
+
+| Area | Finding and change | Evidence |
+|---|---|---|
+| Asset disposal | Disposal could be backdated into a month whose full depreciation had already been posted. That would make the immutable schedule disagree with the partial-month disposal value and P&L. Disposal now rejects any date in a posted month or before later posted months, without changing the asset or schedule. | New integration test asserts the rejection and unchanged rows. |
+| Salary runs | A bonus-only run (zero regular salary after leave deduction) had no `SALARY` row, so preparation offered that employee again. Preparation now excludes any posted regular, bonus or overtime row for the month; posting rejects a second run with a new operation ID. A line with no positive payment is rejected rather than claiming an empty run. | New bonus-only replay/duplicate integration test. Existing salary-to-worked-month P&L test still passes. |
+| Expense and employee masters | The services supported editing and deactivation, but the page only exposed creation. Selecting a category or employee now loads its full saved fields for editing; New clears the form. The expense selector continues to offer only active categories while the master editor includes inactive ones. | Rendered [expenses](docs/audit-screenshots/phase5/expenses.en.png) and [payroll](docs/audit-screenshots/phase5/payroll.en.png). |
+| Repeated expenses | The UI only repeated one category and omitted reference, notes and mode from the initially selected draft. Operators can now select multiple categories; when none are selected, the current category is used. The draft restores all entry fields before saving. | Expense page screenshot shows the category picker; existing repeat-last-month service date handling remains in place. |
+| Damage and expiry | Blank expiry damage quantity previously defaulted to the entire lot. Quantity is now explicit. Individual damage, bulk write-off and lot blocking prompt before changing stock or saleability. The damage lot picker shows the lot code alongside the product name, and reasons use localized labels while preserving database codes. | Rendered [expiry](docs/audit-screenshots/phase5/expiry.en.png) and [damages](docs/audit-screenshots/phase5/damages.en.png); existing stock and replay tests pass. |
+| Asset and page layout | The asset register lacked an edit route; selecting an unposted asset now populates the form and posted/disposed assets cannot be saved. Asset and depreciation tables use the available width. Phase 5 forms have visible labels, short dates, readable fixed-width columns, and new English/Gujarati resource strings. | Rendered [assets in English](docs/audit-screenshots/phase5/assets.en.png), [assets in Gujarati](docs/audit-screenshots/phase5/assets.gu.png), and [payroll in Gujarati](docs/audit-screenshots/phase5/payroll.gu.png). |
+
+## Screenshot review
+
+The WPF UI runner captured seven PNGs from rendered controls at 1120 × 700 with deterministic fixture data. I visually inspected all seven. The first pass exposed clipped asset/depreciation columns, long dates, crowded fields and an unreadable payroll form; I adjusted the layout and regenerated the screenshots. The final captures show the asset and schedule values, expense controls, employee and salary grids, damage row and expiry actions within the window. All visible amounts use English digits in both language captures. Operator-entered fixture names and category text remain in their entered language. These screenshots verify local rendering at the captured size, not the target PC's DPI or an end-to-end cashier workflow.
+
+## Validation
+
+- Release solution build: zero warnings and errors.
+- xUnit v3 runners: Core 10, Architecture 1, Integration 78, UI 2 passed; no failures or skips. Integration ran with `-maxThreads 1`; the UI runner regenerated the Phase 5 screenshots.
+- `dotnet format --verify-no-changes` passed; English and Gujarati keys referenced by the two Phase 5 pages were checked against both resource files.
+
+## Remaining acceptance requiring people or equipment
+
+- Run the pages on the store PC at 1366 × 768 with 125% and 150% display scaling, and complete keyboard-only entry and review with an operator. The local rendered captures do not establish those conditions.
+- Have a native Gujarati speaker review the new and existing Phase 5 wording.
+- Verify the expiry vendor-list printout on the store printer. Physical printer output was not available to this audit.

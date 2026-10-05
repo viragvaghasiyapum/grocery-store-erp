@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Dapper;
 using GroceryErp.App.Presentation;
+using GroceryErp.Assets;
 using GroceryErp.Catalog;
 using GroceryErp.Catalog.Barcodes;
 using GroceryErp.Core.Numerics;
@@ -14,6 +15,7 @@ using GroceryErp.Data.Backup;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Security;
 using GroceryErp.Data.Services;
+using GroceryErp.Expenses;
 using GroceryErp.Inventory;
 using GroceryErp.Localization;
 using GroceryErp.Purchasing;
@@ -412,6 +414,77 @@ public sealed class PhaseZeroSmokeTests
                 Capture(source, "stock-source.en.png");
                 source.Close();
 
+                IClock phase5Clock = new SystemClock(settings);
+                var moneyOutService = new MoneyOutService(database, new StockLedger(settings),
+                    new DocNumberService(settings), new PeriodGuard(settings), new AuditLog());
+                var moneyOutPage = new MoneyOutPage(moneyOutService, inventory, phase5Clock, loadOnShow: false);
+                var moneyOutHost = new Window { Content = moneyOutPage, Width = 1120, Height = 700 };
+                ((ListBox)moneyOutPage.FindName("ExpiredList")).ItemsSource = new[]
+                {
+                    new ExpiryLot(1, 1, "SALT001", "Tata Salt 1 kg", "ટાટા મીઠું", "L2627-000014",
+                        "SALT-2409", new DateOnly(2026, 9, 26), -2, new Quantity(11), new Money(220), "EXPIRED", 1, "Shree Wholesale"),
+                };
+                ((DataGrid)moneyOutPage.FindName("DamageGrid")).ItemsSource = new[]
+                {
+                    new DamageItem(1, "D2627-000021", new DateOnly(2026, 9, 27), "Tata Salt 1 kg", "L2627-000014",
+                        new Quantity(2), new Money(20), new Money(40), Money.Zero, "BROKEN", "Handling"),
+                };
+                ((ComboBox)moneyOutPage.FindName("ExpenseCategory")).ItemsSource = new[]
+                {
+                    new ExpenseCategoryItem(1, "Electricity", "વીજળી", true),
+                };
+                ((ComboBox)moneyOutPage.FindName("ExpenseCategory")).SelectedIndex = 0;
+                ((ComboBox)moneyOutPage.FindName("CategoryMaster")).ItemsSource = new[]
+                {
+                    new ExpenseCategoryItem(1, "Electricity", "વીજળી", true),
+                };
+                ((DataGrid)moneyOutPage.FindName("ExpenseGrid")).ItemsSource = new[]
+                {
+                    new ExpenseItem(1, new DateOnly(2026, 9, 27), 1, "Electricity", new Money(1500), "UPI", "Power Co", "TX-1", null),
+                };
+                ((DataGrid)moneyOutPage.FindName("EmployeeGrid")).ItemsSource = new[]
+                {
+                    new EmployeeItem(1, "Asha Patel", "9999999999", "Cashier", new DateOnly(2026, 4, 1), null,
+                        new Money(12000), true, null),
+                };
+                ((DataGrid)moneyOutPage.FindName("SalaryGrid")).ItemsSource = new[]
+                {
+                    new { EmployeeId = 1, BaseSalary = "12000.000", LeaveDeduction = "500.000", Overtime = "250.000", Bonus = "1000.000" },
+                };
+                moneyOutHost.Show();
+                Capture(moneyOutHost, "expiry.en.png");
+                ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 1;
+                Capture(moneyOutHost, "damages.en.png");
+                ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 2;
+                Capture(moneyOutHost, "expenses.en.png");
+                ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 3;
+                Capture(moneyOutHost, "payroll.en.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                Capture(moneyOutHost, "payroll.gu.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                moneyOutHost.Close();
+
+                var assetService = new AssetService(database, settings, new PeriodGuard(settings), new AuditLog(), phase5Clock);
+                var assetsPage = new AssetsPage(assetService, phase5Clock, purchasing, loadOnShow: false);
+                ((DataGrid)assetsPage.FindName("AssetGrid")).ItemsSource = new[]
+                {
+                    new AssetItem(1, "Visi-cooler 300 L", "Equipment", new DateOnly(2026, 4, 1),
+                        new DateOnly(2026, 4, 1), new Money(45000), null, null, DepreciationMethod.Wdv,
+                        new Percent(15), Money.Zero, null, null, new Money(1128.083m), new Money(43871.917m), null),
+                };
+                ((DataGrid)assetsPage.FindName("ScheduleGrid")).ItemsSource = new[]
+                {
+                    new DepreciationEntry(1, 1, new YearMonth(2026, 4), new Money(45000), new Money(554.795m),
+                        new Money(44445.205m), new DateTime(2026, 5, 1)),
+                };
+                var assetsHost = new Window { Content = assetsPage, Width = 1120, Height = 700 };
+                assetsHost.Show();
+                Capture(assetsHost, "assets.en.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                Capture(assetsHost, "assets.gu.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                assetsHost.Close();
+
                 IClock posClock = new SystemClock(settings);
                 var sales = new SalesService(database, new StockLedger(settings), new DocNumberService(settings),
                     new PeriodGuard(settings), settings, new AuditLog(), posClock);
@@ -610,6 +683,9 @@ public sealed class PhaseZeroSmokeTests
 
     private static void Capture(Window window, string fileName)
     {
+        string? phase5Directory = Environment.GetEnvironmentVariable("GROCERY_PHASE5_SCREENSHOT_DIR");
+        if (phase5Directory is not null && fileName is not ("expiry.en.png" or "damages.en.png" or
+            "expenses.en.png" or "payroll.en.png" or "payroll.gu.png" or "assets.en.png" or "assets.gu.png")) return;
         string? phase4Directory = Environment.GetEnvironmentVariable("GROCERY_PHASE4_SCREENSHOT_DIR");
         if (phase4Directory is not null)
         {
@@ -624,7 +700,7 @@ public sealed class PhaseZeroSmokeTests
             "stock-count-scope.en.png" or "opening-stock-preview.en.png" or "vendor-history.en.png" or
             "product-lots.en.png" or
             "vendor-return.en.png" or "stock-source.en.png")) return;
-        string? directory = phase4Directory ?? phase3Directory ?? Environment.GetEnvironmentVariable("GROCERY_PHASE2_SCREENSHOT_DIR");
+        string? directory = phase5Directory ?? phase4Directory ?? phase3Directory ?? Environment.GetEnvironmentVariable("GROCERY_PHASE2_SCREENSHOT_DIR");
         if (string.IsNullOrEmpty(directory)) return;
         Directory.CreateDirectory(directory);
         window.UpdateLayout();

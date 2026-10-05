@@ -104,6 +104,15 @@ public sealed class AssetService(
             if (asset is null) throw new DomainException(ErrorCode.NotFound, "asset", assetId);
             if (asset.DisposedDate is not null || date < asset.InUseFrom)
                 throw new DomainException(ErrorCode.Validation, "Asset is already disposed or the date is before it entered use.");
+            // Posted depreciation is immutable. A previously posted disposal month used the
+            // whole month, so it cannot be turned into a partial month after the fact.
+            string disposalPeriod = YearMonth.From(date).ToString();
+            bool postedAtOrAfterDisposal = transaction.Connection.ExecuteScalar<long>("""
+                SELECT EXISTS(SELECT 1 FROM asset_depreciation
+                              WHERE asset_id=@assetId AND period_month>=@disposalPeriod)
+                """, new { assetId, disposalPeriod }, transaction.Transaction) != 0;
+            if (postedAtOrAfterDisposal)
+                throw new DomainException(ErrorCode.Validation, "Depreciation is already posted for the disposal month or later.");
             asset.DisposedDate = date;
             var locked = new SortedSet<YearMonth>();
             PostAssetThrough(transaction, asset, YearMonth.From(date), locked);

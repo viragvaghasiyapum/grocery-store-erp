@@ -113,6 +113,45 @@ public sealed class MoneyOutTests
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM v_pnl_entry WHERE head_code='ASSET_DISPOSAL' AND ref_id=@asset", new { asset }).ShouldBe(1L);
     }
 
+    [Fact]
+    public async Task Disposal_RejectsMonthWithAlreadyPostedDepreciation()
+    {
+        using var fixture = new Fixture();
+        long asset = await fixture.Assets.SaveAssetAsync(null, new(
+            "Freezer", "Equipment", new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 1),
+            new Money(45000), null, DepreciationMethod.Wdv, new Percent(15), Money.Zero, null),
+            TestContext.Current.CancellationToken);
+        await fixture.Assets.PostThroughAsync(new YearMonth(2026, 8), TestContext.Current.CancellationToken);
+
+        await Should.ThrowAsync<GroceryErp.Core.Errors.DomainException>(() => fixture.Assets.DisposeAsync(
+            asset, new DateOnly(2026, 8, 15), new Money(30000), OperationGuard.NewId(),
+            TestContext.Current.CancellationToken));
+
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<string?>("SELECT disposed_date FROM asset WHERE id=@asset", new { asset }).ShouldBeNull();
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM asset_depreciation WHERE asset_id=@asset", new { asset }).ShouldBe(5L);
+    }
+
+    [Fact]
+    public async Task BonusOnlySalaryRun_IsNotPreparedAgain()
+    {
+        using var fixture = new Fixture();
+        long employee = await fixture.MoneyOut.SaveEmployeeAsync(null,
+            new("Asha", null, null, new DateOnly(2026, 1, 1), null, new Money(1000), true, null),
+            TestContext.Current.CancellationToken);
+        YearMonth period = new(2026, 8);
+        await fixture.MoneyOut.PostSalaryRunAsync(new(period, fixture.Today, "BANK",
+            [new(employee, new Money(1000), new Money(1000), Money.Zero, new Money(100), null)]),
+            OperationGuard.NewId(), TestContext.Current.CancellationToken);
+
+        (await fixture.MoneyOut.PrepareSalaryRunAsync(period, TestContext.Current.CancellationToken)).ShouldBeEmpty();
+        await Should.ThrowAsync<GroceryErp.Core.Errors.DomainException>(() => fixture.MoneyOut.PostSalaryRunAsync(
+            new(period, fixture.Today, "BANK", [new(employee, new Money(1000), Money.Zero, Money.Zero, Money.Zero, null)]),
+            OperationGuard.NewId(), TestContext.Current.CancellationToken));
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM salary_payment WHERE employee_id=@employee", new { employee }).ShouldBe(1L);
+    }
+
     private sealed class Fixture : IDisposable
     {
         public Fixture(DateOnly? expiry = null)

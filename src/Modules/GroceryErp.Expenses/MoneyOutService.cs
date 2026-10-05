@@ -283,7 +283,7 @@ public sealed class MoneyOutService(
         database.ReadAsync(connection => (IReadOnlyList<SalaryRunLine>)connection.Query<SalaryPrepareRow>("""
             SELECT id AS EmployeeId,monthly_salary AS BaseSalary FROM employee
             WHERE is_active=1 AND (join_date IS NULL OR join_date<=@to) AND (leave_date IS NULL OR leave_date>=@from)
-              AND NOT EXISTS (SELECT 1 FROM salary_payment s WHERE s.employee_id=employee.id AND s.period_month=@period AND s.kind='SALARY')
+              AND NOT EXISTS (SELECT 1 FROM salary_payment s WHERE s.employee_id=employee.id AND s.period_month=@period AND s.kind IN ('SALARY','BONUS','OVERTIME'))
             ORDER BY name COLLATE NOCASE
             """, new { from = period.FirstDay, to = period.LastDay, period = period.ToString() })
             .Select(static row => new SalaryRunLine(row.EmployeeId, Money.FromScaled(row.BaseSalary), Money.Zero, Money.Zero, Money.Zero, null)).ToList(), cancellationToken);
@@ -299,6 +299,12 @@ public sealed class MoneyOutService(
             long firstId = 0;
             foreach (SalaryRunLine line in input.Lines)
             {
+                bool alreadyPaid = transaction.Connection.ExecuteScalar<long>("""
+                    SELECT EXISTS(SELECT 1 FROM salary_payment
+                                  WHERE employee_id=@employeeId AND period_month=@period
+                                    AND kind IN ('SALARY','BONUS','OVERTIME'))
+                    """, new { employeeId = line.EmployeeId, period = input.Period.ToString() }, transaction.Transaction) != 0;
+                if (alreadyPaid) throw new DomainException(ErrorCode.Validation, "Salary for this employee and month is already posted.");
                 Money salary = line.BaseSalary - line.LeaveDeduction;
                 if (salary > Money.Zero) firstId = InsertSalary(transaction, line.EmployeeId, input, "SALARY", salary, line.Notes, firstId);
                 if (line.Overtime > Money.Zero) firstId = InsertSalary(transaction, line.EmployeeId, input, "OVERTIME", line.Overtime, line.Notes, firstId);
@@ -393,7 +399,8 @@ public sealed class MoneyOutService(
             throw new DomainException(ErrorCode.Validation, "Invalid salary run.");
         foreach (SalaryRunLine line in input.Lines)
             if (line.EmployeeId <= 0 || line.BaseSalary < Money.Zero || line.LeaveDeduction < Money.Zero ||
-                line.LeaveDeduction > line.BaseSalary || line.Overtime < Money.Zero || line.Bonus < Money.Zero)
+                line.LeaveDeduction > line.BaseSalary || line.Overtime < Money.Zero || line.Bonus < Money.Zero ||
+                line.BaseSalary - line.LeaveDeduction + line.Overtime + line.Bonus <= Money.Zero)
                 throw new DomainException(ErrorCode.Validation, "Invalid salary line.");
     }
 
