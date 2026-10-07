@@ -14,39 +14,63 @@ internal static class ReportDefinitions
         {
             [ReportKind.SalesRegister] = new("Sales register", true, """
                 SELECT s.sale_date AS Date,s.invoice_no AS Invoice,s.status AS Status,s.line_count AS Items,
-                       s.taxable_total AS Taxable,s.tax_total AS Tax,s.round_off AS RoundOff,s.grand_total AS Total,
+                       CASE WHEN s.status='VOID' THEN 0 ELSE s.taxable_total END AS Taxable,
+                       CASE WHEN s.status='VOID' THEN 0 ELSE s.tax_total END AS Tax,
+                       CASE WHEN s.status='VOID' THEN 0 ELSE s.round_off END AS RoundOff,
+                       CASE WHEN s.status='VOID' THEN 0 ELSE s.grand_total END AS Total,
+                       s.grand_total AS OriginalTotal,
                        COALESCE((SELECT group_concat(mode, ', ') FROM (SELECT DISTINCT mode FROM sale_payment WHERE sale_id=s.id ORDER BY mode)),'') AS PaymentMode
                 FROM sale s WHERE s.sale_date BETWEEN @from AND @to AND s.status IN ('COMPLETED','VOID')
                   AND (@Status IS NULL OR s.status=@Status)
                   AND (@PaymentMode IS NULL OR EXISTS (SELECT 1 FROM sale_payment sp WHERE sp.sale_id=s.id AND sp.mode=@PaymentMode))
                 ORDER BY s.sale_date,s.id LIMIT @Limit
-                """, [D("Date", "Date"), T("Invoice", "Invoice"), T("Status", "Status"), I("Items", "Items"), M("Taxable", "Taxable"), M("Tax", "Tax"), M("RoundOff", "Round off"), M("Total", "Total"), T("PaymentMode", "Payment mode")]),
+                """, [D("Date", "Date"), T("Invoice", "Invoice"), T("Status", "Status"), I("Items", "Items"), M("Taxable", "Taxable"), M("Tax", "Tax"), M("RoundOff", "Round off"), M("Total", "Total"), M("OriginalTotal", "Original bill"), T("PaymentMode", "Payment mode")]),
 
             [ReportKind.ItemSales] = new("Item-wise sales", true, """
-                SELECT c.name AS Category,p.sku AS Sku,MAX(sl.product_name) AS Product,MAX(sl.product_name_local) AS LocalName,
-                       SUM(sl.qty) AS Quantity,SUM(sl.taxable_amount) AS Revenue,SUM(sl.cost_amount) AS Cost,
-                       SUM(sl.taxable_amount-sl.cost_amount) AS Margin
-                FROM sale_line sl JOIN sale s ON s.id=sl.sale_id JOIN product p ON p.id=sl.product_id JOIN category c ON c.id=p.category_id
-                WHERE s.status='COMPLETED' AND s.sale_date BETWEEN @from AND @to
-                GROUP BY c.id,sl.product_id ORDER BY c.name,Revenue DESC LIMIT @Limit
+                WITH movements AS (
+                  SELECT sl.product_id,sl.product_name,sl.product_name_local,sl.qty,sl.taxable_amount,sl.cost_amount
+                  FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
+                  WHERE s.status='COMPLETED' AND s.sale_date BETWEEN @from AND @to
+                  UNION ALL
+                  SELECT sl.product_id,sl.product_name,sl.product_name_local,-rl.qty,-rl.taxable_amount,-rl.cost_amount
+                  FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
+                  JOIN sale_line sl ON sl.id=rl.sale_line_id WHERE r.return_date BETWEEN @from AND @to
+                )
+                SELECT c.name AS Category,p.sku AS Sku,MAX(m.product_name) AS Product,MAX(m.product_name_local) AS LocalName,
+                       SUM(m.qty) AS Quantity,SUM(m.taxable_amount) AS Revenue,SUM(m.cost_amount) AS Cost,
+                       SUM(m.taxable_amount-m.cost_amount) AS Margin
+                FROM movements m JOIN product p ON p.id=m.product_id JOIN category c ON c.id=p.category_id
+                WHERE (@ProductId IS NULL OR m.product_id=@ProductId)
+                GROUP BY c.id,m.product_id ORDER BY c.name,Revenue DESC LIMIT @Limit
                 """, [T("Category", "Category"), T("Sku", "SKU"), T("Product", "Product"), T("LocalName", "Local name"), Q("Quantity", "Quantity"), M("Revenue", "Revenue"), M("Cost", "Cost"), M("Margin", "Margin")]),
 
             [ReportKind.CategorySales] = new("Category-wise sales and margin", true, """
-                WITH current_period AS (
-                  SELECT c.id,c.name,c.name_local,SUM(sl.qty) AS quantity,SUM(sl.taxable_amount) AS revenue,
-                         SUM(sl.cost_amount) AS cost,SUM(sl.taxable_amount-sl.cost_amount) AS margin
-                  FROM sale_line sl JOIN sale s ON s.id=sl.sale_id JOIN product p ON p.id=sl.product_id JOIN category c ON c.id=p.category_id
-                  WHERE s.status='COMPLETED' AND s.sale_date BETWEEN @from AND @to GROUP BY c.id
+                WITH movements AS (
+                  SELECT sl.product_id,s.sale_date AS entry_date,sl.qty,sl.taxable_amount,sl.cost_amount
+                  FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
+                  WHERE s.status='COMPLETED' AND s.sale_date BETWEEN @previousFrom AND @to
+                  UNION ALL
+                  SELECT sl.product_id,r.return_date,-rl.qty,-rl.taxable_amount,-rl.cost_amount
+                  FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
+                  JOIN sale_line sl ON sl.id=rl.sale_line_id WHERE r.return_date BETWEEN @previousFrom AND @to
+                ), current_period AS (
+                  SELECT c.id,c.name,c.name_local,SUM(m.qty) AS quantity,SUM(m.taxable_amount) AS revenue,
+                         SUM(m.cost_amount) AS cost,SUM(m.taxable_amount-m.cost_amount) AS margin
+                  FROM movements m JOIN product p ON p.id=m.product_id JOIN category c ON c.id=p.category_id
+                  WHERE m.entry_date BETWEEN @from AND @to GROUP BY c.id
                 ), previous_period AS (
-                  SELECT c.id,SUM(sl.taxable_amount) AS revenue,SUM(sl.taxable_amount-sl.cost_amount) AS margin
-                  FROM sale_line sl JOIN sale s ON s.id=sl.sale_id JOIN product p ON p.id=sl.product_id JOIN category c ON c.id=p.category_id
-                  WHERE s.status='COMPLETED' AND s.sale_date BETWEEN @previousFrom AND @previousTo GROUP BY c.id
+                  SELECT c.id,SUM(m.taxable_amount) AS revenue,SUM(m.taxable_amount-m.cost_amount) AS margin
+                  FROM movements m JOIN product p ON p.id=m.product_id JOIN category c ON c.id=p.category_id
+                  WHERE m.entry_date BETWEEN @previousFrom AND @previousTo GROUP BY c.id
                 )
-                SELECT cp.name AS Category,cp.name_local AS LocalName,cp.quantity AS Quantity,cp.revenue AS Revenue,
-                       cp.cost AS Cost,cp.margin AS Margin,
-                       CASE WHEN cp.revenue=0 THEN 0 ELSE CAST(ROUND(cp.margin*100000.0/cp.revenue) AS INTEGER) END AS MarginPercent,
+                SELECT c.name AS Category,c.name_local AS LocalName,
+                       COALESCE(cp.quantity,0) AS Quantity,COALESCE(cp.revenue,0) AS Revenue,
+                       COALESCE(cp.cost,0) AS Cost,COALESCE(cp.margin,0) AS Margin,
+                       CASE WHEN COALESCE(cp.revenue,0)=0 THEN 0 ELSE CAST(ROUND(cp.margin*100000.0/cp.revenue) AS INTEGER) END AS MarginPercent,
                        COALESCE(pp.revenue,0) AS PreviousRevenue,COALESCE(pp.margin,0) AS PreviousMargin
-                FROM current_period cp LEFT JOIN previous_period pp ON pp.id=cp.id ORDER BY cp.revenue DESC LIMIT @Limit
+                FROM (SELECT id FROM current_period UNION SELECT id FROM previous_period) ids
+                JOIN category c ON c.id=ids.id LEFT JOIN current_period cp ON cp.id=ids.id
+                LEFT JOIN previous_period pp ON pp.id=ids.id ORDER BY Revenue DESC LIMIT @Limit
                 """, [T("Category", "Category"), T("LocalName", "Local name"), Q("Quantity", "Quantity"), M("Revenue", "Revenue"), M("Cost", "Cost"), M("Margin", "Margin"), P("MarginPercent", "Margin %"), M("PreviousRevenue", "Previous revenue"), M("PreviousMargin", "Previous margin")]),
 
             [ReportKind.HourlySales] = new("Hourly sales heatmap", true, """
@@ -94,7 +118,9 @@ internal static class ReportDefinitions
                 SELECT e.bucket AS Status,e.sku AS Sku,e.name AS Product,e.name_local AS LocalName,e.lot_code AS Lot,
                        e.batch_no AS Batch,e.expiry_date AS Expiry,e.days_left AS DaysLeft,e.qty_on_hand AS Quantity,
                        e.value_at_cost AS CostValue,v.name AS Vendor
-                FROM v_expiry_alert e LEFT JOIN vendor v ON v.id=e.vendor_id ORDER BY e.days_left,e.name LIMIT @Limit
+                FROM v_expiry_alert e LEFT JOIN vendor v ON v.id=e.vendor_id
+                WHERE (@Status IS NULL OR e.bucket=@Status)
+                ORDER BY e.days_left,e.name LIMIT @Limit
                 """, [T("Status", "Status"), T("Sku", "SKU"), T("Product", "Product"), T("LocalName", "Local name"), T("Lot", "Lot"), T("Batch", "Batch"), D("Expiry", "Expiry"), I("DaysLeft", "Days left"), Q("Quantity", "Quantity"), M("CostValue", "Cost value"), T("Vendor", "Vendor")]),
 
             [ReportKind.Damages] = new("Damages", true, """
@@ -134,10 +160,11 @@ internal static class ReportDefinitions
                 SELECT v.name AS Vendor,v.gstin AS Gstin,v.phone AS Phone,v.opening_balance AS OpeningBalance,
                        COALESCE((SELECT SUM(p.grand_total) FROM purchase p WHERE p.vendor_id=v.id AND p.status='POSTED'),0) AS Purchases,
                        COALESCE((SELECT SUM(vp.amount) FROM vendor_payment vp WHERE vp.vendor_id=v.id),0) AS Payments,
+                       COALESCE((SELECT SUM(vr.credit_total) FROM vendor_return vr WHERE vr.vendor_id=v.id),0) AS Returns,
                        b.balance_due AS BalanceDue
                 FROM v_vendor_balance b JOIN vendor v ON v.id=b.vendor_id
                 WHERE (@VendorId IS NULL OR v.id=@VendorId) ORDER BY BalanceDue DESC LIMIT @Limit
-                """, [T("Vendor", "Vendor"), T("Gstin", "GSTIN"), T("Phone", "Phone"), M("OpeningBalance", "Opening balance"), M("Purchases", "Purchases"), M("Payments", "Payments"), M("BalanceDue", "Balance due")]),
+                """, [T("Vendor", "Vendor"), T("Gstin", "GSTIN"), T("Phone", "Phone"), M("OpeningBalance", "Opening balance"), M("Purchases", "Purchases"), M("Payments", "Payments"), M("Returns", "Supplier credits"), M("BalanceDue", "Balance due")]),
 
             [ReportKind.PurchaseRegister] = new("Purchase register", true, """
                 SELECT p.received_date AS Date,p.doc_no AS Document,v.name AS Vendor,v.gstin AS Gstin,p.vendor_invoice_no AS VendorInvoice,
@@ -147,15 +174,34 @@ internal static class ReportDefinitions
                 """, [D("Date", "Date"), T("Document", "Document"), T("Vendor", "Vendor"), T("Gstin", "GSTIN"), T("VendorInvoice", "Vendor invoice"), M("Subtotal", "Subtotal"), M("Discount", "Discount"), M("Tax", "Tax"), M("OtherCharges", "Other charges"), M("Total", "Total")]),
 
             [ReportKind.GstSummary] = new("GST summary (accountant)", true, """
-                SELECT 'OUTWARD' AS Direction,COALESCE(sl.hsn_code,'') AS Hsn,sl.tax_rate_pct AS Rate,
-                       SUM(sl.taxable_amount)-COALESCE((SELECT SUM(rl.taxable_amount) FROM sale_return_line rl JOIN sale_line rsl ON rsl.id=rl.sale_line_id JOIN sale_return r ON r.id=rl.sale_return_id WHERE COALESCE(rsl.hsn_code,'')=COALESCE(sl.hsn_code,'') AND rsl.tax_rate_pct=sl.tax_rate_pct AND r.return_date BETWEEN @from AND @to),0) AS Taxable,
-                       SUM(sl.tax_amount)-COALESCE((SELECT SUM(rl.tax_amount) FROM sale_return_line rl JOIN sale_line rsl ON rsl.id=rl.sale_line_id JOIN sale_return r ON r.id=rl.sale_return_id WHERE COALESCE(rsl.hsn_code,'')=COALESCE(sl.hsn_code,'') AND rsl.tax_rate_pct=sl.tax_rate_pct AND r.return_date BETWEEN @from AND @to),0) AS Tax
-                FROM sale_line sl JOIN sale s ON s.id=sl.sale_id WHERE s.status='COMPLETED' AND s.sale_date BETWEEN @from AND @to
-                GROUP BY COALESCE(sl.hsn_code,''),sl.tax_rate_pct
+                SELECT 'OUTWARD' AS Direction, Hsn, Rate, SUM(Taxable) AS Taxable, SUM(Tax) AS Tax
+                FROM (
+                  SELECT COALESCE(sl.hsn_code,'') AS Hsn,sl.tax_rate_pct AS Rate,
+                         sl.taxable_amount AS Taxable,sl.tax_amount AS Tax
+                  FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
+                  WHERE s.status='COMPLETED' AND s.sale_date BETWEEN @from AND @to
+                  UNION ALL
+                  SELECT COALESCE(sl.hsn_code,''),sl.tax_rate_pct,
+                         -rl.taxable_amount,-rl.tax_amount
+                  FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
+                  JOIN sale_line sl ON sl.id=rl.sale_line_id
+                  WHERE r.return_date BETWEEN @from AND @to
+                ) outward_lines GROUP BY Hsn,Rate
                 UNION ALL
-                SELECT 'INWARD',COALESCE(v.gstin,''),pl.tax_rate_pct,SUM(CAST(ROUND(pl.qty*pl.unit_cost/1000.0) AS INTEGER)-pl.discount),SUM(pl.tax_amount)
-                FROM purchase_line pl JOIN purchase p ON p.id=pl.purchase_id JOIN vendor v ON v.id=p.vendor_id
-                WHERE p.status='POSTED' AND p.received_date BETWEEN @from AND @to GROUP BY COALESCE(v.gstin,''),pl.tax_rate_pct
+                SELECT 'INWARD',Hsn,Rate,SUM(Taxable),SUM(Tax)
+                FROM (
+                  SELECT COALESCE(v.gstin,'') AS Hsn,pl.tax_rate_pct AS Rate,
+                         CAST(ROUND(pl.qty*pl.unit_cost/1000.0) AS INTEGER)-pl.discount AS Taxable,
+                         pl.tax_amount AS Tax
+                  FROM purchase_line pl JOIN purchase p ON p.id=pl.purchase_id JOIN vendor v ON v.id=p.vendor_id
+                  WHERE p.status='POSTED' AND p.received_date BETWEEN @from AND @to
+                  UNION ALL
+                  SELECT COALESCE(v.gstin,''),pl.tax_rate_pct,-vrl.credit_before_tax,-vrl.tax_credit
+                  FROM vendor_return_line vrl JOIN vendor_return vr ON vr.id=vrl.vendor_return_id
+                  JOIN vendor v ON v.id=vr.vendor_id JOIN product_lot l ON l.id=vrl.lot_id
+                  JOIN purchase_line pl ON pl.id=l.purchase_line_id
+                  WHERE vr.return_date BETWEEN @from AND @to
+                ) inward_lines GROUP BY Hsn,Rate
                 ORDER BY Direction,Hsn,Rate LIMIT @Limit
                 """, [T("Direction", "Direction"), T("Hsn", "HSN / vendor GSTIN"), P("Rate", "GST rate"), M("Taxable", "Taxable value"), M("Tax", "Tax")]),
 

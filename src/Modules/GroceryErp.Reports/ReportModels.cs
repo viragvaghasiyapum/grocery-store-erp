@@ -43,6 +43,7 @@ public sealed record PnlMatrix(DateRange Period, IReadOnlyList<string> MonthKeys
 public sealed record DashboardSummary(
     DateOnly AsOf,
     Money TodaySales,
+    Money TodayTaxableSales,
     int TodayBills,
     Money AverageBill,
     Money TodayGrossProfit,
@@ -78,7 +79,7 @@ public enum ReportValueKind { Text, Date, Count, Quantity, Money, Percent }
 public sealed record ReportColumn(string Key, string Heading, ReportValueKind Kind);
 public sealed record ReportRow(IReadOnlyDictionary<string, object?> Values);
 public sealed record TabularReport(string Title, DateRange? Period, IReadOnlyList<ReportColumn> Columns,
-    IReadOnlyList<ReportRow> Rows, IReadOnlyDictionary<string, decimal> Totals);
+    IReadOnlyList<ReportRow> Rows, IReadOnlyDictionary<string, decimal> Totals, bool IsTruncated = false);
 
 public sealed record ReportFilter(DateOnly? From = null, DateOnly? To = null, long? ProductId = null,
     long? LotId = null, long? VendorId = null, long? AssetId = null, string? Status = null, string? PaymentMode = null,

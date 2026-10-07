@@ -6,7 +6,9 @@ public sealed class ReportNavigationState
 {
     private ReportRequest? _pending;
 
-    public void Open(ReportKind kind, DateOnly from, DateOnly to) => _pending = new(kind, from, to);
+    public void Open(ReportKind kind, DateOnly from, DateOnly to, string? status = null,
+        string? paymentMode = null, long? productId = null) =>
+        _pending = new(kind, from, to, status, paymentMode, productId);
 
     public ReportRequest? Consume()
     {
@@ -16,4 +18,5 @@ public sealed class ReportNavigationState
     }
 }
 
-public sealed record ReportRequest(ReportKind Kind, DateOnly From, DateOnly To);
+public sealed record ReportRequest(ReportKind Kind, DateOnly From, DateOnly To,
+    string? Status, string? PaymentMode, long? ProductId);

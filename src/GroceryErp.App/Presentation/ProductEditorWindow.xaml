@@ -11,7 +11,7 @@
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-      <StackPanel>
+      <StackPanel Margin="0,0,18,0">
         <TextBlock FontSize="26" FontWeight="SemiBold" Text="{l:Tr Catalog_EditorTitle}" />
         <TextBlock x:Name="ErrorText" Margin="0,8,0,0" Foreground="Crimson" TextWrapping="Wrap" />
 

@@ -108,6 +108,7 @@ public partial class ShellWindow : FluentWindow
 
     internal void SetExpiryBadge(int count) => ExpiryInfoBadge.Value = count.ToString(CultureInfo.InvariantCulture);
     internal void OpenReports() => RootNavigation.Navigate(typeof(ReportsPage));
+    internal void OpenSettings() => RootNavigation.Navigate(typeof(SettingsPage));
 
     private async void Update_OnClick(object sender, RoutedEventArgs e)
     {

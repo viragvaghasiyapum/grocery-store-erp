@@ -4,6 +4,7 @@ using Dapper;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
+using GroceryErp.Localization;
 using GroceryErp.Reports;
 using Shouldly;
 using Xunit;
@@ -34,11 +35,20 @@ public sealed class ReportsTests
         statement.GrossMargin.Value.ShouldBe(40m);
         matrix.MonthKeys.ShouldBe(["2026-09"]);
         matrix.Rows.Single(static row => row.HeadCode == "SALES").Total.Value.ShouldBe(1000m);
+        matrix.Rows.Single(static row => row.HeadCode == "NET_PROFIT").Total.Value.ShouldBe(265m);
+        matrix.Rows.Single(static row => row.HeadCode == "GROSS_PROFIT").Months[0].Value.ShouldBe(360m);
         sales.Rows.Count.ShouldBe(1);
         salaries.Columns.ShouldContain(static column => column.Key == "2026-09");
         salaries.Rows.Count.ShouldBe(1);
         assetSchedule.Rows.Count.ShouldBe(4);
         assetSchedule.Rows[^1].Values["Status"].ShouldBe("PROJECTED");
+        string pnlPath = Path.Combine(fixture.Root, "pnl.xlsx");
+        fixture.Output.ExportPnlExcel(statement, pnlPath);
+        using var pnlWorkbook = new XLWorkbook(pnlPath);
+        IXLWorksheet pnlSheet = pnlWorkbook.Worksheet(1);
+        int grossRow = pnlSheet.RowsUsed().Single(row => row.Cell(1).GetString() == "Gross profit").RowNumber();
+        pnlSheet.Cell(grossRow, 3).GetDouble().ShouldBe(40d);
+        pnlSheet.Cell(grossRow, 3).Style.NumberFormat.Format.ShouldBe("#,##0.000");
     }
 
     [Fact]
@@ -54,6 +64,198 @@ public sealed class ReportsTests
                 new(From: new(2026, 9, 1), To: new(2026, 9, 30)), TestContext.Current.CancellationToken);
             report.Title.ShouldNotBeNullOrWhiteSpace();
         }
+    }
+
+    [Fact]
+    public async Task HourlySales_GroupsCompletedBillsAndLocalizesWeekdays()
+    {
+        using var fixture = new ReportFixture();
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("""
+                INSERT INTO sale(sale_date,status) VALUES ('2026-09-14','DRAFT'),('2026-09-14','DRAFT');
+                UPDATE sale SET status='COMPLETED',invoice_no='H-'||id,
+                    completed_at='2026-09-14 09:30:00',taxable_total=45000,grand_total=45000 WHERE id IN (1,2);
+                """);
+        TranslationSource translations = TranslationSource.Instance;
+        var original = translations.UiCulture;
+        try
+        {
+            translations.UiCulture = System.Globalization.CultureInfo.GetCultureInfo("gu-IN");
+            var service = new ReportService(fixture.Database, fixture.Settings,
+                new FixedClock(new DateOnly(2026, 9, 14)), translations);
+            TabularReport report = await service.GetReportAsync(ReportKind.HourlySales,
+                new(From: new(2026, 9, 14), To: new(2026, 9, 14)), TestContext.Current.CancellationToken);
+
+            ReportRow row = report.Rows.Single();
+            row.Values["Weekday"].ShouldBe(translations["Reports_Weekday_Mon"]);
+            row.Values["Hour"].ShouldBe(9L);
+            row.Values["Bills"].ShouldBe(2L);
+            row.Values["Revenue"].ShouldBe(90000L);
+        }
+        finally { translations.UiCulture = original; }
+    }
+
+    [Fact]
+    public async Task GstSummary_IncludesReturnsWhenOriginalSaleIsOutsidePeriod()
+    {
+        using var fixture = new ReportFixture();
+        fixture.SeedGoldenScenario();
+        using (var connection = fixture.Factory.Open())
+        {
+            connection.Execute("""
+                INSERT INTO sale(sale_date,status) VALUES ('2026-09-25','DRAFT');
+                INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,
+                    tax_rate_pct,hsn_code,taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+                VALUES (2,1,1,1,'Rice',1000,105000,5000,'1006',100000,5000,105000,60000,60000);
+                UPDATE sale SET invoice_no='S2',status='COMPLETED',line_count=1,
+                    taxable_total=100000,tax_total=5000,grand_total=105000,cost_total=60000
+                WHERE id=2;
+                INSERT INTO sale_return(return_no,sale_id,return_date,refund_mode,taxable_total,tax_total,refund_total,cost_total)
+                VALUES ('R2',2,'2026-10-02','CASH',100000,5000,105000,60000);
+                INSERT INTO sale_return_line(sale_return_id,sale_line_id,qty,taxable_amount,tax_amount,
+                    refund_amount,cost_amount)
+                VALUES (2,1,1000,100000,5000,105000,60000);
+                """);
+        }
+
+        TabularReport report = await fixture.Reports.GetReportAsync(ReportKind.GstSummary,
+            new(From: new(2026, 10, 1), To: new(2026, 10, 31)), TestContext.Current.CancellationToken);
+
+        ReportRow outward = report.Rows.Single(row => (string)row.Values["Direction"]! == "OUTWARD");
+        outward.Values["Hsn"].ShouldBe("1006");
+        outward.Values["Taxable"].ShouldBe(-100000L);
+        outward.Values["Tax"].ShouldBe(-5000L);
+        TabularReport items = await fixture.Reports.GetReportAsync(ReportKind.ItemSales,
+            new(From: new(2026, 10, 1), To: new(2026, 10, 31)), TestContext.Current.CancellationToken);
+        ReportRow item = items.Rows.First(row => row.Values.GetValueOrDefault("Sku")?.ToString() == "RICE");
+        item.Values["Quantity"].ShouldBe(-1000L);
+        item.Values["Revenue"].ShouldBe(-100000L);
+        TabularReport categories = await fixture.Reports.GetReportAsync(ReportKind.CategorySales,
+            new(From: new(2026, 10, 1), To: new(2026, 10, 31)), TestContext.Current.CancellationToken);
+        categories.Rows.Single().Values["Revenue"].ShouldBe(-100000L);
+    }
+
+    [Fact]
+    public async Task SalesRegister_VoidAmountsDoNotInflateTotals_AndLimitIsDisclosed()
+    {
+        using var fixture = new ReportFixture();
+        fixture.SeedGoldenScenario();
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("""
+                INSERT INTO sale(invoice_no,sale_date,status,void_reason,line_count,
+                    taxable_total,grand_total,cost_total)
+                VALUES ('S-VOID','2026-09-02','VOID','Entry correction',1,200000,200000,120000);
+                """);
+
+        var filter = new ReportFilter(From: new(2026, 9, 1), To: new(2026, 9, 30));
+        TabularReport full = await fixture.Reports.GetReportAsync(ReportKind.SalesRegister,
+            filter, TestContext.Current.CancellationToken);
+        ReportRow voidRow = full.Rows.Single(row => (string)row.Values["Status"]! == "VOID");
+        voidRow.Values["Total"].ShouldBe(0L);
+        voidRow.Values["OriginalTotal"].ShouldBe(200000L);
+        full.Totals["Total"].ShouldBe(1000m);
+        full.IsTruncated.ShouldBeFalse();
+
+        TabularReport limited = await fixture.Reports.GetReportAsync(ReportKind.SalesRegister,
+            filter with { Limit = 1 }, TestContext.Current.CancellationToken);
+        limited.Rows.Count.ShouldBe(1);
+        limited.IsTruncated.ShouldBeTrue();
+        limited.Totals["Total"].ShouldBe(0m);
+        string path = Path.Combine(fixture.Root, "partial.xlsx");
+        fixture.Output.ExportExcel(limited, path);
+        using var workbook = new XLWorkbook(path);
+        workbook.Worksheet(1).Cell(4, 1).GetString().ShouldContain("Partial report");
+    }
+
+    [Fact]
+    public async Task GstSummary_IncludesVendorCreditsWhenPurchaseIsOutsidePeriod()
+    {
+        using var fixture = new ReportFixture();
+        fixture.SeedGoldenScenario();
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("""
+                INSERT INTO vendor(name,gstin) VALUES ('Supplier','24ABCDE1234F1Z5');
+                INSERT INTO purchase(vendor_id,received_date,status) VALUES (1,'2026-09-10','DRAFT');
+                INSERT INTO purchase_line(purchase_id,line_no,product_id,qty,unit_cost,
+                    tax_rate_pct,tax_amount,line_total,landed_unit_cost,selling_price)
+                VALUES (1,1,1,1000,100000,5000,5000,105000,100000,120000);
+                UPDATE purchase SET status='POSTED',doc_no='P1',subtotal=100000,tax_total=5000,grand_total=105000 WHERE id=1;
+                INSERT INTO product_lot(product_id,lot_code,purchase_line_id,vendor_id,received_date,
+                    unit_cost,selling_price,qty_received)
+                VALUES (1,'RETURN-LOT',1,1,'2026-09-10',100000,120000,1000);
+                INSERT INTO vendor_return(doc_no,vendor_id,purchase_id,return_date,vendor_credit_no,reason,
+                    tax_mode,credit_before_tax,tax_credit,credit_total,cost_total)
+                VALUES ('VR1',1,1,'2026-10-02','CREDIT-1','Short dated','REGULAR',40000,2000,42000,40000);
+                INSERT INTO vendor_return_line(vendor_return_id,product_id,lot_id,qty,credit_before_tax,
+                    tax_credit,cost_value)
+                VALUES (1,1,2,400,40000,2000,40000);
+                """);
+
+        TabularReport report = await fixture.Reports.GetReportAsync(ReportKind.GstSummary,
+            new(From: new(2026, 10, 1), To: new(2026, 10, 31)), TestContext.Current.CancellationToken);
+
+        ReportRow inward = report.Rows.Single(row => (string)row.Values["Direction"]! == "INWARD");
+        inward.Values["Hsn"].ShouldBe("24ABCDE1234F1Z5");
+        inward.Values["Taxable"].ShouldBe(-40000L);
+        inward.Values["Tax"].ShouldBe(-2000L);
+        TabularReport payables = await fixture.Reports.GetReportAsync(ReportKind.VendorPayables,
+            new(To: new(2026, 10, 31)), TestContext.Current.CancellationToken);
+        payables.Rows.Single().Values["Returns"].ShouldBe(42000L);
+        payables.Rows.Single().Values["BalanceDue"].ShouldBe(63000L);
+    }
+
+    [Fact]
+    public async Task Reports_LocalizeHeadingsAndStatusWhileKeepingNumericValues()
+    {
+        using var fixture = new ReportFixture();
+        fixture.SeedGoldenScenario();
+        TranslationSource translations = TranslationSource.Instance;
+        var original = translations.UiCulture;
+        try
+        {
+            translations.UiCulture = System.Globalization.CultureInfo.GetCultureInfo("gu-IN");
+            var service = new ReportService(fixture.Database, fixture.Settings,
+                new FixedClock(new DateOnly(2026, 9, 27)), translations);
+            TabularReport report = await service.GetReportAsync(ReportKind.SalesRegister,
+                new(From: new(2026, 9, 1), To: new(2026, 9, 30)), TestContext.Current.CancellationToken);
+
+            report.Title.ShouldBe(translations["Reports_Kind_SalesRegister"]);
+            report.Columns[0].Heading.ShouldBe(translations["Reports_Column_Date"]);
+            report.Rows.Single().Values["Status"].ShouldBe(translations["Reports_StatusCompleted"]);
+            report.Rows.Single().Values["Total"].ShouldBe(1000000L);
+        }
+        finally
+        {
+            translations.UiCulture = original;
+        }
+    }
+
+    [Fact]
+    public async Task CategoryComparison_IncludesCategoriesWithOnlyPreviousPeriodSales()
+    {
+        using var fixture = new ReportFixture();
+        fixture.SeedGoldenScenario();
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("""
+                INSERT INTO category(name) VALUES ('Dairy');
+                INSERT INTO product(sku,name,category_id,uom_id)
+                VALUES ('MILK','Milk',2,(SELECT id FROM uom ORDER BY id LIMIT 1));
+                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,selling_price,qty_received)
+                VALUES (2,'MILK-LOT','2026-09-01',60000,100000,1000);
+                INSERT INTO sale(sale_date,status) VALUES ('2026-09-15','DRAFT');
+                INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,
+                    taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+                VALUES (2,1,2,2,'Milk',1000,100000,100000,0,100000,60000,60000);
+                UPDATE sale SET invoice_no='S2',status='COMPLETED',line_count=1,
+                    taxable_total=100000,grand_total=100000,cost_total=60000 WHERE id=2;
+                """);
+
+        TabularReport report = await fixture.Reports.GetReportAsync(ReportKind.CategorySales,
+            new(From: new(2026, 10, 1), To: new(2026, 10, 31)), TestContext.Current.CancellationToken);
+
+        ReportRow dairy = report.Rows.Single(row => (string)row.Values["Category"]! == "Dairy");
+        dairy.Values["Revenue"].ShouldBe(0L);
+        dairy.Values["PreviousRevenue"].ShouldBe(100000L);
     }
 
     [Fact]

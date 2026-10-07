@@ -4,7 +4,7 @@
  xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
  Title="{l:Tr Sales_Action}" Width="720" Height="570" MinWidth="620" MinHeight="500" WindowStartupLocation="CenterOwner"
  NumberSubstitution.Substitution="European">
- <Grid Margin="20">
+ <Grid x:Name="LayoutGrid" Margin="20">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <TextBlock Text="{l:Tr Stock_Reason}"/>
   <TextBox x:Name="ReasonBox" Grid.Row="1" Margin="0,6,0,16" Height="36"/>

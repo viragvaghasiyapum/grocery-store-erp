@@ -51,8 +51,10 @@
       </TabItem>
       <TabItem Header="{l:Tr Setup_StepData}">
         <StackPanel Margin="24"><TextBlock Style="{StaticResource SectionTitle}" Text="{l:Tr Setup_DataBackups}"/>
-          <TextBlock Margin="0,12,0,4" Text="{l:Tr Setup_DataFolder}"/><DockPanel><Button DockPanel.Dock="Right" Margin="8,0,0,0" Click="ChooseData_OnClick" Content="{l:Tr Settings_ChooseFolder}"/><TextBox x:Name="DataFolder" IsReadOnly="True"/></DockPanel>
-          <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_BackupFolder}"/><TextBox x:Name="BackupFolder"/>
+          <TextBlock Margin="0,12,0,4" Text="{l:Tr Setup_DataFolder}"/>
+          <TextBox x:Name="DataFolder" IsReadOnly="True" ToolTip="{Binding Text, ElementName=DataFolder}"/>
+          <Button HorizontalAlignment="Right" Margin="0,8,0,0" Click="ChooseData_OnClick" Content="{l:Tr Settings_ChooseFolder}"/>
+          <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_BackupFolder}"/><TextBox x:Name="BackupFolder" ToolTip="{Binding Text, ElementName=BackupFolder}"/>
           <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_UsbReminder}"/><ComboBox x:Name="UsbReminder" SelectedIndex="0"><ComboBoxItem Content="{l:Tr Setup_Every7Days}" Tag="7"/><ComboBoxItem Content="{l:Tr Setup_Every14Days}" Tag="14"/><ComboBoxItem Content="{l:Tr Setup_Every30Days}" Tag="30"/><ComboBoxItem Content="{l:Tr Setup_Every60Days}" Tag="60"/><ComboBoxItem Content="{l:Tr Setup_Every90Days}" Tag="90"/></ComboBox>
           <TextBlock Margin="0,12,0,0" Text="{l:Tr Setup_CloudWarning}" TextWrapping="Wrap"/>
         </StackPanel>

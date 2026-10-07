@@ -12,6 +12,7 @@ namespace GroceryErp.Reports;
 
 public sealed class ReportService(DbExecutor database, ISettings settings, IClock clock, TranslationSource? translations = null)
 {
+    private static readonly string[] LocalizedCodeKeys = ["Status", "Direction", "PaymentMode", "Method", "Weekday"];
     public DateRange ResolvePeriod(PnlPeriodKind kind, DateOnly? customFrom = null, DateOnly? customTo = null)
     {
         DateOnly today = clock.BusinessDate;
@@ -86,7 +87,26 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                         Label(group.Key.HeadCode, group.Key.ReferenceId, categories), cells,
                         Money.FromScaled(cells.Sum(static x => x.Scaled)));
                 }).ToList();
-            return new PnlMatrix(period, months, rows);
+            List<PnlMatrixRow> income = rows.Where(static row => row.Section == "INCOME").ToList();
+            List<PnlMatrixRow> cogs = rows.Where(static row => row.Section == "COGS").ToList();
+            List<PnlMatrixRow> expenses = rows.Where(static row => row.Section == "EXPENSE").ToList();
+            List<PnlMatrixRow> other = rows.Where(static row => row.Section == "OTHER").ToList();
+            Money[] netSales = SumMonths(income, months.Count);
+            Money[] grossProfit = SubtractMonths(netSales, SumMonths(cogs, months.Count));
+            Money[] totalExpenses = SumMonths(expenses, months.Count);
+            Money[] netProfit = AddMonths(SubtractMonths(grossProfit, totalExpenses), SumMonths(other, months.Count));
+            List<PnlMatrixRow> ordered =
+            [
+                ..income,
+                SummaryRow("NET_SALES", Text("Reports_Section_NetSales", "Net sales"), netSales),
+                ..cogs,
+                SummaryRow("GROSS_PROFIT", Text("Reports_Section_GrossProfit", "Gross profit"), grossProfit),
+                ..expenses,
+                SummaryRow("TOTAL_EXPENSES", Text("Reports_Section_TotalExpenses", "Total expenses"), totalExpenses),
+                ..other,
+                SummaryRow("NET_PROFIT", Text("Reports_Section_NetProfit", "Net profit"), netProfit),
+            ];
+            return new PnlMatrix(period, months, ordered);
         }, cancellationToken);
     }
 
@@ -100,6 +120,7 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         Task<DashboardCore> core = database.ReadAsync(connection => connection.QuerySingle<DashboardCore>("""
             SELECT
               COALESCE((SELECT sales FROM v_daily_sales WHERE sale_date=@today),0) AS TodaySales,
+              COALESCE((SELECT SUM(taxable_total) FROM sale WHERE status='COMPLETED' AND sale_date=@today),0) AS TodayTaxableSales,
               COALESCE((SELECT bills FROM v_daily_sales WHERE sale_date=@today),0) AS TodayBills,
               COALESCE((SELECT gross_profit FROM v_daily_sales WHERE sale_date=@today),0) AS TodayGrossProfit,
               COALESCE((SELECT SUM(grand_total) FROM sale WHERE status='COMPLETED' AND sale_date BETWEEN @monthStart AND @today),0) AS MonthSales,
@@ -122,18 +143,27 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         Task<(List<TopRaw> Revenue, List<TopRaw> Margin)> top = database.ReadAsync(connection =>
         {
             List<TopRaw> all = connection.Query<TopRaw>("""
-                SELECT sl.product_id AS ProductId,MAX(sl.product_name) AS Name,MAX(sl.product_name_local) AS LocalName,
-                       SUM(sl.qty) AS Quantity,SUM(sl.taxable_amount) AS Revenue,SUM(sl.cost_amount) AS Cost,
-                       SUM(sl.taxable_amount-sl.cost_amount) AS Margin
-                FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
-                WHERE s.status='COMPLETED' AND s.sale_date BETWEEN @from AND @today
-                GROUP BY sl.product_id
+                WITH movements AS (
+                  SELECT sl.product_id,sl.product_name,sl.product_name_local,sl.qty,
+                         sl.taxable_amount,sl.cost_amount
+                  FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
+                  WHERE s.status='COMPLETED' AND s.sale_date BETWEEN @from AND @today
+                  UNION ALL
+                  SELECT sl.product_id,sl.product_name,sl.product_name_local,-rl.qty,
+                         -rl.taxable_amount,-rl.cost_amount
+                  FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
+                  JOIN sale_line sl ON sl.id=rl.sale_line_id WHERE r.return_date BETWEEN @from AND @today
+                )
+                SELECT product_id AS ProductId,MAX(product_name) AS Name,MAX(product_name_local) AS LocalName,
+                       SUM(qty) AS Quantity,SUM(taxable_amount) AS Revenue,SUM(cost_amount) AS Cost,
+                       SUM(taxable_amount-cost_amount) AS Margin
+                FROM movements GROUP BY product_id
                 """, new { from = Iso(trendFrom), today = Iso(today) }).ToList();
             return (all.OrderByDescending(static x => x.Revenue).Take(10).ToList(), all.OrderByDescending(static x => x.Margin).Take(10).ToList());
         }, cancellationToken);
         await Task.WhenAll(core, payments, trend, top).ConfigureAwait(false);
         DashboardCore c = await core;
-        return new DashboardSummary(today, Money.FromScaled(c.TodaySales), c.TodayBills,
+        return new DashboardSummary(today, Money.FromScaled(c.TodaySales), Money.FromScaled(c.TodayTaxableSales), c.TodayBills,
             c.TodayBills == 0 ? Money.Zero : new Money(Fx3.FromScaled(c.TodaySales) / c.TodayBills), Money.FromScaled(c.TodayGrossProfit),
             Money.FromScaled(c.MonthSales), Money.FromScaled(c.PreviousMonthSales),
             (await payments).Select(static x => new PaymentSplit(x.Mode, Money.FromScaled(x.Amount))).ToList(),
@@ -175,14 +205,20 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                 previousFrom = Iso(previousFrom),
                 previousTo = Iso(previousTo),
                 slowFrom = Iso(to.AddDays(-filter.SlowMoverDays)),
-                filter.Limit
+                Limit = filter.Limit + 1
             });
             List<ReportRow> rows = queried.Select(static row => new ReportRow(
                 new Dictionary<string, object?>((IDictionary<string, object?>)row, StringComparer.OrdinalIgnoreCase))).ToList();
+            bool truncated = rows.Count > filter.Limit;
+            if (truncated) rows.RemoveAt(rows.Count - 1);
             Dictionary<string, decimal> totals = definition.Columns.Where(static c => c.Kind is ReportValueKind.Money or ReportValueKind.Quantity)
                 .ToDictionary(static c => c.Key, c => rows.Sum(row => ScaledDecimal(row.Values.GetValueOrDefault(c.Key))));
             if (kind == ReportKind.ItemSales) rows = AddCategorySubtotals(rows);
-            return new TabularReport(definition.Title, definition.UsesPeriod ? period : null, definition.Columns, rows, totals);
+            if (translations is not null) rows = rows.Select(LocalizeCodes).ToList();
+            IReadOnlyList<ReportColumn> columns = definition.Columns.Select(column =>
+                column with { Heading = Text($"Reports_Column_{column.Key}", column.Heading) }).ToList();
+            return new TabularReport(Text($"Reports_Kind_{kind}", definition.Title),
+                definition.UsesPeriod ? period : null, columns, rows, totals, truncated);
         }, cancellationToken);
     }
 
@@ -214,7 +250,12 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                 }).ToList();
             Dictionary<string, decimal> totals = months.Append("Total")
                 .ToDictionary(static month => month, month => rows.Sum(row => ScaledDecimal(row.Values.GetValueOrDefault(month))));
-            return new TabularReport("Salary register", period, columns, rows, totals);
+            return new TabularReport(Text("Reports_Kind_SalaryRegister", "Salary register"), period,
+                columns.Select(column => column with
+                {
+                    Heading = column.Key.Length == 7 && column.Key[4] == '-'
+                    ? column.Heading : Text($"Reports_Column_{column.Key}", column.Heading)
+                }).ToList(), rows, totals);
         }, cancellationToken);
 
     private Task<TabularReport> GetAssetScheduleAsync(long? assetId, DateRange period, CancellationToken cancellationToken) =>
@@ -228,13 +269,14 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                 new("Depreciation", "Depreciation", ReportValueKind.Money),
                 new("Closing", "Closing value", ReportValueKind.Money),
             ];
-            if (assetId is null) return new TabularReport("Asset depreciation schedule", period, columns, [], new Dictionary<string, decimal>());
+            columns = columns.Select(column => column with { Heading = Text($"Reports_Column_{column.Key}", column.Heading) }).ToList();
+            if (assetId is null) return new TabularReport(Text("Reports_Kind_AssetSchedule", "Asset depreciation schedule"), period, columns, [], new Dictionary<string, decimal>());
             AssetRaw? asset = connection.QuerySingleOrDefault<AssetRaw>("""
                 SELECT id AS Id,name AS Name,cost AS Cost,salvage_value AS Salvage,rate_pct AS Rate,
                        method AS Method,in_use_from AS InUseFrom,disposed_date AS DisposedDate
                 FROM asset WHERE id=@assetId
                 """, new { assetId });
-            if (asset is null) return new TabularReport("Asset depreciation schedule", period, columns, [], new Dictionary<string, decimal>());
+            if (asset is null) return new TabularReport(Text("Reports_Kind_AssetSchedule", "Asset depreciation schedule"), period, columns, [], new Dictionary<string, decimal>());
             List<AssetPeriodRaw> posted = connection.Query<AssetPeriodRaw>("""
                 SELECT period_month AS Period,opening_value AS Opening,amount AS Amount,closing_value AS Closing
                 FROM asset_depreciation WHERE asset_id=@assetId ORDER BY period_month
@@ -270,7 +312,8 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                 .Select(row => new ReportRow(new Dictionary<string, object?>
                 {
                     ["Period"] = row.Period,
-                    ["Status"] = schedule.ContainsKey(YearMonth.Parse(row.Period)) ? "POSTED" : "PROJECTED",
+                    ["Status"] = schedule.ContainsKey(YearMonth.Parse(row.Period))
+                        ? Text("Reports_Value_POSTED", "POSTED") : Text("Reports_Value_PROJECTED", "PROJECTED"),
                     ["Opening"] = row.Opening,
                     ["Depreciation"] = row.Amount,
                     ["Closing"] = row.Closing,
@@ -292,7 +335,19 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         return months;
     }
 
-    private static List<ReportRow> AddCategorySubtotals(List<ReportRow> rows)
+    private static Money[] SumMonths(IReadOnlyList<PnlMatrixRow> rows, int count) =>
+        Enumerable.Range(0, count).Select(index => Money.FromScaled(rows.Sum(row => row.Months[index].Scaled))).ToArray();
+
+    private static Money[] SubtractMonths(Money[] left, Money[] right) =>
+        Enumerable.Range(0, left.Length).Select(index => left[index] - right[index]).ToArray();
+
+    private static Money[] AddMonths(Money[] left, Money[] right) =>
+        Enumerable.Range(0, left.Length).Select(index => left[index] + right[index]).ToArray();
+
+    private static PnlMatrixRow SummaryRow(string code, string label, Money[] months) =>
+        new("TOTAL", code, null, label, months, Money.FromScaled(months.Sum(static month => month.Scaled)));
+
+    private List<ReportRow> AddCategorySubtotals(List<ReportRow> rows)
     {
         var result = new List<ReportRow>(rows.Count + rows.Count / 4);
         foreach (IGrouping<string, ReportRow> group in rows.GroupBy(row => Convert.ToString(row.Values.GetValueOrDefault("Category"), CultureInfo.InvariantCulture) ?? ""))
@@ -301,7 +356,7 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
             result.Add(new ReportRow(new Dictionary<string, object?>
             {
                 ["Category"] = group.Key,
-                ["Product"] = "Subtotal",
+                ["Product"] = Text("Reports_Subtotal", "Subtotal"),
                 ["Quantity"] = group.Sum(row => Convert.ToInt64(row.Values.GetValueOrDefault("Quantity") ?? 0, CultureInfo.InvariantCulture)),
                 ["Revenue"] = group.Sum(row => Convert.ToInt64(row.Values.GetValueOrDefault("Revenue") ?? 0, CultureInfo.InvariantCulture)),
                 ["Cost"] = group.Sum(row => Convert.ToInt64(row.Values.GetValueOrDefault("Cost") ?? 0, CultureInfo.InvariantCulture)),
@@ -310,6 +365,41 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         }
         return result;
     }
+
+    private ReportRow LocalizeCodes(ReportRow row)
+    {
+        var values = new Dictionary<string, object?>(row.Values, StringComparer.OrdinalIgnoreCase);
+        foreach (string key in LocalizedCodeKeys)
+        {
+            if (values.GetValueOrDefault(key) is not string code || code.Length == 0) continue;
+            values[key] = key == "PaymentMode"
+                ? string.Join(", ", code.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                    .Select(TranslateCode))
+                : TranslateCode(code);
+        }
+        return new ReportRow(values);
+    }
+
+    private string TranslateCode(string code) => code switch
+    {
+        "COMPLETED" => Text("Reports_StatusCompleted", code),
+        "VOID" => Text("Reports_StatusVoid", code),
+        "EXPIRED" => Text("Reports_StatusExpired", code),
+        "CRITICAL" => Text("Reports_StatusCritical", code),
+        "SOON" => Text("Reports_StatusSoon", code),
+        "POSTED" => Text("Reports_Value_POSTED", code),
+        "PROJECTED" => Text("Reports_Value_PROJECTED", code),
+        "OUTWARD" => Text("Reports_Value_OUTWARD", code),
+        "INWARD" => Text("Reports_Value_INWARD", code),
+        "CASH" => Text("Reports_PaymentCash", code),
+        "UPI" => Text("Reports_PaymentUpi", code),
+        "CARD" => Text("Reports_PaymentCard", code),
+        "OTHER" => Text("Reports_PaymentOther", code),
+        "SLM" => Text("Reports_Value_SLM", code),
+        "WDV" => Text("Reports_Value_WDV", code),
+        "Mon" or "Tue" or "Wed" or "Thu" or "Fri" or "Sat" or "Sun" => Text($"Reports_Weekday_{code}", code),
+        _ => code,
+    };
 
     private DateRange Fiscal(DateOnly today, int yearOffset)
     {
@@ -383,7 +473,7 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
 
     private class PnlRaw { public string Section { get; init; } = ""; public string HeadCode { get; init; } = ""; public long? ReferenceId { get; init; } public long Amount { get; init; } }
     private sealed class PnlMonthRaw : PnlRaw { public string Month { get; init; } = ""; }
-    private sealed class DashboardCore { public long TodaySales { get; init; } public int TodayBills { get; init; } public long TodayGrossProfit { get; init; } public long MonthSales { get; init; } public long PreviousMonthSales { get; init; } public int ExpiredLots { get; init; } public int CriticalLots { get; init; } public int SoonLots { get; init; } public int LowStockProducts { get; init; } public long StockValue { get; init; } public long Payables { get; init; } }
+    private sealed class DashboardCore { public long TodaySales { get; init; } public long TodayTaxableSales { get; init; } public int TodayBills { get; init; } public long TodayGrossProfit { get; init; } public long MonthSales { get; init; } public long PreviousMonthSales { get; init; } public int ExpiredLots { get; init; } public int CriticalLots { get; init; } public int SoonLots { get; init; } public int LowStockProducts { get; init; } public long StockValue { get; init; } public long Payables { get; init; } }
     private sealed class PaymentRaw { public string Mode { get; init; } = ""; public long Amount { get; init; } }
     private sealed class TrendRaw { public DateOnly Date { get; init; } public long Sales { get; init; } public int Bills { get; init; } public long GrossProfit { get; init; } }
     private sealed class TopRaw { public long ProductId { get; init; } public string Name { get; init; } = ""; public string? LocalName { get; init; } public long Quantity { get; init; } public long Revenue { get; init; } public long Cost { get; init; } public long Margin { get; init; } }

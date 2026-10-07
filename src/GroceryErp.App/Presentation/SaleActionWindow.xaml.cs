@@ -17,7 +17,16 @@ public partial class SaleActionWindow : Window
     {
         InitializeComponent();
         _isReturn = isReturn;
+        Title = TranslationSource.Instance[isReturn ? "Sales_Return" : "Sales_Void"];
         ReturnFields.Visibility = isReturn ? Visibility.Visible : Visibility.Collapsed;
+        if (!isReturn)
+        {
+            LayoutGrid.RowDefinitions[2].Height = new GridLength(0);
+            Width = 520;
+            Height = 240;
+            MinWidth = 480;
+            MinHeight = 220;
+        }
         _entries = lines?.Select(static line => new ReturnEntry(line)).ToArray() ?? [];
         ReturnGrid.ItemsSource = _entries;
     }

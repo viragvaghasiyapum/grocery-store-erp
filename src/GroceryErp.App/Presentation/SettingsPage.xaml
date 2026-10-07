@@ -29,11 +29,11 @@
         <StackPanel>
           <TextBlock FontSize="20" FontWeight="SemiBold" Text="{l:Tr Settings_DataTitle}"/>
           <TextBlock Margin="0,12,0,4" Text="{l:Tr Setup_DataFolder}"/>
-          <TextBox x:Name="DataRoot" IsReadOnly="True"/>
+          <TextBox x:Name="DataRoot" IsReadOnly="True" ToolTip="{Binding Text, ElementName=DataRoot}"/>
           <Button x:Name="MoveDataButton" HorizontalAlignment="Left" Margin="0,10,0,2" Click="MoveData_OnClick" Content="{l:Tr Settings_MoveData}"/>
           <TextBlock Text="{l:Tr Settings_MoveDataHelp}" TextWrapping="Wrap" Opacity="0.72"/>
           <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_BackupFolder}"/>
-          <TextBox x:Name="BackupFolder" IsReadOnly="True"/>
+          <TextBox x:Name="BackupFolder" IsReadOnly="True" ToolTip="{Binding Text, ElementName=BackupFolder}"/>
         </StackPanel>
       </Border>
 

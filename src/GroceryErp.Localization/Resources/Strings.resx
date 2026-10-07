@@ -11,7 +11,7 @@
   <data name="Shell_Gujarati" xml:space="preserve"><value>Gujarati</value></data>
   <data name="Demo_Navigation" xml:space="preserve"><value>Welcome</value></data>
   <data name="Demo_Title" xml:space="preserve"><value>Your store, ready for business</value></data>
-  <data name="Demo_Body" xml:space="preserve"><value>This offline workspace is ready for the next implementation phase.</value></data>
+  <data name="Demo_Body" xml:space="preserve"><value>Use the menu to manage your store. The amount and date below are formatting examples.</value></data>
   <data name="Demo_AmountLabel" xml:space="preserve"><value>Sample amount</value></data>
   <data name="Demo_DateLabel" xml:space="preserve"><value>Sample date</value></data>
   <data name="Setup_Title" xml:space="preserve"><value>Set up Grocery ERP</value></data>
@@ -219,7 +219,7 @@
   <data name="Catalog_TaxPercent" xml:space="preserve"><value>Tax percentage</value></data>
   <data name="Catalog_BulkEdit" xml:space="preserve"><value>Bulk edit</value></data>
   <data name="Catalog_Apply" xml:space="preserve"><value>Apply</value></data>
-  <data name="Catalog_SelectedCount" xml:space="preserve"><value>{0} products selected</value></data>
+  <data name="Catalog_SelectedCount" xml:space="preserve"><value>Products selected: {0}</value></data>
   <data name="Catalog_BulkComplete" xml:space="preserve"><value>{0} products updated.</value></data>
   <data name="Purchasing_Navigation" xml:space="preserve"><value>Purchases</value></data>
   <data name="Purchasing_Title" xml:space="preserve"><value>Purchases and vendors</value></data>
@@ -774,4 +774,177 @@
   <data name="Purchasing_ReturnPosted" xml:space="preserve"><value>Vendor return {0} posted.</value></data>
   <data name="Pnl_Head_VendorReturnVariance" xml:space="preserve"><value>Vendor return variance</value></data>
   <data name="Stock_SourceDoc_VendorReturn" xml:space="preserve"><value>Vendor return</value></data>
+  <data name="Reports_Report" xml:space="preserve"><value>Report</value></data>
+  <data name="Reports_Period" xml:space="preserve"><value>Period</value></data>
+  <data name="Reports_From" xml:space="preserve"><value>From</value></data>
+  <data name="Reports_To" xml:space="preserve"><value>To</value></data>
+  <data name="Reports_MoreFilters" xml:space="preserve"><value>More filters</value></data>
+  <data name="Reports_Status" xml:space="preserve"><value>Status</value></data>
+  <data name="Reports_Payment" xml:space="preserve"><value>Payment mode</value></data>
+  <data name="Reports_InvalidDates" xml:space="preserve"><value>End date must be on or after start date.</value></data>
+  <data name="Reports_InvalidFilter" xml:space="preserve"><value>Enter a valid positive filter value.</value></data>
+  <data name="Reports_MonthCount" xml:space="preserve"><value>{0} months</value></data>
+  <data name="Reports_RowCount" xml:space="preserve"><value>{0} rows</value></data>
+  <data name="Reports_Period_ThisMonth" xml:space="preserve"><value>This month</value></data>
+  <data name="Reports_Period_LastMonth" xml:space="preserve"><value>Last month</value></data>
+  <data name="Reports_Period_ThisFiscalYear" xml:space="preserve"><value>This fiscal year</value></data>
+  <data name="Reports_Period_LastFiscalYear" xml:space="preserve"><value>Last fiscal year</value></data>
+  <data name="Reports_Period_Custom" xml:space="preserve"><value>Custom</value></data>
+  <data name="Reports_Kind_ProfitAndLoss" xml:space="preserve"><value>Profit and loss</value></data>
+  <data name="Reports_Kind_SalesRegister" xml:space="preserve"><value>Sales register</value></data>
+  <data name="Reports_Kind_ItemSales" xml:space="preserve"><value>Item-wise sales</value></data>
+  <data name="Reports_Kind_CategorySales" xml:space="preserve"><value>Category-wise sales and margin</value></data>
+  <data name="Reports_Kind_HourlySales" xml:space="preserve"><value>Hourly sales</value></data>
+  <data name="Reports_Kind_StockValue" xml:space="preserve"><value>Stock value</value></data>
+  <data name="Reports_Kind_StockLedger" xml:space="preserve"><value>Stock ledger</value></data>
+  <data name="Reports_Kind_LowStock" xml:space="preserve"><value>Low stock and reorder</value></data>
+  <data name="Reports_Kind_SlowMovers" xml:space="preserve"><value>Slow movers</value></data>
+  <data name="Reports_Kind_Expiry" xml:space="preserve"><value>Expiry</value></data>
+  <data name="Reports_Kind_Damages" xml:space="preserve"><value>Damages</value></data>
+  <data name="Reports_Kind_Expenses" xml:space="preserve"><value>Expenses by category</value></data>
+  <data name="Reports_Kind_SalaryRegister" xml:space="preserve"><value>Salary register</value></data>
+  <data name="Reports_Kind_AssetRegister" xml:space="preserve"><value>Asset register</value></data>
+  <data name="Reports_Kind_VendorPayables" xml:space="preserve"><value>Vendor payables</value></data>
+  <data name="Reports_Kind_PurchaseRegister" xml:space="preserve"><value>Purchase register</value></data>
+  <data name="Reports_Kind_GstSummary" xml:space="preserve"><value>GST summary</value></data>
+  <data name="Reports_Kind_AuditLog" xml:space="preserve"><value>Audit log</value></data>
+  <data name="Reports_Kind_AssetSchedule" xml:space="preserve"><value>Asset depreciation schedule</value></data>
+  <data name="Reports_Column_AccumulatedDepreciation" xml:space="preserve"><value>Accumulated depreciation</value></data>
+  <data name="Reports_Column_Action" xml:space="preserve"><value>Action</value></data>
+  <data name="Reports_Column_Amount" xml:space="preserve"><value>Amount</value></data>
+  <data name="Reports_Column_Asset" xml:space="preserve"><value>Asset</value></data>
+  <data name="Reports_Column_AverageDailySales" xml:space="preserve"><value>30-day average/day</value></data>
+  <data name="Reports_Column_BalanceDue" xml:space="preserve"><value>Balance due</value></data>
+  <data name="Reports_Column_Batch" xml:space="preserve"><value>Batch</value></data>
+  <data name="Reports_Column_Bills" xml:space="preserve"><value>Bills</value></data>
+  <data name="Reports_Column_BookValue" xml:space="preserve"><value>Book value</value></data>
+  <data name="Reports_Column_Category" xml:space="preserve"><value>Category</value></data>
+  <data name="Reports_Column_Cost" xml:space="preserve"><value>Cost</value></data>
+  <data name="Reports_Column_CostValue" xml:space="preserve"><value>Cost value</value></data>
+  <data name="Reports_Column_Date" xml:space="preserve"><value>Date</value></data>
+  <data name="Reports_Column_DaysLeft" xml:space="preserve"><value>Days left</value></data>
+  <data name="Reports_Column_Details" xml:space="preserve"><value>Details</value></data>
+  <data name="Reports_Column_Direction" xml:space="preserve"><value>Direction</value></data>
+  <data name="Reports_Column_Discount" xml:space="preserve"><value>Discount</value></data>
+  <data name="Reports_Column_DisposalValue" xml:space="preserve"><value>Disposal value</value></data>
+  <data name="Reports_Column_DisposedDate" xml:space="preserve"><value>Disposed</value></data>
+  <data name="Reports_Column_Document" xml:space="preserve"><value>Document</value></data>
+  <data name="Reports_Column_Employee" xml:space="preserve"><value>Employee</value></data>
+  <data name="Reports_Column_Entity" xml:space="preserve"><value>Entity</value></data>
+  <data name="Reports_Column_EntityId" xml:space="preserve"><value>Entity ID</value></data>
+  <data name="Reports_Column_Entries" xml:space="preserve"><value>Entries</value></data>
+  <data name="Reports_Column_Expiry" xml:space="preserve"><value>Expiry</value></data>
+  <data name="Reports_Column_Gstin" xml:space="preserve"><value>GSTIN</value></data>
+  <data name="Reports_Column_Hour" xml:space="preserve"><value>Hour</value></data>
+  <data name="Reports_Column_Hsn" xml:space="preserve"><value>HSN / vendor GSTIN</value></data>
+  <data name="Reports_Column_InUseFrom" xml:space="preserve"><value>In use</value></data>
+  <data name="Reports_Column_Invoice" xml:space="preserve"><value>Invoice</value></data>
+  <data name="Reports_Column_Items" xml:space="preserve"><value>Items</value></data>
+  <data name="Reports_Column_LastSold" xml:space="preserve"><value>Last sold</value></data>
+  <data name="Reports_Column_LocalName" xml:space="preserve"><value>Local name</value></data>
+  <data name="Reports_Column_Lot" xml:space="preserve"><value>Lot</value></data>
+  <data name="Reports_Column_Margin" xml:space="preserve"><value>Margin</value></data>
+  <data name="Reports_Column_MarginPercent" xml:space="preserve"><value>Margin %</value></data>
+  <data name="Reports_Column_Method" xml:space="preserve"><value>Method</value></data>
+  <data name="Reports_Column_Month" xml:space="preserve"><value>Month</value></data>
+  <data name="Reports_Column_MrpValue" xml:space="preserve"><value>MRP value</value></data>
+  <data name="Reports_Column_Note" xml:space="preserve"><value>Note</value></data>
+  <data name="Reports_Column_OpeningBalance" xml:space="preserve"><value>Opening balance</value></data>
+  <data name="Reports_Column_Other" xml:space="preserve"><value>Other</value></data>
+  <data name="Reports_Column_OtherCharges" xml:space="preserve"><value>Other charges</value></data>
+  <data name="Reports_Column_PaymentMode" xml:space="preserve"><value>Payment mode</value></data>
+  <data name="Reports_Column_Payments" xml:space="preserve"><value>Payments</value></data>
+  <data name="Reports_Column_Phone" xml:space="preserve"><value>Phone</value></data>
+  <data name="Reports_Column_PreviousMargin" xml:space="preserve"><value>Previous margin</value></data>
+  <data name="Reports_Column_PreviousRevenue" xml:space="preserve"><value>Previous revenue</value></data>
+  <data name="Reports_Column_Product" xml:space="preserve"><value>Product</value></data>
+  <data name="Reports_Column_PurchaseDate" xml:space="preserve"><value>Purchased</value></data>
+  <data name="Reports_Column_Purchases" xml:space="preserve"><value>Purchases</value></data>
+  <data name="Reports_Column_Quantity" xml:space="preserve"><value>Quantity</value></data>
+  <data name="Reports_Column_Rate" xml:space="preserve"><value>Rate %</value></data>
+  <data name="Reports_Column_Reason" xml:space="preserve"><value>Reason</value></data>
+  <data name="Reports_Column_Recovered" xml:space="preserve"><value>Recovered</value></data>
+  <data name="Reports_Column_ReferenceId" xml:space="preserve"><value>Reference</value></data>
+  <data name="Reports_Column_ReferenceType" xml:space="preserve"><value>Reference type</value></data>
+  <data name="Reports_Column_ReorderLevel" xml:space="preserve"><value>Reorder level</value></data>
+  <data name="Reports_Column_Revenue" xml:space="preserve"><value>Revenue</value></data>
+  <data name="Reports_Column_Role" xml:space="preserve"><value>Role</value></data>
+  <data name="Reports_Column_RoundOff" xml:space="preserve"><value>Round off</value></data>
+  <data name="Reports_Column_Salary" xml:space="preserve"><value>Salary</value></data>
+  <data name="Reports_Column_SellingValue" xml:space="preserve"><value>Selling value</value></data>
+  <data name="Reports_Column_Sku" xml:space="preserve"><value>SKU</value></data>
+  <data name="Reports_Column_Status" xml:space="preserve"><value>Status</value></data>
+  <data name="Reports_Column_Subtotal" xml:space="preserve"><value>Subtotal</value></data>
+  <data name="Reports_Column_SuggestedOrder" xml:space="preserve"><value>Suggested order</value></data>
+  <data name="Reports_Column_Tax" xml:space="preserve"><value>Tax</value></data>
+  <data name="Reports_Column_Taxable" xml:space="preserve"><value>Taxable value</value></data>
+  <data name="Reports_Column_Timestamp" xml:space="preserve"><value>Timestamp</value></data>
+  <data name="Reports_Column_Total" xml:space="preserve"><value>Total</value></data>
+  <data name="Reports_Column_Type" xml:space="preserve"><value>Type</value></data>
+  <data name="Reports_Column_UnitCost" xml:space="preserve"><value>Unit cost</value></data>
+  <data name="Reports_Column_Value" xml:space="preserve"><value>Value tied up</value></data>
+  <data name="Reports_Column_Vendor" xml:space="preserve"><value>Vendor</value></data>
+  <data name="Reports_Column_VendorInvoice" xml:space="preserve"><value>Vendor invoice</value></data>
+  <data name="Reports_Column_Weekday" xml:space="preserve"><value>Weekday</value></data>
+  <data name="Reports_Column_Label" xml:space="preserve"><value>Particulars</value></data>
+  <data name="Reports_Column_Opening" xml:space="preserve"><value>Opening value</value></data>
+  <data name="Reports_Column_Closing" xml:space="preserve"><value>Closing value</value></data>
+  <data name="Reports_Column_Depreciation" xml:space="preserve"><value>Depreciation</value></data>
+  <data name="Reports_Column_Period" xml:space="preserve"><value>Period</value></data>
+  <data name="Reports_PnlSummary" xml:space="preserve"><value>Gross profit ₹{0:N3} ({1:N3}%) · Net profit ₹{2:N3} ({3:N3}%)</value></data>
+  <data name="Reports_PreviousNet" xml:space="preserve"><value> · Previous ₹{0:N3}</value></data>
+  <data name="Reports_MatrixTitle" xml:space="preserve"><value>Profit and loss — monthly matrix</value></data>
+  <data name="Reports_Section_Income" xml:space="preserve"><value>Income</value></data>
+  <data name="Reports_Section_NetSales" xml:space="preserve"><value>Net sales</value></data>
+  <data name="Reports_Section_Cogs" xml:space="preserve"><value>Cost of goods sold</value></data>
+  <data name="Reports_Section_GrossProfit" xml:space="preserve"><value>Gross profit</value></data>
+  <data name="Reports_Section_Expenses" xml:space="preserve"><value>Operating expenses</value></data>
+  <data name="Reports_Section_TotalExpenses" xml:space="preserve"><value>Total expenses</value></data>
+  <data name="Reports_Section_OtherIncome" xml:space="preserve"><value>Other income</value></data>
+  <data name="Reports_Section_NetProfit" xml:space="preserve"><value>Net profit</value></data>
+  <data name="Dashboard_TodayDetails" xml:space="preserve"><value>{0} bills · average ₹{1:N3} · margin {2:N3}%</value></data>
+  <data name="Dashboard_MonthDetails" xml:space="preserve"><value>Previous comparable period ₹{0:N3}</value></data>
+  <data name="Dashboard_AttentionDetails" xml:space="preserve"><value>{0} expired · {1} critical · {2} soon · {3} low stock</value></data>
+  <data name="Dashboard_NoPayments" xml:space="preserve"><value>No payments today</value></data>
+  <data name="Dashboard_Payments" xml:space="preserve"><value>Payments today:</value></data>
+  <data name="Dashboard_BackupDetails" xml:space="preserve"><value>Last backup: {0} · USB export: {1}</value></data>
+  <data name="Dashboard_TrendDates" xml:space="preserve"><value>{0} to {1}</value></data>
+  <data name="Reports_Print_Band" xml:space="preserve"><value>Columns</value></data>
+  <data name="Reports_Print_Page" xml:space="preserve"><value>Page</value></data>
+  <data name="Reports_Print_Printed" xml:space="preserve"><value>Printed</value></data>
+  <data name="Reports_Column_OriginalTotal" xml:space="preserve"><value>Original bill</value></data>
+  <data name="Reports_TruncatedRows" xml:space="preserve"><value>Showing first {0} rows · totals and exports are partial</value></data>
+  <data name="Reports_PartialExport" xml:space="preserve"><value>Partial report: totals include displayed rows only.</value></data>
+  <data name="Reports_AllStatuses" xml:space="preserve"><value>All statuses</value></data>
+  <data name="Reports_StatusCompleted" xml:space="preserve"><value>Completed</value></data>
+  <data name="Reports_StatusVoid" xml:space="preserve"><value>Void</value></data>
+  <data name="Reports_AllPayments" xml:space="preserve"><value>All payments</value></data>
+  <data name="Reports_PaymentCash" xml:space="preserve"><value>Cash</value></data>
+  <data name="Reports_PaymentUpi" xml:space="preserve"><value>UPI</value></data>
+  <data name="Reports_PaymentCard" xml:space="preserve"><value>Card</value></data>
+  <data name="Reports_PaymentOther" xml:space="preserve"><value>Other</value></data>
+  <data name="Reports_StatusExpired" xml:space="preserve"><value>Expired</value></data>
+  <data name="Reports_StatusCritical" xml:space="preserve"><value>Critical</value></data>
+  <data name="Reports_StatusSoon" xml:space="preserve"><value>Soon</value></data>
+  <data name="Dashboard_ExpiredCount" xml:space="preserve"><value>{0} expired</value></data>
+  <data name="Dashboard_CriticalCount" xml:space="preserve"><value>{0} critical</value></data>
+  <data name="Dashboard_SoonCount" xml:space="preserve"><value>{0} soon</value></data>
+  <data name="Dashboard_LowStockCount" xml:space="preserve"><value>{0} low stock</value></data>
+  <data name="Reports_Value_POSTED" xml:space="preserve"><value>Posted</value></data>
+  <data name="Reports_Value_PROJECTED" xml:space="preserve"><value>Projected</value></data>
+  <data name="Reports_Value_OUTWARD" xml:space="preserve"><value>Outward</value></data>
+  <data name="Reports_Value_INWARD" xml:space="preserve"><value>Inward</value></data>
+  <data name="Reports_Value_SLM" xml:space="preserve"><value>Straight line</value></data>
+  <data name="Reports_Value_WDV" xml:space="preserve"><value>Written down value</value></data>
+  <data name="Reports_Subtotal" xml:space="preserve"><value>Subtotal</value></data>
+  <data name="Reports_Column_Returns" xml:space="preserve"><value>Supplier credits</value></data>
+  <data name="Reports_HourlyHint" xml:space="preserve"><value>Darker cells show higher revenue. The number in each cell is the bill count; hover for sales.</value></data>
+  <data name="Reports_HourlyCell" xml:space="preserve"><value>{0} {1}:00 · {2} bills · ₹{3:N3}</value></data>
+  <data name="Reports_Weekday_Mon" xml:space="preserve"><value>Mon</value></data>
+  <data name="Reports_Weekday_Tue" xml:space="preserve"><value>Tue</value></data>
+  <data name="Reports_Weekday_Wed" xml:space="preserve"><value>Wed</value></data>
+  <data name="Reports_Weekday_Thu" xml:space="preserve"><value>Thu</value></data>
+  <data name="Reports_Weekday_Fri" xml:space="preserve"><value>Fri</value></data>
+  <data name="Reports_Weekday_Sat" xml:space="preserve"><value>Sat</value></data>
+  <data name="Reports_Weekday_Sun" xml:space="preserve"><value>Sun</value></data>
 </root>

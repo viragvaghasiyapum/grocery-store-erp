@@ -190,3 +190,33 @@ The WPF UI runner captured seven PNGs from rendered controls at 1120 × 700 with
 - Run the pages on the store PC at 1366 × 768 with 125% and 150% display scaling, and complete keyboard-only entry and review with an operator. The local rendered captures do not establish those conditions.
 - Have a native Gujarati speaker review the new and existing Phase 5 wording.
 - Verify the expiry vendor-list printout on the store printer. Physical printer output was not available to this audit.
+
+# Phase 6 audit — 7 October 2026
+
+Scope: [implementation.md](implementation.md) §14 and the Phase 6 checklist, with [PLANS.md](PLANS.md) and [techstack.md](techstack.md). I reviewed the report SQL and service, dashboard, WPF pages, Excel and A4 output, localization resources, and existing tests. This section records the Phase 6 follow-up audit.
+
+## Findings and completed fixes
+
+| Area | Finding and change | Evidence |
+|---|---|---|
+| Financial reports | GST outward/inward summaries missed returns or vendor credits when the original document fell outside the selected period. Item and category sales did not subtract returns. The sales register counted void bill amounts; vendor payables omitted supplier returns. Queries now include signed period activity, show void original amounts separately from effective zero totals, and reconcile credit notes. Category comparison includes categories present only in the previous period. | Integration tests cover return-only periods, void totals, supplier credits, and previous-only categories. |
+| P&L and dashboard math | The monthly matrix lacked net sales, gross profit, expenses, and net profit rows. The dashboard margin percentage used gross receipts including GST as its denominator, and top products ignored returns. The matrix now includes those rows; dashboard margin uses taxable sales and product rankings use net sales. | Golden P&L/matrix and dashboard integration assertions pass. |
+| Report limits and filtering | Reports silently stopped at the row limit and could export a partial result as though it were complete. Item sales and expiry bucket filters were absent. The service now fetches one extra row to detect truncation, limits displayed totals to displayed rows, and marks partial on-screen and Excel output. Relevant filters are enabled per report, validated, and carried through dashboard navigation. An older asynchronous refresh can no longer replace a newer selection. | Partial-report/Excel integration test; [English report table](docs/audit-screenshots/phase6/reports-table.en.png). |
+| Report and dashboard UI | The report controls were crowded, raw status/code values appeared, and hourly sales had no visual heatmap. Reports now use a labeled toolbar, expandable filters, localized values and period choices, right-aligned numbers, and a 24-hour by seven-day heatmap. Dashboard cards and insights use clearer hierarchy, bilingual product names, and direct report/settings navigation. The selected report name now updates correctly when switching languages at runtime. | [English hourly heatmap](docs/audit-screenshots/phase6/reports-hourly.en.png), [Gujarati hourly heatmap](docs/audit-screenshots/phase6/reports-hourly.gu.png), [English dashboard](docs/audit-screenshots/phase6/dashboard.en.png), [Gujarati dashboard](docs/audit-screenshots/phase6/dashboard.gu.png). |
+| Exports and printing | P&L export/preview labels and matrix headings were not consistently localized. Wide A4 tables could clip columns. The P&L export now uses the current language with numeric margin cells; A4 uses landscape bands for wide tables, repeats the identifier column and headings, and prints page numbers and a partial-report notice where needed. | Excel numeric-format assertions; rendered [A4 first band](docs/audit-screenshots/phase6/report-a4-band1.en.png) and [second band](docs/audit-screenshots/phase6/report-a4-band2.en.png). |
+
+## Screenshot review
+
+The WPF UI runner rendered deterministic Phase 6 controls at 1120 × 700 and 740 × 700. I inspected the English/Gujarati report table, hourly heatmap and dashboard, the narrow dashboard and P&L, and both A4 landscape bands. The first hourly English capture exposed a stale Gujarati report name and footer; after the picker refresh fix, the regenerated image shows English throughout. The narrow layouts keep controls and values readable by wrapping or scrolling. Visible numeric values retain English digits in Gujarati. The captures verify rendered controls and fixed-document pages locally; they do not establish physical printer output or target-PC scaling.
+
+## Validation
+
+- Release solution build: zero warnings and errors.
+- xUnit v3: Core 10, Architecture 1, Integration 84, UI 2 passed with no failures or skips. The integration runner includes the 20,000-entry fiscal-year P&L threshold, golden scenario, complete report catalog, and new hourly aggregation/localization test. The UI runner regenerated Phase 6 screenshots.
+- `dotnet format --verify-no-changes`, `git diff --check`, and English/Gujarati resource key parity passed.
+
+## Remaining acceptance requiring people or equipment
+
+- A native Gujarati speaker should review report, dashboard, Excel and print wording.
+- Check the UI on the store PC at 1366 × 768 and 125%/150% scaling with keyboard-only use.
+- Print the A4 reports on the store printer and inspect page fit, Gujarati text and English digits. Local fixed-document rendering has been verified.

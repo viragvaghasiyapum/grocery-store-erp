@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -45,6 +46,31 @@ public sealed class PhaseZeroSmokeTests
                     rows, new Dictionary<string, decimal> { ["Amount"] = 1830m });
 
                 output.CreateA4(report, new DateTime(2026, 9, 27, 12, 0, 0)).Pages.Count.ShouldBe(3);
+                var wideColumns = new[]
+                {
+                    new ReportColumn("Item", "Item", ReportValueKind.Text),
+                    new ReportColumn("Date", "Date", ReportValueKind.Date),
+                    new ReportColumn("Sku", "SKU", ReportValueKind.Text),
+                    new ReportColumn("Category", "Category", ReportValueKind.Text),
+                    new ReportColumn("Quantity", "Quantity", ReportValueKind.Quantity),
+                    new ReportColumn("Cost", "Cost", ReportValueKind.Money),
+                    new ReportColumn("Tax", "Tax", ReportValueKind.Money),
+                    new ReportColumn("Value", "Value", ReportValueKind.Money),
+                    new ReportColumn("Vendor", "Vendor", ReportValueKind.Text),
+                    new ReportColumn("Note", "Note", ReportValueKind.Text),
+                };
+                var wideReport = new TabularReport("Stock value by lot", null, wideColumns,
+                    [new(new Dictionary<string, object?>
+                    {
+                        ["Item"] = "Tata Salt 1 kg", ["Date"] = "2026-09-27", ["Sku"] = "SALT001",
+                        ["Category"] = "Staples", ["Quantity"] = 3000L, ["Cost"] = 60000L,
+                        ["Tax"] = 3000L, ["Value"] = 90000L, ["Vendor"] = "Shree Traders", ["Note"] = "Batch A",
+                    })], new Dictionary<string, decimal> { ["Value"] = 90m });
+                var wideDocument = output.CreateA4(wideReport, new DateTime(2026, 9, 27, 12, 0, 0));
+                wideDocument.Pages.Count.ShouldBe(2);
+                wideDocument.DocumentPaginator.PageSize.Width.ShouldBeGreaterThan(wideDocument.DocumentPaginator.PageSize.Height);
+                CaptureA4(wideDocument.Pages[0].Child, "report-a4-band1.en.png");
+                CaptureA4(wideDocument.Pages[1].Child, "report-a4-band2.en.png");
                 completion.SetResult();
             }
             catch (Exception exception) { completion.SetException(exception); }
@@ -88,6 +114,20 @@ public sealed class PhaseZeroSmokeTests
                 new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
                 using var settings = new SettingsService(database, paths, new AuditLog());
                 settings.LoadAsync().GetAwaiter().GetResult();
+                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                var welcome = new DemoPage { DataContext = viewModel };
+                var welcomeHost = new Window { Content = welcome, Width = 960, Height = 640 };
+                welcomeHost.Show();
+                Capture(welcomeHost, "welcome.en.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                Capture(welcomeHost, "welcome.gu.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                welcomeHost.Close();
+                var login = new LoginWindow(new AuthenticationService(database, new PasswordHasher(),
+                    new SystemClock(settings), new AuditLog()));
+                login.Show();
+                Capture(login, "login.en.png");
+                login.Close();
                 var setup = new SetupWindow(
                     new FirstRunService(database, new PasswordHasher()),
                     paths,
@@ -95,13 +135,30 @@ public sealed class PhaseZeroSmokeTests
                     settings);
 
                 setup.Show();
+                Capture(setup, "onboarding-1-language.en.png");
                 TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                Capture(setup, "onboarding-1-language.gu.png");
                 var steps = (TabControl)setup.FindName("Steps");
                 ((TabItem)steps.Items[1]).Header.ShouldBe("2  દુકાન");
                 ((Button)setup.FindName("BackButton")).Content.ShouldBe("પાછળ");
                 steps.SelectedIndex = 4;
                 steps.SelectedIndex.ShouldBe(0);
+                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                var setupNext = (Button)setup.FindName("NextButton");
+                for (int step = 1; step < steps.Items.Count; step++)
+                {
+                    if (step == 2) ((TextBox)setup.FindName("StoreName")).Text = "Test grocery";
+                    if (step == 3)
+                    {
+                        ((PasswordBox)setup.FindName("Password")).Password = "samplepass123";
+                        ((PasswordBox)setup.FindName("ConfirmPassword")).Password = "samplepass123";
+                    }
+                    setupNext.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    steps.SelectedIndex.ShouldBe(step);
+                    Capture(setup, $"onboarding-{step + 1}.en.png");
+                }
                 setup.Close();
+                translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
 
                 var summary = new BackupSummary(123, 45, "S2627-000045", "2026-09-27");
                 var manifest = new BackupManifest(1, "GroceryErp", "1.0.0", 5,
@@ -115,7 +172,30 @@ public sealed class PhaseZeroSmokeTests
                 backupSummary.Text.ShouldContain("વસ્તુઓ");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 backupSummary.Text.ShouldContain("Products");
+                Capture(restore, "restore.en.png");
                 restore.Close();
+
+                var settingsPage = new SettingsPage(
+                    new BackupService(paths, factory, new SystemClock(settings), settings), settings,
+                    new AuthenticationService(database, new PasswordHasher(), new SystemClock(settings), new AuditLog()),
+                    new SystemClock(settings), paths);
+                var settingsHost = new Window { Content = settingsPage, Width = 1000, Height = 720 };
+                settingsHost.Show();
+                Capture(settingsHost, "settings-top.en.png");
+                ((ScrollViewer)settingsPage.Content).ScrollToEnd();
+                Capture(settingsHost, "settings-bottom.en.png");
+                settingsHost.Close();
+
+                var expiryAlert = new ExpiryAlertWindow(3);
+                expiryAlert.Show();
+                Capture(expiryAlert, "expiry-alert.en.png");
+                expiryAlert.Close();
+                translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                expiryAlert = new ExpiryAlertWindow(3);
+                expiryAlert.Show();
+                Capture(expiryAlert, "expiry-alert.gu.png");
+                expiryAlert.Close();
+                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
 
                 var catalog = new CatalogService(database, new AuditLog(), settings);
                 using (var catalogConnection = factory.Open())
@@ -176,6 +256,16 @@ public sealed class PhaseZeroSmokeTests
                 Capture(stock, "product-ledger.en.png");
                 stock.Close();
 
+                var selectedLot = ((IEnumerable<LotItem>)((DataGrid)stock.FindName("LotsGrid")).ItemsSource).First();
+                var adjustment = new StockAdjustmentWindow(inventory, selectedLot);
+                adjustment.Show();
+                Capture(adjustment, "stock-adjustment.en.png");
+                adjustment.Close();
+                var priceChange = new LotPriceWindow(inventory, selectedLot);
+                priceChange.Show();
+                Capture(priceChange, "lot-price.en.png");
+                priceChange.Close();
+
                 var batch = new LabelBatchWindow(catalog, inventory, settings, loadOnShow: false);
                 batch.Rows.Add(new LabelBatchRow("Tata Salt 1 kg", "ટાટા મીઠું 1 kg", "Lot L000001",
                     "2000000000015", 27.5m, 30m, "10", true));
@@ -231,6 +321,21 @@ public sealed class PhaseZeroSmokeTests
                 Capture(editor, "product-editor.en.png");
                 editor.Close();
 
+                var bulkEdit = new CatalogBulkEditWindow(catalog, new long[] { 1 });
+                bulkEdit.Show();
+                Capture(bulkEdit, "catalog-bulk-edit.en.png");
+                bulkEdit.Close();
+
+                var productImport = new ProductImportWindow(new ProductExcelImporter(database, new AuditLog(), settings));
+                productImport.Show();
+                Capture(productImport, "product-import.en.png");
+                productImport.Width = 760;
+                Capture(productImport, "product-import.narrow.en.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                Capture(productImport, "product-import.narrow.gu.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                productImport.Close();
+
                 var label = new ProductLabelWindow(new ProductDetails(1,
                     new ProductInput("SALT001", "Tata Salt 1 kg", "ટાટા મીઠું 1 kg", "salt",
                         1, null, 1, "1001", 1, true, false, null, true, null, 7,
@@ -244,6 +349,28 @@ public sealed class PhaseZeroSmokeTests
 
                 var purchasing = new PurchasingService(database, new StockLedger(settings),
                     new DocNumberService(settings), new PeriodGuard(settings), settings, new AuditLog());
+                var vendorEditor = new VendorEditorWindow(purchasing);
+                vendorEditor.Show();
+                Capture(vendorEditor, "vendor-editor.en.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                Capture(vendorEditor, "vendor-editor.gu.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                ((ScrollViewer)((Grid)vendorEditor.Content).Children[0]).ScrollToEnd();
+                Capture(vendorEditor, "vendor-editor-bottom.en.png");
+                vendorEditor.Close();
+                var vendorPayment = new VendorPaymentWindow(purchasing);
+                var paymentForm = vendorPayment.Content;
+                vendorPayment.Content = null;
+                var paymentPreview = new Window { Content = paymentForm, Width = 470, Height = 600 };
+                paymentPreview.Show();
+                Capture(paymentPreview, "vendor-payment.en.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                Capture(paymentPreview, "vendor-payment.gu.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                paymentPreview.Height = 510;
+                ((ScrollViewer)((Grid)paymentForm).Children[0]).ScrollToEnd();
+                Capture(paymentPreview, "vendor-payment.narrow.en.png");
+                paymentPreview.Close();
                 var purchaseEntry = new PurchaseEntryWindow(purchasing, loadOnShow: false);
                 ((ComboBox)purchaseEntry.FindName("VendorBox")).ItemsSource = new[]
                 {
@@ -524,6 +651,9 @@ public sealed class PhaseZeroSmokeTests
                 TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 ((TextBlock)billing.FindName("SavingsText")).Text = TranslationSource.Instance.Format("Sales_Savings", "4.000");
                 ((TextBlock)billing.FindName("StatusText")).Text = TranslationSource.Instance["Sales_Status_Draft"];
+                ((TextBlock)billing.FindName("LastScanText")).Text = TranslationSource.Instance.Format(
+                    "Sales_LastScan", "Tata Salt 1 kg", "11.000", "30.000");
+                ((TextBlock)billing.FindName("PrinterStatusText")).Text = TranslationSource.Instance["Sales_PrinterReady"];
                 Capture(billingHost, "billing.gu.png");
                 TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 billingHost.Close();
@@ -588,6 +718,17 @@ public sealed class PhaseZeroSmokeTests
                 returning.Show();
                 Capture(returning, "return.en.png");
                 returning.Close();
+
+                var voidDialog = new SaleActionWindow(false);
+                voidDialog.Title.ShouldBe("Void");
+                voidDialog.Show();
+                Capture(voidDialog, "void.en.png");
+                voidDialog.Close();
+
+                var quantityDialog = new QuantityWindow(new Quantity(2), allowZero: true);
+                quantityDialog.Show();
+                Capture(quantityDialog, "quantity.en.png");
+                quantityDialog.Close();
 
                 var dayEnd = new DayEndWindow(new DayEndSummary(new DateOnly(2026, 10, 3), 12,
                     new Money(3720), new Money(120), new Money(3428.571m), new Money(171.429m),
@@ -659,6 +800,92 @@ public sealed class PhaseZeroSmokeTests
                 };
                 CaptureReceipt(returnReceipt, "return-receipt.gu.png");
 
+                if (Environment.GetEnvironmentVariable("GROCERY_PHASE6_SCREENSHOT_DIR") is not null)
+                {
+                    using (var reportConnection = factory.Open())
+                        reportConnection.Execute("""
+                            INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,selling_price,qty_received,qty_on_hand)
+                            VALUES (1,'REPORT-LOT','2026-10-01',20000,30000,10000,10000);
+                            INSERT INTO sale(sale_date,status) VALUES ('2026-10-04','DRAFT'),('2026-10-05','DRAFT');
+                            INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,
+                                taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+                            VALUES (1,1,1,1,'Tata Salt 1 kg',1000,30000,30000,0,30000,20000,20000),
+                                   (2,1,1,1,'Tata Salt 1 kg',2000,30000,60000,0,60000,20000,40000);
+                            UPDATE sale SET invoice_no='RPT-'||id,status='COMPLETED',line_count=1,
+                                taxable_total=(SELECT SUM(taxable_amount) FROM sale_line WHERE sale_id=sale.id),
+                                grand_total=(SELECT SUM(line_total) FROM sale_line WHERE sale_id=sale.id),
+                                cost_total=(SELECT SUM(cost_amount) FROM sale_line WHERE sale_id=sale.id)
+                            WHERE id IN (1,2);
+                            INSERT INTO sale_payment(sale_id,mode,amount) VALUES (1,'CASH',30000),(2,'UPI',60000);
+                            """);
+                    var reportClock = new ReportClock();
+                    var reportService = new ReportService(database, settings, reportClock, translations);
+                    var reportOutput = new ReportOutputService(settings, translations);
+                    var reportNavigation = new ReportNavigationState();
+                    var reportsPage = new ReportsPage(reportService, reportOutput, reportClock,
+                        new DisplayFormatter(), reportNavigation, loadOnShow: false);
+                    var reportsHost = new Window { Content = reportsPage, Width = 1120, Height = 700 };
+                    reportsHost.Show();
+                    ((DataGrid)reportsPage.FindName("PnlGrid")).ItemsSource = new[]
+                    {
+                        new { Label = "Sales (net of GST)", Amount = "90.000" },
+                        new { Label = "Cost of goods sold", Amount = "60.000" },
+                        new { Label = "Gross profit", Amount = "30.000" },
+                    };
+                    ((TextBlock)reportsPage.FindName("PnlTotals")).Text = "Gross profit ₹30.000 (33.333%) · Net profit ₹30.000 (33.333%)";
+                    ((ScrollViewer)reportsPage.FindName("PnlPanel")).Visibility = Visibility.Visible;
+                    ((DataGrid)reportsPage.FindName("ReportGrid")).Visibility = Visibility.Collapsed;
+                    Capture(reportsHost, "reports-pnl.en.png");
+                    reportsHost.Width = 740;
+                    Capture(reportsHost, "reports-pnl.narrow.en.png");
+                    reportsHost.Width = 1120;
+                    var reportPicker = (ComboBox)reportsPage.FindName("ReportPicker");
+                    reportPicker.SelectedIndex = 1;
+                    PopulateReportCapture(reportsPage, translations);
+                    Capture(reportsHost, "reports-table.en.png");
+                    translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                    reportsPage.RefreshLocalizedChoices();
+                    reportPicker.SelectedItem!.ToString().ShouldBe(translations["Reports_Kind_SalesRegister"]);
+                    PopulateReportCapture(reportsPage, translations);
+                    Capture(reportsHost, "reports-table.gu.png");
+                    reportPicker.SelectedIndex = 4;
+                    reportsPage.ShowHourlyReport(HourlySample(translations));
+                    ((TextBlock)reportsPage.FindName("StatusText")).Text = translations.Format("Reports_RowCount", 2);
+                    ((TextBlock)reportsPage.FindName("TotalsText")).Text = translations["Reports_Column_Total"] + ": 90.000";
+                    Capture(reportsHost, "reports-hourly.gu.png");
+                    translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                    reportsPage.RefreshLocalizedChoices();
+                    reportPicker.SelectedItem!.ToString().ShouldBe(translations["Reports_Kind_HourlySales"]);
+                    reportsPage.ShowHourlyReport(HourlySample(translations));
+                    ((TextBlock)reportsPage.FindName("StatusText")).Text = translations.Format("Reports_RowCount", 2);
+                    ((TextBlock)reportsPage.FindName("TotalsText")).Text = translations["Reports_Column_Total"] + ": 90.000";
+                    Capture(reportsHost, "reports-hourly.en.png");
+                    reportsHost.Close();
+
+                    translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                    var dashboardPage = new DashboardPage(reportService, reportNavigation, loadOnShow: false);
+                    var dashboardHost = new Window { Content = dashboardPage, Width = 1120, Height = 700 };
+                    dashboardHost.Show();
+                    PopulateDashboardCapture(dashboardPage, translations);
+                    Capture(dashboardHost, "dashboard.gu.png");
+                    dashboardHost.Width = 740;
+                    PopulateDashboardCapture(dashboardPage, translations);
+                    Capture(dashboardHost, "dashboard.narrow.gu.png");
+                    dashboardHost.Close();
+                    translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                    dashboardPage = new DashboardPage(reportService, reportNavigation, loadOnShow: false);
+                    dashboardHost = new Window { Content = dashboardPage, Width = 1120, Height = 700 };
+                    dashboardHost.Show();
+                    PopulateDashboardCapture(dashboardPage, translations);
+                    Capture(dashboardHost, "dashboard.en.png");
+                    dashboardHost.Width = 740;
+                    PopulateDashboardCapture(dashboardPage, translations);
+                    Capture(dashboardHost, "dashboard.narrow.en.png");
+                    dashboardHost.Close();
+                }
+
+                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                Capture(shell, "shell.en.png");
                 shell.Close();
                 application.Shutdown();
                 completion.SetResult();
@@ -683,11 +910,15 @@ public sealed class PhaseZeroSmokeTests
 
     private static void Capture(Window window, string fileName)
     {
+        string? phase6Directory = Environment.GetEnvironmentVariable("GROCERY_PHASE6_SCREENSHOT_DIR");
+        if (phase6Directory is not null && fileName is not ("dashboard.en.png" or "dashboard.gu.png" or
+            "dashboard.narrow.en.png" or "dashboard.narrow.gu.png" or "reports-pnl.en.png" or "reports-pnl.narrow.en.png" or
+            "reports-table.en.png" or "reports-table.gu.png" or "reports-hourly.en.png" or "reports-hourly.gu.png")) return;
         string? phase5Directory = Environment.GetEnvironmentVariable("GROCERY_PHASE5_SCREENSHOT_DIR");
-        if (phase5Directory is not null && fileName is not ("expiry.en.png" or "damages.en.png" or
+        if (phase6Directory is null && phase5Directory is not null && fileName is not ("expiry.en.png" or "damages.en.png" or
             "expenses.en.png" or "payroll.en.png" or "payroll.gu.png" or "assets.en.png" or "assets.gu.png")) return;
         string? phase4Directory = Environment.GetEnvironmentVariable("GROCERY_PHASE4_SCREENSHOT_DIR");
-        if (phase4Directory is not null)
+        if (phase6Directory is null && phase4Directory is not null)
         {
             if (fileName is not ("billing.en.png" or "billing.gu.png" or "payment.en.png" or "payment.gu.png" or
                 "saved-bills.en.png" or "sales-history.en.png" or "sales-history.gu.png" or "return.en.png" or
@@ -695,12 +926,12 @@ public sealed class PhaseZeroSmokeTests
                 "discount-percent.en.png" or "day-end.en.png")) return;
         }
         string? phase3Directory = Environment.GetEnvironmentVariable("GROCERY_PHASE3_SCREENSHOT_DIR");
-        if (phase3Directory is not null && fileName is not ("purchase-entry.en.png" or "purchase-entry-warnings.en.png" or "purchases-page.en.png" or
+        if (phase6Directory is null && phase3Directory is not null && fileName is not ("purchase-entry.en.png" or "purchase-entry-warnings.en.png" or "purchases-page.en.png" or
             "purchases-page.gu.png" or "stock-page.en.png" or "stock-lots.en.png" or "stock-ledger.en.png" or "stock-count.en.png" or "stock-count.gu.png" or
             "stock-count-scope.en.png" or "opening-stock-preview.en.png" or "vendor-history.en.png" or
             "product-lots.en.png" or
             "vendor-return.en.png" or "stock-source.en.png")) return;
-        string? directory = phase5Directory ?? phase4Directory ?? phase3Directory ?? Environment.GetEnvironmentVariable("GROCERY_PHASE2_SCREENSHOT_DIR");
+        string? directory = phase6Directory ?? phase5Directory ?? phase4Directory ?? phase3Directory ?? Environment.GetEnvironmentVariable("GROCERY_PHASE2_SCREENSHOT_DIR");
         if (string.IsNullOrEmpty(directory)) return;
         Directory.CreateDirectory(directory);
         window.UpdateLayout();
@@ -738,6 +969,93 @@ public sealed class PhaseZeroSmokeTests
                 pixels[row * 384 + column] = (command[8 + row * bytesWide + column / 8] & (0x80 >> column % 8)) == 0
                     ? (byte)255 : (byte)0;
         var bitmap = BitmapSource.Create(384, height, 96, 96, PixelFormats.Gray8, null, pixels, 384);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var output = File.Create(Path.Combine(directory, fileName));
+        encoder.Save(output);
+    }
+
+    private static void PopulateReportCapture(ReportsPage page, TranslationSource translations)
+    {
+        var grid = (DataGrid)page.FindName("ReportGrid");
+        grid.Columns.Clear();
+        grid.Columns.Add(new DataGridTextColumn { Header = translations["Reports_Column_Date"], Binding = new System.Windows.Data.Binding("Date"), Width = new DataGridLength(130) });
+        grid.Columns.Add(new DataGridTextColumn { Header = translations["Reports_Column_Invoice"], Binding = new System.Windows.Data.Binding("Invoice"), Width = new DataGridLength(160) });
+        grid.Columns.Add(new DataGridTextColumn { Header = translations["Reports_Column_Status"], Binding = new System.Windows.Data.Binding("Status"), Width = new DataGridLength(150) });
+        grid.Columns.Add(new DataGridTextColumn { Header = translations["Reports_Column_Total"], Binding = new System.Windows.Data.Binding("Total"), Width = new DataGridLength(150) });
+        grid.ItemsSource = new[]
+        {
+            new { Date = "04-10-2026", Invoice = "RPT-1", Status = translations["Reports_StatusCompleted"], Total = "30.000" },
+            new { Date = "05-10-2026", Invoice = "RPT-2", Status = translations["Reports_StatusCompleted"], Total = "60.000" },
+        };
+        ((ScrollViewer)page.FindName("PnlPanel")).Visibility = Visibility.Collapsed;
+        grid.Visibility = Visibility.Visible;
+        ((TextBlock)page.FindName("StatusText")).Text = translations.Format("Reports_RowCount", 2);
+        ((TextBlock)page.FindName("TotalsText")).Text = translations["Reports_Column_Total"] + ": 90.000";
+    }
+
+    private static void PopulateDashboardCapture(DashboardPage page, TranslationSource translations)
+    {
+        ((TextBlock)page.FindName("TodaySales")).Text = "₹60.000";
+        ((TextBlock)page.FindName("TodayDetails")).Text = translations.Format("Dashboard_TodayDetails", 1, 60m, 33.333m);
+        ((TextBlock)page.FindName("MonthSales")).Text = "₹90.000";
+        ((TextBlock)page.FindName("MonthDetails")).Text = translations.Format("Dashboard_MonthDetails", 0m);
+        ((TextBlock)page.FindName("StockValue")).Text = "₹200.000";
+        ((TextBlock)page.FindName("Payables")).Text = "₹0.000";
+        ((TextBlock)page.FindName("Attention")).Text = translations.Format("Dashboard_AttentionDetails", 0, 1, 2, 0);
+        ((Button)page.FindName("ExpiredButton")).Content = translations.Format("Dashboard_ExpiredCount", 0);
+        ((Button)page.FindName("CriticalButton")).Content = translations.Format("Dashboard_CriticalCount", 1);
+        ((Button)page.FindName("SoonButton")).Content = translations.Format("Dashboard_SoonCount", 2);
+        ((Button)page.FindName("LowStockButton")).Content = translations.Format("Dashboard_LowStockCount", 0);
+        ((TextBlock)page.FindName("PaymentSplit")).Text = translations["Dashboard_Payments"] + " " +
+            translations["Reports_PaymentCash"] + " ₹30.000 · " + translations["Reports_PaymentUpi"] + " ₹60.000";
+        ((TextBlock)page.FindName("Backup")).Text = translations.Format("Dashboard_BackupDetails", "04-10-2026 21:00", "—");
+        ((TextBlock)page.FindName("TrendDates")).Text = translations.Format("Dashboard_TrendDates", "06-09-2026", "05-10-2026");
+        string product = translations.UiCulture.Name == "gu-IN" ? "ટાટા મીઠું 1 kg" : "Tata Salt 1 kg";
+        ((DataGrid)page.FindName("RevenueGrid")).ItemsSource = new[] { new { Product = product, Quantity = "3.000", Revenue = "90.000" } };
+        ((DataGrid)page.FindName("MarginGrid")).ItemsSource = new[] { new { Product = product, Quantity = "3.000", Margin = "30.000" } };
+        var trend = (Canvas)page.FindName("TrendCanvas");
+        page.UpdateLayout();
+        trend.Children.Clear();
+        double trendWidth = Math.Max(16, trend.ActualWidth);
+        var line = new System.Windows.Shapes.Polyline { Stroke = Brushes.DodgerBlue, StrokeThickness = 2 };
+        line.Points.Add(new Point(8, 135));
+        line.Points.Add(new Point(trendWidth / 2, 100));
+        line.Points.Add(new Point(trendWidth - 8, 36));
+        trend.Children.Add(line);
+    }
+
+    private static TabularReport HourlySample(TranslationSource translations)
+    {
+        ReportRow Hour(string day, int hour, int bills, long revenue) => new(new Dictionary<string, object?>
+        {
+            ["Weekday"] = translations[$"Reports_Weekday_{day}"],
+            ["Hour"] = hour,
+            ["Bills"] = bills,
+            ["Revenue"] = revenue,
+        });
+        return new TabularReport(translations["Reports_Kind_HourlySales"], null, [],
+            [Hour("Mon", 9, 2, 30000), Hour("Tue", 14, 4, 90000), Hour("Sat", 18, 1, 50000)],
+            new Dictionary<string, decimal>());
+    }
+
+    private sealed class ReportClock : IClock
+    {
+        public DateTime Now => new(2026, 10, 5, 12, 0, 0);
+        public DateOnly BusinessDate => new(2026, 10, 5);
+    }
+
+    private static void CaptureA4(FixedPage page, string fileName)
+    {
+        string? directory = Environment.GetEnvironmentVariable("GROCERY_PHASE6_SCREENSHOT_DIR");
+        if (string.IsNullOrEmpty(directory)) return;
+        Directory.CreateDirectory(directory);
+        page.Measure(new Size(page.Width, page.Height));
+        page.Arrange(new Rect(0, 0, page.Width, page.Height));
+        page.UpdateLayout();
+        var bitmap = new RenderTargetBitmap((int)Math.Ceiling(page.Width), (int)Math.Ceiling(page.Height),
+            96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(page);
         var encoder = new PngBitmapEncoder();
         encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using var output = File.Create(Path.Combine(directory, fileName));

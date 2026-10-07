@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -7,6 +8,7 @@ using System.Windows.Shapes;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.Messaging;
 using GroceryErp.Core.Messages;
+using GroceryErp.Localization;
 using GroceryErp.Reports;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -19,12 +21,16 @@ public partial class DashboardPage : Page
     private readonly DispatcherTimer _refreshTimer;
     private DashboardSummary? _summary;
 
-    public DashboardPage()
+    public DashboardPage() : this(
+        ((App)Application.Current).Services.GetRequiredService<ReportService>(),
+        ((App)Application.Current).Services.GetRequiredService<ReportNavigationState>())
+    { }
+
+    public DashboardPage(ReportService reports, ReportNavigationState navigation, bool loadOnShow = true)
     {
         InitializeComponent();
-        IServiceProvider services = ((App)Application.Current).Services;
-        _reports = services.GetRequiredService<ReportService>();
-        _navigation = services.GetRequiredService<ReportNavigationState>();
+        _reports = reports;
+        _navigation = navigation;
         _refreshTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
         {
             Interval = TimeSpan.FromSeconds(5),
@@ -42,8 +48,16 @@ public partial class DashboardPage : Page
             await RefreshAsync();
             args.Handled = true;
         };
-        Loaded += async (_, _) => await RefreshAsync();
-        Unloaded += (_, _) => _refreshTimer.Stop();
+        if (loadOnShow) Loaded += async (_, _) =>
+        {
+            TranslationSource.Instance.PropertyChanged += OnTranslationChanged;
+            await RefreshAsync();
+        };
+        Unloaded += (_, _) =>
+        {
+            _refreshTimer.Stop();
+            TranslationSource.Instance.PropertyChanged -= OnTranslationChanged;
+        };
     }
 
     private async Task RefreshAsync()
@@ -51,17 +65,31 @@ public partial class DashboardPage : Page
         try
         {
             _summary = await _reports.GetDashboardAsync();
-            decimal margin = _summary.TodaySales == GroceryErp.Core.Numerics.Money.Zero
-                ? 0m : _summary.TodayGrossProfit.Value * 100m / _summary.TodaySales.Value;
-            TodaySales.Text = $"₹{_summary.TodaySales.Value:N3} · {_summary.TodayBills.ToString(CultureInfo.InvariantCulture)} bills · avg ₹{_summary.AverageBill.Value:N3} · margin {margin:N3}%";
-            MonthSales.Text = $"₹{_summary.MonthSales.Value:N3} · previous ₹{_summary.PreviousComparableMonthSales.Value:N3}";
+            decimal margin = _summary.TodayTaxableSales == GroceryErp.Core.Numerics.Money.Zero
+                ? 0m : _summary.TodayGrossProfit.Value * 100m / _summary.TodayTaxableSales.Value;
+            TodaySales.Text = $"₹{_summary.TodaySales.Value:N3}";
+            TodayDetails.Text = TranslationSource.Instance.Format("Dashboard_TodayDetails",
+                _summary.TodayBills, _summary.AverageBill.Value, margin);
+            MonthSales.Text = $"₹{_summary.MonthSales.Value:N3}";
+            MonthDetails.Text = TranslationSource.Instance.Format("Dashboard_MonthDetails", _summary.PreviousComparableMonthSales.Value);
             StockValue.Text = $"₹{_summary.StockValue.Value:N3}";
             Payables.Text = $"₹{_summary.Payables.Value:N3}";
-            Attention.Text = $"{_summary.ExpiredLots} expired · {_summary.CriticalLots} critical · {_summary.SoonLots} soon · {_summary.LowStockProducts} low stock";
-            PaymentSplit.Text = string.Join(" · ", _summary.Payments.Select(payment => $"{payment.Mode} ₹{payment.Amount.Value:N3}"));
-            Backup.Text = $"Backup: {_summary.LastBackup ?? "—"} · USB: {_summary.LastUsbExport ?? "—"}";
-            RevenueGrid.ItemsSource = _summary.TopProductsByRevenue;
-            MarginGrid.ItemsSource = _summary.TopProductsByMargin;
+            Attention.Text = TranslationSource.Instance.Format("Dashboard_AttentionDetails", _summary.ExpiredLots,
+                _summary.CriticalLots, _summary.SoonLots, _summary.LowStockProducts);
+            ExpiredButton.Content = TranslationSource.Instance.Format("Dashboard_ExpiredCount", _summary.ExpiredLots);
+            CriticalButton.Content = TranslationSource.Instance.Format("Dashboard_CriticalCount", _summary.CriticalLots);
+            SoonButton.Content = TranslationSource.Instance.Format("Dashboard_SoonCount", _summary.SoonLots);
+            LowStockButton.Content = TranslationSource.Instance.Format("Dashboard_LowStockCount", _summary.LowStockProducts);
+            PaymentSplit.Text = _summary.Payments.Count == 0 ? TranslationSource.Instance["Dashboard_NoPayments"]
+                : TranslationSource.Instance["Dashboard_Payments"] + " " + string.Join(" · ",
+                    _summary.Payments.Select(payment => $"{PaymentLabel(payment.Mode)} ₹{payment.Amount.Value:N3}"));
+            Backup.Text = TranslationSource.Instance.Format("Dashboard_BackupDetails",
+                _summary.LastBackup ?? "—", _summary.LastUsbExport ?? "—");
+            RevenueGrid.ItemsSource = _summary.TopProductsByRevenue.Select(ToDisplay).ToList();
+            MarginGrid.ItemsSource = _summary.TopProductsByMargin.Select(ToDisplay).ToList();
+            TrendDates.Text = TranslationSource.Instance.Format("Dashboard_TrendDates",
+                _summary.AsOf.AddDays(-29).ToString("dd-MM-yyyy", CultureInfo.InvariantCulture),
+                _summary.AsOf.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture));
             DrawTrend();
         }
         catch (Exception exception) { Attention.Text = exception.Message; }
@@ -93,18 +121,70 @@ public partial class DashboardPage : Page
         _refreshTimer.Start();
     }
 
+    private async void OnTranslationChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TranslationSource.UiCulture) && IsLoaded)
+            await RefreshAsync();
+    }
+
     private void Tile_OnClick(object sender, RoutedEventArgs e)
     {
         if (_summary is null || sender is not Button { Tag: string tag }) return;
         DateOnly today = _summary.AsOf;
-        (ReportKind kind, DateOnly from) = tag switch
+        (ReportKind kind, DateOnly from, string? status) = tag switch
         {
-            "Stock" => (ReportKind.StockValue, today),
-            "Payables" => (ReportKind.VendorPayables, today),
-            "Month" => (ReportKind.SalesRegister, new DateOnly(today.Year, today.Month, 1)),
-            _ => (ReportKind.SalesRegister, today),
+            "Stock" => (ReportKind.StockValue, today, null),
+            "Payables" => (ReportKind.VendorPayables, today, null),
+            "Month" => (ReportKind.SalesRegister, new DateOnly(today.Year, today.Month, 1), null),
+            "EXPIRED" or "CRITICAL" or "SOON" => (ReportKind.Expiry, today, tag),
+            "LowStock" => (ReportKind.LowStock, today, null),
+            _ => (ReportKind.SalesRegister, today, null),
         };
-        _navigation.Open(kind, from, today);
+        OpenReport(kind, from, today, status);
+    }
+
+    private void Trend_OnClick(object sender, MouseButtonEventArgs e)
+    {
+        if (_summary is { } summary) OpenReport(ReportKind.SalesRegister, summary.AsOf.AddDays(-29), summary.AsOf);
+    }
+
+    private void Payments_OnClick(object sender, MouseButtonEventArgs e)
+    {
+        if (_summary is { } summary) OpenReport(ReportKind.SalesRegister, summary.AsOf, summary.AsOf);
+    }
+
+    private void Backup_OnClick(object sender, MouseButtonEventArgs e)
+    {
+        if (Window.GetWindow(this) is ShellWindow shell) shell.OpenSettings();
+    }
+
+    private void TopProduct_OnDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (_summary is not { } summary || sender is not DataGrid { SelectedItem: TopDisplay product }) return;
+        OpenReport(ReportKind.ItemSales, summary.AsOf.AddDays(-29), summary.AsOf, productId: product.ProductId);
+    }
+
+    private void OpenReport(ReportKind kind, DateOnly from, DateOnly to, string? status = null, long? productId = null)
+    {
+        _navigation.Open(kind, from, to, status: status, productId: productId);
         if (Window.GetWindow(this) is ShellWindow shell) shell.OpenReports();
     }
+
+    private static TopDisplay ToDisplay(TopProduct product) => new(product.ProductId,
+        TranslationSource.Instance.UiCulture.Name == "gu-IN" && !string.IsNullOrWhiteSpace(product.LocalName)
+            ? product.LocalName : product.Name,
+        product.Quantity.Value.ToString("N3", TranslationSource.FormatCulture),
+        product.Revenue.Value.ToString("N3", TranslationSource.FormatCulture),
+        product.Margin.Value.ToString("N3", TranslationSource.FormatCulture));
+
+    private static string PaymentLabel(string mode) => mode switch
+    {
+        "CASH" => TranslationSource.Instance["Reports_PaymentCash"],
+        "UPI" => TranslationSource.Instance["Reports_PaymentUpi"],
+        "CARD" => TranslationSource.Instance["Reports_PaymentCard"],
+        "OTHER" => TranslationSource.Instance["Reports_PaymentOther"],
+        _ => mode,
+    };
+
+    private sealed record TopDisplay(long ProductId, string Product, string Quantity, string Revenue, string Margin);
 }

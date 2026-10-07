@@ -1,7 +1,7 @@
 <Window x:Class="GroceryErp.App.Presentation.LotPriceWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
-        Title="{l:Tr Stock_ChangePrice}" Width="420" Height="300" WindowStartupLocation="CenterOwner">
+        Title="{l:Tr Stock_ChangePrice}" Width="420" Height="340" MinHeight="320" WindowStartupLocation="CenterOwner">
   <StackPanel Margin="20">
     <TextBlock x:Name="LotText" FontWeight="SemiBold" Margin="0,0,0,14"/>
     <TextBlock Text="{l:Tr Catalog_Price}"/><TextBox x:Name="PriceBox" Margin="0,4,0,10"/>
