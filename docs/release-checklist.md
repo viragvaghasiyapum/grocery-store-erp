@@ -7,16 +7,24 @@ software item. Hardware, language and pilot items require a named human sign-off
 
 - [ ] `dotnet format GroceryErp.slnx --verify-no-changes --no-restore`
 - [ ] `dotnet build GroceryErp.slnx -c Release --no-restore` has zero warnings
-- [ ] `dotnet test GroceryErp.slnx -c Release --no-build` passes
+- [ ] Run the xUnit v3 project runners for Core, Architecture, Integration and UI with
+      `dotnet run --project tests/GroceryErp.<suite>.Tests -c Release --no-build -- -maxThreads 1`;
+      each reports zero failures and zero skips. The local SDK's `dotnet test` does not discover
+      these xUnit v3 tests.
 - [ ] Full data set generated with `dotnet run -c Release --project tools/GroceryErp.DataGen -- --output=<path>`
 - [ ] Performance results recorded in `docs/perf/<version>.md`; no path regressed by more than 20%
 - [ ] `scripts/build-release.ps1 -Version <semver>` produces the installer and local update feed
+- [ ] After packaging, set `GROCERY_PACKAGED_UI_TEST=1` and run the UI project runner again.
+      The FlaUI case extracts the portable release and uses an isolated temporary data root;
+      verify setup, product and vendor creation, purchase posting, every main page, scanned
+      cash sale, language switch, lock/unlock, manual backup and close backup.
 - [ ] Clean-PC install, uninstall and USB update tested without internet access
 - [ ] Backup created before update; post-update migrations, integrity checks and rollback verified
 
 ## Localization and UI
 
-- [ ] UI smoke journey: setup, product, purchase, sale, dashboard, Gujarati, lock/unlock, close backup
+- [ ] Operator walkthrough on the target PC: create a product and vendor, post a purchase,
+      scan and complete a sale, view the dashboard, use Gujarati, lock/unlock, and close with a backup
 - [ ] `--pseudo` pass on every page at 1366×768 and 125%/150% scaling; no clipping or raw `⟦key⟧`
 - [ ] Native Gujarati reviewer signed off all UI, receipt, label and report terminology
 - [ ] All visible and printed numbers remain English digits in Gujarati mode

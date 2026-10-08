@@ -3,20 +3,44 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     Title="{l:Tr Settings_Title}">
-  <ScrollViewer VerticalScrollBarVisibility="Auto">
-    <StackPanel Margin="24" MaxWidth="880" HorizontalAlignment="Left">
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="24" MaxWidth="880" HorizontalAlignment="Stretch">
+      <StackPanel.Resources>
+        <Style x:Key="SettingsPrimaryAction" TargetType="Button">
+          <Setter Property="MinHeight" Value="38"/>
+          <Setter Property="MinWidth" Value="110"/>
+          <Setter Property="Padding" Value="16,8"/>
+          <Setter Property="FontWeight" Value="SemiBold"/>
+          <Setter Property="Background" Value="#176B61"/>
+          <Setter Property="BorderBrush" Value="#176B61"/>
+          <Setter Property="Foreground" Value="White"/>
+        </Style>
+      </StackPanel.Resources>
       <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Settings_Title}"/>
       <TextBlock Margin="0,6,0,22" Opacity="0.75" Text="{l:Tr Settings_Description}" TextWrapping="Wrap"/>
 
       <Border Padding="20" CornerRadius="8" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
         <StackPanel>
           <TextBlock FontSize="20" FontWeight="SemiBold" Text="{l:Tr Settings_BackupTitle}"/>
-          <TextBlock x:Name="BackupStatus" Margin="0,10,0,4" TextWrapping="Wrap"/>
-          <TextBlock x:Name="UsbStatus" Margin="0,0,0,16" TextWrapping="Wrap"/>
+          <Grid Margin="0,14,0,16">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Border Padding="14,12" Margin="0,0,8,0" CornerRadius="7" Background="#EFF7F5" BorderBrush="#D2E5DF" BorderThickness="1">
+              <StackPanel>
+                <TextBlock FontWeight="SemiBold" Foreground="#176B61" Text="{l:Tr Settings_LocalBackupLabel}"/>
+                <TextBlock x:Name="BackupStatus" Margin="0,5,0,0" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Padding="14,12" Margin="8,0,0,0" CornerRadius="7" Background="#F4F6FA" BorderBrush="#DCE1EA" BorderThickness="1">
+              <StackPanel>
+                <TextBlock FontWeight="SemiBold" Foreground="#384B69" Text="{l:Tr Settings_UsbCopyLabel}"/>
+                <TextBlock x:Name="UsbStatus" Margin="0,5,0,0" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
+          </Grid>
           <WrapPanel>
-            <Button x:Name="BackupButton" Margin="0,0,8,8" Click="Backup_OnClick" Content="{l:Tr Settings_BackupNow}"/>
+            <Button x:Name="BackupButton" Style="{StaticResource SettingsPrimaryAction}" Margin="0,0,8,8" Click="Backup_OnClick" Content="{l:Tr Settings_BackupNow}"/>
             <Button x:Name="ExportButton" Margin="0,0,8,8" Click="Export_OnClick" Content="{l:Tr Settings_ExportUsb}"/>
-            <Button Margin="0,0,8,8" Click="Restore_OnClick" Content="{l:Tr Settings_RestoreAction}"/>
+            <Button x:Name="RestoreActionButton" Margin="0,0,8,8" Click="Restore_OnClick" Content="{l:Tr Settings_RestoreAction}"/>
           </WrapPanel>
           <TextBlock Margin="0,10,0,4" Text="{l:Tr Settings_RemovableDrive}"/>
           <DockPanel><Button DockPanel.Dock="Right" Margin="8,0,0,0" Click="RefreshDrives_OnClick" Content="{l:Tr Stock_Refresh}"/>
@@ -46,7 +70,7 @@
           <PasswordBox x:Name="NewPassword"/>
           <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_ConfirmPassword}"/>
           <PasswordBox x:Name="ConfirmPassword"/>
-          <Button x:Name="ChangePasswordButton" HorizontalAlignment="Left" Margin="0,16,0,0" Click="ChangePassword_OnClick" Content="{l:Tr Settings_SavePassword}"/>
+          <Button x:Name="ChangePasswordButton" Style="{StaticResource SettingsPrimaryAction}" HorizontalAlignment="Left" Margin="0,16,0,0" Click="ChangePassword_OnClick" Content="{l:Tr Settings_SavePassword}"/>
         </StackPanel>
       </Border>
       <TextBlock x:Name="StatusText" Margin="0,18,0,12" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>

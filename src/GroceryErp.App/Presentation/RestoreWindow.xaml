@@ -3,7 +3,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-    Title="{l:Tr Settings_RestoreTitle}" Width="660" Height="600" MinWidth="600" MinHeight="580"
+    Title="{l:Tr Settings_RestoreTitle}" Width="660" Height="580" MinWidth="600" MinHeight="540"
     WindowStartupLocation="CenterOwner" FontFamily="{StaticResource AppFont}"
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN"
     NumberSubstitution.Substitution="European">
@@ -14,10 +14,10 @@
     <Grid Grid.Row="2">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
       <Border Padding="16" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
-        <StackPanel><TextBlock FontWeight="SemiBold" FontSize="18" Text="{l:Tr Settings_CurrentData}"/><TextBlock x:Name="CurrentSummary" Margin="0,12,0,0" TextWrapping="Wrap" LineHeight="27"/></StackPanel>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel><TextBlock FontWeight="SemiBold" FontSize="18" Text="{l:Tr Settings_CurrentData}"/><TextBlock x:Name="CurrentSummary" Margin="0,12,0,0" TextWrapping="Wrap" LineHeight="27"/></StackPanel></ScrollViewer>
       </Border>
       <Border Grid.Column="2" Padding="16" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
-        <StackPanel><TextBlock FontWeight="SemiBold" FontSize="18" Text="{l:Tr Settings_BackupData}"/><TextBlock x:Name="BackupSummary" Margin="0,12,0,0" TextWrapping="Wrap" LineHeight="27"/></StackPanel>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel><TextBlock FontWeight="SemiBold" FontSize="18" Text="{l:Tr Settings_BackupData}"/><TextBlock x:Name="BackupSummary" Margin="0,12,0,0" TextWrapping="Wrap" LineHeight="27"/></StackPanel></ScrollViewer>
       </Border>
     </Grid>
     <StackPanel Grid.Row="3" Margin="0,18,0,0"><TextBlock Text="{l:Tr Settings_TypeRestore}"/><TextBox x:Name="Confirmation" Margin="0,6,0,0" TextChanged="Confirmation_OnTextChanged"/></StackPanel>

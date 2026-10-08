@@ -16,7 +16,9 @@ public partial class StockPage : Page
     private readonly InventoryService _inventory;
     private IReadOnlyList<LedgerItem> _ledgerItems = [];
 
-    public StockPage(InventoryService? inventory = null, bool loadOnShow = true)
+    public StockPage() : this(null) { }
+
+    public StockPage(InventoryService? inventory, bool loadOnShow = true)
     {
         InitializeComponent();
         _inventory = inventory ?? ((App)Application.Current).Services.GetRequiredService<InventoryService>();

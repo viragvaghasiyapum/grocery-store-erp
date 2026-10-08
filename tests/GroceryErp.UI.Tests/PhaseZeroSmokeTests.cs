@@ -173,8 +173,11 @@ public sealed class PhaseZeroSmokeTests
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 backupSummary.Text.ShouldContain("Products");
                 Capture(restore, "restore.en.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                Capture(restore, "restore.gu.png");
                 restore.Close();
 
+                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 var settingsPage = new SettingsPage(
                     new BackupService(paths, factory, new SystemClock(settings), settings), settings,
                     new AuthenticationService(database, new PasswordHasher(), new SystemClock(settings), new AuditLog()),
@@ -184,7 +187,11 @@ public sealed class PhaseZeroSmokeTests
                 Capture(settingsHost, "settings-top.en.png");
                 ((ScrollViewer)settingsPage.Content).ScrollToEnd();
                 Capture(settingsHost, "settings-bottom.en.png");
+                ((ScrollViewer)settingsPage.Content).ScrollToTop();
+                translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                Capture(settingsHost, "settings-top.gu.png");
                 settingsHost.Close();
+                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
 
                 var expiryAlert = new ExpiryAlertWindow(3);
                 expiryAlert.Show();
@@ -910,8 +917,11 @@ public sealed class PhaseZeroSmokeTests
 
     private static void Capture(Window window, string fileName)
     {
+        string? phase7Directory = Environment.GetEnvironmentVariable("GROCERY_PHASE7_SCREENSHOT_DIR");
+        if (phase7Directory is not null && fileName is not ("settings-top.en.png" or "settings-bottom.en.png" or
+            "settings-top.gu.png" or "restore.en.png" or "restore.gu.png")) return;
         string? phase6Directory = Environment.GetEnvironmentVariable("GROCERY_PHASE6_SCREENSHOT_DIR");
-        if (phase6Directory is not null && fileName is not ("dashboard.en.png" or "dashboard.gu.png" or
+        if (phase7Directory is null && phase6Directory is not null && fileName is not ("dashboard.en.png" or "dashboard.gu.png" or
             "dashboard.narrow.en.png" or "dashboard.narrow.gu.png" or "reports-pnl.en.png" or "reports-pnl.narrow.en.png" or
             "reports-table.en.png" or "reports-table.gu.png" or "reports-hourly.en.png" or "reports-hourly.gu.png")) return;
         string? phase5Directory = Environment.GetEnvironmentVariable("GROCERY_PHASE5_SCREENSHOT_DIR");
@@ -931,7 +941,7 @@ public sealed class PhaseZeroSmokeTests
             "stock-count-scope.en.png" or "opening-stock-preview.en.png" or "vendor-history.en.png" or
             "product-lots.en.png" or
             "vendor-return.en.png" or "stock-source.en.png")) return;
-        string? directory = phase6Directory ?? phase5Directory ?? phase4Directory ?? phase3Directory ?? Environment.GetEnvironmentVariable("GROCERY_PHASE2_SCREENSHOT_DIR");
+        string? directory = phase7Directory ?? phase6Directory ?? phase5Directory ?? phase4Directory ?? phase3Directory ?? Environment.GetEnvironmentVariable("GROCERY_PHASE2_SCREENSHOT_DIR");
         if (string.IsNullOrEmpty(directory)) return;
         Directory.CreateDirectory(directory);
         window.UpdateLayout();

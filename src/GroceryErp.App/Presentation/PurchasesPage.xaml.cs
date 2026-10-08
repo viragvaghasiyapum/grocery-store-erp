@@ -13,7 +13,9 @@ public partial class PurchasesPage : Page
 {
     private readonly PurchasingService _purchasing;
 
-    public PurchasesPage(PurchasingService? purchasing = null, bool loadOnShow = true)
+    public PurchasesPage() : this(null) { }
+
+    public PurchasesPage(PurchasingService? purchasing, bool loadOnShow = true)
     {
         InitializeComponent();
         _purchasing = purchasing ?? ((App)Application.Current).Services.GetRequiredService<PurchasingService>();

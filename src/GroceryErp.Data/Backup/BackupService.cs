@@ -27,6 +27,7 @@ public sealed class BackupService(
     ISettings settings) : IMigrationBackup
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    private readonly object _backupGate = new();
 
     public string BackupDirectory => settings.Current.BackupDirectory;
     public bool HasPendingRestore => File.Exists(Path.Combine(paths.DbDir, "restore.pending.json"));
@@ -52,6 +53,11 @@ public sealed class BackupService(
     }
 
     public IReadOnlyList<string> ExportToUsb(string driveRoot)
+    {
+        lock (_backupGate) return ExportToUsbCore(driveRoot);
+    }
+
+    private List<string> ExportToUsbCore(string driveRoot)
     {
         string root = Path.GetFullPath(driveRoot);
         var drive = new DriveInfo(Path.GetPathRoot(root) ?? root);
@@ -100,6 +106,11 @@ public sealed class BackupService(
 
     public BackupInfo Create(string reason)
     {
+        lock (_backupGate) return CreateCore(reason);
+    }
+
+    private BackupInfo CreateCore(string reason)
+    {
         string safeReason = SanitizeReason(reason);
         string stamp = clock.Now.ToString("yyyy-MM-dd_HHmmss", CultureInfo.InvariantCulture);
         string workingDirectory = Path.Combine(paths.TempDir, $"backup-{stamp}-{Guid.NewGuid():N}");
@@ -134,8 +145,9 @@ public sealed class BackupService(
                 using Stream json = archive.CreateEntry("manifest.json", CompressionLevel.Fastest).Open();
                 JsonSerializer.Serialize(json, manifest, JsonOptions);
             }
+            // A failed verification must never leave a final-looking backup behind.
+            Verify(partial);
             File.Move(partial, final);
-            Verify(final);
             Rotate(backupDirectory, settings.Current.BackupKeep, clock.Now.ToUniversalTime());
             return new(final, new FileInfo(final).Length, manifest);
         }
@@ -181,9 +193,9 @@ public sealed class BackupService(
                 .ExtractToFile(staged);
             if (!string.Equals(Sha256Hex(staged), verified.Database.Sha256, StringComparison.Ordinal))
                 throw new DomainException(ErrorCode.BackupInvalid, "staged database checksum mismatch");
-            (string quickCheck, long version, _) = InspectDatabase(staged);
-            if (quickCheck != "ok" || version != verified.SchemaVersion)
-                throw new DomainException(ErrorCode.BackupInvalid, "database integrity or schema mismatch");
+            (string quickCheck, long version, BackupSummary summary) = InspectDatabase(staged);
+            if (quickCheck != "ok" || version != verified.SchemaVersion || summary != verified.Summary)
+                throw new DomainException(ErrorCode.BackupInvalid, "database integrity, schema or summary mismatch");
             return new(zipPath, staged, verified);
         }
         catch
@@ -205,29 +217,43 @@ public sealed class BackupService(
 
     public void ApplyRestore(RestoreCandidate candidate)
     {
+        lock (_backupGate) ApplyRestoreCore(candidate);
+    }
+
+    private void ApplyRestoreCore(RestoreCandidate candidate)
+    {
         ArgumentNullException.ThrowIfNull(candidate);
+        if (HasPendingRestore)
+            throw new DomainException(ErrorCode.BackupInvalid, "a restore is already pending");
         Create("pre-restore");
+        using (SqliteConnection connection = factory.Open())
+            if (connection.ExecuteScalar<long>("PRAGMA wal_checkpoint(TRUNCATE);") != 0)
+                throw new DomainException(ErrorCode.BackupInvalid, "the database is busy during restore");
         SqliteConnection.ClearAllPools();
         string stamp = clock.Now.ToString("yyyy-MM-dd_HHmmss", CultureInfo.InvariantCulture);
         string replaced = Path.Combine(paths.DbDir, $"replaced-{stamp}");
         Directory.CreateDirectory(replaced);
         string replacedDatabase = Path.Combine(replaced, Path.GetFileName(paths.DatabaseFile));
+        string marker = Path.Combine(paths.DbDir, "restore.pending.json");
         bool originalMoved = false;
         bool candidateApplied = false;
 
         try
         {
+            // Write the recovery marker before the first rename. A power loss at any point
+            // in the swap can then be rolled back before the database is opened on startup.
+            WriteMarker(marker, new RestoreMarker(candidate.SourceZip, replaced, candidate.Manifest, "preparing"));
             MoveDatabaseSet(paths.DatabaseFile, replacedDatabase);
             originalMoved = true;
             File.Move(candidate.StagedDatabase, paths.DatabaseFile);
             candidateApplied = true;
-            string marker = Path.Combine(paths.DbDir, "restore.pending.json");
-            File.WriteAllText(marker, JsonSerializer.Serialize(new RestoreMarker(candidate.SourceZip, replaced, candidate.Manifest), JsonOptions));
+            WriteMarker(marker, new RestoreMarker(candidate.SourceZip, replaced, candidate.Manifest, "applied"));
         }
         catch
         {
             if (candidateApplied) DeleteDatabaseSet(paths.DatabaseFile);
             if (originalMoved) MoveDatabaseSet(replacedDatabase, paths.DatabaseFile);
+            File.Delete(marker);
             throw;
         }
         finally
@@ -237,12 +263,36 @@ public sealed class BackupService(
         }
     }
 
+    public void RecoverInterruptedRestoreBeforeStartup()
+    {
+        string marker = Path.Combine(paths.DbDir, "restore.pending.json");
+        if (!File.Exists(marker)) return;
+        RestoreMarker pending = ReadMarker(marker);
+        // Old markers were written only after a successful swap.
+        if (pending.Stage != "preparing") return;
+        string replacedDatabase = SafeReplacedDatabase(pending);
+        if (File.Exists(replacedDatabase) && File.Exists(paths.DatabaseFile))
+        {
+            // The staged database was installed, so the original set is wholly replaced.
+            UndoPendingRestore();
+            return;
+        }
+        // Power may have failed between the three original-file renames, or while undoing
+        // them. Files still at the live path belong to the original database and are kept.
+        foreach (string suffix in new[] { "", "-wal", "-shm" })
+            if (File.Exists(replacedDatabase + suffix) && !File.Exists(paths.DatabaseFile + suffix))
+                File.Move(replacedDatabase + suffix, paths.DatabaseFile + suffix);
+        // The original main database must be present after rejoining the set.
+        if (!File.Exists(paths.DatabaseFile))
+            throw new DomainException(ErrorCode.BackupInvalid, "both restore databases are missing");
+        File.Delete(marker);
+    }
+
     public void FinishPendingRestore()
     {
         string marker = Path.Combine(paths.DbDir, "restore.pending.json");
         if (!File.Exists(marker)) return;
-        RestoreMarker pending = JsonSerializer.Deserialize<RestoreMarker>(File.ReadAllText(marker), JsonOptions)
-            ?? throw new DomainException(ErrorCode.BackupInvalid, "restore marker is invalid");
+        RestoreMarker pending = ReadMarker(marker);
         using SqliteConnection connection = factory.Open();
         if (connection.ExecuteScalar<string>("PRAGMA quick_check;") != "ok" ||
             connection.Query("PRAGMA foreign_key_check;").Any())
@@ -264,11 +314,10 @@ public sealed class BackupService(
     {
         string marker = Path.Combine(paths.DbDir, "restore.pending.json");
         if (!File.Exists(marker)) return;
-        RestoreMarker pending = JsonSerializer.Deserialize<RestoreMarker>(File.ReadAllText(marker), JsonOptions)
-            ?? throw new DomainException(ErrorCode.BackupInvalid, "restore marker is invalid");
+        RestoreMarker pending = ReadMarker(marker);
         SqliteConnection.ClearAllPools();
         string current = paths.DatabaseFile;
-        string replaced = Path.Combine(pending.ReplacedDirectory, Path.GetFileName(current));
+        string replaced = SafeReplacedDatabase(pending);
         if (!File.Exists(replaced)) throw new DomainException(ErrorCode.BackupInvalid, "replaced database is missing");
         string failedDirectory = Path.Combine(paths.TempDir, $"restore-failed-{Guid.NewGuid():N}");
         string failedDatabase = Path.Combine(failedDirectory, Path.GetFileName(current));
@@ -295,13 +344,37 @@ public sealed class BackupService(
     public void PurgeExpiredRestoreData()
     {
         DateTime cutoff = clock.Now.AddDays(-7);
+        string? pendingDirectory = HasPendingRestore
+            ? Path.GetDirectoryName(SafeReplacedDatabase(ReadMarker(Path.Combine(paths.DbDir, "restore.pending.json"))))
+            : null;
         foreach (string directory in Directory.EnumerateDirectories(paths.DbDir, "replaced-*"))
             try
             {
+                if (string.Equals(directory, pendingDirectory, StringComparison.OrdinalIgnoreCase)) continue;
                 if (Directory.GetLastWriteTime(directory) < cutoff) Directory.Delete(directory, recursive: true);
             }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
+    }
+
+    private static RestoreMarker ReadMarker(string path) =>
+        JsonSerializer.Deserialize<RestoreMarker>(File.ReadAllText(path), JsonOptions)
+        ?? throw new DomainException(ErrorCode.BackupInvalid, "restore marker is invalid");
+
+    private string SafeReplacedDatabase(RestoreMarker marker)
+    {
+        string directory = Path.GetFullPath(marker.ReplacedDirectory);
+        if (!string.Equals(Path.GetDirectoryName(directory), paths.DbDir, StringComparison.OrdinalIgnoreCase) ||
+            !Path.GetFileName(directory).StartsWith("replaced-", StringComparison.Ordinal))
+            throw new DomainException(ErrorCode.BackupInvalid, "restore marker has an invalid location");
+        return Path.Combine(directory, Path.GetFileName(paths.DatabaseFile));
+    }
+
+    private static void WriteMarker(string path, RestoreMarker marker)
+    {
+        string partial = path + ".partial";
+        File.WriteAllText(partial, JsonSerializer.Serialize(marker, JsonOptions));
+        File.Move(partial, path, overwrite: true);
     }
 
     private static BackupManifest ReadManifest(ZipArchive archive)
@@ -311,7 +384,13 @@ public sealed class BackupService(
         using Stream stream = entry.Open();
         BackupManifest manifest = JsonSerializer.Deserialize<BackupManifest>(stream, JsonOptions)
             ?? throw new DomainException(ErrorCode.BackupInvalid, "manifest is empty");
-        if (manifest.Format != 1 || manifest.App != "GroceryErp" || manifest.Database.File != "grocery.db")
+        if (manifest.Format != 1 || manifest.App != "GroceryErp" ||
+            manifest.Database is null || manifest.Database.File != "grocery.db" ||
+            manifest.Database.Bytes <= 0 || manifest.Database.Sha256 is null ||
+            manifest.Database.Sha256.Length != 64 ||
+            !manifest.Database.Sha256.All(static character => char.IsAsciiHexDigit(character)) ||
+            manifest.Summary is null || manifest.SchemaVersion < 1 ||
+            string.IsNullOrWhiteSpace(manifest.CreatedAt) || string.IsNullOrWhiteSpace(manifest.Reason))
             throw new DomainException(ErrorCode.BackupInvalid, "unknown backup format");
         return manifest;
     }
@@ -410,5 +489,5 @@ public sealed class BackupService(
             if (File.Exists(database + suffix)) File.Delete(database + suffix);
     }
 
-    private sealed record RestoreMarker(string SourceZip, string ReplacedDirectory, BackupManifest Manifest);
+    private sealed record RestoreMarker(string SourceZip, string ReplacedDirectory, BackupManifest Manifest, string? Stage = null);
 }

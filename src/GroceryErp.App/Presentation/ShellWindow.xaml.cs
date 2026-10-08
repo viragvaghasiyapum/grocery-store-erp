@@ -12,6 +12,7 @@ using GroceryErp.Data.Services;
 using GroceryErp.Expenses;
 using GroceryErp.Localization;
 using Microsoft.Win32;
+using Serilog;
 using Wpf.Ui.Controls;
 using WinMessageBox = System.Windows.MessageBox;
 using WinMessageBoxButton = System.Windows.MessageBoxButton;
@@ -109,6 +110,7 @@ public partial class ShellWindow : FluentWindow
     internal void SetExpiryBadge(int count) => ExpiryInfoBadge.Value = count.ToString(CultureInfo.InvariantCulture);
     internal void OpenReports() => RootNavigation.Navigate(typeof(ReportsPage));
     internal void OpenSettings() => RootNavigation.Navigate(typeof(SettingsPage));
+    internal void ShowMaintenanceWarning() => MaintenanceWarning.Visibility = Visibility.Visible;
 
     private async void Update_OnClick(object sender, RoutedEventArgs e)
     {
@@ -122,7 +124,7 @@ public partial class ShellWindow : FluentWindow
         try
         {
             UpdateButton.IsEnabled = false;
-            PendingUsbUpdate? pending = await UsbUpdateService.CheckAsync(picker.FolderName);
+            PendingUsbUpdate? pending = await _updates.CheckAsync(picker.FolderName);
             if (pending is null)
             {
                 WinMessageBox.Show(TranslationSource.Instance["Settings_Update_None"],
@@ -133,11 +135,15 @@ public partial class ShellWindow : FluentWindow
                 TranslationSource.Instance.Format("Settings_Update_Confirm", pending.Version),
                 TranslationSource.Instance["App_Title"], WinMessageBoxButton.YesNo, MessageBoxImage.Question);
             if (install == WinMessageBoxResult.Yes)
-                await _updates.DownloadAndRestartAsync(pending, picker.FolderName);
+            {
+                await ((App)Application.Current).WaitForStartupMaintenanceAsync();
+                await _updates.DownloadAndRestartAsync(pending);
+            }
         }
         catch (Exception exception)
         {
-            WinMessageBox.Show(exception.Message, TranslationSource.Instance["App_Title"],
+            Log.Error(exception, "USB update failed");
+            WinMessageBox.Show(TranslationSource.Instance["Settings_ActionFailed"], TranslationSource.Instance["App_Title"],
                 WinMessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally { UpdateButton.IsEnabled = true; }

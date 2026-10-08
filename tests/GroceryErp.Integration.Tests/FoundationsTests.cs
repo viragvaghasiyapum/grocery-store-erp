@@ -1,5 +1,7 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Dapper;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Backup;
@@ -14,6 +16,8 @@ namespace GroceryErp.Integration.Tests;
 
 public sealed class FoundationsTests
 {
+    private static readonly JsonSerializerOptions ManifestJson = new(JsonSerializerDefaults.Web);
+
     [Fact]
     public void FreshDatabase_AppliesAllMigrationsAndSeedsRequiredTables()
     {
@@ -137,6 +141,96 @@ public sealed class FoundationsTests
         connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'store.name'")
             .ShouldBe("current-data");
         backup.HasPendingRestore.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task RecoverInterruptedRestore_PreparingMarkerRestoresOriginalBeforeStartup()
+    {
+        using var fixture = new FoundationFixture();
+        var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
+        await settings.LoadAsync(TestContext.Current.CancellationToken);
+        var backup = new BackupService(fixture.Paths, fixture.Factory,
+            new GroceryErp.Core.Time.SystemClock(settings), settings);
+        await fixture.Database.WriteAsync(transaction => transaction.Connection.Execute(
+            "UPDATE setting SET value = 'backup-state' WHERE key = 'store.name'",
+            transaction: transaction.Transaction), TestContext.Current.CancellationToken);
+        BackupInfo saved = backup.Create("manual");
+        await fixture.Database.WriteAsync(transaction => transaction.Connection.Execute(
+            "UPDATE setting SET value = 'latest-state' WHERE key = 'store.name'",
+            transaction: transaction.Transaction), TestContext.Current.CancellationToken);
+
+        backup.ApplyRestore(backup.InspectRestore(saved.Path));
+        string markerPath = Path.Combine(fixture.Paths.DbDir, "restore.pending.json");
+        JsonNode marker = JsonNode.Parse(File.ReadAllText(markerPath))!;
+        marker["stage"] = "preparing";
+        File.WriteAllText(markerPath, marker.ToJsonString(ManifestJson));
+
+        backup.RecoverInterruptedRestoreBeforeStartup();
+
+        backup.HasPendingRestore.ShouldBeFalse();
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'store.name'")
+            .ShouldBe("latest-state");
+    }
+
+    [Fact]
+    public async Task InspectRestore_RejectsTamperedSummaryAndMissingManifest()
+    {
+        using var fixture = new FoundationFixture();
+        var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
+        await settings.LoadAsync(TestContext.Current.CancellationToken);
+        var backup = new BackupService(fixture.Paths, fixture.Factory,
+            new GroceryErp.Core.Time.SystemClock(settings), settings);
+        BackupInfo saved = backup.Create("manual");
+        string tampered = Path.Combine(fixture.Paths.TempDir, "tampered.zip");
+        File.Copy(saved.Path, tampered);
+        using (ZipArchive archive = ZipFile.Open(tampered, ZipArchiveMode.Update))
+        {
+            ZipArchiveEntry entry = archive.GetEntry("manifest.json")!;
+            JsonNode manifest;
+            using (Stream source = entry.Open()) manifest = JsonNode.Parse(source)!;
+            entry.Delete();
+            manifest["summary"]!["products"] = 123456;
+            using Stream destination = archive.CreateEntry("manifest.json").Open();
+            JsonSerializer.Serialize(destination, manifest);
+        }
+        Should.Throw<GroceryErp.Core.Errors.DomainException>(() => backup.InspectRestore(tampered));
+
+        using (ZipArchive archive = ZipFile.Open(tampered, ZipArchiveMode.Update))
+            archive.GetEntry("manifest.json")!.Delete();
+        Should.Throw<GroceryErp.Core.Errors.DomainException>(() => BackupService.Verify(tampered));
+    }
+
+    [Fact]
+    public async Task RecoverInterruptedRestore_WhenOriginalFilesAreSplit_PreservesWal()
+    {
+        using var fixture = new FoundationFixture();
+        var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
+        await settings.LoadAsync(TestContext.Current.CancellationToken);
+        var backup = new BackupService(fixture.Paths, fixture.Factory,
+            new GroceryErp.Core.Time.SystemClock(settings), settings);
+        BackupInfo saved = backup.Create("manual");
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        string replaced = Path.Combine(fixture.Paths.DbDir, "replaced-interrupted");
+        Directory.CreateDirectory(replaced);
+        byte[] wal = [1, 2, 3, 4];
+        File.WriteAllBytes(fixture.Paths.DatabaseFile + "-wal", wal);
+        File.Move(fixture.Paths.DatabaseFile, Path.Combine(replaced, "grocery.db"));
+        string marker = Path.Combine(fixture.Paths.DbDir, "restore.pending.json");
+        File.WriteAllText(marker, JsonSerializer.Serialize(new
+        {
+            sourceZip = saved.Path,
+            replacedDirectory = replaced,
+            manifest = saved.Manifest,
+            stage = "preparing",
+        }, ManifestJson));
+
+        backup.RecoverInterruptedRestoreBeforeStartup();
+
+        File.Exists(fixture.Paths.DatabaseFile).ShouldBeTrue();
+        File.ReadAllBytes(fixture.Paths.DatabaseFile + "-wal").ShouldBe(wal);
+        backup.HasPendingRestore.ShouldBeFalse();
+        File.Delete(fixture.Paths.DatabaseFile + "-wal");
     }
 
     [Fact]

@@ -31,6 +31,7 @@ public partial class App : Application
     private bool _databaseReady;
     private bool _skipCloseBackup;
     private Task? _maintenanceTask;
+    private Task? _shutdownTask;
     private Mutex? _instanceMutex;
     private bool _ownsInstanceMutex;
 
@@ -48,12 +49,21 @@ public partial class App : Application
             {
                 MessageBox.Show(TranslationSource.Instance["Startup_AlreadyRunning"],
                     TranslationSource.Instance["App_Title"], MessageBoxButton.OK, MessageBoxImage.Information);
-                Shutdown();
+                await RequestShutdownAsync();
                 return;
             }
-            DataRootRelocator.ApplyPending();
+            // The packaged UI runner supplies an isolated temporary store without changing
+            // the machine's real bootstrap file or operational database.
+            string? testRoot = Environment.GetEnvironmentVariable("GROCERY_ERP_TEST_DATA_ROOT");
+            if (testRoot is not null)
+            {
+                string expectedPrefix = Path.Combine(Path.GetTempPath(), "grocery-erp-packaged-ui-");
+                if (!Path.GetFullPath(testRoot).StartsWith(expectedPrefix, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("The packaged UI test data root must be temporary.");
+            }
+            if (testRoot is null) DataRootRelocator.ApplyPending();
             HostApplicationBuilder builder = Host.CreateApplicationBuilder(e.Args);
-            var paths = new AppPaths(SettingsBootstrap.Load());
+            var paths = new AppPaths(testRoot is null ? SettingsBootstrap.Load() : new SettingsBootstrap(testRoot));
             string logDirectory = paths.LogsDir;
 
             builder.Services.AddSerilog((_, configuration) => configuration
@@ -127,6 +137,7 @@ public partial class App : Application
 
             SettingsService settings = _host.Services.GetRequiredService<SettingsService>();
             BackupService backups = _host.Services.GetRequiredService<BackupService>();
+            backups.RecoverInterruptedRestoreBeforeStartup();
             StartupState startup = await _host.Services.GetRequiredService<StartupPipeline>().RunAsync();
             TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo(startup.Settings.UiLanguage);
             _databaseReady = true;
@@ -138,19 +149,19 @@ public partial class App : Application
                     _host.Services.GetRequiredService<FirstRunService>(), paths,
                     backups,
                     settings);
-                if (setup.ShowDialog() != true) { Shutdown(); return; }
+                if (setup.ShowDialog() != true) { await RequestShutdownAsync(); return; }
                 await settings.LoadAsync();
                 if (DataRootRelocator.HasPending(paths.Root))
                 {
                     MessageBox.Show(TranslationSource.Instance["Settings_DataMoveRestart"],
                         TranslationSource.Instance["App_Title"], MessageBoxButton.OK, MessageBoxImage.Information);
-                    Shutdown();
+                    await RequestShutdownAsync();
                     return;
                 }
             }
 
             var login = new LoginWindow(authentication);
-            if (login.ShowDialog() != true) { Shutdown(); return; }
+            if (login.ShowDialog() != true) { await RequestShutdownAsync(); return; }
 
             if (backups.HasPendingRestore)
             {
@@ -165,12 +176,12 @@ public partial class App : Application
                 {
                     backups.UndoPendingRestore();
                     MessageBox.Show(TranslationSource.Instance["Startup_RestoreUndone"], TranslationSource.Instance["App_Title"], MessageBoxButton.OK, MessageBoxImage.Information);
-                    Shutdown();
+                    await RequestShutdownAsync();
                     return;
                 }
                 else
                 {
-                    Shutdown();
+                    await RequestShutdownAsync();
                     return;
                 }
             }
@@ -193,6 +204,11 @@ public partial class App : Application
                     int corrected = await _host.Services.GetRequiredService<InventoryService>().RebuildStockCacheAsync();
                     Log.Warning("Rebuilt cached quantities for {LotCount} lots", corrected);
                 }
+                else
+                {
+                    await RequestShutdownAsync(1);
+                    return;
+                }
             }
             if (health.LastSaleDate is not null &&
                 DateOnly.TryParseExact(health.LastSaleDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly lastSale) &&
@@ -203,7 +219,7 @@ public partial class App : Application
                     TranslationSource.Instance["App_Title"], MessageBoxButton.YesNo, MessageBoxImage.Warning);
                 if (choice != MessageBoxResult.Yes)
                 {
-                    Shutdown();
+                    await RequestShutdownAsync();
                     return;
                 }
                 await maintenance.OverrideClockWarningAsync(health.LastSaleDate);
@@ -211,6 +227,7 @@ public partial class App : Application
 
             ShellWindow shell = _host.Services.GetRequiredService<ShellWindow>();
             MainWindow = shell;
+            shell.Closed += async (_, _) => await RequestShutdownAsync();
             shell.Show();
             ReleaseNotesService releaseNotesService = _host.Services.GetRequiredService<ReleaseNotesService>();
             if (releaseNotesService.GetUnseen(TranslationSource.Instance.UiCulture) is { } releaseNotes)
@@ -223,7 +240,12 @@ public partial class App : Application
                 maintenance.RunAfterShellAsync(),
                 _host.Services.GetRequiredService<AssetService>().PostDueDepreciationAsync());
             _ = _maintenanceTask.ContinueWith(
-                task => { if (task.IsFaulted) Log.Error(task.Exception, "Background startup maintenance failed"); },
+                task =>
+                {
+                    if (!task.IsFaulted) return;
+                    Log.Error(task.Exception, "Background startup maintenance failed");
+                    shell.ShowMaintenanceWarning();
+                },
                 TaskScheduler.FromCurrentSynchronizationContext());
         }
         catch (Exception exception)
@@ -261,11 +283,14 @@ public partial class App : Application
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
-            Shutdown(1);
+            await RequestShutdownAsync(1);
         }
     }
 
-    protected override async void OnExit(ExitEventArgs e)
+    internal Task RequestShutdownAsync(int exitCode = 0) =>
+        _shutdownTask ??= CompleteShutdownAsync(exitCode);
+
+    private async Task CompleteShutdownAsync(int exitCode)
     {
         try
         {
@@ -277,13 +302,15 @@ public partial class App : Application
                     catch (OperationCanceledException) { }
                     catch (Exception exception) { Log.Error(exception, "Background startup maintenance failed during shutdown"); }
                 }
-                if (_databaseReady && !_skipCloseBackup)
+                if (_databaseReady && !_skipCloseBackup &&
+                    _host.Services.GetRequiredService<BackupService>().HasPendingRestore == false)
                 {
                     try { await _host.Services.GetRequiredService<ShutdownPipeline>().RunAsync(); }
                     catch (Exception exception) { Log.Error(exception, "Close backup failed"); }
                 }
                 await _host.StopAsync();
                 _host.Dispose();
+                _host = null;
             }
 
             await Log.CloseAndFlushAsync();
@@ -294,14 +321,20 @@ public partial class App : Application
         }
         finally
         {
-            if (_ownsInstanceMutex)
-            {
-                _instanceMutex?.ReleaseMutex();
-                _ownsInstanceMutex = false;
-            }
-            _instanceMutex?.Dispose();
-            base.OnExit(e);
+            Shutdown(exitCode);
         }
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _host?.Dispose();
+        if (_ownsInstanceMutex)
+        {
+            _instanceMutex?.ReleaseMutex();
+            _ownsInstanceMutex = false;
+        }
+        _instanceMutex?.Dispose();
+        base.OnExit(e);
     }
 
     private static void ConfigureCultures()

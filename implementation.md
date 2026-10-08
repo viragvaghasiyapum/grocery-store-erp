@@ -3008,9 +3008,8 @@ public BackupInfo Create(string reason)
             using var json = zip.CreateEntry("manifest.json", CompressionLevel.Fastest).Open();
             JsonSerializer.Serialize(json, manifest, ManifestJson.Options);   // camelCase, indented
         }
-        File.Move(partial, final);                          // only complete backups get the final name
-
-        Verify(final);                                      // re-read zip: manifest parses, hash matches
+        Verify(partial);                                    // re-read zip: manifest parses, hash matches
+        File.Move(partial, final);                          // only verified backups get the final name
         Rotate();
         return new BackupInfo(final, new FileInfo(final).Length, manifest);
     }
@@ -3082,16 +3081,21 @@ and bill counts, app version) next to the same figures for the current database.
 **3. Apply:**
 
 1. Backup the current database (`pre-restore`).
-2. `SqliteConnection.ClearAllPools()`; stop background jobs.
-3. Move `db/grocery.db` (+ `-wal`, `-shm`) to `db/replaced-<stamp>/`.
-4. Move the staged file to `db/grocery.db` (same volume → atomic rename).
-5. Write `db/restore.pending.json` (source zip, manifest summary, replaced folder).
+2. Stop background jobs, run a `wal_checkpoint(TRUNCATE)` that must report no busy readers,
+   then `SqliteConnection.ClearAllPools()`.
+3. Write `db/restore.pending.json` with stage `preparing` before the first rename.
+4. Move `db/grocery.db` (+ `-wal`, `-shm`) to `db/replaced-<stamp>/`.
+5. Move the staged file to `db/grocery.db` (same volume → atomic rename), then atomically
+   change the marker stage to `applied`.
 6. Restart the app.
 
 **4. Finish on the next start** (startup step 7): migrations run (an older backup is upgraded),
 the startup checks pass → write a `RESTORE` audit entry, delete the marker; the `replaced-*` folder
 is kept 7 days, then purged. If startup fails while the marker exists, the app offers
 **Undo restore**, which moves the replaced database back.
+Before opening SQLite, a `preparing` marker is rolled back to the original database. A marker
+whose original database was never moved is simply removed. Pending replaced data is excluded
+from the seven-day purge.
 
 ### 16.6 Integrity & maintenance
 
@@ -3399,6 +3403,8 @@ mgr.ApplyUpdatesAndRestart(update);            // restart → migrations run at 
 ```
 
 3. Release notes (per language) are shown after restart from an embedded `CHANGELOG.<lang>.md`.
+The selected update folder is remembered after every successful folder check, including when no
+newer release is found. Checking and the verified pre-update backup run off the WPF thread.
 
 ### 19.5 Versioning
 
@@ -3581,7 +3587,10 @@ Phase 7 checklist:
 - [x] Local-folder/USB update flow takes a verified pre-update backup and remembers the folder
 - [x] Automated and store go-live checklists are versioned in `docs/release-checklist.md`
 - [ ] Full five-year performance run on the target mid-range store PC; results recorded per version
-- [ ] Full FlaUI operator-journey run against the packaged application
+- [x] FlaUI portable-release journey: isolated setup/login, product and vendor creation,
+      purchase posting, every main page, scanned cash sale, English/Gujarati switch,
+      lock/unlock, manual and close backups
+- [ ] Operator walkthrough on the target store PC, including product and purchase entry
 - [ ] Native-speaker review of every Gujarati string and printed artifact
 - [ ] Scanner, printers, cutter, drawer, power-pull, display-scaling and second-PC restore sign-off
 - [ ] One-to-two-week store pilot and owner-approved cut-over

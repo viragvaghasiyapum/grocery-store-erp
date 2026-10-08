@@ -118,6 +118,7 @@
   <data name="Startup_RestoreUndone" xml:space="preserve"><value>પુનઃસ્થાપન રદ કરવામાં આવ્યું છે. અગાઉનો ડેટાબેઝ પાછો મૂકવામાં આવ્યો છે.</value><comment>MT - needs review</comment></data>
   <data name="Startup_RestoreFailed" xml:space="preserve"><value>પુનઃસ્થાપિત ડેટાબેઝ સુરક્ષિત રીતે શરૂ થઈ શક્યો નથી. પુનઃસ્થાપન રદ કરીને અગાઉનો ડેટાબેઝ પાછો મૂકવો છે?</value><comment>MT - needs review</comment></data>
   <data name="Startup_Failed" xml:space="preserve"><value>ગ્રોસરી ERP શરૂ થઈ શક્યું નથી. વિગતો લૉગમાં લખવામાં આવી છે.</value><comment>MT - needs review</comment></data>
+  <data name="Startup_MaintenanceFailed" xml:space="preserve"><value>પાછળ ચાલી રહેલી સુરક્ષા તપાસ નિષ્ફળ ગઈ. આગળ વધતા પહેલાં લૉગ તપાસો અને બેકઅપ ચકાસો.</value><comment>MT - needs review</comment></data>
   <data name="Catalog_Navigation" xml:space="preserve"><value>ઉત્પાદનો</value><comment>MT - needs review</comment></data>
   <data name="Catalog_Title" xml:space="preserve"><value>ઉત્પાદનો</value><comment>MT - needs review</comment></data>
   <data name="Catalog_Subtitle" xml:space="preserve"><value>ઉત્પાદનો શોધો, સ્ટોક જુઓ અને લેબલ મેનેજ કરો.</value><comment>MT - needs review</comment></data>
@@ -566,6 +567,8 @@
   <data name="Settings_Title" xml:space="preserve"><value>સેટિંગ્સ</value><comment>MT – needs review</comment></data>
   <data name="Settings_Description" xml:space="preserve"><value>દુકાનનો ડેટા સુરક્ષિત રાખો અને પ્રવેશ સંચાલિત કરો.</value><comment>MT – needs review</comment></data>
   <data name="Settings_BackupTitle" xml:space="preserve"><value>બેકઅપ</value><comment>MT – needs review</comment></data>
+  <data name="Settings_LocalBackupLabel" xml:space="preserve"><value>આ કમ્પ્યુટર પર</value><comment>MT – needs review</comment></data>
+  <data name="Settings_UsbCopyLabel" xml:space="preserve"><value>USB સુરક્ષા નકલ</value><comment>MT – needs review</comment></data>
   <data name="Settings_BackupNow" xml:space="preserve"><value>હમણાં બેકઅપ લો</value><comment>MT – needs review</comment></data>
   <data name="Settings_ExportUsb" xml:space="preserve"><value>USB પર નિકાસ કરો</value><comment>MT – needs review</comment></data>
   <data name="Settings_RemovableDrive" xml:space="preserve"><value>દૂર કરી શકાય તેવી ડ્રાઇવ</value><comment>MT – needs review</comment></data>
@@ -603,6 +606,13 @@
   <data name="Settings_CreatedAt" xml:space="preserve"><value>બનાવ્યો: {0}</value><comment>MT – needs review</comment></data>
   <data name="Settings_AppVersion" xml:space="preserve"><value>એપ સંસ્કરણ: {0}</value><comment>MT – needs review</comment></data>
   <data name="Settings_Reason" xml:space="preserve"><value>બેકઅપનું કારણ: {0}</value><comment>MT – needs review</comment></data>
+  <data name="Settings_BackupReason_Manual" xml:space="preserve"><value>જાતે બનાવેલો બેકઅપ</value><comment>MT – needs review</comment></data>
+  <data name="Settings_BackupReason_Daily" xml:space="preserve"><value>દૈનિક બેકઅપ</value><comment>MT – needs review</comment></data>
+  <data name="Settings_BackupReason_Close" xml:space="preserve"><value>એપ બંધ કરતી વખતે</value><comment>MT – needs review</comment></data>
+  <data name="Settings_BackupReason_PreRestore" xml:space="preserve"><value>પુનઃસ્થાપન પહેલાં</value><comment>MT – needs review</comment></data>
+  <data name="Settings_BackupReason_PreUpdate" xml:space="preserve"><value>અપડેટ પહેલાં</value><comment>MT – needs review</comment></data>
+  <data name="Settings_BackupReason_PreDataMove" xml:space="preserve"><value>ડેટા ખસેડતાં પહેલાં</value><comment>MT – needs review</comment></data>
+  <data name="Settings_BackupReason_PreMigration" xml:space="preserve"><value>સ્કીમા સંસ્કરણ {0} થી અપગ્રેડ પહેલાં</value><comment>MT – needs review</comment></data>
   <data name="Settings_SchemaVersion" xml:space="preserve"><value>સ્કીમા સંસ્કરણ: {0}</value><comment>MT – needs review</comment></data>
   <data name="Settings_ProductCount" xml:space="preserve"><value>વસ્તુઓ: {0}</value><comment>MT – needs review</comment></data>
   <data name="Settings_BillCount" xml:space="preserve"><value>પૂર્ણ બિલ: {0}</value><comment>MT – needs review</comment></data>

@@ -118,6 +118,7 @@
   <data name="Startup_RestoreUndone" xml:space="preserve"><value>The restore was undone. The previous database has been put back.</value></data>
   <data name="Startup_RestoreFailed" xml:space="preserve"><value>The restored database could not start safely. Undo the restore and put the previous database back?</value></data>
   <data name="Startup_Failed" xml:space="preserve"><value>Grocery ERP could not start. Details were written to the log.</value></data>
+  <data name="Startup_MaintenanceFailed" xml:space="preserve"><value>A background safety check failed. Check the log and verify a backup before continuing.</value></data>
   <data name="Catalog_Navigation" xml:space="preserve"><value>Products</value></data>
   <data name="Catalog_Title" xml:space="preserve"><value>Products</value></data>
   <data name="Catalog_Subtitle" xml:space="preserve"><value>Find products, review stock, and manage labels.</value></data>
@@ -566,6 +567,8 @@
   <data name="Settings_Title" xml:space="preserve"><value>Settings</value></data>
   <data name="Settings_Description" xml:space="preserve"><value>Protect your store data and manage access.</value></data>
   <data name="Settings_BackupTitle" xml:space="preserve"><value>Backups</value></data>
+  <data name="Settings_LocalBackupLabel" xml:space="preserve"><value>On this computer</value></data>
+  <data name="Settings_UsbCopyLabel" xml:space="preserve"><value>USB safety copy</value></data>
   <data name="Settings_BackupNow" xml:space="preserve"><value>Backup now</value></data>
   <data name="Settings_ExportUsb" xml:space="preserve"><value>Export to USB</value></data>
   <data name="Settings_RemovableDrive" xml:space="preserve"><value>Removable drive</value></data>
@@ -603,6 +606,13 @@
   <data name="Settings_CreatedAt" xml:space="preserve"><value>Created: {0}</value></data>
   <data name="Settings_AppVersion" xml:space="preserve"><value>App version: {0}</value></data>
   <data name="Settings_Reason" xml:space="preserve"><value>Backup reason: {0}</value></data>
+  <data name="Settings_BackupReason_Manual" xml:space="preserve"><value>Manual backup</value></data>
+  <data name="Settings_BackupReason_Daily" xml:space="preserve"><value>Daily backup</value></data>
+  <data name="Settings_BackupReason_Close" xml:space="preserve"><value>App close</value></data>
+  <data name="Settings_BackupReason_PreRestore" xml:space="preserve"><value>Before restore</value></data>
+  <data name="Settings_BackupReason_PreUpdate" xml:space="preserve"><value>Before update</value></data>
+  <data name="Settings_BackupReason_PreDataMove" xml:space="preserve"><value>Before moving data</value></data>
+  <data name="Settings_BackupReason_PreMigration" xml:space="preserve"><value>Before schema upgrade from version {0}</value></data>
   <data name="Settings_SchemaVersion" xml:space="preserve"><value>Schema version: {0}</value></data>
   <data name="Settings_ProductCount" xml:space="preserve"><value>Products: {0}</value></data>
   <data name="Settings_BillCount" xml:space="preserve"><value>Completed bills: {0}</value></data>

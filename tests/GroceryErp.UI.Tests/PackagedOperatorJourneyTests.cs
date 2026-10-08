@@ -1,0 +1,274 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.IO.Compression;
+using Dapper;
+using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Input;
+using FlaUI.UIA3;
+using GroceryErp.Catalog.Barcodes;
+using GroceryErp.Data.Infrastructure;
+using Shouldly;
+using Xunit;
+using PackagedApplication = FlaUI.Core.Application;
+
+namespace GroceryErp.UI.Tests;
+
+public sealed class PackagedOperatorJourneyTests
+{
+    [Fact]
+    public async Task PortableRelease_OperatorJourneyAndBackup_WorkOffline()
+    {
+        if (Environment.GetEnvironmentVariable("GROCERY_PACKAGED_UI_TEST") != "1")
+        {
+            Assert.Skip("Set GROCERY_PACKAGED_UI_TEST=1 after building the portable release.");
+            return;
+        }
+
+        string repository = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        string archivePath = Path.Combine(repository, "artifacts", "Releases", "GroceryErp-win-Portable.zip");
+        File.Exists(archivePath).ShouldBeTrue($"Build {archivePath} first.");
+        string root = Path.Combine(Path.GetTempPath(), $"grocery-erp-packaged-ui-{Guid.NewGuid():N}");
+        string package = Path.Combine(root, "package");
+        string store = Path.Combine(root, "store");
+        Directory.CreateDirectory(package);
+        ZipFile.ExtractToDirectory(archivePath, package);
+        string executable = Path.Combine(package, "current", "GroceryErp.App.exe");
+        File.Exists(executable).ShouldBeTrue();
+        var start = new ProcessStartInfo(executable) { UseShellExecute = false };
+        start.Environment["GROCERY_ERP_TEST_DATA_ROOT"] = store;
+        PackagedApplication? app = null;
+        try
+        {
+            app = PackagedApplication.Launch(start);
+            using var automation = new UIA3Automation();
+            Window setup = await WaitWindowAsync(app, automation, "NextButton");
+            Click(setup, "NextButton");
+            Enter(setup, "StoreName", "Packaged UI Test Store");
+            Click(setup, "NextButton");
+            Enter(setup, "Password", "test-owner-2026");
+            Enter(setup, "ConfirmPassword", "test-owner-2026");
+            for (int step = 2; step < 8; step++) Click(setup, "NextButton");
+
+            Window login = await WaitWindowAsync(app, automation, "PasswordBox");
+            SeedCategory(store);
+            string barcode = Ean.Internal("21", 1);
+            Enter(login, "PasswordBox", "test-owner-2026");
+            Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
+            Window shell = await WaitWindowAsync(app, automation, "BackupStatusButton");
+            shell.FindFirstDescendant(cf => cf.ByAutomationId("UpdateButton")).ShouldNotBeNull();
+            shell.FindFirstDescendant(cf => cf.ByAutomationId("LockButton")).ShouldNotBeNull();
+
+            // Release notes are shown on first launch and must be dismissed before using the shell.
+            foreach (Window other in app.GetAllTopLevelWindows(automation).Where(window =>
+                         window.FindFirstDescendant(cf => cf.ByAutomationId("BackupStatusButton")) is null))
+                other.FindFirstDescendant(cf => cf.ByName("OK"))?.Click();
+
+            ClickNamed(shell, "Products");
+            await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("SearchBox")) is not null,
+                TimeSpan.FromSeconds(10));
+            ClickNamed(shell, "New product");
+            Window product = await WaitWindowAsync(app, automation, "BarcodesBox");
+            Enter(product, "NameBox", "Packaged Test Rice");
+            Find(product, "HsnBox").AsTextBox().Text = "1006";
+            Enter(product, "PriceBox", "30");
+            Enter(product, "MrpBox", "35");
+            Find(product, "BarcodesBox").AsTextBox().Text = barcode;
+            Find(product, "BarcodesBox").AsTextBox().Text.ShouldBe(barcode);
+            await WaitUntilAsync(() => Find(product, "SaveButton").IsEnabled, TimeSpan.FromSeconds(10));
+            Click(product, "SaveButton");
+            try
+            {
+                await WaitUntilAsync(() => ProductExists(store, barcode) ||
+                    !string.IsNullOrWhiteSpace(Find(product, "ErrorText").Name), TimeSpan.FromSeconds(10));
+            }
+            catch (TimeoutException)
+            {
+                throw new TimeoutException($"Product editor did not save: name={Find(product, "NameBox").AsTextBox().Text}, " +
+                    $"barcode={Find(product, "BarcodesBox").AsTextBox().Text}, " +
+                    $"saveEnabled={Find(product, "SaveButton").IsEnabled}, error={Find(product, "ErrorText").Name}");
+            }
+            if (!ProductExists(store, barcode))
+                throw new InvalidOperationException($"Product editor rejected the entry: {Find(product, "ErrorText").Name}");
+
+            ClickNamed(shell, "Purchases");
+            await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("OpenDraftButton")) is not null,
+                TimeSpan.FromSeconds(10));
+            ClickNamed(shell, "New vendor");
+            Window vendor = await WaitWindowAsync(app, automation, "ContactBox");
+            Enter(vendor, "NameBox", "Packaged Test Supplier");
+            ClickNamed(vendor, "Save");
+            await WaitUntilAsync(() => VendorExists(store), TimeSpan.FromSeconds(10));
+            ClickNamed(shell, "New purchase");
+            Window purchase = await WaitWindowAsync(app, automation, "ProductSearchBox");
+            purchase.FindFirstDescendant(cf => cf.ByAutomationId("VendorBox"))!.AsComboBox()
+                .Select("Packaged Test Supplier");
+            Enter(purchase, "InvoiceBox", "PKG-INV-001");
+            Enter(purchase, "ProductSearchBox", barcode);
+            Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
+            try { await WaitUntilAsync(() => PurchaseRows(purchase).Length >= 2, TimeSpan.FromSeconds(10)); }
+            catch (TimeoutException)
+            {
+                throw new TimeoutException($"Purchase scan did not add a line: rows={PurchaseRows(purchase).Length}, " +
+                    $"search={Find(purchase, "ProductSearchBox").AsTextBox().Text}, " +
+                    $"error={Find(purchase, "ErrorText").Name}");
+            }
+            EditPurchaseCell(purchase, 1, "PKG-BATCH");
+            EditPurchaseCell(purchase, 3, DateTime.Today.AddYears(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            EditPurchaseCell(purchase, 6, "20");
+            Click(purchase, "PostButton");
+            await WaitUntilAsync(() => PurchaseExists(store), TimeSpan.FromSeconds(10));
+            foreach (Window prompt in app.GetAllTopLevelWindows(automation).Where(window =>
+                         window.FindFirstDescendant(cf => cf.ByName("No")) is not null))
+                prompt.FindFirstDescendant(cf => cf.ByName("No"))?.Click();
+
+            await NavigateAsync(shell, "Stock", "StockTabs");
+            await NavigateAsync(shell, "Money out", "MoneyOutTabs");
+            await NavigateAsync(shell, "Assets", "AssetName");
+            await NavigateAsync(shell, "Reports", "ReportPicker");
+            await NavigateAsync(shell, "Sales history", "HistoryGrid");
+            ClickNamed(shell, "Billing (POS)");
+            await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("ScanBox")) is not null,
+                TimeSpan.FromSeconds(10));
+            Enter(shell, "ScanBox", barcode);
+            Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
+            await WaitUntilAsync(() => CountSalesRows(store, "sale_line") == 1, TimeSpan.FromSeconds(10));
+            ClickNamed(shell, "F9 Cash");
+            Window payment = await WaitWindowAsync(app, automation, "CashBox");
+            ClickNamed(payment, "Complete bill");
+            await WaitUntilAsync(() => CountSalesRows(store, "sale") == 1, TimeSpan.FromSeconds(10));
+            ClickNamed(shell, "Dashboard");
+            await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("TodaySales")) is not null,
+                TimeSpan.FromSeconds(10));
+
+            shell.FindFirstDescendant(cf => cf.ByName("ગુ"))?.Click();
+            Find(shell, "LockButton").Name.ShouldBe("લૉક");
+            Click(shell, "LockButton");
+            Enter(shell, "UnlockPassword", "test-owner-2026");
+            Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
+            await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("UnlockPassword")) is null,
+                TimeSpan.FromSeconds(10));
+
+            Click(shell, "BackupStatusButton");
+            await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("BackupButton")) is not null,
+                TimeSpan.FromSeconds(10));
+            Click(shell, "BackupButton");
+            await WaitUntilAsync(() => Directory.Exists(Path.Combine(store, "backups")) &&
+                Directory.EnumerateFiles(Path.Combine(store, "backups"), "*_manual.zip").Any(), TimeSpan.FromSeconds(30));
+            shell.Close();
+            await WaitUntilAsync(() => app.HasExited, TimeSpan.FromSeconds(30));
+            Directory.EnumerateFiles(Path.Combine(store, "backups"), "*_close.zip").ShouldNotBeEmpty();
+        }
+        finally
+        {
+            if (app is { HasExited: false }) app.Kill();
+            app?.Dispose();
+            try { await WaitUntilAsync(() => TryDeleteDirectory(root), TimeSpan.FromSeconds(10)); }
+            catch (TimeoutException) { Trace.TraceWarning("Test package could not be removed: {0}", root); }
+        }
+    }
+
+    private static async Task<Window> WaitWindowAsync(PackagedApplication app, UIA3Automation automation, string automationId)
+    {
+        Window? found = null;
+        await WaitUntilAsync(() =>
+        {
+            found = app.GetAllTopLevelWindows(automation)
+                .FirstOrDefault(window => window.FindFirstDescendant(cf => cf.ByAutomationId(automationId)) is not null);
+            return found is not null;
+        }, TimeSpan.FromSeconds(45));
+        return found!;
+    }
+
+    private static AutomationElement Find(Window window, string automationId) =>
+        window.FindFirstDescendant(cf => cf.ByAutomationId(automationId))
+        ?? throw new InvalidOperationException($"The {automationId} control is missing.");
+
+    private static void Click(Window window, string automationId) => Find(window, automationId).Click();
+
+    private static void ClickNamed(Window window, string name) =>
+        (window.FindFirstDescendant(cf => cf.ByName(name))
+         ?? throw new InvalidOperationException($"The {name} action is missing.")).Click();
+
+    private static async Task NavigateAsync(Window shell, string name, string automationId)
+    {
+        ClickNamed(shell, name);
+        await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId(automationId)) is not null,
+            TimeSpan.FromSeconds(10));
+    }
+
+    private static void SeedCategory(string root)
+    {
+        using var connection = new SqliteConnectionFactory(new AppPaths(new SettingsBootstrap(root))).Open();
+        connection.Execute("INSERT INTO category(name) VALUES ('Staples')");
+    }
+
+    private static bool ProductExists(string root, string barcode)
+    {
+        using var connection = new SqliteConnectionFactory(new AppPaths(new SettingsBootstrap(root))).Open();
+        return connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product_barcode WHERE barcode = @barcode", new { barcode }) == 1;
+    }
+
+    private static bool VendorExists(string root)
+    {
+        using var connection = new SqliteConnectionFactory(new AppPaths(new SettingsBootstrap(root))).Open();
+        return connection.ExecuteScalar<long>("SELECT COUNT(*) FROM vendor WHERE name = 'Packaged Test Supplier'") == 1;
+    }
+
+    private static AutomationElement[] PurchaseRows(Window purchase) =>
+        Find(purchase, "LinesGrid").FindAllDescendants()
+            .Where(element => element.ControlType.ToString() == "DataItem").ToArray();
+
+    private static void EditPurchaseCell(Window purchase, int column, string value)
+    {
+        AutomationElement row = PurchaseRows(purchase)[1];
+        AutomationElement[] cells = row.FindAllChildren();
+        if (cells.Length <= column)
+            throw new InvalidOperationException($"Purchase column {column} was not found ({cells.Length} cells).");
+        AutomationElement cell = cells[column];
+        cell.DoubleClick();
+        Keyboard.Type(value);
+        Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.TAB);
+    }
+
+    private static bool PurchaseExists(string root)
+    {
+        using var connection = new SqliteConnectionFactory(new AppPaths(new SettingsBootstrap(root))).Open();
+        return connection.ExecuteScalar<long>("SELECT COUNT(*) FROM purchase WHERE status = 'POSTED'") == 1;
+    }
+
+    private static long CountSalesRows(string root, string table)
+    {
+        using var connection = new SqliteConnectionFactory(new AppPaths(new SettingsBootstrap(root))).Open();
+        return table switch
+        {
+            "sale_line" => connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sale_line"),
+            "sale" => connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sale WHERE status = 'COMPLETED'"),
+            _ => throw new ArgumentOutOfRangeException(nameof(table)),
+        };
+    }
+
+    private static void Enter(Window window, string automationId, string value)
+    {
+        AutomationElement field = Find(window, automationId);
+        field.Click();
+        Keyboard.Type(value);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var watch = Stopwatch.StartNew();
+        while (!condition())
+        {
+            if (watch.Elapsed >= timeout) throw new TimeoutException("The packaged UI did not reach the expected state.");
+            await Task.Delay(100);
+        }
+    }
+
+    private static bool TryDeleteDirectory(string path)
+    {
+        if (!Directory.Exists(path)) return true;
+        try { Directory.Delete(path, recursive: true); return true; }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
+}

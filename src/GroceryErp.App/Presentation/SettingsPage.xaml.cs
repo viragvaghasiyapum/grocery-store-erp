@@ -95,7 +95,7 @@ public partial class SettingsPage : Page
             DataRootRelocator.Schedule(_paths.Root, picker.FolderName);
             MessageBox.Show(TranslationSource.Instance["Settings_DataMoveRestart"],
                 TranslationSource.Instance["App_Title"], MessageBoxButton.OK, MessageBoxImage.Information);
-            app.Shutdown();
+            await app.RequestShutdownAsync();
         }
         catch (Exception exception) { ShowError(exception); }
         finally { MoveDataButton.IsEnabled = true; }
@@ -107,6 +107,7 @@ public partial class SettingsPage : Page
         {
             BackupButton.IsEnabled = false;
             ShowStatus("Settings_BackupRunning");
+            await ((App)Application.Current).WaitForStartupMaintenanceAsync();
             await Task.Run(() => _backups.Create("manual"));
             ShowStatus("Settings_BackupSuccess");
             RefreshStatus();
@@ -126,6 +127,7 @@ public partial class SettingsPage : Page
         {
             ExportButton.IsEnabled = false;
             ShowStatus("Settings_ExportRunning");
+            await ((App)Application.Current).WaitForStartupMaintenanceAsync();
             IReadOnlyList<string> copied = await Task.Run(() => _backups.ExportToUsb(drive));
             await _settings.SaveAsync(new Dictionary<string, string>
             {
@@ -142,17 +144,18 @@ public partial class SettingsPage : Page
 
     private async void Restore_OnClick(object sender, RoutedEventArgs e)
     {
-        var picker = new OpenFileDialog
-        {
-            Title = TranslationSource.Instance["Settings_SelectBackup"],
-            Filter = TranslationSource.Instance["Settings_SelectBackupFilter"],
-            InitialDirectory = _backups.BackupDirectory,
-            CheckFileExists = true,
-        };
-        if (picker.ShowDialog(Window.GetWindow(this)) != true) return;
+        RestoreActionButton.IsEnabled = false;
         RestoreCandidate? candidate = null;
         try
         {
+            var picker = new OpenFileDialog
+            {
+                Title = TranslationSource.Instance["Settings_SelectBackup"],
+                Filter = TranslationSource.Instance["Settings_SelectBackupFilter"],
+                InitialDirectory = _backups.BackupDirectory,
+                CheckFileExists = true,
+            };
+            if (picker.ShowDialog(Window.GetWindow(this)) != true) return;
             ShowStatus("Settings_InspectRunning");
             candidate = await Task.Run(() => _backups.InspectRestore(picker.FileName));
             CurrentDatabaseInfo current = await Task.Run(_backups.InspectCurrent);
@@ -165,10 +168,14 @@ public partial class SettingsPage : Page
             app.SkipCloseBackup();
             MessageBox.Show(TranslationSource.Instance["Settings_RestoreRestart"],
                 TranslationSource.Instance["App_Title"], MessageBoxButton.OK, MessageBoxImage.Information);
-            app.Shutdown();
+            await app.RequestShutdownAsync();
         }
         catch (Exception exception) { ShowError(exception); }
-        finally { if (candidate is not null) _backups.DiscardRestoreCandidate(candidate); }
+        finally
+        {
+            if (candidate is not null) _backups.DiscardRestoreCandidate(candidate);
+            RestoreActionButton.IsEnabled = true;
+        }
     }
 
     private async void ChangePassword_OnClick(object sender, RoutedEventArgs e)

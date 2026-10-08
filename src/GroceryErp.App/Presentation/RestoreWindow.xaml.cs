@@ -44,13 +44,26 @@ public partial class RestoreWindow : FluentWindow
                 DateTimeStyles.None, out DateTime parsed)
                 ? parsed.ToString("dd MMM yyyy HH:mm", TranslationSource.FormatCulture) : createdAt) + "\n";
         string app = appVersion is null ? "" : source.Format("Settings_AppVersion", appVersion) + "\n";
-        string why = reason is null ? "" : source.Format("Settings_Reason", reason) + "\n";
+        string why = reason is null ? "" : source.Format("Settings_Reason", LocalizeReason(source, reason)) + "\n";
         return date + app + why + source.Format("Settings_SchemaVersion", version.ToString(CultureInfo.InvariantCulture)) + "\n" +
             source.Format("Settings_ProductCount", summary.Products.ToString("N0", TranslationSource.FormatCulture)) + "\n" +
             source.Format("Settings_BillCount", summary.Bills.ToString("N0", TranslationSource.FormatCulture)) + "\n" +
             source.Format("Settings_LastInvoice", summary.LastInvoiceNo ?? "—") + "\n" +
             source.Format("Settings_LastSale", summary.LastSaleDate ?? "—");
     }
+
+    private static string LocalizeReason(TranslationSource source, string reason) => reason switch
+    {
+        "manual" => source["Settings_BackupReason_Manual"],
+        "daily" => source["Settings_BackupReason_Daily"],
+        "close" => source["Settings_BackupReason_Close"],
+        "pre-restore" => source["Settings_BackupReason_PreRestore"],
+        "pre-update" => source["Settings_BackupReason_PreUpdate"],
+        "pre-data-move" => source["Settings_BackupReason_PreDataMove"],
+        _ when reason.StartsWith("pre-migration-v", StringComparison.Ordinal) =>
+            source.Format("Settings_BackupReason_PreMigration", reason[15..]),
+        _ => reason,
+    };
 
     private void Confirmation_OnTextChanged(object sender, TextChangedEventArgs e) =>
         RestoreButton.IsEnabled = string.Equals(Confirmation.Text, "RESTORE", StringComparison.Ordinal);
