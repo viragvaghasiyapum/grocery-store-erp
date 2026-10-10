@@ -45,7 +45,7 @@ public partial class VendorReturnWindow : Window
             }
             UpdateTotals();
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; PostButton.IsEnabled = false; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); PostButton.IsEnabled = false; }
     }
 
     private static bool TryMoney(string raw, out Money money)
@@ -107,7 +107,7 @@ public partial class VendorReturnWindow : Window
             DocumentNumber = posted.DocumentNumber;
             DialogResult = true;
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; PostButton.IsEnabled = true; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); PostButton.IsEnabled = true; }
     }
 
     public string? DocumentNumber { get; private set; }

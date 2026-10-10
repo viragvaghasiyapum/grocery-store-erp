@@ -30,7 +30,7 @@ public partial class CustomerWindow : Window
             CustomersGrid.SelectedItem = customers.FirstOrDefault(customer => customer.Id == _currentCustomerId);
             ErrorText.Text = "";
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
 
     private async void Search_OnClick(object sender, RoutedEventArgs e) => await SearchAsync();
@@ -44,7 +44,7 @@ public partial class CustomerWindow : Window
             SelectedCustomerId = id;
             DialogResult = true;
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
 
     private void WalkIn_OnClick(object sender, RoutedEventArgs e)

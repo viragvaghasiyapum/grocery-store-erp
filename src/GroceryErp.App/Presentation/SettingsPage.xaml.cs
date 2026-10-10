@@ -206,8 +206,6 @@ public partial class SettingsPage : Page
     private void ShowError(Exception exception)
     {
         StatusText.Foreground = Brushes.Crimson;
-        StatusText.Text = exception is DomainException domain
-            ? TranslationSource.Instance[$"Error_{domain.Code}"]
-            : TranslationSource.Instance["Settings_ActionFailed"];
+        StatusText.Text = UserError.Message(exception);
     }
 }

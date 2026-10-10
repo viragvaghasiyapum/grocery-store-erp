@@ -119,7 +119,8 @@ public partial class SetupWindow : FluentWindow
                     _gujaratiKeyboardAvailable, StartImport.IsChecked == true ? "IMPORT" : "EMPTY",
                     FirstRunService.RequiredSeedKeys.ToDictionary(key => key, key =>
                         SharedStrings.ResourceManager.GetString(key, CultureInfo.GetCultureInfo("gu-IN"))
-                        ?? throw new InvalidOperationException($"Missing Gujarati seed translation: {key}"))));
+                        ?? throw new InvalidOperationException($"Missing Gujarati seed translation: {key}")),
+                    ((ComboBoxItem)ReceiptMode.SelectedItem).Tag?.ToString() ?? "RASTER"));
                 await _settings.LoadAsync();
                 _setupCompleted = true;
             }
@@ -134,7 +135,7 @@ public partial class SetupWindow : FluentWindow
                 ? Translate("Setup_ErrorBackupFailed")
                 : Translate("Error_Validation");
         }
-        catch (ArgumentException exception) { ErrorText.Text = exception.Message; }
+        catch (ArgumentException exception) { ErrorText.Text = UserError.Message(exception); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             ErrorText.Text = Translate("Setup_ErrorBackupFailed");
@@ -228,7 +229,10 @@ public partial class SetupWindow : FluentWindow
                 Money.Zero, Money.Zero, Money.Zero, Money.Zero, Money.Zero, Money.Zero, Money.Zero,
                 Array.Empty<PaymentInput>(), Money.Zero,
                 Gujarati.IsChecked == true ? "gu-IN" : "en-IN", Translate("Setup_TestDocument"), false);
-            byte[] bytes = GroceryErp.Sales.ReceiptPrinter.Render(receipt, ParseTag(ReceiptWidth, 576), false);
+            int width = ParseTag(ReceiptWidth, 576);
+            byte[] bytes = ((ComboBoxItem)ReceiptMode.SelectedItem).Tag?.ToString() == "TEXT"
+                ? GroceryErp.Sales.ReceiptPrinter.RenderText(receipt, width)
+                : GroceryErp.Sales.ReceiptPrinter.Render(receipt, width, false);
             await Task.Run(() => RawPrinter.Send(ReceiptPrinter.Text.Trim(), bytes, Translate("Setup_TestDocument")));
             ErrorText.Text = Translate("Setup_TestSent");
         }

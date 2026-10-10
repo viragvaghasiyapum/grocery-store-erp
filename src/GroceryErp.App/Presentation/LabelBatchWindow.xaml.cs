@@ -10,6 +10,8 @@ using GroceryErp.Data.Services;
 using GroceryErp.Inventory;
 using GroceryErp.Localization;
 using GroceryErp.Printing;
+using GroceryErp.Sales;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Win32;
 
 namespace GroceryErp.App.Presentation;
@@ -97,7 +99,7 @@ public partial class LabelBatchWindow : Window
             if (Rows.Count > 0) LabelsGrid.SelectedIndex = 0;
             StatusText.Text = Rows.Count == 0 ? TranslationSource.Instance["Catalog_NoLabels"] : string.Empty;
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
         finally { SaveButton.IsEnabled = PrintButton.IsEnabled = Rows.Count > 0; }
     }
 
@@ -137,7 +139,7 @@ public partial class LabelBatchWindow : Window
         PreviewBarcode.Height = template == TsplLabelTemplate.Price ? 46 : 56;
     }
 
-    private byte[] BuildCommand()
+    private List<TsplLabel> BuildLabels()
     {
         LabelsGrid.CommitEdit(DataGridEditingUnit.Cell, true);
         LabelsGrid.CommitEdit(DataGridEditingUnit.Row, true);
@@ -152,14 +154,14 @@ public partial class LabelBatchWindow : Window
                 _width, _height, copies, template));
         }
         if (labels.Count == 0) throw new InvalidOperationException(TranslationSource.Instance["Catalog_SelectLabels"]);
-        return TsplLabelBuilder.BuildBatch(labels);
+        return labels;
     }
 
     private void Save_OnClick(object sender, RoutedEventArgs e)
     {
         try
         {
-            byte[] command = BuildCommand();
+            byte[] command = TsplLabelBuilder.BuildBatch(BuildLabels());
             var dialog = new SaveFileDialog
             {
                 Filter = "TSPL print file (*.prn)|*.prn|All files (*.*)|*.*",
@@ -171,7 +173,7 @@ public partial class LabelBatchWindow : Window
             File.WriteAllBytes(dialog.FileName, command);
             StatusText.Text = string.Empty;
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void Print_OnClick(object sender, RoutedEventArgs e)
@@ -180,11 +182,12 @@ public partial class LabelBatchWindow : Window
         {
             PrintButton.IsEnabled = SaveButton.IsEnabled = false;
             LabelsGrid.IsEnabled = false;
-            byte[] command = BuildCommand();
-            await Task.Run(() => RawPrinter.Send(PrinterBox.Text, command, "Product labels"));
+            IReadOnlyList<TsplLabel> labels = BuildLabels();
+            await ((App)Application.Current).Services.GetRequiredService<ReceiptPrinter>().PrintLabelsAsync(PrinterBox.Text, labels,
+                (PrinterModeBox.SelectedItem as ComboBoxItem)?.Tag as string == "DRIVER");
             DialogResult = true;
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
         finally
         {
             PrintButton.IsEnabled = SaveButton.IsEnabled = true;

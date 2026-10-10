@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Globalization;
 using System.Resources;
+using GroceryErp.Core.Errors;
 using GroceryErp.Localization;
 using Shouldly;
 using Xunit;
@@ -37,6 +38,19 @@ public sealed class LocalizationTests
             .Where(character => character is >= '\u0AE6' and <= '\u0AEF');
 
         digits.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void EveryDomainError_HasEnglishAndGujaratiMessage()
+    {
+        foreach (ErrorCode code in Enum.GetValues<ErrorCode>())
+        {
+            string key = $"Error_{code}";
+            SharedStrings.ResourceManager.GetString(key, CultureInfo.GetCultureInfo("en-IN"))
+                .ShouldNotBeNullOrWhiteSpace();
+            SharedStrings.ResourceManager.GetString(key, CultureInfo.GetCultureInfo("gu-IN"))
+                .ShouldNotBeNullOrWhiteSpace();
+        }
     }
 
     [Fact]

@@ -119,6 +119,7 @@
   <data name="Startup_RestoreFailed" xml:space="preserve"><value>પુનઃસ્થાપિત ડેટાબેઝ સુરક્ષિત રીતે શરૂ થઈ શક્યો નથી. પુનઃસ્થાપન રદ કરીને અગાઉનો ડેટાબેઝ પાછો મૂકવો છે?</value><comment>MT - needs review</comment></data>
   <data name="Startup_Failed" xml:space="preserve"><value>ગ્રોસરી ERP શરૂ થઈ શક્યું નથી. વિગતો લૉગમાં લખવામાં આવી છે.</value><comment>MT - needs review</comment></data>
   <data name="Startup_MaintenanceFailed" xml:space="preserve"><value>પાછળ ચાલી રહેલી સુરક્ષા તપાસ નિષ્ફળ ગઈ. આગળ વધતા પહેલાં લૉગ તપાસો અને બેકઅપ ચકાસો.</value><comment>MT - needs review</comment></data>
+  <data name="Startup_PrintReview" xml:space="preserve"><value>સાચવેલાં પ્રિન્ટ કામ તપાસવા જરૂરી છે. છપાયેલું કાગળ તપાસો, પછી બિલિંગ ખોલી દરેક કામ ફરી છાપતા પહેલાં તેની સમીક્ષા કરવા Ctrl+P દબાવો.</value><comment>MT - needs review</comment></data>
   <data name="Catalog_Navigation" xml:space="preserve"><value>ઉત્પાદનો</value><comment>MT - needs review</comment></data>
   <data name="Catalog_Title" xml:space="preserve"><value>ઉત્પાદનો</value><comment>MT - needs review</comment></data>
   <data name="Catalog_Subtitle" xml:space="preserve"><value>ઉત્પાદનો શોધો, સ્ટોક જુઓ અને લેબલ મેનેજ કરો.</value><comment>MT - needs review</comment></data>
@@ -148,6 +149,17 @@
   <data name="Error_BarcodeExists" xml:space="preserve"><value>આ બારકોડ પહેલેથી જ જોડાયેલો છે.</value><comment>MT - needs review</comment></data>
   <data name="Error_InvalidBarcode" xml:space="preserve"><value>બારકોડ અથવા તેનો ચેક અંક અમાન્ય છે.</value><comment>MT - needs review</comment></data>
   <data name="Error_PriceAboveMrp" xml:space="preserve"><value>વેચાણ કિંમત MRP કરતાં વધુ હોઈ શકતી નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Error_Unknown" xml:space="preserve"><value>કાર્ય પૂર્ણ થઈ શક્યું નથી. કૃપા કરીને ફરી પ્રયાસ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Error_ExpiredLot" xml:space="preserve"><value>આ સ્ટોક લોટની મુદત પૂરી થઈ ગઈ છે અને તેનો ઉપયોગ કરી શકાતો નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Error_SaleFinalized" xml:space="preserve"><value>પૂર્ણ થયેલું અથવા રદ થયેલું વેચાણ બદલી શકાતું નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Error_LedgerAppendOnly" xml:space="preserve"><value>નોંધાયેલી સ્ટોક હિલચાલ બદલી શકાતી નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Error_LotProductMismatch" xml:space="preserve"><value>પસંદ કરેલો લોટ બીજા ઉત્પાદનનો છે.</value><comment>MT - needs review</comment></data>
+  <data name="Error_InvalidDate" xml:space="preserve"><value>માન્ય તારીખ દાખલ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Error_BarcodeNotFound" xml:space="preserve"><value>આ બારકોડ માટે કોઈ ઉત્પાદન મળ્યું નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Error_CreditNeedsCustomer" xml:space="preserve"><value>ઉધાર ચુકવણી માટે ગ્રાહક પસંદ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Error_DiscountExceedsLine" xml:space="preserve"><value>છૂટ લાઇનની રકમ કરતાં વધુ હોઈ શકતી નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Error_ClockBehindLastBill" xml:space="preserve"><value>કમ્પ્યુટરની તારીખ છેલ્લા બિલની તારીખ પહેલાંની છે. ઘડિયાળ તપાસો.</value><comment>MT - needs review</comment></data>
+  <data name="Error_StockCountReviewChanged" xml:space="preserve"><value>સ્ટોક ગણતરીની સમીક્ષા પછી સ્ટોક બદલાયો છે. ફરી તાજું કરીને સમીક્ષા કરો.</value><comment>MT - needs review</comment></data>
   <data name="Common_Save" xml:space="preserve"><value>સાચવો</value><comment>MT - needs review</comment></data>
   <data name="Common_Cancel" xml:space="preserve"><value>રદ કરો</value><comment>MT - needs review</comment></data>
   <data name="Common_Close" xml:space="preserve"><value>બંધ કરો</value><comment>MT - needs review</comment></data>
@@ -769,6 +781,82 @@
   <data name="Sales_HeldChip" xml:space="preserve"><value>રોકેલું #{0}</value><comment>MT - needs review</comment></data>
   <data name="Sales_PrinterReady" xml:space="preserve"><value>રસીદ પ્રિન્ટર તૈયાર છે</value><comment>MT - needs review</comment></data>
   <data name="Sales_PrinterUnavailable" xml:space="preserve"><value>રસીદ પ્રિન્ટર ઉપલબ્ધ નથી</value><comment>MT - needs review</comment></data>
+  <data name="Sales_PrinterJobFailed" xml:space="preserve"><value>સાચવેલું પ્રિન્ટ કામ તપાસવું જરૂરી છે. Ctrl+P દબાવો.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_PrintReviewPrompt" xml:space="preserve"><value>સાચવેલું કામ “{0}” પ્રિન્ટર “{1}” પર ફરી છાપવું? તે પહેલેથી છપાયું હોઈ શકે છે. રસીદ પર DUPLICATE લખાશે.</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_PrinterModeTspl" xml:space="preserve"><value>TSPL લેબલ પ્રિન્ટર</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_PrinterModeDriver" xml:space="preserve"><value>Windows પ્રિન્ટર ડ્રાઇવર</value><comment>MT - needs review</comment></data>
+  <data name="Receipt_Gstin" xml:space="preserve"><value>GSTIN</value><comment>Invariant tax identifier</comment></data>
+  <data name="Receipt_Mrp" xml:space="preserve"><value>MRP</value><comment>Invariant retail acronym</comment></data>
+  <data name="Receipt_Cgst" xml:space="preserve"><value>CGST</value><comment>Invariant tax acronym</comment></data>
+  <data name="Receipt_Sgst" xml:space="preserve"><value>SGST</value><comment>Invariant tax acronym</comment></data>
+  <data name="Setup_ReceiptMode" xml:space="preserve"><value>રસીદ મોડ</value><comment>MT - needs review</comment></data>
+  <data name="Setup_ModeRaster" xml:space="preserve"><value>રાસ્ટર (અંગ્રેજી અને ગુજરાતી)</value><comment>MT - needs review</comment></data>
+  <data name="Setup_ModeText" xml:space="preserve"><value>ટેક્સ્ટ (ફક્ત અંગ્રેજી)</value><comment>MT - needs review</comment></data>
+  <data name="App_ActionFailed" xml:space="preserve"><value>આ ક્રિયા પૂર્ણ થઈ શકી નથી. વિગતો તપાસી ફરી પ્રયાસ કરો. ભૂલ લૉગમાં નોંધાઈ છે.</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_CREATE" xml:space="preserve"><value>બનાવ્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_UPDATE" xml:space="preserve"><value>સુધાર્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_DELETE" xml:space="preserve"><value>કાઢી નાખ્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_ARCHIVE" xml:space="preserve"><value>આર્કાઇવ કર્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_RESTORE" xml:space="preserve"><value>પુનઃસ્થાપિત કર્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_POST" xml:space="preserve"><value>પોસ્ટ કર્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_CANCEL" xml:space="preserve"><value>રદ કર્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_VOID" xml:space="preserve"><value>બિલ રદ કર્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_IMPORT" xml:space="preserve"><value>આયાત કર્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_CREATE_DRAFT" xml:space="preserve"><value>ડ્રાફ્ટ બનાવ્યો</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_UPDATE_DRAFT" xml:space="preserve"><value>ડ્રાફ્ટ સુધાર્યો</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_IMPORT_CREATE" xml:space="preserve"><value>આયાતથી બનાવ્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_IMPORT_UPDATE" xml:space="preserve"><value>આયાતથી સુધાર્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_BARCODE_ADD" xml:space="preserve"><value>બારકોડ ઉમેર્યો</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_BULK_CATEGORY" xml:space="preserve"><value>સમૂહમાં કેટેગરી બદલી</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_BULK_TAX_RATE" xml:space="preserve"><value>સમૂહમાં કર દર બદલ્યો</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_ADJUST" xml:space="preserve"><value>સમાયોજન કર્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_PRICE_CHANGE" xml:space="preserve"><value>કિંમત બદલી</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_PRICE_OVERRIDE" xml:space="preserve"><value>કિંમત બદલી</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_BLOCK" xml:space="preserve"><value>અવરોધ્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_UNBLOCK" xml:space="preserve"><value>અવરોધ દૂર કર્યો</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_REFRESH_LOTS" xml:space="preserve"><value>લોટ યાદી નવી કરી</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_REBUILD" xml:space="preserve"><value>ફરી બનાવ્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_POST_DUE" xml:space="preserve"><value>બાકી મૂલ્યહ્રાસ પોસ્ટ કર્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_DISPOSE" xml:space="preserve"><value>નિકાલ કર્યો</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_OTHER" xml:space="preserve"><value>અન્ય</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_PASSWORD_CHANGE" xml:space="preserve"><value>પાસવર્ડ બદલ્યો</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_CLOCK_WARNING_OVERRIDE" xml:space="preserve"><value>સમય ચેતવણી અવગણી</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_INTEGRITY_CHECK" xml:space="preserve"><value>અખંડિતતા તપાસી</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_RETURN" xml:space="preserve"><value>પરત કર્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_COMPLETE" xml:space="preserve"><value>પૂર્ણ કર્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_HOLD" xml:space="preserve"><value>હોલ્ડ કર્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_RESUME" xml:space="preserve"><value>ફરી શરૂ કર્યું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Action_PAY" xml:space="preserve"><value>ચૂકવણી કરી</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_app_user" xml:space="preserve"><value>વપરાશકર્તા</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_setting" xml:space="preserve"><value>સેટિંગ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_clock" xml:space="preserve"><value>સમય</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_maintenance" xml:space="preserve"><value>જાળવણી</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_category" xml:space="preserve"><value>કેટેગરી</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_brand" xml:space="preserve"><value>બ્રાન્ડ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_uom" xml:space="preserve"><value>એકમ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_tax_rate" xml:space="preserve"><value>કર દર</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_product" xml:space="preserve"><value>ઉત્પાદન</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_product_lot" xml:space="preserve"><value>ઉત્પાદન લોટ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_product_import" xml:space="preserve"><value>ઉત્પાદન આયાત</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_vendor" xml:space="preserve"><value>વિક્રેતા</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_purchase" xml:space="preserve"><value>ખરીદી</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_vendor_payment" xml:space="preserve"><value>વિક્રેતાને ચૂકવણી</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_vendor_return" xml:space="preserve"><value>વિક્રેતાને પરત</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_stock_cache" xml:space="preserve"><value>સ્ટોક કેશ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_opening_stock" xml:space="preserve"><value>શરૂઆતનો સ્ટોક</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_stock_count" xml:space="preserve"><value>સ્ટોક ગણતરી</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_sale_line" xml:space="preserve"><value>વેચાણ લાઇન</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_customer" xml:space="preserve"><value>ગ્રાહક</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_sale" xml:space="preserve"><value>વેચાણ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_damage" xml:space="preserve"><value>નુકસાન</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_expense_category" xml:space="preserve"><value>ખર્ચ કેટેગરી</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_expense" xml:space="preserve"><value>ખર્ચ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_employee" xml:space="preserve"><value>કર્મચારી</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_salary_run" xml:space="preserve"><value>પગાર પ્રક્રિયા</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_salary_payment" xml:space="preserve"><value>પગાર ચૂકવણી</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_asset" xml:space="preserve"><value>મિલકત</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_asset_depreciation" xml:space="preserve"><value>મિલકતનું મૂલ્યહ્રાસ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Entity_restore" xml:space="preserve"><value>પુનઃસ્થાપન</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_VendorReturn" xml:space="preserve"><value>વિક્રેતાને પરત</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_VendorReturns" xml:space="preserve"><value>વિક્રેતાને પરત કરેલા માલ</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_CreditNumber" xml:space="preserve"><value>વિક્રેતા ક્રેડિટ નોટ નંબર</value><comment>MT - needs review</comment></data>

@@ -1,9 +1,12 @@
 using System.Globalization;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using GroceryErp.Catalog;
 using GroceryErp.Localization;
 using GroceryErp.Printing;
+using GroceryErp.Sales;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Win32;
 
 namespace GroceryErp.App.Presentation;
@@ -33,7 +36,7 @@ public partial class ProductLabelWindow : Window
     {
         try
         {
-            byte[] command = BuildCommand();
+            byte[] command = TsplLabelBuilder.Build(BuildLabel());
             var dialog = new SaveFileDialog
             {
                 Filter = "TSPL print file (*.prn)|*.prn|All files (*.*)|*.*",
@@ -47,7 +50,7 @@ public partial class ProductLabelWindow : Window
         }
         catch (Exception exception)
         {
-            StatusText.Text = exception.Message;
+            StatusText.Text = UserError.Message(exception);
         }
     }
 
@@ -56,19 +59,20 @@ public partial class ProductLabelWindow : Window
         try
         {
             PrintButton.IsEnabled = false;
-            byte[] command = BuildCommand();
             string printer = PrinterBox.Text;
-            await Task.Run(() => RawPrinter.Send(printer, command, $"{_details.Product.Sku} labels"));
+            TsplLabel label = BuildLabel();
+            await ((App)Application.Current).Services.GetRequiredService<ReceiptPrinter>().PrintLabelsAsync(printer, [label],
+                (PrinterModeBox.SelectedItem as ComboBoxItem)?.Tag as string == "DRIVER");
             DialogResult = true;
         }
         catch (Exception exception)
         {
-            StatusText.Text = exception.Message;
+            StatusText.Text = UserError.Message(exception);
             PrintButton.IsEnabled = true;
         }
     }
 
-    private byte[] BuildCommand()
+    private TsplLabel BuildLabel()
     {
         ProductBarcodeInput barcode = _details.Product.Barcodes.FirstOrDefault()
             ?? throw new InvalidOperationException(TranslationSource.Instance["Catalog_LabelBarcodeRequired"]);
@@ -76,9 +80,9 @@ public partial class ProductLabelWindow : Window
             throw new InvalidOperationException(TranslationSource.Instance["Catalog_LabelCopiesRange"]);
         decimal price = _details.Product.DefaultSellingPrice?.Value
             ?? throw new InvalidOperationException(TranslationSource.Instance["Catalog_LabelPriceRequired"]);
-        return TsplLabelBuilder.Build(new(
+        return new TsplLabel(
             _details.Product.Name, _details.Product.NameLocal, barcode.Barcode, price,
-            _details.Product.DefaultMrp?.Value, _width, _height, copies));
+            _details.Product.DefaultMrp?.Value, _width, _height, copies);
     }
 
     private static (int Width, int Height) ParseSize(string value)

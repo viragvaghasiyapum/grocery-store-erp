@@ -223,6 +223,26 @@ public sealed class ReportsTests
             report.Columns[0].Heading.ShouldBe(translations["Reports_Column_Date"]);
             report.Rows.Single().Values["Status"].ShouldBe(translations["Reports_StatusCompleted"]);
             report.Rows.Single().Values["Total"].ShouldBe(1000000L);
+
+            PnlStatement statement = await service.GetPnlAsync(new(2026, 9, 1), new(2026, 9, 30),
+                TestContext.Current.CancellationToken);
+            string path = Path.Combine(fixture.Root, "pnl-gu.xlsx");
+            new ReportOutputService(fixture.Settings, translations).ExportPnlExcel(statement, path);
+            using var workbook = new XLWorkbook(path);
+            IXLWorksheet sheet = workbook.Worksheet(1);
+            sheet.Cell(1, 1).GetString().ShouldBe(translations["Reports_Kind_ProfitAndLoss"]);
+            sheet.RowsUsed().Select(static row => row.Cell(1).GetString())
+                .ShouldContain(translations["Reports_Section_GrossProfit"]);
+
+            using (var connection = fixture.Factory.Open())
+                connection.Execute("""
+                    INSERT INTO audit_log(at,entity,entity_id,action,changes)
+                    VALUES ('2026-09-15 12:00:00','product',1,'CREATE','{}')
+                    """);
+            TabularReport audit = await service.GetReportAsync(ReportKind.AuditLog,
+                new(From: new(2026, 9, 1), To: new(2026, 9, 30)), TestContext.Current.CancellationToken);
+            audit.Rows.Single().Values["Action"].ShouldBe(translations["Reports_Action_CREATE"]);
+            audit.Rows.Single().Values["Entity"].ShouldBe(translations["Reports_Entity_product"]);
         }
         finally
         {

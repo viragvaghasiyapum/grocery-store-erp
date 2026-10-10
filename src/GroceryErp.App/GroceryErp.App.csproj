@@ -23,6 +23,7 @@
     <ProjectReference Include="../Modules/GroceryErp.Expenses/GroceryErp.Expenses.csproj" />
     <ProjectReference Include="../Modules/GroceryErp.Assets/GroceryErp.Assets.csproj" />
     <ProjectReference Include="../Modules/GroceryErp.Reports/GroceryErp.Reports.csproj" />
+    <ProjectReference Include="../Modules/GroceryErp.Settings/GroceryErp.Settings.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />

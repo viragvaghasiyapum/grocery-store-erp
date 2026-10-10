@@ -58,7 +58,7 @@ public partial class DayEndWindow : Window
             await _printer.PrintDayEndAsync(_summary);
             StatusText.Text = TranslationSource.Instance["Sales_DayEndPrinted"];
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private sealed record SummaryRow(string Label, string Value);

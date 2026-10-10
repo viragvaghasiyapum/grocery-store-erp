@@ -50,7 +50,7 @@ public partial class AssetsPage : Page
             NewAsset_OnClick(sender, e);
             await RefreshAsync();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private void AssetCategory_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -71,7 +71,7 @@ public partial class AssetsPage : Page
         if (MessageBox.Show(TranslationSource.Instance.Format("Assets_DisposeConfirm", asset.Name),
             TranslationSource.Instance["Assets_Dispose"], MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         try { await _assets.DisposeAsync(asset.Id, DateOnly.FromDateTime(date), new Money(Parse(DisposalValue.Text)), OperationGuard.NewId()); await RefreshAsync(); }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void Post_OnClick(object sender, RoutedEventArgs e)
@@ -82,7 +82,7 @@ public partial class AssetsPage : Page
             await RefreshAsync();
             StatusText.Text = TranslationSource.Instance.Format("Assets_PostResult", result.PostedCount, result.LockedPeriods.Count);
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void Refresh_OnClick(object sender, RoutedEventArgs e) => await RefreshAsync();
@@ -97,17 +97,17 @@ public partial class AssetsPage : Page
             AssetCategory.SelectedItem = AssetCategory.Items.Cast<ComboBoxItem>().FirstOrDefault(item => (string?)item.Tag == asset.Category);
             PurchaseDate.SelectedDate = asset.PurchaseDate.ToDateTime(TimeOnly.MinValue);
             InUseDate.SelectedDate = asset.InUseFrom.ToDateTime(TimeOnly.MinValue);
-            AssetCost.Text = asset.Cost.ToString();
+            AssetCost.Text = asset.Cost.Value.ToString("0.000", TranslationSource.FormatCulture);
             AssetMethod.SelectedIndex = asset.Method == DepreciationMethod.Wdv ? 0 : 1;
-            AssetRate.Text = asset.Rate.ToString();
-            AssetSalvage.Text = asset.SalvageValue.ToString();
+            AssetRate.Text = asset.Rate.Value.ToString("0.000", TranslationSource.FormatCulture);
+            AssetSalvage.Text = asset.SalvageValue.Value.ToString("0.000", TranslationSource.FormatCulture);
             AssetVendor.SelectedValue = asset.VendorId;
             AssetNotes.Text = asset.Notes ?? "";
             IReadOnlyList<DepreciationEntry> schedule = await _assets.GetScheduleAsync(asset.Id);
             ScheduleGrid.ItemsSource = schedule;
             SaveAssetButton.IsEnabled = asset.DisposedDate is null && schedule.Count == 0;
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private void NewAsset_OnClick(object sender, RoutedEventArgs e)
@@ -136,7 +136,7 @@ public partial class AssetsPage : Page
             AssetGrid.SelectedItem = assets.FirstOrDefault(asset => asset.Id == selectedId);
             StatusText.Text = TranslationSource.Instance["MoneyOut_Ready"];
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private static decimal Parse(string? text)

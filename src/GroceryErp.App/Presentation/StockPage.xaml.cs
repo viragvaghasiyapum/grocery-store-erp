@@ -40,7 +40,7 @@ public partial class StockPage : Page
             await importer.ImportAsync(preview, OperationGuard.NewId());
             await RefreshAsync();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private void OpeningTemplate_OnClick(object sender, RoutedEventArgs e)
@@ -48,7 +48,7 @@ public partial class StockPage : Page
         var picker = new SaveFileDialog { Filter = "Excel workbook (*.xlsx)|*.xlsx", FileName = "opening-stock-template.xlsx" };
         if (picker.ShowDialog() != true) return;
         try { OpeningStockExcelImporter.WriteTemplate(picker.FileName); StatusText.Text = TranslationSource.Instance["Stock_TemplateSaved"]; }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void Adjust_OnClick(object sender, RoutedEventArgs e)
@@ -68,7 +68,7 @@ public partial class StockPage : Page
             var window = new StockCountWindow(_inventory, draft.Id) { Owner = Window.GetWindow(this) };
             if (window.ShowDialog() == true) await RefreshAsync();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void NewCount_OnClick(object sender, RoutedEventArgs e)
@@ -112,14 +112,14 @@ public partial class StockPage : Page
                 services.GetRequiredService<IClock>().BusinessDate, OperationGuard.NewId());
             await RefreshAsync();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void ToggleLot_OnClick(object sender, RoutedEventArgs e)
     {
         if (LotsGrid.SelectedItem is not LotItem lot) return;
         try { await _inventory.SetLotActiveAsync(lot.Id, !lot.IsActive); await RefreshAsync(); }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void OverviewGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -146,7 +146,7 @@ public partial class StockPage : Page
             LedgerTypeBox.SelectedItem = options.FirstOrDefault(option => option.Code == previous) ?? options[0];
             ApplyLedgerType();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private void ApplyLedgerType()
@@ -168,7 +168,7 @@ public partial class StockPage : Page
             StockSourceDocument source = await _inventory.GetSourceDocumentAsync(movement);
             new StockSourceWindow(source) { Owner = Window.GetWindow(this) }.ShowDialog();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private sealed record LedgerTypeOption(string Label, string? Code)
@@ -185,6 +185,6 @@ public partial class StockPage : Page
             ValuationGrid.ItemsSource = await _inventory.GetValuationAsync();
             StatusText.Text = $"{OverviewGrid.Items.Count} / {LotsGrid.Items.Count}";
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 }

@@ -29,7 +29,7 @@ public partial class CatalogBulkEditWindow : Window
         }
         catch (Exception exception)
         {
-            StatusText.Text = exception.Message;
+            StatusText.Text = UserError.Message(exception);
         }
     }
 
@@ -56,7 +56,7 @@ public partial class CatalogBulkEditWindow : Window
         }
         catch (Exception exception)
         {
-            StatusText.Text = exception.Message;
+            StatusText.Text = UserError.Message(exception);
         }
     }
 }

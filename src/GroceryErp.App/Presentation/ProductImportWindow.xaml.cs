@@ -45,7 +45,7 @@ public partial class ProductImportWindow : Window
         {
             _preview = null;
             PreviewGrid.ItemsSource = null;
-            StatusText.Text = exception.Message;
+            StatusText.Text = UserError.Message(exception);
         }
         finally
         {
@@ -71,7 +71,7 @@ public partial class ProductImportWindow : Window
         }
         catch (Exception exception)
         {
-            StatusText.Text = exception.Message;
+            StatusText.Text = UserError.Message(exception);
         }
     }
 
@@ -91,7 +91,7 @@ public partial class ProductImportWindow : Window
             ProductExcelImporter.WriteErrors(dialog.FileName, _preview);
             StatusText.Text = TranslationSource.Instance["Catalog_ErrorsSaved"];
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private void PreviewGrid_OnCurrentCellChanged(object sender, EventArgs e) => UpdateImportButton();
@@ -130,7 +130,7 @@ public partial class ProductImportWindow : Window
         }
         catch (Exception exception)
         {
-            StatusText.Text = exception.Message;
+            StatusText.Text = UserError.Message(exception);
         }
         finally
         {

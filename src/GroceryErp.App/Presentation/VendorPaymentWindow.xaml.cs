@@ -34,7 +34,7 @@ public partial class VendorPaymentWindow : Window
             PurchaseBox.ItemsSource = VendorBox.SelectedValue is long vendorId
                 ? await _purchasing.GetVendorPurchaseChoicesAsync(vendorId) : null;
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
     private async void Save_OnClick(object sender, RoutedEventArgs e)
     {
@@ -48,7 +48,7 @@ public partial class VendorPaymentWindow : Window
                     NumberStyles.Number, TranslationSource.FormatCulture)), mode, ReferenceBox.Text, NotesBox.Text), OperationGuard.NewId());
             DialogResult = true;
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
     private void Cancel_OnClick(object sender, RoutedEventArgs e) => DialogResult = false;
 }

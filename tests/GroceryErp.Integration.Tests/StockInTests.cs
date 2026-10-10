@@ -299,6 +299,31 @@ public sealed class StockInTests
     }
 
     [Fact]
+    public async Task NegativeStockFefo_DoesNotFallBackToExpiredLot()
+    {
+        using var fixture = new StockInFixture();
+        await fixture.Settings.SaveAsync(new Dictionary<string, string>
+        {
+            ["stock.allow_negative"] = "1",
+            ["pos.block_expired"] = "1",
+        }, TestContext.Current.CancellationToken);
+        await fixture.Inventory.ImportOpeningStockAsync(
+        [
+            new(fixture.ProductId, Quantity.One, new Money(20), new Money(30), new Money(35),
+                fixture.Date.AddMonths(2), "GOOD", fixture.Date.AddDays(-2)),
+            new(fixture.ProductId, Quantity.One, new Money(20), new Money(30), new Money(35),
+                fixture.Date.AddDays(-1), "EXPIRED", fixture.Date.AddDays(-1)),
+        ], OperationGuard.NewId(), TestContext.Current.CancellationToken);
+
+        IReadOnlyList<LotAllocation> allocation = await fixture.Database.WriteAsync(transaction =>
+            fixture.Ledger.AllocateFefo(transaction, fixture.ProductId, new Quantity(3), fixture.Date,
+                new Dictionary<long, Quantity>()), TestContext.Current.CancellationToken);
+
+        allocation.Sum(static item => item.Quantity.Value).ShouldBe(3m);
+        allocation.All(item => item.Lot.Expiry is null || item.Lot.Expiry >= fixture.Date).ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task StockCache_RebuildRestoresLedgerBalanceAndAuditsRepair()
     {
         using var fixture = new StockInFixture();

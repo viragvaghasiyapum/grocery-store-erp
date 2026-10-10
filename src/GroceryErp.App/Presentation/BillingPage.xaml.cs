@@ -251,13 +251,13 @@ public partial class BillingPage : Page, IDisposable
             try
             {
                 ReceiptData receipt = await _sales.GetReceiptAsync(completed.SaleId);
-                await _printer.PrintAsync(receipt);
+                await _printer.QueueReceiptAsync(receipt);
             }
-            catch (Exception exception) { printError = exception.Message; }
+            catch (Exception exception) { printError = UserError.Message(exception); }
             if (payments.Any(static payment => payment.Mode == PaymentMode.Cash))
             {
-                try { await _printer.OpenDrawerAsync(); }
-                catch (Exception exception) { printError = printError is null ? exception.Message : $"{printError}; {exception.Message}"; }
+                try { await _printer.QueueDrawerAsync(); }
+                catch (Exception exception) { printError = printError is null ? UserError.Message(exception) : $"{printError}; {UserError.Message(exception)}"; }
             }
             StartNew();
             await RefreshAsync();
@@ -351,6 +351,12 @@ public partial class BillingPage : Page, IDisposable
     {
         try
         {
+            if (_printer.HasFailedJobs)
+            {
+                PrinterStatusText.Text = TranslationSource.Instance["Sales_PrinterJobFailed"];
+                PrinterStatusText.Foreground = (System.Windows.Media.Brush)FindResource("ExpiryExpiredBrush");
+                return;
+            }
             bool ready = await _printer.IsReadyAsync().WaitAsync(TimeSpan.FromSeconds(3));
             PrinterStatusText.Text = TranslationSource.Instance[ready ? "Sales_PrinterReady" : "Sales_PrinterUnavailable"];
             PrinterStatusText.Foreground = ready
@@ -484,9 +490,24 @@ public partial class BillingPage : Page, IDisposable
 
     private async void OnShortcut(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.P && Keyboard.Modifiers == ModifierKeys.Control && _lastCompletedSaleId is { } lastSaleId)
+        if (e.Key == Key.P && Keyboard.Modifiers == ModifierKeys.Control &&
+            (_printer.HasFailedJobs || _lastCompletedSaleId is not null))
         {
-            try { await _printer.PrintAsync(await _sales.GetReceiptAsync(lastSaleId, duplicate: true)); }
+            try
+            {
+                SavedPrintJob? review = _printer.OldestReviewJob;
+                if (review is not null &&
+                    MessageBox.Show(TranslationSource.Instance.Format("Sales_PrintReviewPrompt", review.Document, review.Printer),
+                        TranslationSource.Instance["App_Title"], MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                {
+                    e.Handled = true;
+                    return;
+                }
+                if (!await _printer.RetryFailedAsync(review?.Id) && review is null &&
+                    _lastCompletedSaleId is { } lastSaleId)
+                    await _printer.PrintAsync(await _sales.GetReceiptAsync(lastSaleId, duplicate: true));
+                await RefreshPrinterAsync();
+            }
             catch (Exception exception) { StatusText.Text = Message(exception); }
             e.Handled = true;
         }
@@ -506,9 +527,7 @@ public partial class BillingPage : Page, IDisposable
         else if (e.Key == Key.Delete) { Delete_OnClick(sender, e); e.Handled = true; }
     }
 
-    private static string Message(Exception exception) => exception is DomainException domain
-        ? TranslationSource.Instance[$"Error_{domain.Code}"]
-        : exception.Message;
+    private static string Message(Exception exception) => UserError.Message(exception);
 
     public void Dispose()
     {

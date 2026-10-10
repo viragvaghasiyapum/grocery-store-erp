@@ -31,7 +31,7 @@ public partial class LotPriceWindow : Window
             await _inventory.ChangeLotPriceAsync(_lot.Id, price, mrp);
             DialogResult = true;
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
     private void Cancel_OnClick(object sender, RoutedEventArgs e) => DialogResult = false;
 }

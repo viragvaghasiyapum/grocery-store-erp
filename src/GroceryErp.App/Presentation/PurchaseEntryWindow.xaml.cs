@@ -83,13 +83,13 @@ public partial class PurchaseEntryWindow : Window
             if (Lines.Count == 0) Lines.Add(new());
             UpdateTotals();
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
 
     private async void Save_OnClick(object sender, RoutedEventArgs e)
     {
         try { SetBusy(true); _purchaseId = await SaveAsync(); ErrorText.Text = TranslationSource.Instance["Purchasing_DraftSaved"]; }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
         finally { SetBusy(false); }
     }
 
@@ -113,11 +113,14 @@ public partial class PurchaseEntryWindow : Window
                         lotIds: posted.LotIds)
                     { Owner = this }.ShowDialog();
                 }
-                catch (Exception labelError) { MessageBox.Show(labelError.Message); }
+                catch (Exception labelError)
+                {
+                    MessageBox.Show(UserError.Message(labelError), TranslationSource.Instance["Catalog_PrintLabels"]);
+                }
             }
             DialogResult = true;
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
         finally { SetBusy(false); }
     }
 
@@ -167,7 +170,7 @@ public partial class PurchaseEntryWindow : Window
             LinesGrid.Items.Refresh();
             UpdateTotals();
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
     private void TotalsInput_OnTextChanged(object sender, TextChangedEventArgs e) => UpdateTotals();
 
@@ -223,7 +226,7 @@ public partial class PurchaseEntryWindow : Window
                 ? TranslationSource.Instance["Purchasing_NoProduct"]
                 : TranslationSource.Instance.Format("Purchasing_MatchesFound", matches.Count);
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
 
     private async Task EnsureProductChoiceAsync(long productId)

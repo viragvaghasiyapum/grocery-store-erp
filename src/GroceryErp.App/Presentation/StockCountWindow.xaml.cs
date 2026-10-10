@@ -54,7 +54,7 @@ public partial class StockCountWindow : Window
             if (count.Status != "DRAFT") throw new InvalidOperationException("Stock count is already finalized.");
             BindLines(count.Lines);
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
     private async void Post_OnClick(object sender, RoutedEventArgs e)
     {
@@ -84,10 +84,10 @@ public partial class StockCountWindow : Window
                 StockCountDetails changed = await _inventory.GetStockCountAsync(_countId);
                 BindLines(changed.Lines);
             }
-            catch (Exception reloadError) { ErrorText.Text = reloadError.Message; return; }
+            catch (Exception reloadError) { ErrorText.Text = UserError.Message(reloadError); return; }
             ErrorText.Text = TranslationSource.Instance["Stock_MovementsChanged"];
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
         finally { SetBusy(false); }
     }
 
@@ -118,7 +118,7 @@ public partial class StockCountWindow : Window
                 formatter.Number(net.Value));
             ErrorText.Text = "";
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
         finally { SetBusy(false); }
     }
 
@@ -158,7 +158,7 @@ public partial class StockCountWindow : Window
             await SaveCountsAsync(requireComplete: false);
             DialogResult = false;
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
         finally { SetBusy(false); }
     }
 
@@ -173,7 +173,7 @@ public partial class StockCountWindow : Window
             InvalidateReview();
             ErrorText.Text = TranslationSource.Instance.Format("Stock_NewLotsAdded", added);
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
         finally { SetBusy(false); }
     }
 
@@ -236,7 +236,7 @@ public partial class StockCountWindow : Window
             ErrorText.Text = "";
             CountSearchBox.Clear();
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
     private void CountGrid_OnCellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
     {
@@ -265,7 +265,8 @@ public partial class StockCountWindow : Window
         group.Rows.Add(Row(TranslationSource.Instance["Catalog_Name"], TranslationSource.Instance["Stock_Expected"],
             TranslationSource.Instance["Stock_Counted"], TranslationSource.Instance["Purchasing_Notes"]));
         foreach (CountEditLine line in CountGrid.ItemsSource.Cast<CountEditLine>())
-            group.Rows.Add(Row($"{line.ProductName} / {line.LotCode}", line.Expected.ToString(), "", ""));
+            group.Rows.Add(Row($"{line.ProductName} / {line.LotCode}",
+                line.Expected.Value.ToString("0.000", TranslationSource.FormatCulture), "", ""));
         table.RowGroups.Add(group);
         document.Blocks.Add(table);
         dialog.PrintDocument(((IDocumentPaginatorSource)document).DocumentPaginator, "Stock count sheet");
@@ -284,7 +285,7 @@ public partial class StockCountWindow : Window
         if (MessageBox.Show(TranslationSource.Instance["Stock_DiscardConfirm"],
             TranslationSource.Instance["Stock_DiscardCount"], MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         try { await _inventory.CancelStockCountAsync(_countId); DialogResult = false; }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
     private sealed class CountEditLine(StockCountLine line) : INotifyPropertyChanged
     {

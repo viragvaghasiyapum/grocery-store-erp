@@ -57,7 +57,7 @@ public partial class MoneyOutPage : Page
             DamageQuantity.Clear();
             await RefreshAsync();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void RecordAnyDamage_OnClick(object sender, RoutedEventArgs e)
@@ -75,7 +75,7 @@ public partial class MoneyOutPage : Page
             DamageNotes.Clear();
             await RefreshAsync();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void BulkWriteOff_OnClick(object sender, RoutedEventArgs e)
@@ -85,7 +85,7 @@ public partial class MoneyOutPage : Page
         if (MessageBox.Show(TranslationSource.Instance.Format("MoneyOut_BulkConfirm", lots.Length),
             TranslationSource.Instance["MoneyOut_WriteOff"], MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         try { await _service.WriteOffExpiredAsync(lots, _clock.BusinessDate, OperationGuard.NewId()); await RefreshAsync(); }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void BlockLot_OnClick(object sender, RoutedEventArgs e)
@@ -94,7 +94,7 @@ public partial class MoneyOutPage : Page
         if (MessageBox.Show(TranslationSource.Instance.Format("MoneyOut_BlockConfirm", lot.LotCode),
             TranslationSource.Instance["MoneyOut_BlockLot"], MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         try { await _inventory.SetLotActiveAsync(lot.LotId, false); await RefreshAsync(); StatusText.Text = TranslationSource.Instance["MoneyOut_Saved"]; }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void MarkDown_OnClick(object sender, RoutedEventArgs e)
@@ -149,7 +149,7 @@ public partial class MoneyOutPage : Page
             ExpenseAmount.Clear(); ExpensePaidTo.Clear(); ExpenseReference.Clear(); ExpenseNotes.Clear();
             await RefreshAsync();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private void OpenAssets_OnClick(object sender, RoutedEventArgs e)
@@ -170,14 +170,14 @@ public partial class MoneyOutPage : Page
             RepeatDraftGrid.ItemsSource = drafts;
             RepeatDraftGrid.Visibility = Visibility.Visible;
             ExpenseDate.SelectedDate = drafts[0].Date.ToDateTime(TimeOnly.MinValue);
-            ExpenseAmount.Text = drafts[0].Amount.ToString();
+            ExpenseAmount.Text = drafts[0].Amount.Value.ToString("0.000", TranslationSource.FormatCulture);
             ExpensePaidTo.Text = drafts[0].PaidTo;
             ExpenseReference.Text = drafts[0].Reference;
             ExpenseNotes.Text = drafts[0].Notes;
             SelectMode(ExpenseMode, drafts[0].Mode);
             StatusText.Text = TranslationSource.Instance.Format("MoneyOut_DraftsFound", drafts.Count);
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private void RepeatDraftGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -185,7 +185,7 @@ public partial class MoneyOutPage : Page
         if (RepeatDraftGrid.SelectedItem is not ExpenseInput draft) return;
         ExpenseDate.SelectedDate = draft.Date.ToDateTime(TimeOnly.MinValue);
         ExpenseCategory.SelectedValue = draft.CategoryId;
-        ExpenseAmount.Text = draft.Amount.ToString();
+        ExpenseAmount.Text = draft.Amount.Value.ToString("0.000", TranslationSource.FormatCulture);
         ExpensePaidTo.Text = draft.PaidTo;
         ExpenseReference.Text = draft.Reference;
         ExpenseNotes.Text = draft.Notes;
@@ -200,7 +200,7 @@ public partial class MoneyOutPage : Page
             NewCategory_OnClick(sender, e);
             await RefreshAsync();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private void ExpenseCategory_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -230,7 +230,7 @@ public partial class MoneyOutPage : Page
             NewEmployee_OnClick(sender, e);
             await RefreshAsync();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private void EmployeeGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -242,7 +242,7 @@ public partial class MoneyOutPage : Page
         EmployeeRole.Text = employee.Role ?? "";
         EmployeeJoinDate.SelectedDate = employee.JoinDate?.ToDateTime(TimeOnly.MinValue);
         EmployeeLeaveDate.SelectedDate = employee.LeaveDate?.ToDateTime(TimeOnly.MinValue);
-        EmployeeSalary.Text = employee.MonthlySalary.ToString();
+        EmployeeSalary.Text = employee.MonthlySalary.Value.ToString("0.000", TranslationSource.FormatCulture);
         EmployeeActive.IsChecked = employee.IsActive;
         EmployeeNotes.Text = employee.Notes ?? "";
     }
@@ -260,7 +260,7 @@ public partial class MoneyOutPage : Page
     private async void PrepareSalary_OnClick(object sender, RoutedEventArgs e)
     {
         try { SalaryGrid.ItemsSource = (await _service.PrepareSalaryRunAsync(YearMonth.Parse(SalaryPeriod.Text))).Select(SalaryEditRow.From).ToList(); }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void PostSalary_OnClick(object sender, RoutedEventArgs e)
@@ -276,7 +276,7 @@ public partial class MoneyOutPage : Page
             await _service.PostSalaryRunAsync(new(period, DateOnly.FromDateTime(payDate), mode, lines), OperationGuard.NewId());
             SalaryGrid.ItemsSource = null; await RefreshAsync();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void RecordAdvance_OnClick(object sender, RoutedEventArgs e)
@@ -290,7 +290,7 @@ public partial class MoneyOutPage : Page
             AdvanceAmount.Clear(); AdvanceNotes.Clear();
             StatusText.Text = TranslationSource.Instance["MoneyOut_Saved"];
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async Task RefreshAsync()
@@ -319,7 +319,7 @@ public partial class MoneyOutPage : Page
             DamageLot.ItemsSource = (await _inventory.GetLotsAsync()).Where(static lot => lot.IsActive && lot.OnHand > Quantity.Zero).ToList();
             StatusText.Text = TranslationSource.Instance["MoneyOut_Ready"];
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private ListBox ActiveExpiryList() => ExpiryTabs.SelectedIndex switch
@@ -366,7 +366,7 @@ public partial class MoneyOutPage : Page
         public string LeaveDeduction { get; set; } = "0.000";
         public string Overtime { get; set; } = "0.000";
         public string Bonus { get; set; } = "0.000";
-        public static SalaryEditRow From(SalaryRunLine line) => new() { EmployeeId = line.EmployeeId, BaseSalary = line.BaseSalary.ToString() };
+        public static SalaryEditRow From(SalaryRunLine line) => new() { EmployeeId = line.EmployeeId, BaseSalary = line.BaseSalary.Value.ToString("0.000", TranslationSource.FormatCulture) };
         public SalaryRunLine ToModel() => new(EmployeeId, new Money(Parse(BaseSalary)), new Money(Parse(LeaveDeduction)), new Money(Parse(Overtime)), new Money(Parse(Bonus)), null);
     }
 }

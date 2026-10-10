@@ -147,6 +147,5 @@ public partial class UnknownBarcodeWindow : Window
         return date;
     }
 
-    private static string Error(Exception exception) => exception is DomainException domain
-        ? TranslationSource.Instance[$"Error_{domain.Code}"] : exception.Message;
+    private static string Error(Exception exception) => UserError.Message(exception);
 }

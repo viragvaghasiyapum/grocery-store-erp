@@ -46,7 +46,7 @@ public partial class VendorEditorWindow : Window
             OpeningBox.Text = vendor.OpeningBalance.Value.ToString(CultureInfo.InvariantCulture);
             NotesBox.Text = vendor.Notes ?? "";
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
 
     private async void Save_OnClick(object sender, RoutedEventArgs e)
@@ -62,7 +62,7 @@ public partial class VendorEditorWindow : Window
             else await _purchasing.CreateVendorAsync(input);
             DialogResult = true;
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
 
     private void Cancel_OnClick(object sender, RoutedEventArgs e) => DialogResult = false;

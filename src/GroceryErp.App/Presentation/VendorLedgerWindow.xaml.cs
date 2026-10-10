@@ -28,7 +28,7 @@ public partial class VendorLedgerWindow : Window
             ReturnsGrid.ItemsSource = ledger.Where(static row => row.Kind == "VENDOR_RETURN").ToList();
             LotsGrid.ItemsSource = await _purchasing.GetVendorLotsAsync(_vendorId);
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
 
     private void Close_OnClick(object sender, RoutedEventArgs e) => Close();

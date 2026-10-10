@@ -92,7 +92,7 @@ public partial class DashboardPage : Page
                 _summary.AsOf.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture));
             DrawTrend();
         }
-        catch (Exception exception) { Attention.Text = exception.Message; }
+        catch (Exception exception) { Attention.Text = UserError.Message(exception); }
     }
 
     private void DrawTrend()

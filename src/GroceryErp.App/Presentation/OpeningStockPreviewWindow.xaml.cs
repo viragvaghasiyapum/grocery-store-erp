@@ -22,9 +22,9 @@ public partial class OpeningStockPreviewWindow : Window
     {
         public int RowNumber { get; } = row.RowNumber;
         public string Sku { get; } = row.Sku;
-        public string Quantity { get; } = row.Line?.Quantity.ToString() ?? "";
-        public string UnitCost { get; } = row.Line?.UnitCost.ToString() ?? "";
-        public string SellingPrice { get; } = row.Line?.SellingPrice.ToString() ?? "";
+        public string Quantity { get; } = row.Line?.Quantity.Value.ToString("0.000", TranslationSource.FormatCulture) ?? "";
+        public string UnitCost { get; } = row.Line?.UnitCost.Value.ToString("0.000", TranslationSource.FormatCulture) ?? "";
+        public string SellingPrice { get; } = row.Line?.SellingPrice.Value.ToString("0.000", TranslationSource.FormatCulture) ?? "";
         public string ErrorText { get; } = string.Join("; ", row.Errors);
     }
 }

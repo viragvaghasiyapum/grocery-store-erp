@@ -19,6 +19,7 @@ using GroceryErp.Data.Services;
 using GroceryErp.Expenses;
 using GroceryErp.Inventory;
 using GroceryErp.Localization;
+using GroceryErp.Printing;
 using GroceryErp.Purchasing;
 using GroceryErp.Reports;
 using GroceryErp.Sales;
@@ -29,6 +30,30 @@ namespace GroceryErp.UI.Tests;
 
 public sealed class PhaseZeroSmokeTests
 {
+    [Fact]
+    public void EscPos_RasterSplitsIntoBoundedBands_AndTextModeUsesAscii()
+    {
+        byte[] bits = Enumerable.Repeat((byte)0xAA, 48 * 300).ToArray();
+        byte[] command = new EscPos().Init().Raster(bits, 48, 300).Cut().ToArray();
+        int offset = 2;
+        int[] expectedRows = [128, 128, 44];
+        foreach (int rows in expectedRows)
+        {
+            command[offset..(offset + 4)].ShouldBe([0x1D, 0x76, 0x30, 0x00]);
+            (command[offset + 6] | command[offset + 7] << 8).ShouldBe(rows);
+            offset += 8 + 48 * rows;
+        }
+        command[offset..].ShouldBe([0x1D, 0x56, 0x42, 0x00]);
+
+        var receipt = new ReceiptData("Store", "Road", "9999999999", "", "REGULAR", "S-1",
+            new DateTime(2026, 10, 8, 12, 0, 0), null, [], Money.Zero, Money.Zero,
+            Money.Zero, Money.Zero, Money.Zero, Money.Zero, Money.Zero, [], Money.Zero,
+            "gu-IN", "Thanks", false);
+        byte[] text = ReceiptPrinter.RenderText(receipt, 384);
+        System.Text.Encoding.ASCII.GetString(text).ShouldContain("Rs 0.000");
+        text.ShouldContain((byte)0x1B);
+    }
+
     [Fact]
     public async Task A4Report_PaginatesOnStaThread()
     {
@@ -45,7 +70,45 @@ public sealed class PhaseZeroSmokeTests
                     [new("Name", "Name", ReportValueKind.Text), new("Amount", "Amount", ReportValueKind.Money)],
                     rows, new Dictionary<string, decimal> { ["Amount"] = 1830m });
 
-                output.CreateA4(report, new DateTime(2026, 9, 27, 12, 0, 0)).Pages.Count.ShouldBe(3);
+                output.CreateA4(report, new DateTime(2026, 9, 27, 12, 0, 0)).Pages.Count.ShouldBe(2);
+                var wrappedRows = Enumerable.Range(1, 60)
+                    .Select(index => new ReportRow(new Dictionary<string, object?>
+                    {
+                        ["Name"] = $"ઉત્પાદન {index} " + string.Concat(Enumerable.Repeat(
+                            "લાંબું ગુજરાતી વર્ણન અને વધુ વિગતો ", 8)),
+                        ["Amount"] = index * 1000L,
+                    })).ToList();
+                var wrappedReport = report with { Rows = wrappedRows };
+                output.CreateA4(wrappedReport, new DateTime(2026, 9, 27, 12, 0, 0)).Pages.Count
+                    .ShouldBeGreaterThan(2);
+                string longValue = string.Concat(Enumerable.Repeat(
+                    "લાંબું ગુજરાતી વર્ણન અને વિગત જે અહેવાલમાં ઘણા પાનાં સુધી ચાલુ રહે છે. ", 400));
+                var tallReport = new TabularReport("Long cell", null,
+                    [new("Name", "Name", ReportValueKind.Text)],
+                    [new(new Dictionary<string, object?> { ["Name"] = longValue })],
+                    new Dictionary<string, decimal>());
+                var tallDocument = output.CreateA4(tallReport, new DateTime(2026, 9, 27, 12, 0, 0));
+                tallDocument.Pages.Count.ShouldBeGreaterThan(1);
+                var continuation = tallDocument.Pages[1].Child.Children.OfType<Border>()
+                    .Select(border => border.Child).OfType<TextBlock>()
+                    .Single(block => block.Text == longValue);
+                continuation.Margin.Top.ShouldBeLessThan(0);
+                FixedPage continuationPage = tallDocument.Pages[1].Child;
+                continuationPage.Measure(new Size(continuationPage.Width, continuationPage.Height));
+                continuationPage.Arrange(new Rect(0, 0, continuationPage.Width, continuationPage.Height));
+                continuationPage.UpdateLayout();
+                int bitmapWidth = (int)Math.Ceiling(continuationPage.Width);
+                int bitmapHeight = (int)Math.Ceiling(continuationPage.Height);
+                var continuationBitmap = new RenderTargetBitmap(bitmapWidth, bitmapHeight,
+                    96, 96, PixelFormats.Pbgra32);
+                continuationBitmap.Render(continuationPage);
+                byte[] pixels = new byte[bitmapWidth * bitmapHeight * 4];
+                continuationBitmap.CopyPixels(pixels, bitmapWidth * 4, 0);
+                int darkBodyPixels = 0;
+                for (int y = 170; y < 350; y++)
+                    for (int x = 100; x < 500; x++)
+                        if (pixels[(y * bitmapWidth + x) * 4] < 128) darkBodyPixels++;
+                darkBodyPixels.ShouldBeGreaterThan(100);
                 var wideColumns = new[]
                 {
                     new ReportColumn("Item", "Item", ReportValueKind.Text),
@@ -71,6 +134,14 @@ public sealed class PhaseZeroSmokeTests
                 wideDocument.DocumentPaginator.PageSize.Width.ShouldBeGreaterThan(wideDocument.DocumentPaginator.PageSize.Height);
                 CaptureA4(wideDocument.Pages[0].Child, "report-a4-band1.en.png");
                 CaptureA4(wideDocument.Pages[1].Child, "report-a4-band2.en.png");
+
+                DrawingVisual label = DriverLabelPrinter.Render(new TsplLabel(
+                    "Tata Salt 1 kg", "મીઠું", "8901234567890", 28m, 30m, 50, 25), 189, 94);
+                var labelBitmap = new RenderTargetBitmap(189, 94, 96, 96, PixelFormats.Pbgra32);
+                labelBitmap.Render(label);
+                byte[] labelPixels = new byte[189 * 94 * 4];
+                labelBitmap.CopyPixels(labelPixels, 189 * 4, 0);
+                labelPixels.Where((_, index) => index % 4 == 0).Any(static value => value < 128).ShouldBeTrue();
                 completion.SetResult();
             }
             catch (Exception exception) { completion.SetException(exception); }
@@ -787,6 +858,8 @@ public sealed class PhaseZeroSmokeTests
                     Money.Zero, new Money(56), new Money(4), [new(PaymentMode.Cash, new Money(60))],
                     new Money(4), "en-IN", "Thank you! Visit again.", false);
                 CaptureReceipt(saleReceipt, "sale-receipt.en.png");
+                CaptureReceipt(saleReceipt with { PrintLanguage = "gu-IN", Footer = "ફરી મળવા આવજો." },
+                    "sale-receipt.gu.png");
                 var returnReceipt = saleReceipt with
                 {
                     TaxMode = "RETURN",
@@ -966,8 +1039,21 @@ public sealed class PhaseZeroSmokeTests
     private static void CaptureReceipt(ReceiptData receipt, string fileName)
     {
         byte[] command = ReceiptPrinter.Render(receipt, 384, bilingualNames: true);
-        int bytesWide = command[4] | command[5] << 8;
-        int height = command[6] | command[7] << 8;
+        int offset = 2; // ESC @ initialization
+        int bytesWide = 0;
+        int height = 0;
+        var raster = new List<byte>();
+        while (offset + 8 <= command.Length && command[offset] == 0x1D && command[offset + 1] == 0x76)
+        {
+            int bandWidth = command[offset + 4] | command[offset + 5] << 8;
+            int rows = command[offset + 6] | command[offset + 7] << 8;
+            if (bytesWide == 0) bytesWide = bandWidth;
+            bandWidth.ShouldBe(bytesWide);
+            offset += 8;
+            raster.AddRange(command.AsSpan(offset, bandWidth * rows).ToArray());
+            offset += bandWidth * rows;
+            height += rows;
+        }
         bytesWide.ShouldBe(48);
         height.ShouldBeGreaterThan(100);
         string? directory = Environment.GetEnvironmentVariable("GROCERY_PHASE4_SCREENSHOT_DIR");
@@ -976,7 +1062,7 @@ public sealed class PhaseZeroSmokeTests
         byte[] pixels = new byte[384 * height];
         for (int row = 0; row < height; row++)
             for (int column = 0; column < 384; column++)
-                pixels[row * 384 + column] = (command[8 + row * bytesWide + column / 8] & (0x80 >> column % 8)) == 0
+                pixels[row * 384 + column] = (raster[row * bytesWide + column / 8] & (0x80 >> column % 8)) == 0
                     ? (byte)255 : (byte)0;
         var bitmap = BitmapSource.Create(384, height, 96, 96, PixelFormats.Gray8, null, pixels, 384);
         var encoder = new PngBitmapEncoder();

@@ -1,9 +1,44 @@
 # Luna implementation gap audit
 
+## Recheck — 8 October 2026
+
+This section supersedes the 6 October findings below. The earlier evidence is retained as a historical snapshot; its line numbers and "confirmed missing" labels describe the pre-fix tree.
+
+| ID | Current status | Recheck result |
+|---|---|---|
+| P0-01 | **Partly fixed** | Eight concrete `IModule` implementations now own business-service registration and navigation metadata. `App` composes an explicit list, and `ShellWindow` builds its business navigation from that list. Pages still live in `GroceryErp.App`, and module-local presentation/resources and the full layer layout remain to be moved. |
+| P1-01 / P5-01 | **Fixed in presentation paths** | Direct exception-message output was removed from presentation screens. `UserError` logs exceptions, translates domain codes, and shows a localized retry message for unexpected errors. Every domain error code now has English and Gujarati resources, guarded by a coverage test. Native Gujarati review and targeted UI failure tests remain open. |
+| P1-02 / P5-01 | **Fixed for cited numeric fields** | Product, opening-stock, money-out, assets, held-bill, and stock-count numeric text now uses explicit `TranslationSource.FormatCulture` and precision. Remaining parameterless `ToString()` uses in presentation are identifiers, enum tags, dates, or localized choice labels. |
+| P1-03 | **Open acceptance** | Native Gujarati, public XML documentation, and target hardware/restore review still require sign-off. |
+| P2-01 | **Implemented; hardware check open** | Product and batch label dialogs offer TSPL or Windows-driver printing. The latter renders the same label model into a WPF visual and uses `PrintVisual`. Printer calibration and real-driver output still need checking. |
+| P2-02 | **Open acceptance** | Physical label/scanner, scaling, keyboard, and Gujarati checks remain. |
+| P3-01 | **Fixed** | The stale post-v1 vendor-return backlog item now describes follow-up improvements rather than an undelivered workflow. |
+| P3-02 | **Open acceptance** | Target-PC printer/scanner, scaling, keyboard, and Gujarati checks remain. |
+| P4-01 | **Implemented; focused-input test open** | The scanner detector uses a monotonic clock and restores the focused text box's original content and selection before routing a recognized Enter-terminated burst. The focused-field hardware/UI regression matrix has not yet been run. |
+| P4-02 | **Fixed and tested** | Negative-stock fallback applies the expired-lot predicate. An integration test covers a newer expired lot when negative stock and expiry blocking are both enabled. |
+| P4-03 | **Implemented; hardware check open** | Receipt, drawer, and label jobs share one bounded, single-reader STA `Channel` worker; sale completion queues printing without waiting for the spooler. ESC/POS raster uses 128-row bands; `TEXT` mode is selectable during setup. Migration 010 journals receipt, day-end, and label documents with printer/mode snapshots. Failed or interrupted jobs stay for cashier review after restart, with a startup notice; Ctrl+P names the saved document and printer, warns about possible duplicates, and marks retried receipts `DUPLICATE`. Drawer pulses are deliberately not replayed. Physical printer and power-pull behavior remains unverified. |
+| P4-04 | **Fixed in code** | GSTIN, MRP, GST, CGST, and SGST receipt tokens now resolve through print resources. Gujarati entries explicitly mark the invariant acronyms. Native review of printed output remains. |
+| P4-05 | **Open acceptance** | Printer/cutter/drawer, power-pull, scanner timing, scaling, and Gujarati receipt checks remain. |
+| P6-01 | **Already fixed before this recheck** | `BuildPnlReport` was already using translated section keys. A Gujarati workbook assertion now guards title and section output. |
+| P6-02 | **Mostly fixed** | Dashboard payment labels were already localized. Reports now also translate stock movement and reference types, damage reasons, audit actions and entities, alongside existing status/payment/direction/method mappings. Unknown future codes and free-form audit JSON still display verbatim. |
+| P6-03 | **Fixed and tested** | A4 reports measure wrapped header/row text, paginate by actual row height, repeat headers, and split a single tall cell across pages. An STA render test verifies visible continuation text on the next page. |
+| P6-04 | **Status corrected** | Phase 6 is now recorded as core software implemented with report translation and native review open, rather than unqualified complete. |
+| P7-01 | **Local blocker removed; release gate open** | .NET SDK `10.0.401` was installed locally. Release build, 106 tests, and `dotnet format --verify-no-changes` pass. Hosted CI, full-scale generator/performance, packaging, clean-PC install/update, and backup/restore evidence remain open. |
+| P7-02 | **Open acceptance** | Full-scale target-PC, packaged UI, native Gujarati, physical hardware/power-pull, and pilot checks remain. |
+
+The software recheck ran a Release build with zero warnings and 106 passing tests; one packaged operator-journey test was skipped because it requires a portable release. Physical printer, scanner, drawer, USB, clean-PC, and store-pilot behavior was not verified here.
+
+### Remaining engineering work
+
+1. Move module pages/resources into their module projects and enforce those boundaries in architecture tests.
+2. Verify persisted print review and retry, including power loss before and after spooler acceptance, with physical printers.
+3. Review unknown report codes and free-form audit details for Gujarati presentation.
+4. Run the focused-field scanner and both printer modes on store hardware, then complete the existing release checklist.
+
 Audit date: 2026-10-06  
 Scope: `implementation.md`, `PLANS.md`, and the current working tree.
 
-## Executive conclusion
+## Original executive conclusion (historical)
 
 The main business workflows are present, but the project is not yet fully compliant with its own implementation contract. The highest-risk gaps are:
 
@@ -241,7 +276,7 @@ The parameterless numeric formatting and raw exception paths listed under P1-01/
 
 The Phase 7 checklist leaves the five-year target-PC performance run, packaged FlaUI journey, native Gujarati review of all UI/printed artifacts, scanner/printer/cutter/drawer/power-pull/scaling/restore sign-off, and one-to-two-week pilot unchecked (`implementation.md:3573-3586`). These must remain release blockers.
 
-## Recommended fix order
+## Original recommended fix order (historical)
 
 1. Fix P4-01 and P4-02 first because they affect scan correctness and stock integrity.
 2. Replace the printing path with the required queued, mode-aware pipeline and add receipt/label regression tests.

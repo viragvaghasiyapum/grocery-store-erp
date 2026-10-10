@@ -65,46 +65,6 @@
             Icon="{ui:SymbolIcon Home24}"
             TargetPageType="{x:Type local:DashboardPage}" />
         <ui:NavigationViewItem
-            Content="{l:Tr Sales_Pos_Navigation}"
-            Icon="{ui:SymbolIcon Cart24}"
-            TargetPageType="{x:Type local:BillingPage}" />
-        <ui:NavigationViewItem
-            Content="{l:Tr Sales_History_Navigation}"
-            Icon="{ui:SymbolIcon Document24}"
-            TargetPageType="{x:Type local:SalesHistoryPage}" />
-        <ui:NavigationViewItem
-            Content="{l:Tr Purchasing_Navigation}"
-            Icon="{ui:SymbolIcon Cart24}"
-            TargetPageType="{x:Type local:PurchasesPage}" />
-        <ui:NavigationViewItem
-            Content="{l:Tr Stock_Navigation}"
-            Icon="{ui:SymbolIcon Box24}"
-            TargetPageType="{x:Type local:StockPage}" />
-        <ui:NavigationViewItem
-            Content="{l:Tr MoneyOut_Navigation}"
-            Icon="{ui:SymbolIcon Money24}"
-            TargetPageType="{x:Type local:MoneyOutPage}">
-          <ui:NavigationViewItem.InfoBadge>
-            <ui:InfoBadge x:Name="ExpiryInfoBadge" Severity="Caution" Value="0" />
-          </ui:NavigationViewItem.InfoBadge>
-        </ui:NavigationViewItem>
-        <ui:NavigationViewItem
-            Content="{l:Tr Assets_Navigation}"
-            Icon="{ui:SymbolIcon Building24}"
-            TargetPageType="{x:Type local:AssetsPage}" />
-        <ui:NavigationViewItem
-            Content="{l:Tr Reports_Navigation}"
-            Icon="{ui:SymbolIcon DataBarVertical24}"
-            TargetPageType="{x:Type local:ReportsPage}" />
-        <ui:NavigationViewItem
-            Content="{l:Tr Catalog_Navigation}"
-            Icon="{ui:SymbolIcon Box24}"
-            TargetPageType="{x:Type local:ProductsPage}" />
-        <ui:NavigationViewItem
-            Content="{l:Tr Settings_Title}"
-            Icon="{ui:SymbolIcon Settings24}"
-            TargetPageType="{x:Type local:SettingsPage}" />
-        <ui:NavigationViewItem
             Content="{l:Tr Demo_Navigation}"
             Icon="{ui:SymbolIcon Home24}"
             TargetPageType="{x:Type local:DemoPage}" />

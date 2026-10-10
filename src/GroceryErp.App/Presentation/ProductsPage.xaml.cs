@@ -40,7 +40,7 @@ public partial class ProductsPage : Page
                 await LoadMastersAsync();
                 await RefreshAsync();
             }
-            catch (Exception exception) { StatusText.Text = exception.Message; }
+            catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
         };
         Unloaded += (_, _) => TranslationSource.Instance.PropertyChanged -= TranslationChanged;
     }
@@ -106,7 +106,7 @@ public partial class ProductsPage : Page
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            if (IsLoaded) StatusText.Text = exception.Message;
+            if (IsLoaded) StatusText.Text = UserError.Message(exception);
         }
     }
 
@@ -244,9 +244,7 @@ public partial class ProductsPage : Page
 
     private static void ShowError(Exception exception)
     {
-        string message = exception is DomainException domain
-            ? TranslationSource.Instance[$"Error_{domain.Code}"]
-            : exception.Message;
+        string message = UserError.Message(exception);
         MessageBox.Show(message, TranslationSource.Instance["Catalog_Title"], MessageBoxButton.OK, MessageBoxImage.Error);
     }
 }

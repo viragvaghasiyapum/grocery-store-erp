@@ -88,7 +88,8 @@ public sealed record FirstRunRequest(
     string ReceiptPrinterName = "", int ReceiptWidthDots = 576,
     string LabelPrinterName = "", string LabelSize = "50x25", string A4PrinterName = "",
     int UsbReminderDays = 7, string ScaleRule = "", bool GujaratiKeyboardAvailable = false,
-    string StartChoice = "EMPTY", IReadOnlyDictionary<string, string>? SeedLocalNames = null);
+    string StartChoice = "EMPTY", IReadOnlyDictionary<string, string>? SeedLocalNames = null,
+    string ReceiptMode = "RASTER");
 
 public sealed class FirstRunService(DbExecutor database, PasswordHasher hasher)
 {
@@ -142,7 +143,7 @@ public sealed class FirstRunService(DbExecutor database, PasswordHasher hasher)
             };
             settings["printer.receipt.name"] = request.ReceiptPrinterName.Trim();
             settings["printer.receipt.width_dots"] = request.ReceiptWidthDots.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            settings["printer.receipt.mode"] = "RASTER";
+            settings["printer.receipt.mode"] = request.ReceiptMode;
             settings["printer.label.name"] = request.LabelPrinterName.Trim();
             settings["printer.label.size"] = request.LabelSize.Trim();
             settings["printer.a4.name"] = request.A4PrinterName.Trim();
@@ -190,6 +191,7 @@ public sealed class FirstRunService(DbExecutor database, PasswordHasher hasher)
             !request.SeedLocalNames.TryGetValue(key, out string? value) || string.IsNullOrWhiteSpace(value)))
             throw new DomainException(ErrorCode.Validation, "Gujarati names for seeded units and expenses are required.");
         if (request.ReceiptWidthDots is not (384 or 576)) throw new DomainException(ErrorCode.Validation, "Receipt width must be 58 or 80 mm.");
+        if (request.ReceiptMode is not ("RASTER" or "TEXT")) throw new DomainException(ErrorCode.Validation, "Invalid receipt mode.");
         if (request.UsbReminderDays is < 1 or > 365) throw new DomainException(ErrorCode.Validation, "USB reminder must be between 1 and 365 days.");
         if (request.StartChoice is not ("EMPTY" or "IMPORT")) throw new DomainException(ErrorCode.Validation, "Invalid start choice.");
         if (string.IsNullOrWhiteSpace(request.BackupDirectory))

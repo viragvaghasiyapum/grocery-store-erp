@@ -11,6 +11,7 @@ using GroceryErp.Data.Security;
 using GroceryErp.Data.Services;
 using GroceryErp.Expenses;
 using GroceryErp.Localization;
+using GroceryErp.UI.Common.Modularity;
 using Microsoft.Win32;
 using Serilog;
 using Wpf.Ui.Controls;
@@ -28,6 +29,8 @@ public partial class ShellWindow : FluentWindow
     private readonly DispatcherTimer? _idleTimer;
     private readonly UsbUpdateService? _updates;
     private readonly BackupService? _backups;
+    private readonly Dictionary<NavigationViewItem, string> _moduleNavigation = [];
+    private readonly InfoBadge _expiryInfoBadge = new() { Value = "0" };
     private DateTime _lastActivity;
 
     public ShellWindow(
@@ -38,9 +41,23 @@ public partial class ShellWindow : FluentWindow
         MoneyOutService? moneyOut = null,
         SettingsService? settingsService = null,
         UsbUpdateService? updates = null,
-        BackupService? backups = null)
+        BackupService? backups = null,
+        IReadOnlyList<IModule>? modules = null)
     {
         InitializeComponent();
+        foreach (NavItem item in (modules ?? App.CreateModules()).SelectMany(static module => module.Navigation)
+                     .OrderBy(static item => item.Order))
+        {
+            var view = new NavigationViewItem
+            {
+                Content = TranslationSource.Instance[item.TitleKey],
+                Icon = new SymbolIcon { Symbol = Enum.Parse<SymbolRegular>(item.Icon) },
+                TargetPageType = item.PageType,
+            };
+            if (item.BadgeProvider == "expiry") view.InfoBadge = _expiryInfoBadge;
+            RootNavigation.MenuItems.Insert(RootNavigation.MenuItems.Count - 1, view);
+            _moduleNavigation.Add(view, item.TitleKey);
+        }
         DataContext = viewModel;
         _authentication = authentication;
         _settings = settings;
@@ -64,7 +81,7 @@ public partial class ShellWindow : FluentWindow
             {
                 IReadOnlyList<ExpiryLot> actionable = await moneyOut.GetExpiryAsync();
                 int count = actionable.Count(static lot => lot.Bucket is "EXPIRED" or "CRITICAL");
-                ExpiryInfoBadge.Value = count.ToString(CultureInfo.InvariantCulture);
+                _expiryInfoBadge.Value = count.ToString(CultureInfo.InvariantCulture);
                 string today = clock?.BusinessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "";
                 string lastPopup = settings?.Current.Values.GetValueOrDefault("expiry.last_popup_date", "") ?? "";
                 if (count > 0 && settings?.Current.ExpiryPopupOnLogin == true && settingsService is not null && lastPopup != today)
@@ -86,7 +103,12 @@ public partial class ShellWindow : FluentWindow
 
     private void TranslationChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == "Item[]") RefreshBackupStatus();
+        if (e.PropertyName == "Item[]")
+        {
+            RefreshBackupStatus();
+            foreach ((NavigationViewItem view, string key) in _moduleNavigation)
+                view.Content = TranslationSource.Instance[key];
+        }
     }
 
     internal void RefreshBackupStatus()
@@ -107,7 +129,7 @@ public partial class ShellWindow : FluentWindow
 
     private void BackupStatus_OnClick(object sender, RoutedEventArgs e) => RootNavigation.Navigate(typeof(SettingsPage));
 
-    internal void SetExpiryBadge(int count) => ExpiryInfoBadge.Value = count.ToString(CultureInfo.InvariantCulture);
+    internal void SetExpiryBadge(int count) => _expiryInfoBadge.Value = count.ToString(CultureInfo.InvariantCulture);
     internal void OpenReports() => RootNavigation.Navigate(typeof(ReportsPage));
     internal void OpenSettings() => RootNavigation.Navigate(typeof(SettingsPage));
     internal void ShowMaintenanceWarning() => MaintenanceWarning.Visibility = Visibility.Visible;

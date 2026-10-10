@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Text;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 
 namespace GroceryErp.UI.Common;
@@ -8,7 +10,11 @@ public sealed class ScanBurstDetector(int maximumGapMilliseconds, int minimumLen
 {
     private readonly StringBuilder _buffer = new();
     private Window? _window;
-    private DateTime _lastInputUtc;
+    private long _lastInput;
+    private TextBox? _target;
+    private string? _originalText;
+    private int _selectionStart;
+    private int _selectionLength;
 
     public event EventHandler<string>? ScanReceived;
 
@@ -27,14 +33,26 @@ public sealed class ScanBurstDetector(int maximumGapMilliseconds, int minimumLen
         _window.PreviewTextInput -= OnTextInput;
         _window.PreviewKeyDown -= OnKeyDown;
         _window = null;
+        Reset();
     }
 
     private void OnTextInput(object sender, TextCompositionEventArgs e)
     {
-        DateTime now = DateTime.UtcNow;
-        if (_buffer.Length > 0 && (now - _lastInputUtc).TotalMilliseconds > maximumGapMilliseconds)
-            _buffer.Clear();
-        _lastInputUtc = now;
+        if (string.IsNullOrEmpty(e.Text)) return;
+        long now = Stopwatch.GetTimestamp();
+        TextBox? focused = Keyboard.FocusedElement as TextBox;
+        if (_buffer.Length > 0 &&
+            (Stopwatch.GetElapsedTime(_lastInput, now).TotalMilliseconds > maximumGapMilliseconds ||
+             !ReferenceEquals(focused, _target)))
+            Reset();
+        if (_buffer.Length == 0 && focused is not null)
+        {
+            _target = focused;
+            _originalText = focused.Text;
+            _selectionStart = focused.SelectionStart;
+            _selectionLength = focused.SelectionLength;
+        }
+        _lastInput = now;
         _buffer.Append(e.Text);
     }
 
@@ -43,10 +61,27 @@ public sealed class ScanBurstDetector(int maximumGapMilliseconds, int minimumLen
         if (e.Key != Key.Enter) return;
         string value = _buffer.ToString();
         bool burst = value.Length >= minimumLength &&
-                     (DateTime.UtcNow - _lastInputUtc).TotalMilliseconds <= maximumGapMilliseconds * 2;
-        _buffer.Clear();
+                     Stopwatch.GetElapsedTime(_lastInput).TotalMilliseconds <= maximumGapMilliseconds * 2;
+        TextBox? target = _target;
+        string? originalText = _originalText;
+        int selectionStart = _selectionStart;
+        int selectionLength = _selectionLength;
+        Reset();
         if (!burst) return;
         e.Handled = true;
+        if (target is not null && originalText is not null)
+        {
+            target.Text = originalText;
+            target.Select(selectionStart, selectionLength);
+        }
         ScanReceived?.Invoke(this, value);
+    }
+
+    private void Reset()
+    {
+        _buffer.Clear();
+        _target = null;
+        _originalText = null;
+        _lastInput = 0;
     }
 }

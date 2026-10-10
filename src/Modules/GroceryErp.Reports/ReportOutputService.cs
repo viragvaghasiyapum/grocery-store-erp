@@ -98,19 +98,56 @@ public sealed class ReportOutputService(ISettings settings, TranslationSource? t
         double pageHeight = landscape ? PageWidth : PageHeight;
         var document = new FixedDocument();
         document.DocumentPaginator.PageSize = new Size(pageWidth, pageHeight);
-        int rowsPerPage = landscape ? (report.IsTruncated ? 21 : 22) : (report.IsTruncated ? 26 : 27);
         int renderedRows = report.Rows.Count + (report.Totals.Count > 0 ? 1 : 0);
-        int rowPages = Math.Max(1, (renderedRows + rowsPerPage - 1) / rowsPerPage);
         int bands = report.Columns.Count <= 8 ? 1 : (report.Columns.Count - 2) / 7 + 1;
-        int pages = rowPages * bands;
+        double top = report.IsTruncated ? 150 : 130;
+        double available = pageWidth - 2 * Margin;
+        List<int>[] bandColumns = Enumerable.Range(0, bands).Select(band => report.Columns.Count <= 8
+            ? Enumerable.Range(0, report.Columns.Count).ToList()
+            : FirstColumn.Concat(Enumerable.Range(1 + band * 7,
+                Math.Min(7, report.Columns.Count - 1 - band * 7))).ToList()).ToArray();
+        double headerHeight = bandColumns.Max(columns => columns.Max(index =>
+            MeasureCell(report.Columns[index].Heading, available / columns.Count, true)));
+        var rowHeights = new double[renderedRows];
+        for (int row = 0; row < renderedRows; row++)
+            rowHeights[row] = bandColumns.Max(columns => columns.Max(index =>
+                MeasureCell(CellValue(report, row, index), available / columns.Count,
+                    row == report.Rows.Count)));
+        double usableRowsHeight = pageHeight - 50 - top - headerHeight;
+        List<List<RowFragment>> rowSlices = [[]];
+        double remainingHeight = usableRowsHeight;
+        for (int row = 0; row < renderedRows; row++)
+        {
+            double offset = 0;
+            if (rowHeights[row] <= usableRowsHeight && rowHeights[row] > remainingHeight && rowSlices[^1].Count > 0)
+            {
+                rowSlices.Add([]);
+                remainingHeight = usableRowsHeight;
+            }
+            while (offset < rowHeights[row])
+            {
+                if (remainingHeight < 25 && rowSlices[^1].Count > 0)
+                {
+                    rowSlices.Add([]);
+                    remainingHeight = usableRowsHeight;
+                }
+                double height = Math.Min(remainingHeight, rowHeights[row] - offset);
+                rowSlices[^1].Add(new RowFragment(row, offset, height));
+                offset += height;
+                remainingHeight -= height;
+                if (offset < rowHeights[row])
+                {
+                    rowSlices.Add([]);
+                    remainingHeight = usableRowsHeight;
+                }
+            }
+        }
+        int pages = rowSlices.Count * bands;
         for (int pageNumber = 0; pageNumber < pages; pageNumber++)
         {
             int rowPage = pageNumber / bands;
             int band = pageNumber % bands;
-            List<int> columnIndexes = report.Columns.Count <= 8
-                ? Enumerable.Range(0, report.Columns.Count).ToList()
-                : FirstColumn.Concat(Enumerable.Range(1 + band * 7,
-                    Math.Min(7, report.Columns.Count - 1 - band * 7))).ToList();
+            List<int> columnIndexes = bandColumns[band];
             var page = new FixedPage { Width = pageWidth, Height = pageHeight, Background = Brushes.White };
             NumberSubstitution.SetCultureSource(page, NumberCultureSource.Override);
             NumberSubstitution.SetCultureOverride(page, CultureInfo.GetCultureInfo("en-IN"));
@@ -129,28 +166,26 @@ public sealed class ReportOutputService(ISettings settings, TranslationSource? t
             if (report.IsTruncated)
                 AddText(page, Text("Reports_PartialExport", "Partial report: totals include displayed rows only."),
                     Margin, 124, 9, FontWeights.SemiBold, pageWidth - 2 * Margin);
-            double top = report.IsTruncated ? 150 : 130;
-            double available = pageWidth - 2 * Margin;
             double columnWidth = available / Math.Max(1, columnIndexes.Count);
             for (int column = 0; column < columnIndexes.Count; column++)
-                AddCell(page, report.Columns[columnIndexes[column]].Heading, Margin + column * columnWidth, top, columnWidth, true);
-            int first = rowPage * rowsPerPage;
-            int count = Math.Min(rowsPerPage, renderedRows - first);
-            for (int row = 0; row < count; row++)
+                AddCell(page, report.Columns[columnIndexes[column]].Heading, Margin + column * columnWidth,
+                    top, columnWidth, headerHeight, true);
+            double rowTop = top + headerHeight;
+            foreach (RowFragment fragment in rowSlices[rowPage])
+            {
+                int sourceIndex = fragment.Index;
                 for (int column = 0; column < columnIndexes.Count; column++)
                 {
                     int sourceColumn = columnIndexes[column];
                     ReportColumn definition = report.Columns[sourceColumn];
-                    int sourceIndex = first + row;
                     bool isTotal = sourceIndex == report.Rows.Count;
-                    object? source = isTotal
-                        ? sourceColumn == 0 ? Text("Reports_Column_Total", "Total") : report.Totals.GetValueOrDefault(definition.Key)
-                        : report.Rows[sourceIndex].Values.GetValueOrDefault(definition.Key);
-                    string value = isTotal && sourceColumn > 0 && !report.Totals.ContainsKey(definition.Key)
-                        ? "" : Format(definition, source);
-                    AddCell(page, value, Margin + column * columnWidth, top + 25 * (row + 1), columnWidth, isTotal,
-                        definition.Kind is ReportValueKind.Money or ReportValueKind.Quantity or ReportValueKind.Percent or ReportValueKind.Count);
+                    AddCell(page, CellValue(report, sourceIndex, sourceColumn),
+                        Margin + column * columnWidth, rowTop, columnWidth, fragment.Height, isTotal,
+                        definition.Kind is ReportValueKind.Money or ReportValueKind.Quantity or ReportValueKind.Percent or ReportValueKind.Count,
+                        fragment.Offset, rowHeights[sourceIndex]);
                 }
+                rowTop += fragment.Height;
+            }
             AddText(page, Text("Reports_Print_Page", "Page") + $" {pageNumber + 1} / {pages}", Margin, pageHeight - 34, 9, FontWeights.Normal, 200);
             AddText(page, Text("Reports_Print_Printed", "Printed") + $" {printedAt:dd-MM-yyyy HH:mm}", pageWidth - Margin - 220, pageHeight - 34, 9, FontWeights.Normal, 220, TextAlignment.Right);
             var content = new PageContent();
@@ -211,10 +246,55 @@ public sealed class ReportOutputService(ISettings settings, TranslationSource? t
         string safe = string.Concat(title.Where(static character => character is not ':' and not '\\' and not '/' and not '?' and not '*' and not '[' and not ']'));
         return safe.Length == 0 ? "Report" : safe[..Math.Min(31, safe.Length)];
     }
-    private static void AddCell(FixedPage page, string text, double left, double top, double width, bool header, bool numeric = false)
+    private string CellValue(TabularReport report, int row, int column)
     {
-        var border = new Border { Width = width, Height = 25, BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(0.5), Background = header ? Brushes.Gainsboro : Brushes.White };
-        border.Child = new TextBlock { Text = text, Margin = new Thickness(3), FontSize = 9, FontWeight = header ? FontWeights.SemiBold : FontWeights.Normal, TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = numeric ? TextAlignment.Right : TextAlignment.Left };
+        ReportColumn definition = report.Columns[column];
+        bool isTotal = row == report.Rows.Count;
+        if (isTotal && column > 0 && !report.Totals.ContainsKey(definition.Key)) return "";
+        object? source = isTotal
+            ? column == 0 ? Text("Reports_Column_Total", "Total") : report.Totals.GetValueOrDefault(definition.Key)
+            : report.Rows[row].Values.GetValueOrDefault(definition.Key);
+        return Format(definition, source);
+    }
+
+    private static double MeasureCell(string text, double width, bool header)
+    {
+        var block = new TextBlock
+        {
+            Text = text,
+            FontSize = 9,
+            FontWeight = header ? FontWeights.SemiBold : FontWeights.Normal,
+            TextWrapping = TextWrapping.Wrap,
+        };
+        block.Measure(new Size(Math.Max(1, width - 6), double.PositiveInfinity));
+        return Math.Max(25, Math.Ceiling(block.DesiredSize.Height + 6));
+    }
+
+    private readonly record struct RowFragment(int Index, double Offset, double Height);
+
+    private static void AddCell(FixedPage page, string text, double left, double top, double width,
+        double height, bool header, bool numeric = false, double contentOffset = 0, double? contentHeight = null)
+    {
+        var border = new Border
+        {
+            Width = width,
+            Height = height,
+            ClipToBounds = true,
+            BorderBrush = Brushes.LightGray,
+            BorderThickness = new Thickness(0.5),
+            Background = header ? Brushes.Gainsboro : Brushes.White
+        };
+        border.Child = new TextBlock
+        {
+            Text = text,
+            Width = Math.Max(1, width - 6),
+            Height = Math.Max(1, (contentHeight ?? height) - 6),
+            Margin = new Thickness(3, 3 - contentOffset, 3, 0),
+            FontSize = 9,
+            FontWeight = header ? FontWeights.SemiBold : FontWeights.Normal,
+            TextWrapping = TextWrapping.Wrap,
+            TextAlignment = numeric ? TextAlignment.Right : TextAlignment.Left
+        };
         FixedPage.SetLeft(border, left); FixedPage.SetTop(border, top); page.Children.Add(border);
     }
     private static void AddText(FixedPage page, string text, double left, double top, double size, FontWeight weight, double width, TextAlignment alignment = TextAlignment.Left)

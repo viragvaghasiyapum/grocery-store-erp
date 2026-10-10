@@ -12,7 +12,8 @@ namespace GroceryErp.Reports;
 
 public sealed class ReportService(DbExecutor database, ISettings settings, IClock clock, TranslationSource? translations = null)
 {
-    private static readonly string[] LocalizedCodeKeys = ["Status", "Direction", "PaymentMode", "Method", "Weekday"];
+    private static readonly string[] LocalizedCodeKeys =
+        ["Status", "Direction", "PaymentMode", "Method", "Weekday", "Type", "ReferenceType", "Reason", "Action", "Entity"];
     public DateRange ResolvePeriod(PnlPeriodKind kind, DateOnly? customFrom = null, DateOnly? customTo = null)
     {
         DateOnly today = clock.BusinessDate;
@@ -372,10 +373,14 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         foreach (string key in LocalizedCodeKeys)
         {
             if (values.GetValueOrDefault(key) is not string code || code.Length == 0) continue;
-            values[key] = key == "PaymentMode"
-                ? string.Join(", ", code.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-                    .Select(TranslateCode))
-                : TranslateCode(code);
+            values[key] = key switch
+            {
+                "PaymentMode" => string.Join(", ", code.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                    .Select(TranslateCode)),
+                "Action" => Text($"Reports_Action_{code}", code),
+                "Entity" => Text($"Reports_Entity_{code}", code),
+                _ => TranslateCode(code),
+            };
         }
         return new ReportRow(values);
     }
@@ -397,6 +402,18 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         "OTHER" => Text("Reports_PaymentOther", code),
         "SLM" => Text("Reports_Value_SLM", code),
         "WDV" => Text("Reports_Value_WDV", code),
+        "OPENING" => Text("Stock_SourceDoc_Opening", code),
+        "PURCHASE" or "PURCHASE_CANCEL" => Text("Stock_SourceDoc_Purchase", code),
+        "VENDOR_RETURN" => Text("Stock_SourceDoc_VendorReturn", code),
+        "SALE" or "SALE_VOID" => Text("Stock_SourceDoc_Sale", code),
+        "SALE_RETURN" => Text("Stock_SourceDoc_Return", code),
+        "DAMAGE" => Text("Stock_SourceDoc_Damage", code),
+        "ADJUSTMENT" => Text("Stock_SourceDoc_Adjustment", code),
+        "BROKEN" => Text("MoneyOut_ReasonBroken", code),
+        "SPOILED" => Text("MoneyOut_ReasonSpoiled", code),
+        "PEST" => Text("MoneyOut_ReasonPest", code),
+        "LOST" => Text("MoneyOut_ReasonLost", code),
+        "CUSTOMER_RETURN" => Text("MoneyOut_ReasonReturn", code),
         "Mon" or "Tue" or "Wed" or "Thu" or "Fri" or "Sat" or "Sun" => Text($"Reports_Weekday_{code}", code),
         _ => code,
     };

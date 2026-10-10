@@ -36,7 +36,7 @@ public partial class QuickProductWindow : Window
             SaveButton.IsEnabled = CategoryBox.Items.Count > 0 && UnitBox.Items.Count > 0 && TaxBox.Items.Count > 0;
             NameBox.Focus();
         }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
 
     private async void Save_OnClick(object sender, RoutedEventArgs e)
@@ -60,8 +60,7 @@ public partial class QuickProductWindow : Window
         }
         catch (Exception exception)
         {
-            ErrorText.Text = exception is DomainException domain
-                ? TranslationSource.Instance[$"Error_{domain.Code}"] : exception.Message;
+            ErrorText.Text = UserError.Message(exception);
             SaveButton.IsEnabled = true;
         }
     }

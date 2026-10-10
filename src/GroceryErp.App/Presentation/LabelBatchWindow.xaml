@@ -18,6 +18,10 @@
       <StackPanel Grid.Column="1">
         <TextBlock Text="{l:Tr Catalog_PrinterName}"/>
         <TextBox x:Name="PrinterBox"/>
+        <ComboBox x:Name="PrinterModeBox" SelectedIndex="0" Margin="0,6,0,0">
+          <ComboBoxItem Tag="TSPL" Content="{l:Tr Catalog_PrinterModeTspl}"/>
+          <ComboBoxItem Tag="DRIVER" Content="{l:Tr Catalog_PrinterModeDriver}"/>
+        </ComboBox>
       </StackPanel>
     </Grid>
     <Grid Grid.Row="2">

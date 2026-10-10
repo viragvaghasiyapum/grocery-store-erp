@@ -60,16 +60,16 @@ public partial class ProductEditorWindow : Window
                 TrackExpiryBox.IsChecked = product.TrackExpiry;
                 ShelfLifeBox.Text = product.DefaultShelfLifeDays?.ToString(CultureInfo.InvariantCulture);
                 ExpiryAlertBox.Text = product.ExpiryAlertDays?.ToString(CultureInfo.InvariantCulture);
-                ReorderBox.Text = product.ReorderLevel.ToString();
-                PriceBox.Text = product.DefaultSellingPrice?.ToString();
-                MrpBox.Text = product.DefaultMrp?.ToString();
+                ReorderBox.Text = product.ReorderLevel.Value.ToString("0.000", TranslationSource.FormatCulture);
+                PriceBox.Text = product.DefaultSellingPrice?.Value.ToString("0.000", TranslationSource.FormatCulture);
+                MrpBox.Text = product.DefaultMrp?.Value.ToString("0.000", TranslationSource.FormatCulture);
                 BarcodesBox.Text = string.Join(Environment.NewLine, product.Barcodes.Select(static item => item.Barcode));
             }
             SaveButton.IsEnabled = categories.Count > 0;
         }
         catch (Exception exception)
         {
-            ErrorText.Text = exception.Message;
+            ErrorText.Text = UserError.Message(exception);
         }
     }
 
@@ -107,9 +107,7 @@ public partial class ProductEditorWindow : Window
         }
         catch (Exception exception)
         {
-            ErrorText.Text = exception is DomainException domain
-                ? TranslationSource.Instance[$"Error_{domain.Code}"]
-                : exception.Message;
+            ErrorText.Text = UserError.Message(exception);
             SaveButton.IsEnabled = true;
         }
     }

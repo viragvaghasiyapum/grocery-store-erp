@@ -80,8 +80,14 @@ public sealed class StockLedger(ISettings settings) : IStockLedger
             SELECT id AS LotId, qty_on_hand AS OnHand, expiry_date AS Expiry,
                    selling_price AS Price, mrp AS Mrp, unit_cost AS Cost
             FROM product_lot WHERE product_id=@productId AND is_active=1
+              AND (@blockExpired=0 OR expiry_date IS NULL OR expiry_date>=@asOf)
             ORDER BY received_date DESC,id DESC LIMIT 1
-            """, new { productId }, transaction.Transaction);
+            """, new
+        {
+            productId,
+            blockExpired = settings.Current.BlockExpiredLots ? 1 : 0,
+            asOf = asOf.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+        }, transaction.Transaction);
         if (newest is null) throw new DomainException(ErrorCode.NoLotForProduct, productId);
         result.Add(new(newest.ToModel(), remaining));
         return result;

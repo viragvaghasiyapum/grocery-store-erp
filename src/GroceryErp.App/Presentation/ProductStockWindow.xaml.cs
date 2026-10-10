@@ -36,7 +36,7 @@ public partial class ProductStockWindow : Window
             LedgerGrid.ItemsSource = await _inventory.GetLedgerAsync(_productId, DateOnly.MinValue, DateOnly.MaxValue);
             StatusText.Text = string.Empty;
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private void LotsGrid_OnSelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -60,7 +60,7 @@ public partial class ProductStockWindow : Window
                 services.GetRequiredService<IClock>().BusinessDate, OperationGuard.NewId());
             await RefreshAsync();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private void PrintLot_OnClick(object sender, RoutedEventArgs e)
@@ -86,6 +86,6 @@ public partial class ProductStockWindow : Window
             StockSourceDocument source = await _inventory.GetSourceDocumentAsync(movement);
             new StockSourceWindow(source) { Owner = this }.ShowDialog();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 }

@@ -72,7 +72,7 @@ public partial class SalesHistoryPage : Page
             NextButton.IsEnabled = items.Count == PageSize;
             UpdateActions();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private SaleHistoryFilter CreateFilter(DateOnly? beforeDate, long? beforeId, int limit)
@@ -149,7 +149,7 @@ public partial class SalesHistoryPage : Page
             MovementsGrid.ItemsSource = activity.Movements;
             RefreshDetailHeading();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private void RefreshDetailHeading()
@@ -187,7 +187,7 @@ public partial class SalesHistoryPage : Page
             await _printer.PrintAsync(await _sales.GetReceiptAsync(sale.Id, duplicate: true));
             StatusText.Text = TranslationSource.Instance.Format("Sales_Reprinted", sale.InvoiceNumber ?? "");
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void Void_OnClick(object sender, RoutedEventArgs e)
@@ -196,7 +196,7 @@ public partial class SalesHistoryPage : Page
         var dialog = new SaleActionWindow(false) { Owner = Window.GetWindow(this) };
         if (dialog.ShowDialog() != true) return;
         try { await _sales.VoidAsync(sale.Id, dialog.Reason, OperationGuard.NewId()); await RefreshAsync(); }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void Return_OnClick(object sender, RoutedEventArgs e)
@@ -218,10 +218,10 @@ public partial class SalesHistoryPage : Page
             try { await _printer.PrintAsync(await _sales.GetReturnReceiptAsync(returned.ReturnId)); }
             catch (Exception exception)
             {
-                StatusText.Text = TranslationSource.Instance.Format("Sales_ReturnPrintFailed", returned.ReturnNumber, exception.Message);
+                StatusText.Text = TranslationSource.Instance.Format("Sales_ReturnPrintFailed", returned.ReturnNumber, UserError.Message(exception));
             }
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void DayEnd_OnClick(object sender, RoutedEventArgs e)
@@ -233,7 +233,7 @@ public partial class SalesHistoryPage : Page
             DayEndSummary summary = await _sales.GetDayEndAsync(date);
             new DayEndWindow(summary, _printer) { Owner = Window.GetWindow(this) }.ShowDialog();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void Export_OnClick(object sender, RoutedEventArgs e)
@@ -273,6 +273,6 @@ public partial class SalesHistoryPage : Page
             await Task.Run(() => output.ExportExcel(report, picker.FileName));
             StatusText.Text = TranslationSource.Instance.Format("Sales_Exported", all.Count);
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 }

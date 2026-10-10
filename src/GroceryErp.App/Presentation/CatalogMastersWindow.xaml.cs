@@ -197,9 +197,7 @@ public partial class CatalogMastersWindow : Window
         }
     }
 
-    private void ShowError(Exception exception) => StatusText.Text = exception is DomainException domain
-        ? TranslationSource.Instance[$"Error_{domain.Code}"]
-        : exception.Message;
+    private void ShowError(Exception exception) => StatusText.Text = UserError.Message(exception);
 
     private void CategoryTree_OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {

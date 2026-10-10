@@ -17,6 +17,8 @@ using GroceryErp.Localization;
 using GroceryErp.Purchasing;
 using GroceryErp.Reports;
 using GroceryErp.Sales;
+using GroceryErp.Settings;
+using GroceryErp.UI.Common.Modularity;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
@@ -94,20 +96,13 @@ public partial class App : Application
             builder.Services.AddSingleton<MaintenanceService>();
             builder.Services.AddSingleton<StartupPipeline>();
             builder.Services.AddSingleton<ShutdownPipeline>();
-            builder.Services.AddSingleton<CatalogService>();
-            builder.Services.AddSingleton<ProductExcelImporter>();
-            builder.Services.AddSingleton<GroceryErp.Catalog.Barcodes.ScanResolver>();
-            builder.Services.AddSingleton<StockLedger>();
-            builder.Services.AddSingleton<IStockLedger>(static provider => provider.GetRequiredService<StockLedger>());
-            builder.Services.AddSingleton<InventoryService>();
-            builder.Services.AddSingleton<OpeningStockExcelImporter>();
-            builder.Services.AddSingleton<PurchasingService>();
-            builder.Services.AddSingleton<SalesService>();
-            builder.Services.AddSingleton<ReceiptPrinter>();
-            builder.Services.AddSingleton<MoneyOutService>();
-            builder.Services.AddSingleton<AssetService>();
-            builder.Services.AddSingleton<ReportService>();
-            builder.Services.AddSingleton<ReportOutputService>();
+            IReadOnlyList<IModule> modules = CreateModules();
+            foreach (IModule module in modules)
+            {
+                module.Register(builder.Services);
+                TranslationSource.Instance.Register(module.Key, module.Strings);
+            }
+            builder.Services.AddSingleton(modules);
             builder.Services.AddSingleton<ReportNavigationState>();
             builder.Services.AddSingleton<UsbUpdateService>();
             builder.Services.AddSingleton<ReleaseNotesService>();
@@ -225,10 +220,14 @@ public partial class App : Application
                 await maintenance.OverrideClockWarningAsync(health.LastSaleDate);
             }
 
+            bool pendingPrintReview = _host.Services.GetRequiredService<ReceiptPrinter>().HasFailedJobs;
             ShellWindow shell = _host.Services.GetRequiredService<ShellWindow>();
             MainWindow = shell;
             shell.Closed += async (_, _) => await RequestShutdownAsync();
             shell.Show();
+            if (pendingPrintReview)
+                MessageBox.Show(TranslationSource.Instance["Startup_PrintReview"],
+                    TranslationSource.Instance["App_Title"], MessageBoxButton.OK, MessageBoxImage.Warning);
             ReleaseNotesService releaseNotesService = _host.Services.GetRequiredService<ReleaseNotesService>();
             if (releaseNotesService.GetUnseen(TranslationSource.Instance.UiCulture) is { } releaseNotes)
             {
@@ -350,6 +349,18 @@ public partial class App : Application
 
     internal IServiceProvider Services =>
         _host?.Services ?? throw new InvalidOperationException("The application host is not ready.");
+
+    internal static IReadOnlyList<IModule> CreateModules() =>
+    [
+        new SalesModule(typeof(BillingPage), typeof(SalesHistoryPage)),
+        new PurchasingModule(typeof(PurchasesPage)),
+        new InventoryModule(typeof(StockPage)),
+        new ExpensesModule(typeof(MoneyOutPage)),
+        new AssetsModule(typeof(AssetsPage)),
+        new ReportsModule(typeof(ReportsPage)),
+        new CatalogModule(typeof(ProductsPage)),
+        new SettingsModule(typeof(SettingsPage)),
+    ];
 
     internal async Task WaitForStartupMaintenanceAsync()
     {

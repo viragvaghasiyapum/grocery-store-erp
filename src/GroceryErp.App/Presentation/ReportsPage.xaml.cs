@@ -186,7 +186,7 @@ public partial class ReportsPage : Page
             PnlGrid.ItemsSource = null;
             HourlyPanel.Visibility = Visibility.Collapsed;
             TotalsText.Text = "";
-            StatusText.Text = exception.Message;
+            StatusText.Text = UserError.Message(exception);
         }
     }
 
@@ -407,7 +407,7 @@ public partial class ReportsPage : Page
             else if (_currentReport is not null) _output.ExportExcel(_currentReport, dialog.FileName);
             StatusText.Text = dialog.FileName;
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private void Preview_OnClick(object sender, RoutedEventArgs e)
@@ -421,7 +421,7 @@ public partial class ReportsPage : Page
             var window = new Window { Title = report.Title, Width = 900, Height = 700, Owner = Window.GetWindow(this), Content = viewer };
             window.ShowDialog();
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private static List<PnlDisplayRow> PnlRows(PnlStatement statement)

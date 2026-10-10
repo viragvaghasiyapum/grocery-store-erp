@@ -21,7 +21,7 @@ public partial class StockCountScopeWindow : Window
     private async void LoadAsync(object sender, RoutedEventArgs e)
     {
         try { CategoriesBox.ItemsSource = await _catalog.GetCategoriesAsync(); }
-        catch (Exception exception) { ErrorText.Text = exception.Message; }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
 
     private void AllCategoriesBox_OnChanged(object sender, RoutedEventArgs e)

@@ -27,11 +27,11 @@ public partial class HeldBillReviewWindow : Window
     {
         public HeldBillReviewLine Line { get; } = line;
         public string ProductName => Line.ProductName;
-        public string Quantity => Line.Quantity.ToString();
-        public string PreviousPrice => Line.PreviousPrice.ToString();
-        public string CurrentPrice => Line.CurrentPrice.ToString();
-        public string CurrentMrp => Line.CurrentMrp?.ToString() ?? "";
-        public string Available => Line.Available.ToString();
+        public string Quantity => Line.Quantity.Value.ToString("0.000", TranslationSource.FormatCulture);
+        public string PreviousPrice => Line.PreviousPrice.Value.ToString("0.000", TranslationSource.FormatCulture);
+        public string CurrentPrice => Line.CurrentPrice.Value.ToString("0.000", TranslationSource.FormatCulture);
+        public string CurrentMrp => Line.CurrentMrp?.Value.ToString("0.000", TranslationSource.FormatCulture) ?? "";
+        public string Available => Line.Available.Value.ToString("0.000", TranslationSource.FormatCulture);
         public bool AvailableForSale => Line.IsActive && Line.Available >= Line.Quantity &&
             (Line.ExpiryDate is null || Line.ExpiryDate >= today);
         public string Status => !AvailableForSale ? TranslationSource.Instance["Sales_HeldStockIssue"] :

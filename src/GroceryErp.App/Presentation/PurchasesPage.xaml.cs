@@ -97,7 +97,7 @@ public partial class PurchasesPage : Page
         {
             StatusText.Text = TranslationSource.Instance["Purchasing_CancelBlocked"];
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void VendorReturn_OnClick(object sender, RoutedEventArgs e)
@@ -117,6 +117,6 @@ public partial class PurchasesPage : Page
             VendorsGrid.ItemsSource = await _purchasing.GetVendorsAsync();
             StatusText.Text = $"{PurchasesGrid.Items.Count} / {VendorsGrid.Items.Count}";
         }
-        catch (Exception exception) { StatusText.Text = exception.Message; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 }

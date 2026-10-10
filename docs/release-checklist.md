@@ -3,14 +3,17 @@
 Record the operator, date, machine and evidence beside every item. Do not release with an unchecked
 software item. Hardware, language and pilot items require a named human sign-off.
 
+Interim code recheck on 8 October 2026 with SDK `10.0.401`: Release build had zero warnings,
+`dotnet format --verify-no-changes` passed, and `dotnet test GroceryErp.slnx -c Release --no-build --no-restore`
+reported 106 passed, zero failed, one packaged-journey skip. The boxes below require a versioned
+release run and evidence before sign-off.
+
 ## Automated release gate
 
 - [ ] `dotnet format GroceryErp.slnx --verify-no-changes --no-restore`
 - [ ] `dotnet build GroceryErp.slnx -c Release --no-restore` has zero warnings
-- [ ] Run the xUnit v3 project runners for Core, Architecture, Integration and UI with
-      `dotnet run --project tests/GroceryErp.<suite>.Tests -c Release --no-build -- -maxThreads 1`;
-      each reports zero failures and zero skips. The local SDK's `dotnet test` does not discover
-      these xUnit v3 tests.
+- [ ] Run `dotnet test GroceryErp.slnx -c Release --no-build --no-restore`; require zero failures.
+      The packaged UI journey may skip before packaging and must pass in the post-package rerun below.
 - [ ] Full data set generated with `dotnet run -c Release --project tools/GroceryErp.DataGen -- --output=<path>`
 - [ ] Performance results recorded in `docs/perf/<version>.md`; no path regressed by more than 20%
 - [ ] `scripts/build-release.ps1 -Version <semver>` produces the installer and local update feed
@@ -35,6 +38,7 @@ software item. Hardware, language and pilot items require a named human sign-off
 - [ ] Data folder is outside OneDrive; BitLocker enabled where available
 - [ ] Scanner test sheet passes EAN-13, UPC-A, scale label and 2D scans
 - [ ] Receipt printer passes English/Gujarati, cutter and cash-drawer tests
+- [ ] Interrupt printing before and after spooler acceptance; after restart, review each saved receipt/day-end/label job, confirm Ctrl+P retry and receipt DUPLICATE mark, and check that drawer pulses do not replay
 - [ ] Label printer is calibrated and its labels scan from 30 cm
 - [ ] Power-pull during a draft bill recovers the draft and preserves ledger integrity
 - [ ] Backup exported to USB and restored on a second PC
