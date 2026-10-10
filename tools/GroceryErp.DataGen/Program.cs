@@ -14,7 +14,7 @@ Dictionary<string, string> options = args
 decimal scale = options.TryGetValue("scale", out string? rawScale) &&
                 decimal.TryParse(rawScale, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal parsedScale)
     ? parsedScale : 1m;
-if (scale is <= 0m or > 1m) throw new ArgumentException("Scale must be > 0 and <= 1.", nameof(args));
+if (scale is <= 0m or > 1.5m) throw new ArgumentException("Scale must be > 0 and <= 1.5.", nameof(args));
 
 string requestedOutput = Path.GetFullPath(options.GetValueOrDefault("output",
     Path.Combine(Environment.CurrentDirectory, "artifacts", "data", "grocery-erp-5y.db")));
@@ -31,6 +31,9 @@ int bills = Scaled(640_000);
 int expenses = Scaled(3_600);
 int employees = Math.Max(3, Scaled(25));
 int assets = Math.Max(2, Scaled(40));
+var productNames = new string[products + 1];
+var localNames = new string?[products + 1];
+var lotPools = Enumerable.Range(0, products + 1).Select(static _ => new List<GeneratedLot>()).ToArray();
 var random = new Random(seed);
 Randomizer.Seed = new Random(seed);
 var faker = new Faker("en_IND");
@@ -56,8 +59,14 @@ try
         string integrity = connection.ExecuteScalar<string>("PRAGMA integrity_check;") ?? "";
         long foreignKeys = connection.Query("PRAGMA foreign_key_check;").LongCount();
         long cacheMismatches = connection.ExecuteScalar<long>("SELECT COUNT(*) FROM v_lot_cache_mismatch;");
-        if (integrity != "ok" || foreignKeys != 0 || cacheMismatches != 0)
-            throw new InvalidDataException($"Generated database failed verification: {integrity}, FK={foreignKeys}, cache={cacheMismatches}.");
+        long expiredSaleLines = connection.ExecuteScalar<long>("""
+            SELECT COUNT(*) FROM sale_line sl
+            JOIN sale s ON s.id=sl.sale_id
+            JOIN product_lot pl ON pl.id=sl.lot_id
+            WHERE s.sale_date>pl.expiry_date
+            """);
+        if (integrity != "ok" || foreignKeys != 0 || cacheMismatches != 0 || expiredSaleLines != 0)
+            throw new InvalidDataException($"Generated database failed verification: {integrity}, FK={foreignKeys}, cache={cacheMismatches}, expired sale lines={expiredSaleLines}.");
     }
 
     SqliteConnection.ClearAllPools();
@@ -78,7 +87,7 @@ void InsertMasters(SqliteConnection connection)
     using SqliteTransaction transaction = connection.BeginTransaction();
     for (int index = 1; index <= categories; index++)
         connection.Execute("INSERT INTO category(id,parent_id,name,name_local,expiry_alert_days,sort_order) VALUES (@id,@parent,@name,@local,30,@id)",
-            new { id = index, parent = index <= 10 ? (int?)null : 1 + index % Math.Min(10, categories), name = $"Category {index:D2}", local = index % 3 == 0 ? $"શ્રેણી {index}" : null }, transaction);
+            new { id = index, parent = index <= 10 ? (int?)null : index <= 30 ? 1 + (index - 11) % 10 : 11 + (index - 31) % Math.Min(20, Math.Max(1, categories - 10)), name = $"Category {index:D2}", local = index % 3 == 0 ? $"શ્રેણી {index}" : null }, transaction);
     for (int index = 1; index <= brands; index++)
         connection.Execute("INSERT INTO brand(id,name) VALUES (@id,@name)", new { id = index, name = $"Brand {index:D3}" }, transaction);
     for (int index = 1; index <= vendors; index++)
@@ -89,6 +98,8 @@ void InsertMasters(SqliteConnection connection)
         bool loose = index % 20 == 0;
         long cost = 20_000 + index % 180 * 1000L;
         long price = cost + Math.Max(5_000, cost / 4);
+        productNames[index] = faker.Commerce.ProductName() + $" {index:D5}";
+        localNames[index] = index % 10 < 3 ? $"કરિયાણા વસ્તુ {index}" : null;
         connection.Execute("""
             INSERT INTO product(id,sku,name,name_local,search_terms,category_id,brand_id,uom_id,hsn_code,tax_rate_id,
               is_loose,plu_code,track_expiry,default_shelf_life_days,reorder_level,default_selling_price,default_mrp)
@@ -97,8 +108,8 @@ void InsertMasters(SqliteConnection connection)
         {
             id = index,
             sku = $"P{index:D6}",
-            name = faker.Commerce.ProductName() + $" {index:D5}",
-            local = index % 10 < 3 ? $"કરિયાણા વસ્તુ {index}" : null,
+            name = productNames[index],
+            local = localNames[index],
             terms = $"grocery item {index}",
             category = 1 + index % categories,
             brand = 1 + index % brands,
@@ -126,7 +137,8 @@ void InsertPurchasesAndLots(SqliteConnection connection)
         int batchEnd = Math.Min(purchases, batchStart + 999);
         for (int purchaseId = batchStart; purchaseId <= batchEnd; purchaseId++)
         {
-            DateOnly received = start.AddDays(random.Next(end.DayNumber - start.DayNumber + 1));
+            // Seed one lot per product before trading starts; later receipts follow Pareto demand.
+            DateOnly received = nextLot <= products ? start : start.AddDays(random.Next(end.DayNumber - start.DayNumber + 1));
             int lineCount = baseLines + (purchaseId <= extraLines ? 1 : 0);
             long total = lineCount * 10_000_000L;
             connection.Execute("""
@@ -147,7 +159,7 @@ void InsertPurchasesAndLots(SqliteConnection connection)
             }, transaction);
             for (int line = 1; line <= lineCount; line++, nextLot++)
             {
-                int productId = 1 + (nextLot - 1) % products;
+                int productId = nextLot <= products ? nextLot : PickProduct();
                 long cost = 20_000 + productId % 180 * 1000L;
                 long price = cost + Math.Max(5_000, cost / 4);
                 DateOnly expiry = received.AddDays(90 + random.Next(641));
@@ -175,6 +187,7 @@ void InsertPurchasesAndLots(SqliteConnection connection)
                     vendor = 1 + purchaseId % vendors,
                     received = Iso(received)
                 }, transaction);
+                lotPools[productId].Add(new GeneratedLot(nextLot, received, expiry, 1_000_000));
             }
             connection.Execute("UPDATE purchase SET status='POSTED', posted_at=@at WHERE id=@id",
                 new { id = purchaseId, at = Timestamp(received) }, transaction);
@@ -182,6 +195,8 @@ void InsertPurchasesAndLots(SqliteConnection connection)
         transaction.Commit();
         Console.WriteLine($"Purchases: {batchEnd:N0}/{purchases:N0}");
     }
+    foreach (List<GeneratedLot> pool in lotPools)
+        pool.Sort(static (left, right) => left.Received.CompareTo(right.Received));
 }
 
 void InsertSales(SqliteConnection connection)
@@ -203,11 +218,16 @@ void InsertSales(SqliteConnection connection)
             long gross = 0, taxable = 0, tax = 0, costTotal = 0;
             for (int line = 1; line <= lineCount; line++)
             {
-                int productId = 1 + (int)(Math.Pow(random.NextDouble(), 2) * products);
-                int lotsForProduct = Math.Max(1, lots / products);
-                int lotId = productId + products * random.Next(lotsForProduct);
-                if (lotId > lots) lotId = productId;
                 long qty = random.Next(1, 4) * 1000L;
+                int productId = 0;
+                int lotId = 0;
+                for (int attempt = 0; attempt < 1_000; attempt++)
+                {
+                    productId = PickProduct();
+                    lotId = TakeAvailableLot(productId, date, qty);
+                    if (lotId != 0) break;
+                }
+                if (lotId == 0) throw new InvalidDataException($"No stock is available for a sale on {date}.");
                 long unitCost = 20_000 + productId % 180 * 1000L;
                 long unitPrice = unitCost + Math.Max(5_000, unitCost / 4);
                 long lineGross = qty * unitPrice / 1000;
@@ -227,7 +247,7 @@ void InsertSales(SqliteConnection connection)
                     line,
                     product = productId,
                     lot = lotId,
-                    name = $"Product {productId:D5}",
+                    name = productNames[productId],
                     qty,
                     price = unitPrice,
                     mrp = unitPrice + 10_000,
@@ -236,7 +256,7 @@ void InsertSales(SqliteConnection connection)
                     total = lineGross,
                     cost = unitCost,
                     costAmount = lineCost,
-                    local = productId % 10 < 3 ? $"કરિયાણા વસ્તુ {productId}" : null,
+                    local = localNames[productId],
                     movement = ++movementId,
                     date = Iso(date),
                     moveQty = -qty
@@ -300,7 +320,45 @@ void InsertOverheads(SqliteConnection connection)
     transaction.Commit();
 }
 
+int PickProduct() => 1 + (int)(Math.Pow(random.NextDouble(), 2) * products);
+
+int TakeAvailableLot(int productId, DateOnly saleDate, long quantity)
+{
+    List<GeneratedLot> pool = lotPools[productId];
+    int low = 0, high = pool.Count;
+    while (low < high)
+    {
+        int middle = low + (high - low) / 2;
+        if (pool[middle].Received <= saleDate) low = middle + 1;
+        else high = middle;
+    }
+    int eligible = low;
+    for (int attempt = 0; attempt < Math.Min(8, eligible); attempt++)
+    {
+        GeneratedLot lot = pool[random.Next(eligible)];
+        if (lot.Remaining < quantity || lot.Expiry < saleDate) continue;
+        lot.Remaining -= quantity;
+        return lot.Id;
+    }
+    for (int index = 0; index < eligible; index++)
+    {
+        GeneratedLot lot = pool[index];
+        if (lot.Remaining < quantity || lot.Expiry < saleDate) continue;
+        lot.Remaining -= quantity;
+        return lot.Id;
+    }
+    return 0;
+}
+
 int Scaled(int value) => Math.Max(1, (int)Math.Round(value * scale, MidpointRounding.AwayFromZero));
 static string Iso(DateOnly value) => value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 static string Timestamp(DateOnly value) => $"{value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} 12:00:00";
+
+sealed class GeneratedLot(int id, DateOnly received, DateOnly expiry, long remaining)
+{
+    public int Id { get; } = id;
+    public DateOnly Received { get; } = received;
+    public DateOnly Expiry { get; } = expiry;
+    public long Remaining { get; set; } = remaining;
+}
 

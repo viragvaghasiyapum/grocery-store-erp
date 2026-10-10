@@ -24,7 +24,7 @@ public sealed class FoundationsTests
         using var fixture = new FoundationFixture();
 
         using var connection = fixture.Factory.Open();
-        connection.ExecuteScalar<long>("PRAGMA user_version").ShouldBe(9L);
+        connection.ExecuteScalar<long>("PRAGMA user_version").ShouldBe((long)MigrationRunner.LatestVersion);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM setting").ShouldBeGreaterThan(0);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM operation").ShouldBe(0L);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM uom").ShouldBeGreaterThan(0);
@@ -63,7 +63,7 @@ public sealed class FoundationsTests
             new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
 
             using var upgraded = factory.Open();
-            upgraded.ExecuteScalar<long>("PRAGMA user_version").ShouldBe(9L);
+            upgraded.ExecuteScalar<long>("PRAGMA user_version").ShouldBe((long)MigrationRunner.LatestVersion);
             upgraded.ExecuteScalar<long>("SELECT COUNT(*) FROM expense").ShouldBe(1L);
             upgraded.ExecuteScalar<long>("SELECT COUNT(*) FROM pragma_table_info('damage') WHERE name='bulk_operation_id'").ShouldBe(1L);
         }
@@ -108,7 +108,7 @@ public sealed class FoundationsTests
         backup.ApplyRestore(candidate);
         backup.FinishPendingRestore();
 
-        verified.SchemaVersion.ShouldBe(9L);
+        verified.SchemaVersion.ShouldBe((long)MigrationRunner.LatestVersion);
         candidate.Manifest.Database.Sha256.ShouldBe(verified.Database.Sha256);
         using var connection = fixture.Factory.Open();
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity = 'restore' AND action = 'RESTORE'")
