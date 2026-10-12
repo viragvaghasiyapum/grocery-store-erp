@@ -393,7 +393,7 @@ public sealed class SalesTests
         public void Dispose()
         {
             Settings.Dispose();
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            SqliteConnectionFactory.ClearPoolForDataRoot(_root);
             if (Directory.Exists(_root)) Directory.Delete(_root, true);
         }
     }

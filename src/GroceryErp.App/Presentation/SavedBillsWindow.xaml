@@ -6,7 +6,13 @@
  WindowStartupLocation="CenterOwner" NumberSubstitution.Substitution="European">
  <Grid Margin="24">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <TextBlock FontSize="22" FontWeight="SemiBold" Text="{l:Tr Sales_SelectSavedBill}"/>
+  <StackPanel>
+   <TextBlock FontSize="22" FontWeight="SemiBold" Text="{l:Tr Sales_SelectSavedBill}"/>
+   <WrapPanel Margin="0,8,0,0">
+    <TextBox x:Name="SearchBox" Width="210" Margin="0,0,6,0" ToolTip="Bill ID or label"/>
+    <Button x:Name="SearchButton" Click="Search_OnClick" Content="Search"/>
+   </WrapPanel>
+  </StackPanel>
   <DataGrid x:Name="BillsGrid" Grid.Row="1" Margin="0,16,0,16" Style="{StaticResource CatalogGrid}"
             MouseDoubleClick="BillsGrid_OnDoubleClick">
    <DataGrid.Columns>
@@ -16,7 +22,10 @@
     <DataGridTextColumn Width="110" Header="{l:Tr Purchasing_Total}" Binding="{Binding Total}"/>
    </DataGrid.Columns>
   </DataGrid>
+  <TextBlock x:Name="StatusText" Grid.Row="2" VerticalAlignment="Center"/>
   <StackPanel Grid.Row="2" HorizontalAlignment="Right" Orientation="Horizontal">
+   <Button x:Name="PreviousButton" IsEnabled="False" Margin="0,0,6,0" Click="Previous_OnClick" Content="{l:Tr Sales_Previous}"/>
+   <Button x:Name="NextButton" IsEnabled="False" Margin="0,0,8,0" Click="Next_OnClick" Content="{l:Tr Sales_Next}"/>
    <Button Width="100" IsCancel="True" Content="{l:Tr Common_Cancel}"/>
    <Button Width="120" Margin="8,0,0,0" IsDefault="True" Click="Select_OnClick" Content="{l:Tr Sales_OpenBill}"/>
   </StackPanel>

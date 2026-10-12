@@ -29,6 +29,11 @@ public partial class StockCountWindow : Window
     private bool _reviewed;
     private bool _loadingRows;
     private Dictionary<long, long> _reviewedMovements = [];
+    private readonly Stack<long?> _pageBack = new();
+    private long? _pageAfter;
+    private long? _pageNext;
+    private long _totalLines;
+    private long _savedCounted;
     public StockCountWindow(InventoryService inventory, long? countId = null, bool loadOnShow = true,
         IReadOnlyCollection<long>? categoryIds = null, string? notes = null)
     {
@@ -50,9 +55,7 @@ public partial class StockCountWindow : Window
                 DateOnly date = ((App)Application.Current).Services.GetRequiredService<IClock>().BusinessDate;
                 _countId = await _inventory.CreateStockCountAsync(date, _categoryIds, _notes);
             }
-            StockCountDetails count = await _inventory.GetStockCountAsync(_countId);
-            if (count.Status != "DRAFT") throw new InvalidOperationException("Stock count is already finalized.");
-            BindLines(count.Lines);
+            await LoadPageAsync();
         }
         catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
@@ -67,7 +70,7 @@ public partial class StockCountWindow : Window
             if (latest.Lines.Any(line => !_reviewedMovements.TryGetValue(line.LotId, out long quantity) ||
                                          quantity != line.MovementSinceSnapshot.Scaled))
             {
-                BindLines(latest.Lines);
+                await LoadPageAsync();
                 InvalidateReview();
                 throw new InvalidOperationException(TranslationSource.Instance["Stock_MovementsChanged"]);
             }
@@ -81,8 +84,7 @@ public partial class StockCountWindow : Window
             try
             {
                 await _inventory.RefreshStockCountLotsAsync(_countId);
-                StockCountDetails changed = await _inventory.GetStockCountAsync(_countId);
-                BindLines(changed.Lines);
+                await LoadPageAsync();
             }
             catch (Exception reloadError) { ErrorText.Text = UserError.Message(reloadError); return; }
             ErrorText.Text = TranslationSource.Instance["Stock_MovementsChanged"];
@@ -100,13 +102,15 @@ public partial class StockCountWindow : Window
             int added = await _inventory.RefreshStockCountLotsAsync(_countId);
             if (added > 0)
             {
-                BindLines((await _inventory.GetStockCountAsync(_countId)).Lines);
+                await LoadPageAsync();
                 InvalidateReview();
                 ErrorText.Text = TranslationSource.Instance.Format("Stock_NewLotsAdded", added);
                 return;
             }
             StockCountDetails current = await _inventory.GetStockCountAsync(_countId);
-            BindLines(current.Lines.OrderByDescending(static line => Math.Abs(line.DifferenceValue.Value)).ToList());
+            if (current.Lines.Any(static line => line.Counted is null))
+                throw new InvalidOperationException(TranslationSource.Instance["Stock_CompleteEveryLot"]);
+            await LoadPageAsync();
             _reviewedMovements = current.Lines.ToDictionary(static line => line.LotId,
                 static line => line.MovementSinceSnapshot.Scaled);
             _reviewed = true;
@@ -133,6 +137,53 @@ public partial class StockCountWindow : Window
             UpdateProgress();
         }
         finally { _loadingRows = false; }
+    }
+
+    private async Task LoadPageAsync()
+    {
+        StockCountPage page = await _inventory.GetStockCountPageAsync(_countId, _pageAfter);
+        if (page.Status != "DRAFT") throw new InvalidOperationException("Stock count is already finalized.");
+        _pageNext = page.NextLineId;
+        _totalLines = page.Total;
+        _savedCounted = page.Counted;
+        BindLines(page.Lines);
+        PreviousButton.IsEnabled = _pageBack.Count > 0;
+        NextButton.IsEnabled = page.HasMore;
+    }
+
+    private async void Next_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_pageNext is null) return;
+        try
+        {
+            SetBusy(true);
+            await SaveCountsAsync(requireComplete: false);
+            long? previous = _pageAfter;
+            _pageAfter = _pageNext;
+            try { await LoadPageAsync(); }
+            catch { _pageAfter = previous; throw; }
+            _pageBack.Push(previous);
+            PreviousButton.IsEnabled = true;
+        }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
+        finally { SetBusy(false); }
+    }
+
+    private async void Previous_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_pageBack.Count == 0) return;
+        try
+        {
+            SetBusy(true);
+            await SaveCountsAsync(requireComplete: false);
+            long? current = _pageAfter;
+            _pageAfter = _pageBack.Peek();
+            try { await LoadPageAsync(); _pageBack.Pop(); }
+            catch { _pageAfter = current; throw; }
+            PreviousButton.IsEnabled = _pageBack.Count > 0;
+        }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
+        finally { SetBusy(false); }
     }
 
     private void CountEntry_OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -169,7 +220,7 @@ public partial class StockCountWindow : Window
             SetBusy(true);
             await SaveCountsAsync(requireComplete: false);
             int added = await _inventory.RefreshStockCountLotsAsync(_countId);
-            BindLines((await _inventory.GetStockCountAsync(_countId)).Lines);
+            await LoadPageAsync();
             InvalidateReview();
             ErrorText.Text = TranslationSource.Instance.Format("Stock_NewLotsAdded", added);
         }
@@ -212,22 +263,25 @@ public partial class StockCountWindow : Window
         if (query.Length == 0 || CountGrid.ItemsSource is null) return;
         try
         {
-            List<CountEditLine> lines = CountGrid.ItemsSource.Cast<CountEditLine>().ToList();
-            CountEditLine? line = lines.FirstOrDefault(item =>
-                item.LotCode.Equals(query, StringComparison.OrdinalIgnoreCase))
-                ?? lines.FirstOrDefault(item => item.ProductName.Contains(query, StringComparison.OrdinalIgnoreCase));
-            if (line is null && _scanner is not null)
+            long? lineId = await _inventory.FindStockCountLineAsync(_countId, query);
+            if (lineId is null && _scanner is not null)
             {
                 ScanResult scan = await _scanner.ResolveAsync(query);
-                line = scan.LotId is long lotId
-                    ? lines.FirstOrDefault(item => item.LotId == lotId)
-                    : lines.FirstOrDefault(item => item.ProductId == scan.ProductId);
+                lineId = await _inventory.FindStockCountLineAsync(_countId, query,
+                    scan.LotId is null ? scan.ProductId : null, scan.LotId);
             }
-            if (line is null)
+            if (lineId is null)
             {
                 ErrorText.Text = TranslationSource.Instance["Stock_CountLotNotFound"];
                 return;
             }
+            await SaveCountsAsync(requireComplete: false);
+            _pageAfter = lineId.Value - 1;
+            _pageBack.Clear();
+            await LoadPageAsync();
+            CountEditLine? line = CountGrid.ItemsSource.Cast<CountEditLine>()
+                .FirstOrDefault(item => item.Id == lineId.Value);
+            if (line is null) return;
             CountGrid.SelectedItem = line;
             CountGrid.ScrollIntoView(line);
             CountGrid.CurrentCell = new DataGridCellInfo(line, CountGrid.Columns[3]);
@@ -247,7 +301,8 @@ public partial class StockCountWindow : Window
         if (ProgressText is null || CountGrid?.ItemsSource is null) return;
         var entries = CountGrid.ItemsSource.Cast<CountEditLine>().ToList();
         ProgressText.Text = TranslationSource.Instance.Format("Stock_CountProgress",
-            entries.Count(static line => !string.IsNullOrWhiteSpace(line.Counted)), entries.Count);
+            _savedCounted - entries.Count(static line => line.WasCounted) +
+                entries.Count(static line => !string.IsNullOrWhiteSpace(line.Counted)), _totalLines);
     }
 
     private void Print_OnClick(object sender, RoutedEventArgs e)
@@ -290,6 +345,8 @@ public partial class StockCountWindow : Window
     private sealed class CountEditLine(StockCountLine line) : INotifyPropertyChanged
     {
         private string _counted = line.Counted?.Value.ToString("0.###", CultureInfo.InvariantCulture) ?? "";
+        public long Id { get; } = line.Id;
+        public bool WasCounted { get; } = line.Counted is not null;
         public long LotId { get; } = line.LotId;
         public long ProductId { get; } = line.ProductId;
         public string ProductName { get; } = line.ProductName;

@@ -373,7 +373,7 @@
   <data name="Stock_SourceId" xml:space="preserve"><value>સ્ત્રોત ID</value><comment>MT - needs review</comment></data>
   <data name="Stock_ChangePrice" xml:space="preserve"><value>કિંમત બદલો</value><comment>MT - needs review</comment></data>
   <data name="Stock_BlockToggle" xml:space="preserve"><value>લોટ બ્લોક / અનબ્લોક</value><comment>MT - needs review</comment></data>
-  <data name="Stock_PrintCount" xml:space="preserve"><value>ગણતરી પત્રક છાપો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_PrintCount" xml:space="preserve"><value>હાલનું પાનું છાપો</value><comment>MT - needs review</comment></data>
   <data name="Stock_Valuation" xml:space="preserve"><value>મૂલ્યાંકન</value><comment>MT - needs review</comment></data>
   <data name="Stock_SellingValue" xml:space="preserve"><value>વેચાણ કિંમતે મૂલ્ય</value><comment>MT - needs review</comment></data>
   <data name="Stock_MrpValue" xml:space="preserve"><value>MRP મુજબ મૂલ્ય</value><comment>MT - needs review</comment></data>
@@ -741,7 +741,7 @@
   <data name="Sales_DiscountInvalid" xml:space="preserve"><value>કુલ રકમ સુધીની છૂટ અથવા 0 થી 100 ટકા દાખલ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Sales_ReturnsTab" xml:space="preserve"><value>પરત</value><comment>MT - needs review</comment></data>
   <data name="Sales_MovementsTab" xml:space="preserve"><value>સ્ટોકની હિલચાલ</value><comment>MT - needs review</comment></data>
-  <data name="Sales_Export" xml:space="preserve"><value>Excel નિકાસ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Export" xml:space="preserve"><value>CSV નિકાસ</value><comment>MT - needs review</comment></data>
   <data name="Sales_Exported" xml:space="preserve"><value>{0} બિલ નિકાસ થયા.</value><comment>MT - needs review</comment></data>
   <data name="Sales_Bills" xml:space="preserve"><value>બિલ</value><comment>MT - needs review</comment></data>
   <data name="Sales_Payable" xml:space="preserve"><value>ચૂકવવાની રકમ</value><comment>MT - needs review</comment></data>

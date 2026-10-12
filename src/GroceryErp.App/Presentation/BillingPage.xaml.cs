@@ -33,6 +33,8 @@ public partial class BillingPage : Page, IDisposable
     private bool _offeredSavedBills;
     private bool _isCompleting;
     private long? _lastScannedProductId;
+    private Task _billOperations = Task.CompletedTask;
+    private int _refreshVersion;
     private readonly DispatcherTimer _printerTimer = new() { Interval = TimeSpan.FromSeconds(15) };
 
     public BillingPage() : this(
@@ -92,14 +94,16 @@ public partial class BillingPage : Page, IDisposable
                     int marker = typed.IndexOf('*', StringComparison.Ordinal);
                     string input = marker > 0 ? typed[..(marker + 1)] + code : code;
                     ScanBox.Clear();
-                    await AddTextAsync(input);
+                    await EnqueueBillActionAsync(() => AddTextAsync(input));
                 };
                 _detector.Attach(window);
             }
             if (!_offeredSavedBills)
             {
                 _offeredSavedBills = true;
-                await OpenSavedBillsAsync(includeDrafts: true);
+                SavedBillPage available = await _sales.GetSavedBillPageAsync(
+                    includeDrafts: true, excludeId: _saleId, limit: 1);
+                if (available.Items.Count > 0) await OpenSavedBillsAsync(includeDrafts: true);
             }
             await RefreshAsync();
             await RefreshHeldChipsAsync();
@@ -117,7 +121,22 @@ public partial class BillingPage : Page, IDisposable
         string value = ScanBox.Text;
         if (value.Trim().EndsWith('*')) return;
         ScanBox.Clear();
-        await AddTextAsync(value);
+        await EnqueueBillActionAsync(() => AddTextAsync(value));
+    }
+
+    private Task EnqueueBillActionAsync(Func<Task> action)
+    {
+        Task previous = _billOperations;
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _billOperations = completion.Task;
+        return RunAsync();
+
+        async Task RunAsync()
+        {
+            try { await previous; await action(); }
+            catch (Exception exception) { StatusText.Text = Message(exception); }
+            finally { completion.TrySetResult(); }
+        }
     }
 
     private async Task AddTextAsync(string text)
@@ -185,6 +204,9 @@ public partial class BillingPage : Page, IDisposable
 
     private async Task RefreshAsync()
     {
+        using var timing = UiRefreshProbe.Track("billing", this);
+        int version = ++_refreshVersion;
+        long? saleId = _saleId;
         if (_saleId is null)
         {
             BillGrid.ItemsSource = null;
@@ -199,9 +221,10 @@ public partial class BillingPage : Page, IDisposable
         }
         try
         {
-            SaleDetails sale = await _sales.GetAsync(_saleId.Value);
+            SaleDetails sale = await _sales.GetAsync(saleId!.Value);
+            if (version != _refreshVersion || _saleId != saleId) return;
             long? selectedLineId = (BillGrid.SelectedItem as SaleLine)?.Id;
-            BillGrid.ItemsSource = sale.Lines;
+            timing.Bind(() => BillGrid.ItemsSource = sale.Lines);
             BillGrid.SelectedItem = sale.Lines.FirstOrDefault(line => line.Id == selectedLineId) ??
                 (sale.Lines.Count > 0 ? sale.Lines[0] : null);
             GrossText.Text = $"₹{sale.Totals.Gross.Value:N3}";
@@ -224,7 +247,9 @@ public partial class BillingPage : Page, IDisposable
         catch (Exception exception) { StatusText.Text = Message(exception); }
     }
 
-    private async Task PayAsync(PaymentMode mode)
+    private Task PayAsync(PaymentMode mode) => EnqueueBillActionAsync(() => PayCoreAsync(mode));
+
+    private async Task PayCoreAsync(PaymentMode mode)
     {
         if (_saleId is null || _isCompleting) return;
         try
@@ -272,7 +297,10 @@ public partial class BillingPage : Page, IDisposable
 
     private async void Cash_OnClick(object sender, RoutedEventArgs e) => await PayAsync(PaymentMode.Cash);
     private async void Upi_OnClick(object sender, RoutedEventArgs e) => await PayAsync(PaymentMode.Upi);
-    private async void Split_OnClick(object sender, RoutedEventArgs e)
+    private async void Split_OnClick(object sender, RoutedEventArgs e) =>
+        await EnqueueBillActionAsync(SplitCoreAsync);
+
+    private async Task SplitCoreAsync()
     {
         if (_saleId is null || _isCompleting) return;
         try
@@ -285,7 +313,10 @@ public partial class BillingPage : Page, IDisposable
         finally { ScanBox.Focus(); }
     }
 
-    private async void Hold_OnClick(object sender, RoutedEventArgs e)
+    private async void Hold_OnClick(object sender, RoutedEventArgs e) =>
+        await EnqueueBillActionAsync(HoldCoreAsync);
+
+    private async Task HoldCoreAsync()
     {
         if (_saleId is null) return;
         var dialog = new HoldBillWindow { Owner = Window.GetWindow(this) };
@@ -295,7 +326,10 @@ public partial class BillingPage : Page, IDisposable
         finally { ScanBox.Focus(); }
     }
 
-    private async void Resume_OnClick(object sender, RoutedEventArgs e)
+    private async void Resume_OnClick(object sender, RoutedEventArgs e) =>
+        await EnqueueBillActionAsync(ResumeCoreAsync);
+
+    private async Task ResumeCoreAsync()
     {
         try { await OpenSavedBillsAsync(includeDrafts: false); }
         catch (Exception exception) { StatusText.Text = Message(exception); }
@@ -304,14 +338,9 @@ public partial class BillingPage : Page, IDisposable
 
     private async Task OpenSavedBillsAsync(bool includeDrafts)
     {
-        IReadOnlyList<HeldSale> held = await _sales.GetHeldAsync();
-        IReadOnlyList<HeldSale> drafts = includeDrafts ? await _sales.GetDraftsAsync() : [];
-        HashSet<long> heldIds = held.Select(static item => item.Id).ToHashSet();
-        HeldSale[] choices = drafts.Concat(held).Where(item => item.Id != _saleId).ToArray();
-        if (choices.Length == 0) return;
-        var picker = new SavedBillsWindow(choices) { Owner = Window.GetWindow(this) };
+        var picker = new SavedBillsWindow(_sales, includeDrafts, _saleId) { Owner = Window.GetWindow(this) };
         if (picker.ShowDialog() != true || picker.SelectedBill is not { } selected) return;
-        await ResumeSelectedAsync(selected, heldIds.Contains(selected.Id));
+        await ResumeSelectedAsync(selected, selected.IsHeld);
     }
 
     private async Task ResumeSelectedAsync(HeldSale selected, bool isHeld)
@@ -332,7 +361,7 @@ public partial class BillingPage : Page, IDisposable
 
     private async Task RefreshHeldChipsAsync()
     {
-        IReadOnlyList<HeldSale> held = await _sales.GetHeldAsync();
+        IReadOnlyList<HeldSale> held = await _sales.GetRecentHeldAsync();
         HeldChips.ItemsSource = held.Select(item => new HeldChipItem(item,
             string.IsNullOrWhiteSpace(item.Label)
                 ? TranslationSource.Instance.Format("Sales_HeldChip", item.Id)
@@ -342,7 +371,7 @@ public partial class BillingPage : Page, IDisposable
     private async void HeldChip_OnClick(object sender, RoutedEventArgs e)
     {
         if ((sender as Button)?.DataContext is not HeldChipItem item) return;
-        try { await ResumeSelectedAsync(item.Bill, true); }
+        try { await EnqueueBillActionAsync(() => ResumeSelectedAsync(item.Bill, true)); }
         catch (Exception exception) { StatusText.Text = Message(exception); }
         finally { ScanBox.Focus(); }
     }
@@ -485,8 +514,9 @@ public partial class BillingPage : Page, IDisposable
         finally { ScanBox.Focus(); }
     }
 
-    private void New_OnClick(object sender, RoutedEventArgs e) { StartNew(); _ = RefreshAsync(); }
-    private void StartNew() { _saleId = null; _lastScannedProductId = null; _completionOperationId = OperationGuard.NewId(); ScanBox.Focus(); }
+    private async void New_OnClick(object sender, RoutedEventArgs e) => await NewBillAsync();
+    private Task NewBillAsync() => EnqueueBillActionAsync(async () => { StartNew(); await RefreshAsync(); });
+    private void StartNew() { ++_refreshVersion; _saleId = null; _lastScannedProductId = null; _completionOperationId = OperationGuard.NewId(); ScanBox.Focus(); }
 
     private async void OnShortcut(object sender, KeyEventArgs e)
     {
@@ -511,7 +541,7 @@ public partial class BillingPage : Page, IDisposable
             catch (Exception exception) { StatusText.Text = Message(exception); }
             e.Handled = true;
         }
-        else if (e.Key == Key.F2) { StartNew(); await RefreshAsync(); e.Handled = true; }
+        else if (e.Key == Key.F2) { await NewBillAsync(); e.Handled = true; }
         else if (e.Key == Key.F3) { ScanBox.Focus(); e.Handled = true; }
         else if (e.Key == Key.F4) { Quantity_OnClick(sender, e); e.Handled = true; }
         else if (e.Key == Key.F5) { LineDiscount_OnClick(sender, e); e.Handled = true; }

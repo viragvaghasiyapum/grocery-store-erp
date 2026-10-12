@@ -40,6 +40,11 @@
     <DockPanel Grid.Row="3" Margin="0,12,0,0">
       <TextBlock x:Name="StatusText" VerticalAlignment="Center"/>
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <TextBox x:Name="AssetSearchBox" Width="140" Margin="0,0,6,0" ToolTip="Asset name or category"/>
+        <CheckBox x:Name="IncludeDisposedBox" IsChecked="True" VerticalAlignment="Center" Margin="0,0,6,0" Content="Disposed"/>
+        <Button Margin="0,0,8,0" Click="AssetSearch_OnClick" Content="Search"/>
+        <Button x:Name="PreviousAssetButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousAsset_OnClick" Content="{l:Tr Sales_Previous}"/>
+        <Button x:Name="NextAssetButton" IsEnabled="False" Margin="0,0,8,0" Click="NextAsset_OnClick" Content="{l:Tr Sales_Next}"/>
         <DatePicker x:Name="DisposalDate" Width="135" SelectedDateFormat="Short"/>
         <TextBox x:Name="DisposalValue" Width="110" Margin="8,0" Text="0" ToolTip="{l:Tr Assets_Proceeds}"/>
         <Button Margin="0,0,8,0" Click="Dispose_OnClick" Content="{l:Tr Assets_Dispose}"/>

@@ -22,6 +22,11 @@ public sealed class MoneyOutService(
     private static readonly HashSet<string> ExpenseModes = ["CASH", "UPI", "BANK", "CARD", "OTHER"];
     private static readonly HashSet<string> SalaryModes = ["CASH", "UPI", "BANK", "OTHER"];
 
+    public Task<int> GetActionableExpiryCountAsync(CancellationToken cancellationToken = default) =>
+        database.ReadAsync(connection => connection.ExecuteScalar<int>("""
+            SELECT COUNT(*) FROM v_expiry_alert WHERE bucket IN ('EXPIRED','CRITICAL')
+            """), cancellationToken);
+
     public Task<IReadOnlyList<ExpiryLot>> GetExpiryAsync(string? bucket = null, CancellationToken cancellationToken = default)
     {
         if (bucket is not null && bucket is not ("EXPIRED" or "CRITICAL" or "SOON"))
@@ -38,6 +43,33 @@ public sealed class MoneyOutService(
             """, new { bucket }).Select(static row => row.ToModel()).ToList(), cancellationToken);
     }
 
+    public Task<ExpiryPage> GetExpiryPageAsync(string bucket, DateOnly? afterDate = null,
+        long? afterId = null, int limit = 100, CancellationToken cancellationToken = default)
+    {
+        if (bucket is not ("EXPIRED" or "CRITICAL" or "SOON") ||
+            afterDate is null != (afterId is null) || limit is < 1 or > 200)
+            throw new DomainException(ErrorCode.Validation, "Invalid expiry page filter.");
+        return database.ReadAsync(connection =>
+        {
+            List<ExpiryLot> rows = connection.Query<ExpiryRow>("""
+                SELECT e.lot_id AS LotId,e.product_id AS ProductId,e.sku AS Sku,e.name AS ProductName,
+                       e.name_local AS ProductNameLocal,e.lot_code AS LotCode,e.batch_no AS BatchNumber,
+                       e.expiry_date AS ExpiryDate,e.days_left AS DaysLeft,e.qty_on_hand AS Quantity,
+                       e.value_at_cost AS CostValue,e.bucket AS Bucket,e.vendor_id AS VendorId,
+                       v.name AS VendorName
+                FROM v_expiry_alert e LEFT JOIN vendor v ON v.id=e.vendor_id
+                WHERE e.bucket=@bucket AND (@afterDate IS NULL OR e.expiry_date>@afterDate
+                      OR (e.expiry_date=@afterDate AND e.lot_id>@afterId))
+                ORDER BY e.expiry_date,e.lot_id LIMIT @take
+                """, new { bucket, afterDate, afterId, take = limit + 1 })
+                .Select(static row => row.ToModel()).ToList();
+            bool hasMore = rows.Count > limit;
+            if (hasMore) rows.RemoveAt(limit);
+            ExpiryLot? last = rows.LastOrDefault();
+            return new ExpiryPage(rows, hasMore, last?.ExpiryDate, last?.LotId);
+        }, cancellationToken);
+    }
+
     public Task<IReadOnlyList<DamageItem>> GetDamagesAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
     {
         EnsureRange(from, to);
@@ -48,6 +80,32 @@ public sealed class MoneyOutService(
             FROM damage d JOIN product p ON p.id=d.product_id JOIN product_lot l ON l.id=d.lot_id
             WHERE d.damage_date BETWEEN @from AND @to ORDER BY d.damage_date DESC,d.id DESC
             """, new { from, to }).Select(static row => row.ToModel()).ToList(), cancellationToken);
+    }
+
+    public Task<DamagePage> GetDamagePageAsync(DateOnly from, DateOnly to, DateOnly? beforeDate = null,
+        long? beforeId = null, int limit = 100, CancellationToken cancellationToken = default)
+    {
+        EnsureRange(from, to);
+        if (beforeDate is null != (beforeId is null) || limit is < 1 or > 200)
+            throw new DomainException(ErrorCode.Validation, "Invalid damage page filter.");
+        return database.ReadAsync(connection =>
+        {
+            List<DamageItem> rows = connection.Query<DamageRow>("""
+                SELECT d.id AS Id,d.doc_no AS DocumentNumber,d.damage_date AS Date,p.name AS ProductName,
+                       l.lot_code AS LotCode,d.qty AS Quantity,d.unit_cost AS UnitCost,d.cost_value AS CostValue,
+                       d.recovered_amount AS RecoveredAmount,d.reason AS Reason,d.notes AS Notes
+                FROM damage d JOIN product p ON p.id=d.product_id JOIN product_lot l ON l.id=d.lot_id
+                WHERE d.damage_date BETWEEN @from AND @to
+                  AND (@beforeDate IS NULL OR d.damage_date<@beforeDate
+                       OR (d.damage_date=@beforeDate AND d.id<@beforeId))
+                ORDER BY d.damage_date DESC,d.id DESC LIMIT @take
+                """, new { from, to, beforeDate, beforeId, take = limit + 1 })
+                .Select(static row => row.ToModel()).ToList();
+            bool hasMore = rows.Count > limit;
+            if (hasMore) rows.RemoveAt(limit);
+            DamageItem? last = rows.LastOrDefault();
+            return new DamagePage(rows, hasMore, last?.Date, last?.Id);
+        }, cancellationToken);
     }
 
     public async Task<long> RecordDamageAsync(DamageInput input, string operationId, CancellationToken cancellationToken = default)
@@ -191,6 +249,31 @@ public sealed class MoneyOutService(
             FROM expense e JOIN expense_category c ON c.id=e.category_id
             WHERE e.expense_date BETWEEN @from AND @to ORDER BY e.expense_date DESC,e.id DESC
             """, new { from, to }).Select(static row => row.ToModel()).ToList(), cancellationToken);
+    }
+
+    public Task<ExpensePage> GetExpensePageAsync(DateOnly from, DateOnly to, DateOnly? beforeDate = null,
+        long? beforeId = null, int limit = 100, CancellationToken cancellationToken = default)
+    {
+        EnsureRange(from, to);
+        if (beforeDate is null != (beforeId is null) || limit is < 1 or > 200)
+            throw new DomainException(ErrorCode.Validation, "Invalid expense page filter.");
+        return database.ReadAsync(connection =>
+        {
+            List<ExpenseItem> rows = connection.Query<ExpenseRow>("""
+                SELECT e.id AS Id,e.expense_date AS Date,e.category_id AS CategoryId,c.name AS CategoryName,
+                       e.amount AS Amount,e.mode AS Mode,e.paid_to AS PaidTo,e.reference AS Reference,e.notes AS Notes
+                FROM expense e JOIN expense_category c ON c.id=e.category_id
+                WHERE e.expense_date BETWEEN @from AND @to
+                  AND (@beforeDate IS NULL OR e.expense_date<@beforeDate
+                       OR (e.expense_date=@beforeDate AND e.id<@beforeId))
+                ORDER BY e.expense_date DESC,e.id DESC LIMIT @take
+                """, new { from, to, beforeDate, beforeId, take = limit + 1 })
+                .Select(static row => row.ToModel()).ToList();
+            bool hasMore = rows.Count > limit;
+            if (hasMore) rows.RemoveAt(limit);
+            ExpenseItem? last = rows.LastOrDefault();
+            return new ExpensePage(rows, hasMore, last?.Date, last?.Id);
+        }, cancellationToken);
     }
 
     public Task<long> RecordExpenseAsync(ExpenseInput input, string operationId, CancellationToken cancellationToken = default)

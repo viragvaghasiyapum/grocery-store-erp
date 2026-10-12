@@ -95,3 +95,6 @@ public sealed record PurchaseListItem(
     string Status,
     Money GrandTotal,
     Money? VendorBillTotal);
+
+public sealed record PurchasePage(IReadOnlyList<PurchaseListItem> Items, bool HasMore,
+    DateOnly? NextDate, long? NextId);

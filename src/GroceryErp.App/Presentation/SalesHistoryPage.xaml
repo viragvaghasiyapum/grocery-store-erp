@@ -97,7 +97,8 @@
     <Button x:Name="ReprintButton" Margin="0,0,8,0" Click="Reprint_OnClick" Content="{l:Tr Sales_Reprint}"/>
     <Button x:Name="VoidButton" Margin="0,0,8,0" Click="Void_OnClick" Content="{l:Tr Sales_Void}"/>
     <Button x:Name="ReturnButton" Click="Return_OnClick" Content="{l:Tr Sales_Return}"/>
-    <Button Margin="8,0,0,0" Click="Export_OnClick" Content="{l:Tr Sales_Export}"/>
+    <Button x:Name="ExportButton" Margin="8,0,0,0" Click="Export_OnClick" Content="{l:Tr Sales_Export}"/>
+    <Button x:Name="CancelExportButton" Margin="6,0,0,0" IsEnabled="False" Click="CancelExport_OnClick" Content="Cancel"/>
    </StackPanel>
   </Grid>
  </Grid>

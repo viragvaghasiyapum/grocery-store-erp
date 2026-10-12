@@ -63,6 +63,8 @@ public sealed class StockInTests
         {
             connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = posted.LotIds[0] })
                 .ShouldBe(11000L);
+            connection.ExecuteScalar<long>("SELECT quantity FROM product_stock_total WHERE product_id=@id", new { id = fixture.ProductId })
+                .ShouldBe(11000L);
             connection.ExecuteScalar<long>("SELECT balance_due FROM v_vendor_balance WHERE vendor_id=@id", new { id = fixture.VendorId })
                 .ShouldBe(2825000L);
         }
@@ -82,6 +84,7 @@ public sealed class StockInTests
         using (var connection = fixture.Factory.Open())
         {
             connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = posted.LotIds[0] }).ShouldBe(0L);
+            connection.ExecuteScalar<long>("SELECT quantity FROM product_stock_total WHERE product_id=@id", new { id = fixture.ProductId }).ShouldBe(0L);
             connection.ExecuteScalar<string>("SELECT status FROM purchase WHERE id=@purchaseId", new { purchaseId }).ShouldBe("CANCELLED");
             connection.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement WHERE lot_id=@id", new { id = posted.LotIds[0] }).ShouldBe(2L);
         }
@@ -170,6 +173,34 @@ public sealed class StockInTests
             fixture.Date, TestContext.Current.CancellationToken)).Single(item => item.RefType == "stock_count");
         (await fixture.Inventory.GetSourceDocumentAsync(countMove, TestContext.Current.CancellationToken))
             .Lines.Single().Quantity.ShouldBe(new Quantity(-2));
+    }
+
+    [Fact]
+    public async Task StockCount_PageAndSearchReachLaterLotsAndKeepGlobalProgress()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long firstDraft = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("PAGE-FIRST"), ct);
+        PostedPurchase first = await fixture.Purchasing.PostAsync(firstDraft, OperationGuard.NewId(), ct);
+        long secondDraft = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("PAGE-SECOND"), ct);
+        PostedPurchase second = await fixture.Purchasing.PostAsync(secondDraft, OperationGuard.NewId(), ct);
+        long countId = await fixture.Inventory.CreateStockCountAsync(fixture.Date, null, null, ct);
+
+        StockCountPage firstPage = await fixture.Inventory.GetStockCountPageAsync(countId, pageSize: 1, cancellationToken: ct);
+        firstPage.Lines.Count.ShouldBe(1);
+        firstPage.HasMore.ShouldBeTrue();
+        firstPage.Total.ShouldBe(2);
+        StockCountPage nextPage = await fixture.Inventory.GetStockCountPageAsync(countId,
+            firstPage.NextLineId, 1, ct);
+        nextPage.Lines.Single().LotId.ShouldBe(second.LotIds[0]);
+        nextPage.HasMore.ShouldBeFalse();
+        (await fixture.Inventory.FindStockCountLineAsync(countId, nextPage.Lines[0].LotCode,
+            cancellationToken: ct)).ShouldBe(nextPage.Lines[0].Id);
+
+        await fixture.Inventory.SetCountedQuantityAsync(countId, first.LotIds[0], new Quantity(11), ct);
+        StockCountPage progress = await fixture.Inventory.GetStockCountPageAsync(countId, pageSize: 1, cancellationToken: ct);
+        progress.Counted.ShouldBe(1);
+        progress.Total.ShouldBe(2);
     }
 
     [Fact]
@@ -390,7 +421,7 @@ public sealed class StockInTests
         {
             Settings.Dispose();
             Database.Dispose();
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            Factory.ClearPool();
             if (Directory.Exists(Root)) Directory.Delete(Root, recursive: true);
         }
     }

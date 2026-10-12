@@ -61,6 +61,12 @@ public sealed record ProductSearchFilter(
     bool LooseOnly = false,
     int Limit = 200);
 
+public sealed record ProductSearchPage(
+    IReadOnlyList<ProductListItem> Items,
+    bool HasMore,
+    string? NextName,
+    long? NextId);
+
 public sealed class MasterItem
 {
     public long Id { get; init; }

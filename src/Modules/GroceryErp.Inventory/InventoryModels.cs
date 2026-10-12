@@ -27,6 +27,10 @@ public sealed record LotItem(
     bool IsActive,
     string ExpiryBucketCode = "NONE");
 
+public sealed record StockOverviewPage(IReadOnlyList<StockOverviewItem> Items, bool HasMore, string? NextName, long? NextId);
+public sealed record LotPage(IReadOnlyList<LotItem> Items, bool HasMore, long? NextId);
+public sealed record LedgerPage(IReadOnlyList<LedgerItem> Items, bool HasMore, long? NextId);
+
 public sealed record LedgerItem(
     long Id,
     DateTime MovedAt,
@@ -69,6 +73,8 @@ public sealed record StockCountLine(
     Money DifferenceValue);
 
 public sealed record StockCountDetails(long Id, DateOnly Date, string Status, string? Notes, IReadOnlyList<StockCountLine> Lines);
+public sealed record StockCountPage(long Id, DateOnly Date, string Status, string? Notes,
+    IReadOnlyList<StockCountLine> Lines, bool HasMore, long? NextLineId, long Total, long Counted);
 
 public sealed class StockCountSummary
 {

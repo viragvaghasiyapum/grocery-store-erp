@@ -103,6 +103,7 @@ public partial class ReportsPage : Page
 
     private async Task RefreshAsync()
     {
+        using var timing = UiRefreshProbe.Track("reports", this);
         int version = ++_refreshVersion;
         try
         {
@@ -120,7 +121,7 @@ public partial class ReportsPage : Page
                     _currentReport = ToReport(matrix);
                     _currentPnl = null;
                     ConfigureColumns(_currentReport);
-                    ReportGrid.ItemsSource = _currentReport.Rows.Select(row => new DisplayRow(_currentReport.Columns, row)).ToList();
+                    timing.Bind(() => ReportGrid.ItemsSource = _currentReport.Rows.Select(row => new DisplayRow(_currentReport.Columns, row)).ToList());
                     PnlPanel.Visibility = Visibility.Collapsed;
                     HourlyPanel.Visibility = Visibility.Collapsed;
                     ReportGrid.Visibility = Visibility.Visible;
@@ -135,7 +136,7 @@ public partial class ReportsPage : Page
                 _currentPnl = comparison?.Current ?? await _reports.GetPnlAsync(from, to);
                 if (version != _refreshVersion) return;
                 _currentReport = null;
-                PnlGrid.ItemsSource = PnlRows(_currentPnl);
+                timing.Bind(() => PnlGrid.ItemsSource = PnlRows(_currentPnl));
                 PnlTotals.Text = TranslationSource.Instance.Format("Reports_PnlSummary", _currentPnl.GrossProfit.Value,
                     _currentPnl.GrossMargin.Value, _currentPnl.NetProfit.Value, _currentPnl.NetMargin.Value);
                 if (comparison is not null)
@@ -157,12 +158,12 @@ public partial class ReportsPage : Page
             TabularReport report = await _reports.GetReportAsync(kind, new(From: from, To: to,
                 ProductId: ParseId(ProductFilter.Text), LotId: ParseId(LotFilter.Text), VendorId: ParseId(VendorFilter.Text),
                 AssetId: ParseId(AssetFilter.Text), Status: status, PaymentMode: payment,
-                Entity: Clean(EntityFilter.Text), Action: Clean(ActionFilter.Text), SlowMoverDays: slowDays));
+                Entity: Clean(EntityFilter.Text), Action: Clean(ActionFilter.Text), SlowMoverDays: slowDays, Limit: 500));
             if (version != _refreshVersion) return;
             _currentReport = report with { Title = ((ReportChoice)ReportPicker.SelectedItem).ToString() };
             _currentPnl = null;
             ConfigureColumns(_currentReport);
-            ReportGrid.ItemsSource = _currentReport.Rows.Select(row => new DisplayRow(_currentReport.Columns, row)).ToList();
+            timing.Bind(() => ReportGrid.ItemsSource = _currentReport.Rows.Select(row => new DisplayRow(_currentReport.Columns, row)).ToList());
             PnlPanel.Visibility = Visibility.Collapsed;
             if (kind == ReportKind.HourlySales)
             {

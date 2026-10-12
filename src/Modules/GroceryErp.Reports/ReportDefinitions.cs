@@ -208,7 +208,7 @@ internal static class ReportDefinitions
             [ReportKind.AuditLog] = new("Audit log", true, """
                 SELECT substr(at,1,10) AS Date,at AS Timestamp,entity AS Entity,entity_id AS EntityId,
                        action AS Action,changes AS Details FROM audit_log
-                WHERE substr(at,1,10) BETWEEN @from AND @to
+                WHERE at>=@from AND at<date(@to,'+1 day')
                   AND (@Entity IS NULL OR entity=@Entity) AND (@Action IS NULL OR action=@Action)
                 ORDER BY id DESC LIMIT @Limit
                 """, [D("Date", "Date"), T("Timestamp", "Timestamp"), T("Entity", "Entity"), I("EntityId", "Entity ID"), T("Action", "Action"), T("Details", "Details")]),

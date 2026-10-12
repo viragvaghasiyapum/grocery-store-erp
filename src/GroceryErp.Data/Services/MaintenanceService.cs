@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using Dapper;
 using GroceryErp.Core.Errors;
@@ -21,10 +22,24 @@ public sealed class MaintenanceService(
 {
     public async Task<StartupHealth> CheckBeforeShellAsync(CancellationToken cancellationToken = default)
     {
+        using var timing = PerformanceMetrics.TrackMaintenance("startup");
         (string? lastSaleDate, bool lotCacheHealthy) = await database.ReadAsync(connection =>
         {
             string? lastDate = connection.ExecuteScalar<string?>("SELECT MAX(sale_date) FROM sale WHERE status = 'COMPLETED'");
-            bool healthy = !connection.Query("SELECT lot_id FROM v_lot_cache_mismatch LIMIT 1").Any();
+            // The full mismatch view groups the entire movement history. Check only recently
+            // touched lots before login; the complete reconciliation runs in maintenance.
+            bool healthy = connection.ExecuteScalar<long>("""
+                WITH recent_lots AS MATERIALIZED (
+                    SELECT DISTINCT lot_id FROM (
+                        SELECT lot_id FROM stock_movement ORDER BY id DESC LIMIT 512
+                    )
+                )
+                SELECT NOT EXISTS (
+                    SELECT 1 FROM recent_lots r JOIN product_lot l ON l.id=r.lot_id
+                    WHERE l.qty_on_hand <> COALESCE(
+                        (SELECT SUM(m.qty) FROM stock_movement m WHERE m.lot_id=r.lot_id),0)
+                )
+                """) != 0;
             return (lastDate, healthy);
         }, cancellationToken).ConfigureAwait(false);
 
@@ -39,6 +54,7 @@ public sealed class MaintenanceService(
 
     public async Task RunAfterShellAsync(CancellationToken cancellationToken = default)
     {
+        using var timing = PerformanceMetrics.TrackMaintenance("after-shell");
         await database.WriteAsync(transaction =>
         {
             DateTime cutoff = clock.Now.AddDays(-30);
@@ -66,6 +82,7 @@ public sealed class MaintenanceService(
 
     private async Task RunWeeklyIntegrityChecksAsync(CancellationToken cancellationToken)
     {
+        using var timing = PerformanceMetrics.TrackMaintenance("weekly-integrity");
         await database.ReadAsync(connection =>
         {
             string integrity = connection.ExecuteScalar<string>("PRAGMA integrity_check;") ?? "";
@@ -73,6 +90,8 @@ public sealed class MaintenanceService(
                 throw new DomainException(ErrorCode.BackupInvalid, integrity);
             if (connection.Query("PRAGMA foreign_key_check;").Any())
                 throw new DomainException(ErrorCode.BackupInvalid, "foreign key check failed");
+            if (connection.Query("SELECT lot_id FROM v_lot_cache_mismatch LIMIT 1").Any())
+                throw new DomainException(ErrorCode.BackupInvalid, "stock cache mismatch");
             // FTS5 keeps a separate index; checking it with SQLite's supported command catches
             // stale or corrupt product search data before a user relies on search results.
             connection.Execute("INSERT INTO product_fts(product_fts) VALUES ('integrity-check');");
@@ -92,9 +111,15 @@ public sealed class MaintenanceService(
 
     public void Shutdown()
     {
-        backups.Create("close");
+        using var timing = PerformanceMetrics.TrackMaintenance("shutdown");
+        if (!backups.HasRecentVerifiedDailyBackup(TimeSpan.FromHours(12))) backups.Create("close");
+        factory.SampleWalBytes();
         using SqliteConnection connection = factory.Open();
-        connection.Execute("PRAGMA optimize; PRAGMA wal_checkpoint(TRUNCATE);");
+        connection.Execute("PRAGMA optimize;");
+        long started = Stopwatch.GetTimestamp();
+        try { connection.Execute("PRAGMA wal_checkpoint(TRUNCATE);"); }
+        finally { PerformanceMetrics.CheckpointMilliseconds.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds); }
+        factory.SampleWalBytes();
     }
 
     public static bool HasLowDiskSpace(string path)

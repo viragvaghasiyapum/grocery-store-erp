@@ -33,6 +33,7 @@ public partial class App : Application
     private bool _databaseReady;
     private bool _skipCloseBackup;
     private Task? _maintenanceTask;
+    private CancellationTokenSource? _maintenanceCancellation;
     private Task? _shutdownTask;
     private Mutex? _instanceMutex;
     private bool _ownsInstanceMutex;
@@ -78,6 +79,8 @@ public partial class App : Application
             builder.Services.AddSingleton(TranslationSource.Instance);
             builder.Services.AddSingleton<DisplayFormatter>();
             builder.Services.AddSingleton(paths);
+            builder.Services.AddSingleton<PerformanceRecorder>();
+            builder.Services.AddHostedService(static provider => provider.GetRequiredService<PerformanceRecorder>());
             builder.Services.AddSingleton<SqliteConnectionFactory>();
             builder.Services.AddSingleton<DbExecutor>();
             builder.Services.AddSingleton<SettingsService>();
@@ -235,9 +238,9 @@ public partial class App : Application
                     MessageBoxButton.OK, MessageBoxImage.Information);
                 await releaseNotesService.MarkSeenAsync(releaseNotes.Version);
             }
-            _maintenanceTask = Task.WhenAll(
-                maintenance.RunAfterShellAsync(),
-                _host.Services.GetRequiredService<AssetService>().PostDueDepreciationAsync());
+            _maintenanceCancellation = new CancellationTokenSource();
+            _maintenanceTask = RunMaintenanceWhenIdleAsync(shell, maintenance,
+                _host.Services.GetRequiredService<AssetService>(), _maintenanceCancellation.Token);
             _ = _maintenanceTask.ContinueWith(
                 task =>
                 {
@@ -295,6 +298,7 @@ public partial class App : Application
         {
             if (_host is not null)
             {
+                _maintenanceCancellation?.Cancel();
                 if (_maintenanceTask is not null)
                 {
                     try { await _maintenanceTask; }
@@ -326,6 +330,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _maintenanceCancellation?.Dispose();
         _host?.Dispose();
         if (_ownsInstanceMutex)
         {
@@ -364,7 +369,20 @@ public partial class App : Application
 
     internal async Task WaitForStartupMaintenanceAsync()
     {
-        if (_maintenanceTask is not null) await _maintenanceTask;
+        _maintenanceCancellation?.Cancel();
+        if (_maintenanceTask is not null)
+            try { await _maintenanceTask; }
+            catch (OperationCanceledException) { }
+    }
+
+    private static async Task RunMaintenanceWhenIdleAsync(ShellWindow shell, MaintenanceService maintenance,
+        AssetService assets, CancellationToken cancellationToken)
+    {
+        while (!shell.IsIdleFor(TimeSpan.FromMinutes(2)))
+            await Task.Delay(TimeSpan.FromSeconds(15), cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        await maintenance.RunAfterShellAsync(cancellationToken);
+        await assets.PostDueDepreciationAsync(cancellationToken);
     }
 
     internal void SkipCloseBackup() => _skipCloseBackup = true;

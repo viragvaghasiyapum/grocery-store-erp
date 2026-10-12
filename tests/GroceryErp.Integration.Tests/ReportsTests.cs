@@ -14,6 +14,40 @@ namespace GroceryErp.Integration.Tests;
 public sealed class ReportsTests
 {
     [Fact]
+    public async Task PnlAggregate_MatchesEntryViewForFullAndPartialMonths()
+    {
+        using var fixture = new ReportFixture();
+        fixture.SeedGoldenScenario();
+        foreach ((DateOnly from, DateOnly to) in new[]
+                 { (new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30)),
+                   (new DateOnly(2026, 9, 15), new DateOnly(2026, 9, 30)),
+                   (new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 15)) })
+        {
+            PnlStatement actual = await fixture.Reports.GetPnlAsync(from, to, TestContext.Current.CancellationToken);
+            var lines = actual.Income.Concat(actual.CostOfGoodsSold).Concat(actual.Expenses)
+                .Concat(actual.OtherIncome).ToDictionary(
+                    line => $"{line.Section}:{line.HeadCode}:{line.ReferenceId}", line => line.Amount.Scaled);
+            using var connection = fixture.Factory.Open();
+            var expected = connection.Query<PnlAggregateRow>("""
+                SELECT section AS Section,head_code AS HeadCode,ref_id AS ReferenceId,SUM(amount) AS Amount
+                FROM v_pnl_entry WHERE entry_date BETWEEN @from AND @to
+                GROUP BY section,head_code,ref_id
+                """, new { from = from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                    to = to.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) })
+                .ToDictionary(row => $"{row.Section}:{row.HeadCode}:{row.ReferenceId}", row => row.Amount);
+            lines.ShouldBe(expected, ignoreOrder: true);
+        }
+    }
+
+    private sealed class PnlAggregateRow
+    {
+        public string Section { get; init; } = "";
+        public string HeadCode { get; init; } = "";
+        public long? ReferenceId { get; init; }
+        public long Amount { get; init; }
+    }
+
+    [Fact]
     public async Task GoldenScenario_PnlAndMonthlyMatrixMatchExpectedAmounts()
     {
         using var fixture = new ReportFixture();
@@ -379,7 +413,7 @@ public sealed class ReportsTests
         {
             Settings.Dispose();
             Database.Dispose();
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            Factory.ClearPool();
             if (Directory.Exists(Root)) Directory.Delete(Root, recursive: true);
         }
     }

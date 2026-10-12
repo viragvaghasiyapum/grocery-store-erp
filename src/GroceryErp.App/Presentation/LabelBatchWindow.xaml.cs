@@ -70,8 +70,7 @@ public partial class LabelBatchWindow : Window
             var products = new Dictionary<long, ProductDetails>();
             if (_lotIds.Count > 0)
             {
-                HashSet<long> selected = _lotIds.ToHashSet();
-                foreach (LotItem lot in (await _inventory.GetLotsAsync()).Where(lot => selected.Contains(lot.Id) && lot.IsActive && lot.OnHand.Value > 0))
+                foreach (LotItem lot in (await _inventory.GetLotsByIdsAsync(_lotIds)).Where(lot => lot.IsActive && lot.OnHand.Value > 0))
                 {
                     ProductDetails product = await GetProductAsync(lot.ProductId, products);
                     await AddLotAsync(product, lot, isSelected: true);

@@ -24,6 +24,15 @@
     </StackPanel>
     <TabControl x:Name="StockTabs" Grid.Row="2" Margin="0,8,0,0">
       <TabItem Header="{l:Tr Stock_Overview}">
+        <DockPanel>
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+          <TextBox x:Name="OverviewSearchBox" Width="240" Margin="0,0,6,0" ToolTip="Product name or SKU"/>
+          <Button Click="OverviewSearch_OnClick" Content="Search"/>
+        </WrapPanel>
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
+          <Button x:Name="PreviousOverviewButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousOverview_OnClick" Content="{l:Tr Sales_Previous}"/>
+          <Button x:Name="NextOverviewButton" IsEnabled="False" Click="NextOverview_OnClick" Content="{l:Tr Sales_Next}"/>
+        </StackPanel>
         <DataGrid x:Name="OverviewGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="OverviewGrid_OnSelectionChanged">
           <DataGrid.Columns>
             <DataGridTextColumn Width="120" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}" />
@@ -34,8 +43,18 @@
             <DataGridCheckBoxColumn Width="90" Header="{l:Tr Stock_Low}" Binding="{Binding IsLow}" />
           </DataGrid.Columns>
         </DataGrid>
+        </DockPanel>
       </TabItem>
       <TabItem Header="{l:Tr Stock_Lots}">
+        <DockPanel>
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+          <TextBox x:Name="LotSearchBox" Width="240" Margin="0,0,6,0" ToolTip="Product, lot or batch"/>
+          <Button Click="LotSearch_OnClick" Content="Search"/>
+        </WrapPanel>
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
+          <Button x:Name="PreviousLotButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousLot_OnClick" Content="{l:Tr Sales_Previous}"/>
+          <Button x:Name="NextLotButton" IsEnabled="False" Click="NextLot_OnClick" Content="{l:Tr Sales_Next}"/>
+        </StackPanel>
         <DataGrid x:Name="LotsGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="LotsGrid_OnSelectionChanged">
           <DataGrid.Columns>
             <DataGridTextColumn Width="210" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}" />
@@ -49,6 +68,7 @@
             <DataGridCheckBoxColumn Width="70" Header="{l:Tr Catalog_Active}" Binding="{Binding IsActive}" />
           </DataGrid.Columns>
         </DataGrid>
+        </DockPanel>
       </TabItem>
       <TabItem Header="{l:Tr Stock_Ledger}">
         <Grid>
@@ -78,8 +98,11 @@
             <DataGridTextColumn Width="90" Header="{l:Tr Stock_SourceId}" Binding="{Binding RefId}"/>
           </DataGrid.Columns>
           </DataGrid>
-          <Button x:Name="OpenSourceButton" Grid.Row="2" HorizontalAlignment="Right"
-                  Margin="0,8,0,0" IsEnabled="False" Click="OpenSource_OnClick" Content="{l:Tr Stock_OpenSource}"/>
+          <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+            <Button x:Name="PreviousLedgerButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousLedger_OnClick" Content="{l:Tr Sales_Previous}"/>
+            <Button x:Name="NextLedgerButton" IsEnabled="False" Margin="0,0,6,0" Click="NextLedger_OnClick" Content="{l:Tr Sales_Next}"/>
+            <Button x:Name="OpenSourceButton" IsEnabled="False" Click="OpenSource_OnClick" Content="{l:Tr Stock_OpenSource}"/>
+          </StackPanel>
         </Grid>
       </TabItem>
       <TabItem Header="{l:Tr Stock_Valuation}">

@@ -69,7 +69,7 @@ public sealed class FoundationsTests
         }
         finally
         {
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            SqliteConnectionFactory.ClearPoolForDataRoot(root);
             if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
         }
     }
@@ -113,6 +113,30 @@ public sealed class FoundationsTests
         using var connection = fixture.Factory.Open();
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity = 'restore' AND action = 'RESTORE'")
             .ShouldBe(1L);
+    }
+
+    [Fact]
+    public async Task Restore_WaitsForOpenConnectionAndBlocksNewDatabaseWork()
+    {
+        using var fixture = new FoundationFixture();
+        using var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
+        await settings.LoadAsync(TestContext.Current.CancellationToken);
+        var backup = new BackupService(fixture.Paths, fixture.Factory,
+            new GroceryErp.Core.Time.SystemClock(settings), settings);
+        RestoreCandidate candidate = backup.InspectRestore(backup.Create("manual").Path);
+        using var held = fixture.Factory.Open();
+        Task apply = Task.Run(() => backup.ApplyRestore(candidate), TestContext.Current.CancellationToken);
+        try
+        {
+            SpinWait.SpinUntil(() => fixture.Factory.IsExclusive, TimeSpan.FromSeconds(10)).ShouldBeTrue();
+            apply.IsCompleted.ShouldBeFalse();
+            Should.Throw<InvalidOperationException>(() => fixture.Factory.Open());
+        }
+        finally { held.Dispose(); }
+        await apply.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        backup.UndoPendingRestore();
+        using var reopened = fixture.Factory.Open();
+        reopened.ExecuteScalar<string>("PRAGMA quick_check").ShouldBe("ok");
     }
 
     [Fact]
@@ -210,7 +234,7 @@ public sealed class FoundationsTests
         var backup = new BackupService(fixture.Paths, fixture.Factory,
             new GroceryErp.Core.Time.SystemClock(settings), settings);
         BackupInfo saved = backup.Create("manual");
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        fixture.Factory.ClearPool();
         string replaced = Path.Combine(fixture.Paths.DbDir, "replaced-interrupted");
         Directory.CreateDirectory(replaced);
         byte[] wal = [1, 2, 3, 4];
@@ -333,7 +357,7 @@ public sealed class FoundationsTests
             SettingsBootstrap.Save(source, bootstrap);
             DataRootRelocator.Schedule(source, target);
             SettingsBootstrap.Load(bootstrap).DataRoot.ShouldBe(source);
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            SqliteConnectionFactory.ClearPoolForDataRoot(source);
 
             DataRootRelocator.ApplyPending(bootstrap).ShouldBeTrue();
 
@@ -347,7 +371,8 @@ public sealed class FoundationsTests
         }
         finally
         {
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            SqliteConnectionFactory.ClearPoolForDataRoot(source);
+            SqliteConnectionFactory.ClearPoolForDataRoot(target);
             if (Directory.Exists(sandbox)) Directory.Delete(sandbox, recursive: true);
         }
     }
@@ -365,7 +390,7 @@ public sealed class FoundationsTests
             var factory = new SqliteConnectionFactory(paths);
             new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
             using (var connection = factory.Open()) connection.Execute("PRAGMA wal_checkpoint(TRUNCATE)");
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            SqliteConnectionFactory.ClearPoolForDataRoot(source);
             SettingsBootstrap.Save(source, bootstrap);
             DataRootRelocator.Schedule(source, target);
             string copiedDb = Path.Combine(target, "db", "grocery.db");
@@ -388,7 +413,8 @@ public sealed class FoundationsTests
         }
         finally
         {
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            SqliteConnectionFactory.ClearPoolForDataRoot(source);
+            SqliteConnectionFactory.ClearPoolForDataRoot(target);
             if (Directory.Exists(sandbox)) Directory.Delete(sandbox, recursive: true);
         }
     }
@@ -412,7 +438,7 @@ public sealed class FoundationsTests
         public void Dispose()
         {
             Database.Dispose();
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            Factory.ClearPool();
             if (Directory.Exists(Root)) Directory.Delete(Root, recursive: true);
         }
     }

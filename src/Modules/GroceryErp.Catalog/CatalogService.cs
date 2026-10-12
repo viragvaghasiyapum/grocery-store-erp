@@ -405,59 +405,89 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             return barcode;
         }, cancellationToken);
 
-    public Task<IReadOnlyList<ProductListItem>> SearchAsync(ProductSearchFilter filter, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ProductListItem>> SearchAsync(ProductSearchFilter filter, CancellationToken cancellationToken = default) =>
+        (await SearchPageAsync(filter, null, null, cancellationToken).ConfigureAwait(false)).Items;
+
+    public Task<ProductSearchPage> SearchPageAsync(ProductSearchFilter filter, string? afterName = null,
+        long? afterId = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(filter);
-        int limit = Math.Clamp(filter.Limit, 1, 20_000);
+        if (afterName is null != (afterId is null))
+            throw new ArgumentException("Both product cursor fields are required.");
+        int limit = Math.Clamp(filter.Limit, 1, 200);
         string query = CatalogText.Optional(filter.Query, 120) ?? string.Empty;
         return database.ReadAsync(connection =>
         {
             string join = string.Empty;
             string search = string.Empty;
-            object parameters;
+            var parameters = new DynamicParameters();
+            parameters.Add("CategoryId", filter.CategoryId);
+            parameters.Add("BrandId", filter.BrandId);
+            parameters.Add("LowStockOnly", filter.LowStockOnly);
+            parameters.Add("NoBarcodeOnly", filter.NoBarcodeOnly);
+            parameters.Add("MissingLocalNameOnly", filter.MissingLocalNameOnly);
+            parameters.Add("IncludeArchived", filter.IncludeArchived);
+            parameters.Add("LooseOnly", filter.LooseOnly);
+            parameters.Add("afterName", afterName);
+            parameters.Add("afterId", afterId);
+            parameters.Add("limit", limit + 1);
             if (query.Length >= 3 && query.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(static term => term.Length >= 3))
             {
                 join = "JOIN product_fts f ON f.rowid=p.id";
                 search = "AND product_fts MATCH @match";
                 string match = string.Join(' ', query.Split(' ', StringSplitOptions.RemoveEmptyEntries)
                     .Select(static term => $"\"{term.Replace("\"", "\"\"")}\""));
-                parameters = new { match, filter.CategoryId, filter.BrandId, filter.LowStockOnly, filter.NoBarcodeOnly, filter.MissingLocalNameOnly, filter.IncludeArchived, filter.LooseOnly, limit };
+                parameters.Add("match", match);
             }
             else
             {
                 search = query.Length == 0 ? string.Empty : "AND (p.sku LIKE @prefix ESCAPE '\\' OR p.name LIKE @prefix ESCAPE '\\' OR p.name_local LIKE @prefix ESCAPE '\\' OR p.search_terms LIKE @prefix ESCAPE '\\')";
                 string escaped = query.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("%", "\\%", StringComparison.Ordinal).Replace("_", "\\_", StringComparison.Ordinal);
-                parameters = new { prefix = (query.Length >= 3 ? "%" : "") + escaped + "%", filter.CategoryId, filter.BrandId, filter.LowStockOnly, filter.NoBarcodeOnly, filter.MissingLocalNameOnly, filter.IncludeArchived, filter.LooseOnly, limit };
+                parameters.Add("prefix", (query.Length >= 3 ? "%" : "") + escaped + "%");
             }
 
+            string stockJoin = filter.LowStockOnly ? "LEFT JOIN product_stock_total stock ON stock.product_id=p.id" : string.Empty;
+            string lowStockFilter = filter.LowStockOnly
+                ? "AND p.reorder_level>0 AND COALESCE(stock.quantity,0)<=p.reorder_level"
+                : string.Empty;
+
             string sql = $$"""
+                WITH visible AS MATERIALIZED (
+                    SELECT p.id,p.name FROM product p {{join}} {{stockJoin}}
+                    WHERE (@IncludeArchived=1 OR p.is_active=1)
+                      AND (@CategoryId IS NULL OR p.category_id=@CategoryId)
+                      AND (@BrandId IS NULL OR p.brand_id=@BrandId)
+                      {{lowStockFilter}}
+                      AND (@NoBarcodeOnly=0 OR NOT EXISTS(SELECT 1 FROM product_barcode pb WHERE pb.product_id=p.id))
+                      AND (@MissingLocalNameOnly=0 OR p.name_local IS NULL OR trim(p.name_local)='')
+                      AND (@LooseOnly=0 OR p.is_loose=1)
+                      AND (@afterName IS NULL OR p.name COLLATE NOCASE > @afterName COLLATE NOCASE
+                           OR (p.name COLLATE NOCASE = @afterName COLLATE NOCASE AND p.id>@afterId))
+                      {{search}}
+                    ORDER BY p.name COLLATE NOCASE,p.id LIMIT @limit
+                )
                 SELECT p.id AS Id, p.sku AS Sku, p.name AS Name, p.name_local AS NameLocal,
                        c.name AS Category, b.name AS Brand, u.code AS Uom,
-                       COALESCE((SELECT SUM(ps.qty_on_hand) FROM product_lot ps WHERE ps.product_id=p.id),0) AS StockScaled,
+                       COALESCE(total.quantity,0) AS StockScaled,
                        COALESCE(l.selling_price,p.default_selling_price) AS SellingPriceScaled,
                        COALESCE(l.mrp,p.default_mrp) AS MrpScaled,
                        p.is_loose AS IsLoose, p.is_active AS IsActive,
                        EXISTS(SELECT 1 FROM product_barcode pb WHERE pb.product_id=p.id) AS HasBarcode
-                FROM product p
+                FROM visible page JOIN product p ON p.id=page.id
+                LEFT JOIN product_stock_total total ON total.product_id=p.id
                 JOIN category c ON c.id=p.category_id
                 JOIN uom u ON u.id=p.uom_id
                 LEFT JOIN brand b ON b.id=p.brand_id
                 LEFT JOIN product_lot l ON l.id=(
                     SELECT pl.id FROM product_lot pl WHERE pl.product_id=p.id AND pl.qty_on_hand>0 AND pl.is_active=1
                     ORDER BY CASE WHEN pl.expiry_date IS NULL THEN 1 ELSE 0 END, pl.expiry_date, pl.id LIMIT 1)
-                {{join}}
-                WHERE (@IncludeArchived=1 OR p.is_active=1)
-                  AND (@CategoryId IS NULL OR p.category_id=@CategoryId)
-                  AND (@BrandId IS NULL OR p.brand_id=@BrandId)
-                  AND (@LowStockOnly=0 OR (p.reorder_level>0 AND COALESCE((SELECT SUM(ps.qty_on_hand) FROM product_lot ps WHERE ps.product_id=p.id),0)<=p.reorder_level))
-                  AND (@NoBarcodeOnly=0 OR NOT EXISTS(SELECT 1 FROM product_barcode pb WHERE pb.product_id=p.id))
-                  AND (@MissingLocalNameOnly=0 OR p.name_local IS NULL OR trim(p.name_local)='')
-                  AND (@LooseOnly=0 OR p.is_loose=1)
-                  {{search}}
-                ORDER BY p.name COLLATE NOCASE
-                LIMIT @limit
+                ORDER BY page.name COLLATE NOCASE,page.id
                 """;
-            return (IReadOnlyList<ProductListItem>)connection.Query<ProductListItem>(sql, parameters).AsList();
+            List<ProductListItem> rows = connection.Query<ProductListItem>(sql, parameters).AsList();
+            bool hasMore = rows.Count > limit;
+            if (hasMore) rows.RemoveAt(limit);
+            ProductListItem? last = rows.LastOrDefault();
+            return new ProductSearchPage(rows, hasMore, last?.Name, last?.Id);
         }, cancellationToken);
     }
 

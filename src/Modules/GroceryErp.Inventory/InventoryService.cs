@@ -16,6 +16,104 @@ public sealed class InventoryService(
     PeriodGuard periods,
     IAuditLog audit)
 {
+    public Task<StockOverviewPage> GetOverviewPageAsync(string? query = null, string? afterName = null,
+        long? afterId = null, int limit = 100, CancellationToken cancellationToken = default)
+    {
+        if (afterName is null != (afterId is null) || limit is < 1 or > 200)
+            throw new DomainException(ErrorCode.Validation, "Invalid stock overview page.");
+        string pattern = "%" + (query ?? string.Empty).Trim().Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal) + "%";
+        return database.ReadAsync(connection =>
+        {
+            List<StockOverviewItem> rows = connection.Query<OverviewRow>("""
+                SELECT p.id AS ProductId,p.sku AS Sku,p.name AS Name,
+                       COALESCE(t.quantity,0) AS Quantity,COALESCE(t.cost_value,0) AS CostValue,
+                       p.reorder_level AS ReorderLevel,
+                       (p.reorder_level>0 AND COALESCE(t.quantity,0)<=p.reorder_level) AS IsLow
+                FROM product p LEFT JOIN product_stock_total t ON t.product_id=p.id
+                WHERE p.is_active=1 AND (p.name LIKE @pattern ESCAPE '\' OR p.sku LIKE @pattern ESCAPE '\')
+                  AND (@afterName IS NULL OR p.name COLLATE NOCASE>@afterName COLLATE NOCASE
+                       OR (p.name COLLATE NOCASE=@afterName COLLATE NOCASE AND p.id>@afterId))
+                ORDER BY p.name COLLATE NOCASE,p.id LIMIT @take
+                """, new { pattern, afterName, afterId, take = limit + 1 })
+                .Select(static row => new StockOverviewItem(row.ProductId, row.Sku, row.Name,
+                    Quantity.FromScaled(row.Quantity), Money.FromScaled(row.CostValue),
+                    Quantity.FromScaled(row.ReorderLevel), row.IsLow)).ToList();
+            bool hasMore = rows.Count > limit;
+            if (hasMore) rows.RemoveAt(limit);
+            StockOverviewItem? last = rows.LastOrDefault();
+            return new StockOverviewPage(rows, hasMore, last?.Name, last?.ProductId);
+        }, cancellationToken);
+    }
+
+    public Task<LotPage> GetLotPageAsync(long? productId = null, string? query = null, long? beforeId = null,
+        int limit = 100, bool availableOnly = false, CancellationToken cancellationToken = default)
+    {
+        if (limit is < 1 or > 200 || beforeId <= 0)
+            throw new DomainException(ErrorCode.Validation, "Invalid lot page.");
+        string pattern = "%" + (query ?? string.Empty).Trim().Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal) + "%";
+        return database.ReadAsync(connection =>
+        {
+            List<LotItem> rows = connection.Query<LotRow>("""
+                WITH visible AS MATERIALIZED (
+                    SELECT l.id FROM product_lot l JOIN product p ON p.id=l.product_id
+                    WHERE (@productId IS NULL OR l.product_id=@productId)
+                      AND (@availableOnly=0 OR (l.is_active=1 AND l.qty_on_hand>0))
+                      AND (@beforeId IS NULL OR l.id<@beforeId)
+                      AND (p.name LIKE @pattern ESCAPE '\' OR l.lot_code LIKE @pattern ESCAPE '\'
+                           OR l.batch_no LIKE @pattern ESCAPE '\')
+                    ORDER BY l.id DESC LIMIT @take
+                )
+                SELECT l.id AS Id,l.product_id AS ProductId,p.name AS ProductName,l.lot_code AS LotCode,
+                       l.batch_no AS BatchNumber,l.received_date AS ReceivedDate,l.expiry_date AS ExpiryDate,
+                       l.unit_cost AS UnitCost,l.mrp AS Mrp,l.selling_price AS SellingPrice,
+                       l.qty_received AS Received,l.qty_on_hand AS OnHand,l.is_active AS IsActive,
+                       CASE WHEN l.is_active=0 THEN 'BLOCKED' WHEN l.qty_on_hand<=0 THEN 'EMPTY'
+                            WHEN l.expiry_date IS NULL THEN 'NONE'
+                            WHEN l.expiry_date<date('now','localtime') THEN 'EXPIRED'
+                            WHEN l.expiry_date<=date('now','localtime','+7 days') THEN 'CRITICAL'
+                            WHEN julianday(l.expiry_date)-julianday('now','localtime','start of day')<=
+                                 COALESCE(p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
+                                          CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30)
+                                 THEN 'SOON' ELSE 'FRESH' END AS ExpiryBucketCode
+                FROM visible page JOIN product_lot l ON l.id=page.id JOIN product p ON p.id=l.product_id
+                JOIN category c ON c.id=p.category_id LEFT JOIN category pc ON pc.id=c.parent_id
+                ORDER BY l.id DESC
+                """, new { productId, beforeId, availableOnly, pattern, take = limit + 1 })
+                .Select(static row => row.ToModel()).ToList();
+            bool hasMore = rows.Count > limit;
+            if (hasMore) rows.RemoveAt(limit);
+            return new LotPage(rows, hasMore, rows.LastOrDefault()?.Id);
+        }, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<LotItem>> GetLotsByIdsAsync(IReadOnlyCollection<long> lotIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(lotIds);
+        long[] ids = lotIds.Where(static id => id > 0).Distinct().ToArray();
+        if (ids.Length > 200) throw new DomainException(ErrorCode.Validation, "Select at most 200 lots per batch.");
+        if (ids.Length == 0) return Task.FromResult<IReadOnlyList<LotItem>>([]);
+        return database.ReadAsync(connection => (IReadOnlyList<LotItem>)connection.Query<LotRow>("""
+            SELECT l.id AS Id,l.product_id AS ProductId,p.name AS ProductName,l.lot_code AS LotCode,
+                   l.batch_no AS BatchNumber,l.received_date AS ReceivedDate,l.expiry_date AS ExpiryDate,
+                   l.unit_cost AS UnitCost,l.mrp AS Mrp,l.selling_price AS SellingPrice,
+                   l.qty_received AS Received,l.qty_on_hand AS OnHand,l.is_active AS IsActive,
+                   CASE WHEN l.is_active=0 THEN 'BLOCKED' WHEN l.qty_on_hand<=0 THEN 'EMPTY'
+                        WHEN l.expiry_date IS NULL THEN 'NONE'
+                        WHEN l.expiry_date<date('now','localtime') THEN 'EXPIRED'
+                        WHEN l.expiry_date<=date('now','localtime','+7 days') THEN 'CRITICAL'
+                        WHEN julianday(l.expiry_date)-julianday('now','localtime','start of day')<=
+                             COALESCE(p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
+                                      CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30)
+                             THEN 'SOON' ELSE 'FRESH' END AS ExpiryBucketCode
+            FROM product_lot l JOIN product p ON p.id=l.product_id
+            JOIN category c ON c.id=p.category_id LEFT JOIN category pc ON pc.id=c.parent_id
+            WHERE l.id IN @ids ORDER BY l.id
+            """, new { ids }).Select(static row => row.ToModel()).ToList(), cancellationToken);
+    }
+
     public Task<IReadOnlyList<StockOverviewItem>> GetOverviewAsync(CancellationToken cancellationToken = default) =>
         database.ReadAsync(connection => (IReadOnlyList<StockOverviewItem>)connection.Query<OverviewRow>("""
             SELECT product_id AS ProductId,sku AS Sku,name AS Name,stock_qty AS Quantity,
@@ -83,6 +181,43 @@ public sealed class InventoryService(
             FROM history WHERE MoveDate BETWEEN @from AND @to ORDER BY Id
             """, new { productId, from, to }).Select(static row => row.ToModel()).ToList(), cancellationToken);
     }
+
+    public Task<LedgerPage> GetLedgerPageAsync(long productId, DateOnly from, DateOnly to,
+        long? beforeId = null, string? type = null, int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        if (productId <= 0 || from > to || limit is < 1 or > 200 || beforeId <= 0)
+            throw new DomainException(ErrorCode.Validation, "Invalid ledger page filter.");
+        return database.ReadAsync(connection =>
+        {
+            List<LedgerItem> rows = connection.Query<LedgerRow>("""
+                WITH page AS MATERIALIZED (
+                    SELECT m.id,m.moved_at,m.move_date,m.type_code,m.qty,m.unit_cost,
+                           m.ref_type,m.ref_id,m.note,m.lot_id
+                    FROM stock_movement m
+                    WHERE m.product_id=@productId AND m.move_date BETWEEN @from AND @to
+                      AND (@beforeId IS NULL OR m.id<@beforeId)
+                      AND (@type IS NULL OR m.type_code=@type)
+                    ORDER BY m.id DESC LIMIT @take
+                )
+                SELECT m.id AS Id,m.moved_at AS MovedAt,m.move_date AS MoveDate,
+                       m.type_code AS TypeCode,m.qty AS Qty,m.unit_cost AS UnitCost,
+                       m.ref_type AS RefType,m.ref_id AS RefId,m.note AS Note,
+                       l.lot_code AS LotCode,
+                       COALESCE((SELECT SUM(b.qty) FROM stock_movement b
+                                 WHERE b.lot_id=m.lot_id AND b.id<=m.id),0) AS LotBalance
+                FROM page m JOIN product_lot l ON l.id=m.lot_id ORDER BY m.id DESC
+                """, new { productId, from, to, beforeId, type, take = limit + 1 })
+                .Select(static row => row.ToModel()).ToList();
+            bool hasMore = rows.Count > limit;
+            if (hasMore) rows.RemoveAt(limit);
+            return new LedgerPage(rows, hasMore, rows.LastOrDefault()?.Id);
+        }, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<string>> GetMovementTypesAsync(CancellationToken cancellationToken = default) =>
+        database.ReadAsync(connection => (IReadOnlyList<string>)connection.Query<string>(
+            "SELECT code FROM stock_movement_type ORDER BY code").ToList(), cancellationToken);
 
     public Task<StockSourceDocument> GetSourceDocumentAsync(LedgerItem movement,
         CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
@@ -364,13 +499,14 @@ public sealed class InventoryService(
     public Task SetCountedQuantityAsync(long countId, long lotId, Quantity counted, CancellationToken cancellationToken = default) =>
         SetCountedQuantitiesAsync(countId, new Dictionary<long, Quantity> { [lotId] = counted }, cancellationToken);
 
-    public Task SetCountedQuantitiesAsync(long countId, IReadOnlyDictionary<long, Quantity> quantities,
+    public async Task SetCountedQuantitiesAsync(long countId, IReadOnlyDictionary<long, Quantity> quantities,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(quantities);
         if (countId <= 0 || quantities.Count == 0 || quantities.Values.Any(static quantity => quantity < Quantity.Zero))
             throw new DomainException(ErrorCode.Validation, "Counted quantities must be non-negative.");
-        return database.WriteAsync(transaction =>
+        foreach (KeyValuePair<long, Quantity>[] batch in quantities.Chunk(200))
+            await database.WriteAsync(transaction =>
         {
             string? status = transaction.Connection.QuerySingleOrDefault<string>(
                 "SELECT status FROM stock_count WHERE id=@countId", new { countId }, transaction.Transaction);
@@ -378,20 +514,21 @@ public sealed class InventoryService(
             var rules = transaction.Connection.Query<CountUnitRule>("""
                 SELECT scl.lot_id AS LotId,u.allow_fraction AS AllowFraction
                 FROM stock_count_line scl JOIN product p ON p.id=scl.product_id JOIN uom u ON u.id=p.uom_id
-                WHERE scl.stock_count_id=@countId
-                """, new { countId }, transaction.Transaction).ToDictionary(static rule => rule.LotId);
-            foreach ((long lotId, Quantity quantity) in quantities)
+                WHERE scl.stock_count_id=@countId AND scl.lot_id IN @lotIds
+                """, new { countId, lotIds = batch.Select(static item => item.Key).ToArray() },
+                transaction.Transaction).ToDictionary(static rule => rule.LotId);
+            foreach ((long lotId, Quantity quantity) in batch)
             {
                 if (!rules.TryGetValue(lotId, out CountUnitRule? rule))
                     throw new DomainException(ErrorCode.NotFound, "stock count line", lotId);
                 if (!rule.AllowFraction && !quantity.IsWhole)
                     throw new DomainException(ErrorCode.FractionalQtyNotAllowed);
             }
-            foreach ((long lotId, Quantity quantity) in quantities)
+            foreach ((long lotId, Quantity quantity) in batch)
                 transaction.Connection.Execute("""
                     UPDATE stock_count_line SET counted_qty=@counted WHERE stock_count_id=@countId AND lot_id=@lotId
                     """, new { countId, lotId, counted = quantity.Scaled }, transaction.Transaction);
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<StockCountDetails> GetStockCountAsync(long countId, CancellationToken cancellationToken = default) =>
@@ -413,6 +550,61 @@ public sealed class InventoryService(
                 """, new { countId, snapshot = header.Snapshot }).Select(static row => row.ToModel()).ToList();
             return new StockCountDetails(header.Id, header.Date, header.Status, header.Notes, lines);
         }, cancellationToken);
+
+    public Task<StockCountPage> GetStockCountPageAsync(long countId, long? afterLineId = null,
+        int pageSize = 100, CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
+    {
+        int take = Math.Clamp(pageSize, 1, 200);
+        CountHeader? header = connection.QuerySingleOrDefault<CountHeader>("""
+            SELECT id AS Id,count_date AS Date,status AS Status,notes AS Notes,snapshot_movement_id AS Snapshot
+            FROM stock_count WHERE id=@countId
+            """, new { countId });
+        if (header is null) throw new DomainException(ErrorCode.NotFound, "stock count", countId);
+        CountProgress progress = connection.QuerySingle<CountProgress>("""
+            SELECT COUNT(*) AS Total,COUNT(counted_qty) AS Counted FROM stock_count_line WHERE stock_count_id=@countId
+            """, new { countId });
+        List<CountLineRow> rows = connection.Query<CountLineRow>("""
+            SELECT scl.id AS Id,scl.product_id AS ProductId,p.name AS ProductName,scl.lot_id AS LotId,
+                   l.lot_code AS LotCode,scl.expected_qty AS Expected,scl.counted_qty AS Counted,
+                   scl.unit_cost AS UnitCost,
+                   COALESCE((SELECT SUM(m.qty) FROM stock_movement m
+                             WHERE m.lot_id=scl.lot_id AND m.id>@snapshot),0) AS Movement
+            FROM stock_count_line scl JOIN product p ON p.id=scl.product_id
+                 JOIN product_lot l ON l.id=scl.lot_id
+            WHERE scl.stock_count_id=@countId AND (@afterLineId IS NULL OR scl.id>@afterLineId)
+            ORDER BY scl.id LIMIT @limit
+            """, new { countId, afterLineId, snapshot = header.Snapshot, limit = take + 1 }).ToList();
+        bool more = rows.Count > take;
+        if (more) rows.RemoveAt(take);
+        return new StockCountPage(header.Id, header.Date, header.Status, header.Notes,
+            rows.Select(static row => row.ToModel()).ToList(), more,
+            more ? rows[^1].Id : null, progress.Total, progress.Counted);
+    }, cancellationToken);
+
+    public Task<long?> FindStockCountLineAsync(long countId, string query, long? productId = null,
+        long? lotId = null, CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
+    {
+        string normalized = query.Trim();
+        if (normalized.Length == 0 && productId is null && lotId is null) return (long?)null;
+        if (lotId is not null)
+            return connection.ExecuteScalar<long?>("""
+                SELECT id FROM stock_count_line WHERE stock_count_id=@countId AND lot_id=@lotId
+                """, new { countId, lotId });
+        if (productId is not null)
+            return connection.ExecuteScalar<long?>("""
+                SELECT id FROM stock_count_line WHERE stock_count_id=@countId AND product_id=@productId
+                ORDER BY id LIMIT 1
+                """, new { countId, productId });
+        long? exact = connection.ExecuteScalar<long?>("""
+            SELECT scl.id FROM product_lot l JOIN stock_count_line scl ON scl.lot_id=l.id
+            WHERE scl.stock_count_id=@countId AND l.lot_code=@query COLLATE NOCASE LIMIT 1
+            """, new { countId, query = normalized });
+        return exact ?? connection.ExecuteScalar<long?>("""
+            SELECT scl.id FROM product p JOIN stock_count_line scl ON scl.product_id=p.id
+            WHERE scl.stock_count_id=@countId AND p.name LIKE @pattern ESCAPE '\'
+            ORDER BY scl.id LIMIT 1
+            """, new { countId, pattern = "%" + normalized.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%" });
+    }, cancellationToken);
 
     public async Task PostStockCountAsync(long countId, string operationId,
         IReadOnlyDictionary<long, long>? reviewedMovements = null, CancellationToken cancellationToken = default)
@@ -526,6 +718,7 @@ public sealed class InventoryService(
     private sealed class ProductRule { public bool TrackExpiry { get; init; } public bool AllowFraction { get; init; } }
     private sealed class LotIdentity { public long ProductId { get; init; } public long UnitCost { get; init; } }
     private sealed class CountHeader { public long Id { get; init; } public DateOnly Date { get; init; } public string Status { get; init; } = ""; public string? Notes { get; init; } public long Snapshot { get; init; } }
+    private sealed class CountProgress { public long Total { get; init; } public long Counted { get; init; } }
     private sealed class CountPostRow { public long ProductId { get; init; } public long LotId { get; init; } public long Expected { get; init; } public long? Counted { get; init; } public long UnitCost { get; init; } public long Movement { get; init; } }
     private sealed class CountUnitRule { public long LotId { get; init; } public bool AllowFraction { get; init; } }
     private sealed class CountLineRow { public long Id { get; init; } public long ProductId { get; init; } public string ProductName { get; init; } = ""; public long LotId { get; init; } public string LotCode { get; init; } = ""; public long Expected { get; init; } public long? Counted { get; init; } public long UnitCost { get; init; } public long Movement { get; init; } public StockCountLine ToModel() { long difference = Counted is null ? 0 : Counted.Value - (Expected + Movement); return new(Id, ProductId, ProductName, LotId, LotCode, Quantity.FromScaled(Expected), Counted is null ? null : Quantity.FromScaled(Counted.Value), Money.FromScaled(UnitCost), Quantity.FromScaled(Movement), Quantity.FromScaled(difference), new Money(Fx3.FromScaled(difference) * Fx3.FromScaled(UnitCost))); } }

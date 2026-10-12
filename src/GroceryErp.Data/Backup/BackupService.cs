@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -28,9 +29,15 @@ public sealed class BackupService(
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     private readonly object _backupGate = new();
+    private DateTime? _lastVerifiedDailyBackup;
 
     public string BackupDirectory => settings.Current.BackupDirectory;
     public bool HasPendingRestore => File.Exists(Path.Combine(paths.DbDir, "restore.pending.json"));
+    public bool HasRecentVerifiedDailyBackup(TimeSpan maximumAge)
+    {
+        lock (_backupGate)
+            return _lastVerifiedDailyBackup is { } at && clock.Now >= at && clock.Now - at <= maximumAge;
+    }
 
     public BackupHealth GetHealth()
     {
@@ -106,7 +113,9 @@ public sealed class BackupService(
 
     public BackupInfo Create(string reason)
     {
-        lock (_backupGate) return CreateCore(reason);
+        long started = Stopwatch.GetTimestamp();
+        try { lock (_backupGate) return CreateCore(reason); }
+        finally { PerformanceMetrics.BackupMilliseconds.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds); }
     }
 
     private BackupInfo CreateCore(string reason)
@@ -148,6 +157,7 @@ public sealed class BackupService(
             // A failed verification must never leave a final-looking backup behind.
             Verify(partial);
             File.Move(partial, final);
+            if (safeReason == "daily") _lastVerifiedDailyBackup = clock.Now;
             Rotate(backupDirectory, settings.Current.BackupKeep, clock.Now.ToUniversalTime());
             return new(final, new FileInfo(final).Length, manifest);
         }
@@ -217,7 +227,20 @@ public sealed class BackupService(
 
     public void ApplyRestore(RestoreCandidate candidate)
     {
-        lock (_backupGate) ApplyRestoreCore(candidate);
+        lock (_backupGate)
+        {
+            ArgumentNullException.ThrowIfNull(candidate);
+            if (HasPendingRestore)
+                throw new DomainException(ErrorCode.BackupInvalid, "a restore is already pending");
+            Create("pre-restore");
+            factory.BeginExclusive();
+            try { ApplyRestoreCore(candidate); }
+            catch
+            {
+                if (!HasPendingRestore) factory.EndExclusive();
+                throw;
+            }
+        }
     }
 
     private void ApplyRestoreCore(RestoreCandidate candidate)
@@ -225,11 +248,16 @@ public sealed class BackupService(
         ArgumentNullException.ThrowIfNull(candidate);
         if (HasPendingRestore)
             throw new DomainException(ErrorCode.BackupInvalid, "a restore is already pending");
-        Create("pre-restore");
-        using (SqliteConnection connection = factory.Open())
-            if (connection.ExecuteScalar<long>("PRAGMA wal_checkpoint(TRUNCATE);") != 0)
+        using (SqliteConnection connection = factory.OpenExclusive())
+        {
+            long checkpointStarted = Stopwatch.GetTimestamp();
+            long checkpointStatus;
+            try { checkpointStatus = connection.ExecuteScalar<long>("PRAGMA wal_checkpoint(TRUNCATE);"); }
+            finally { PerformanceMetrics.CheckpointMilliseconds.Record(Stopwatch.GetElapsedTime(checkpointStarted).TotalMilliseconds); }
+            if (checkpointStatus != 0)
                 throw new DomainException(ErrorCode.BackupInvalid, "the database is busy during restore");
-        SqliteConnection.ClearAllPools();
+        }
+        factory.ClearPool();
         string stamp = clock.Now.ToString("yyyy-MM-dd_HHmmss", CultureInfo.InvariantCulture);
         string replaced = Path.Combine(paths.DbDir, $"replaced-{stamp}");
         Directory.CreateDirectory(replaced);
@@ -293,29 +321,35 @@ public sealed class BackupService(
         string marker = Path.Combine(paths.DbDir, "restore.pending.json");
         if (!File.Exists(marker)) return;
         RestoreMarker pending = ReadMarker(marker);
-        using SqliteConnection connection = factory.Open();
-        if (connection.ExecuteScalar<string>("PRAGMA quick_check;") != "ok" ||
-            connection.Query("PRAGMA foreign_key_check;").Any())
-            throw new DomainException(ErrorCode.BackupInvalid, "restored database failed startup check");
-        long schemaVersion = connection.ExecuteScalar<long>("PRAGMA user_version;");
-        if (schemaVersion > MigrationRunner.LatestVersion)
-            throw new DomainException(ErrorCode.DatabaseNewerThanApp, schemaVersion, MigrationRunner.LatestVersion);
-        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
-        connection.Execute(
-            "INSERT INTO audit_log(entity, entity_id, action, changes) VALUES ('restore', 0, 'RESTORE', @changes)",
-            new { changes = JsonSerializer.Serialize(new { pending.SourceZip, pending.Manifest.SchemaVersion }, JsonOptions) },
-            transaction);
-        transaction.Commit();
-        File.Delete(marker);
-        PurgeExpiredRestoreData();
+        bool exclusive = factory.IsExclusive;
+        try
+        {
+            using SqliteConnection connection = exclusive ? factory.OpenExclusive() : factory.Open();
+            if (connection.ExecuteScalar<string>("PRAGMA quick_check;") != "ok" ||
+                connection.Query("PRAGMA foreign_key_check;").Any())
+                throw new DomainException(ErrorCode.BackupInvalid, "restored database failed startup check");
+            long schemaVersion = connection.ExecuteScalar<long>("PRAGMA user_version;");
+            if (schemaVersion > MigrationRunner.LatestVersion)
+                throw new DomainException(ErrorCode.DatabaseNewerThanApp, schemaVersion, MigrationRunner.LatestVersion);
+            using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+            connection.Execute(
+                "INSERT INTO audit_log(entity, entity_id, action, changes) VALUES ('restore', 0, 'RESTORE', @changes)",
+                new { changes = JsonSerializer.Serialize(new { pending.SourceZip, pending.Manifest.SchemaVersion }, JsonOptions) },
+                transaction);
+            transaction.Commit();
+            File.Delete(marker);
+            PurgeExpiredRestoreData();
+        }
+        finally { if (exclusive) factory.EndExclusive(); }
     }
 
     public void UndoPendingRestore()
     {
         string marker = Path.Combine(paths.DbDir, "restore.pending.json");
         if (!File.Exists(marker)) return;
+        bool exclusive = factory.IsExclusive;
         RestoreMarker pending = ReadMarker(marker);
-        SqliteConnection.ClearAllPools();
+        factory.ClearPool();
         string current = paths.DatabaseFile;
         string replaced = SafeReplacedDatabase(pending);
         if (!File.Exists(replaced)) throw new DomainException(ErrorCode.BackupInvalid, "replaced database is missing");
@@ -324,6 +358,7 @@ public sealed class BackupService(
         Directory.CreateDirectory(failedDirectory);
         bool currentMoved = false;
         bool replacedMoved = false;
+        bool restored = false;
         try
         {
             MoveDatabaseSet(current, failedDatabase);
@@ -332,6 +367,7 @@ public sealed class BackupService(
             replacedMoved = true;
             File.Delete(marker);
             TryDeleteDirectory(failedDirectory);
+            restored = true;
         }
         catch
         {
@@ -339,6 +375,7 @@ public sealed class BackupService(
             if (currentMoved) MoveDatabaseSet(failedDatabase, current);
             throw;
         }
+        finally { if (exclusive && restored) factory.EndExclusive(); }
     }
 
     public void PurgeExpiredRestoreData()
@@ -374,7 +411,12 @@ public sealed class BackupService(
     {
         string partial = path + ".partial";
         File.WriteAllText(partial, JsonSerializer.Serialize(marker, JsonOptions));
-        File.Move(partial, path, overwrite: true);
+        for (int attempt = 0; ; attempt++)
+        {
+            try { File.Move(partial, path, overwrite: true); return; }
+            catch (IOException) when (attempt < 3) { Thread.Sleep(50 * (attempt + 1)); }
+            catch (UnauthorizedAccessException) when (attempt < 3) { Thread.Sleep(50 * (attempt + 1)); }
+        }
     }
 
     private static BackupManifest ReadManifest(ZipArchive archive)

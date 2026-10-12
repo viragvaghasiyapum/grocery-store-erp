@@ -70,6 +70,12 @@
       <Button x:Name="RestoreButton" IsEnabled="False" Margin="0,0,8,8" Click="Restore_OnClick" Content="{l:Tr Catalog_Restore}"/>
       <Button x:Name="RemoveButton" IsEnabled="False" Margin="0,0,0,8" Click="Remove_OnClick" Content="{l:Tr Catalog_Remove}"/>
     </WrapPanel>
-    <TextBlock x:Name="StatusText" Grid.Row="4" TextWrapping="Wrap" Opacity="0.75"/>
+    <DockPanel Grid.Row="4">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <Button x:Name="PreviousPageButton" IsEnabled="False" Margin="8,0" Click="PreviousPage_OnClick" Content="{l:Tr Sales_Previous}"/>
+        <Button x:Name="NextPageButton" IsEnabled="False" Click="NextPage_OnClick" Content="{l:Tr Sales_Next}"/>
+      </StackPanel>
+      <TextBlock x:Name="StatusText" TextWrapping="Wrap" Opacity="0.75" VerticalAlignment="Center"/>
+    </DockPanel>
   </Grid>
 </Page>

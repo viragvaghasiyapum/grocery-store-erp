@@ -8,6 +8,9 @@ public sealed record ExpiryLot(
     string? BatchNumber, DateOnly ExpiryDate, int DaysLeft, Quantity Quantity,
     Money CostValue, string Bucket, long? VendorId, string? VendorName);
 
+public sealed record ExpiryPage(IReadOnlyList<ExpiryLot> Items, bool HasMore,
+    DateOnly? NextDate, long? NextId);
+
 public sealed record DamageInput(
     long LotId, DateOnly Date, Quantity Quantity, string Reason,
     Money RecoveredAmount, string? Notes);
@@ -16,9 +19,12 @@ public sealed record DamageItem(
     long Id, string DocumentNumber, DateOnly Date, string ProductName, string LotCode,
     Quantity Quantity, Money UnitCost, Money CostValue, Money RecoveredAmount, string Reason, string? Notes);
 
+public sealed record DamagePage(IReadOnlyList<DamageItem> Items, bool HasMore, DateOnly? NextDate, long? NextId);
+
 public sealed record ExpenseCategoryItem(long Id, string Name, string? LocalName, bool IsActive);
 public sealed record ExpenseInput(DateOnly Date, long CategoryId, Money Amount, string Mode, string? PaidTo, string? Reference, string? Notes);
 public sealed record ExpenseItem(long Id, DateOnly Date, long CategoryId, string CategoryName, Money Amount, string Mode, string? PaidTo, string? Reference, string? Notes);
+public sealed record ExpensePage(IReadOnlyList<ExpenseItem> Items, bool HasMore, DateOnly? NextDate, long? NextId);
 
 public sealed record EmployeeInput(
     string Name, string? Phone, string? Role, DateOnly? JoinDate, DateOnly? LeaveDate,

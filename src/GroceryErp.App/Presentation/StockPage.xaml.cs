@@ -14,7 +14,18 @@ namespace GroceryErp.App.Presentation;
 public partial class StockPage : Page
 {
     private readonly InventoryService _inventory;
-    private IReadOnlyList<LedgerItem> _ledgerItems = [];
+    private readonly Stack<(string? Name, long? Id)> _overviewPrevious = new();
+    private readonly Stack<long?> _lotPrevious = new();
+    private readonly Stack<long?> _ledgerPrevious = new();
+    private (string? Name, long? Id) _overviewCursor;
+    private long? _lotCursor;
+    private long? _ledgerCursor;
+    private StockOverviewPage? _overviewPage;
+    private LotPage? _lotPage;
+    private LedgerPage? _ledgerPage;
+    private bool _overviewLoading;
+    private bool _lotLoading;
+    private bool _ledgerLoading;
 
     public StockPage() : this(null) { }
 
@@ -132,27 +143,59 @@ public partial class StockPage : Page
     private async Task ReloadLedgerAsync()
     {
         if (OverviewGrid.SelectedItem is not StockOverviewItem product) return;
+        _ledgerPrevious.Clear();
+        await LoadLedgerPageAsync(product, null);
+    }
+
+    private async Task LoadLedgerPageAsync(StockOverviewItem product, long? beforeId)
+    {
+        if (_ledgerLoading) return;
+        _ledgerLoading = true;
         try
         {
             LedgerProductText.Text = product.Name;
             DateOnly from = DateOnly.FromDateTime(LedgerFromBox.SelectedDate ?? new DateTime(2000, 1, 1));
             DateOnly to = DateOnly.FromDateTime(LedgerToBox.SelectedDate ?? new DateTime(2100, 12, 31));
-            _ledgerItems = await _inventory.GetLedgerAsync(product.ProductId, from, to);
             string? previous = (LedgerTypeBox.SelectedItem as LedgerTypeOption)?.Code;
-            var options = new List<LedgerTypeOption> { new(TranslationSource.Instance["Stock_AllMovements"], null) };
-            options.AddRange(_ledgerItems.Select(static movement => movement.Type).Distinct().Order()
-                .Select(static code => new LedgerTypeOption(code, code)));
-            LedgerTypeBox.ItemsSource = options;
-            LedgerTypeBox.SelectedItem = options.FirstOrDefault(option => option.Code == previous) ?? options[0];
-            ApplyLedgerType();
+            if (LedgerTypeBox.ItemsSource is null)
+            {
+                var options = new List<LedgerTypeOption> { new(TranslationSource.Instance["Stock_AllMovements"], null) };
+                options.AddRange((await _inventory.GetMovementTypesAsync()).Select(static code => new LedgerTypeOption(code, code)));
+                LedgerTypeBox.ItemsSource = options;
+                LedgerTypeBox.SelectedItem = options.FirstOrDefault(option => option.Code == previous) ?? options[0];
+            }
+            LedgerPage page = await _inventory.GetLedgerPageAsync(product.ProductId, from, to, beforeId,
+                (LedgerTypeBox.SelectedItem as LedgerTypeOption)?.Code);
+            _ledgerPage = page;
+            _ledgerCursor = beforeId;
+            LedgerGrid.ItemsSource = page.Items;
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        finally
+        {
+            _ledgerLoading = false;
+            PreviousLedgerButton.IsEnabled = _ledgerPrevious.Count > 0;
+            NextLedgerButton.IsEnabled = _ledgerPage?.HasMore == true;
+        }
     }
 
-    private void ApplyLedgerType()
+    private async void NextLedger_OnClick(object sender, RoutedEventArgs e)
     {
-        string? type = (LedgerTypeBox.SelectedItem as LedgerTypeOption)?.Code;
-        LedgerGrid.ItemsSource = type is null ? _ledgerItems : _ledgerItems.Where(item => item.Type == type).ToList();
+        if (_ledgerLoading || OverviewGrid.SelectedItem is not StockOverviewItem product ||
+            _ledgerPage is not { HasMore: true, NextId: not null } page) return;
+        long? previous = _ledgerCursor;
+        await LoadLedgerPageAsync(product, page.NextId);
+        if (_ledgerCursor == page.NextId) _ledgerPrevious.Push(previous);
+        PreviousLedgerButton.IsEnabled = _ledgerPrevious.Count > 0;
+    }
+
+    private async void PreviousLedger_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_ledgerLoading || _ledgerPrevious.Count == 0 || OverviewGrid.SelectedItem is not StockOverviewItem product) return;
+        long? previous = _ledgerPrevious.Peek();
+        await LoadLedgerPageAsync(product, previous);
+        if (_ledgerCursor == previous) _ledgerPrevious.Pop();
+        PreviousLedgerButton.IsEnabled = _ledgerPrevious.Count > 0;
     }
 
     private void LedgerGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -178,13 +221,105 @@ public partial class StockPage : Page
 
     private async Task RefreshAsync()
     {
+        using var timing = UiRefreshProbe.Track("stock", this);
         try
         {
-            OverviewGrid.ItemsSource = await _inventory.GetOverviewAsync();
-            LotsGrid.ItemsSource = await _inventory.GetLotsAsync();
-            ValuationGrid.ItemsSource = await _inventory.GetValuationAsync();
+            _overviewPrevious.Clear();
+            _lotPrevious.Clear();
+            await LoadOverviewPageAsync(null, null);
+            await LoadLotPageAsync(null);
+            var valuation = await _inventory.GetValuationAsync();
+            timing.Bind(() => ValuationGrid.ItemsSource = valuation);
             StatusText.Text = $"{OverviewGrid.Items.Count} / {LotsGrid.Items.Count}";
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async Task LoadOverviewPageAsync(string? name, long? id)
+    {
+        if (_overviewLoading) return;
+        _overviewLoading = true;
+        try
+        {
+            StockOverviewPage page = await _inventory.GetOverviewPageAsync(OverviewSearchBox.Text, name, id);
+            _overviewPage = page;
+            _overviewCursor = (name, id);
+            UiRefreshProbe.RecordBinding("stock", () => OverviewGrid.ItemsSource = page.Items);
+        }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        finally
+        {
+            _overviewLoading = false;
+            PreviousOverviewButton.IsEnabled = _overviewPrevious.Count > 0;
+            NextOverviewButton.IsEnabled = _overviewPage?.HasMore == true;
+        }
+    }
+
+    private async Task LoadLotPageAsync(long? beforeId)
+    {
+        if (_lotLoading) return;
+        _lotLoading = true;
+        try
+        {
+            LotPage page = await _inventory.GetLotPageAsync(query: LotSearchBox.Text, beforeId: beforeId);
+            _lotPage = page;
+            _lotCursor = beforeId;
+            UiRefreshProbe.RecordBinding("stock", () => LotsGrid.ItemsSource = page.Items);
+        }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        finally
+        {
+            _lotLoading = false;
+            PreviousLotButton.IsEnabled = _lotPrevious.Count > 0;
+            NextLotButton.IsEnabled = _lotPage?.HasMore == true;
+        }
+    }
+
+    private async void OverviewSearch_OnClick(object sender, RoutedEventArgs e)
+    {
+        _overviewPrevious.Clear();
+        await LoadOverviewPageAsync(null, null);
+    }
+
+    private async void LotSearch_OnClick(object sender, RoutedEventArgs e)
+    {
+        _lotPrevious.Clear();
+        await LoadLotPageAsync(null);
+    }
+
+    private async void NextOverview_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_overviewLoading || _overviewPage is not { HasMore: true, NextName: not null, NextId: not null } page) return;
+        (string? name, long? id) old = _overviewCursor;
+        await LoadOverviewPageAsync(page.NextName, page.NextId);
+        if (_overviewCursor == (page.NextName, page.NextId)) _overviewPrevious.Push(old);
+        PreviousOverviewButton.IsEnabled = _overviewPrevious.Count > 0;
+    }
+
+    private async void PreviousOverview_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_overviewLoading || _overviewPrevious.Count == 0) return;
+        (string? name, long? id) previous = _overviewPrevious.Peek();
+        await LoadOverviewPageAsync(previous.name, previous.id);
+        if (_overviewCursor == previous) _overviewPrevious.Pop();
+        PreviousOverviewButton.IsEnabled = _overviewPrevious.Count > 0;
+    }
+
+    private async void NextLot_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_lotLoading || _lotPage is not { HasMore: true, NextId: not null } page) return;
+        long? old = _lotCursor;
+        await LoadLotPageAsync(page.NextId);
+        if (_lotCursor == page.NextId) _lotPrevious.Push(old);
+        PreviousLotButton.IsEnabled = _lotPrevious.Count > 0;
+    }
+
+    private async void PreviousLot_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_lotLoading || _lotPrevious.Count == 0) return;
+        long? previous = _lotPrevious.Peek();
+        await LoadLotPageAsync(previous);
+        if (_lotCursor == previous) _lotPrevious.Pop();
+        PreviousLotButton.IsEnabled = _lotPrevious.Count > 0;
     }
 }

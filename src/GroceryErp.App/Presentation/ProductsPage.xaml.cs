@@ -11,12 +11,18 @@ namespace GroceryErp.App.Presentation;
 
 public partial class ProductsPage : Page
 {
+    private const int PageSize = 100;
     private readonly CatalogService _catalog;
     private readonly ISettings _settings;
     private readonly ProductExcelImporter _importer;
     private int _searchVersion;
     private int _refreshVersion;
     private bool _loadingMasters;
+    private readonly Stack<(string? Name, long? Id)> _previousPages = new();
+    private string? _afterName;
+    private long? _afterId;
+    private ProductSearchPage? _currentPage;
+    private bool _pageLoading;
 
     public ProductsPage() : this(
         ((App)Application.Current).Services.GetRequiredService<CatalogService>(),
@@ -84,12 +90,20 @@ public partial class ProductsPage : Page
         finally { _loadingMasters = false; }
     }
 
-    private async Task RefreshAsync(CancellationToken cancellationToken = default)
+    private Task RefreshAsync(CancellationToken cancellationToken = default) =>
+        LoadPageAsync(null, null, reset: true, cancellationToken);
+
+    private async Task LoadPageAsync(string? afterName, long? afterId, bool reset,
+        CancellationToken cancellationToken = default)
     {
+        using var timing = UiRefreshProbe.Track("products", this);
         try
         {
             int version = ++_refreshVersion;
-            var products = await _catalog.SearchAsync(new ProductSearchFilter(
+            _pageLoading = true;
+            PreviousPageButton.IsEnabled = false;
+            NextPageButton.IsEnabled = false;
+            ProductSearchPage page = await _catalog.SearchPageAsync(new ProductSearchFilter(
                 SearchBox.Text,
                 CategoryId: CategoryFilter.SelectedValue as long?,
                 BrandId: BrandFilter.SelectedValue as long?,
@@ -98,15 +112,47 @@ public partial class ProductsPage : Page
                 MissingLocalNameOnly: MissingLocalFilter.IsChecked == true,
                 IncludeArchived: ArchivedFilter.IsChecked == true,
                 LooseOnly: LooseFilter.IsChecked == true,
-                Limit: 20_000), cancellationToken);
+                Limit: PageSize), afterName, afterId, cancellationToken);
             if (version != _refreshVersion || !IsLoaded) return;
-            ProductsGrid.ItemsSource = products;
-            EmptyText.Visibility = products.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (reset) _previousPages.Clear();
+            _afterName = afterName;
+            _afterId = afterId;
+            _currentPage = page;
+            timing.Bind(() => ProductsGrid.ItemsSource = page.Items);
+            EmptyText.Visibility = page.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             StatusText.Text = TranslationSource.Instance.Format("Catalog_Count", ProductsGrid.Items.Count);
+            PreviousPageButton.IsEnabled = _previousPages.Count > 0;
+            NextPageButton.IsEnabled = page.HasMore;
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             if (IsLoaded) StatusText.Text = UserError.Message(exception);
+        }
+        finally { if (IsLoaded) _pageLoading = false; }
+    }
+
+    private async void NextPage_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_pageLoading || _currentPage is not { HasMore: true, NextName: not null, NextId: not null } page) return;
+        string? previousName = _afterName;
+        long? previousId = _afterId;
+        await LoadPageAsync(page.NextName, page.NextId, reset: false);
+        if (_afterName == page.NextName && _afterId == page.NextId)
+        {
+            _previousPages.Push((previousName, previousId));
+            PreviousPageButton.IsEnabled = true;
+        }
+    }
+
+    private async void PreviousPage_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_pageLoading || _previousPages.Count == 0) return;
+        (string? name, long? id) = _previousPages.Peek();
+        await LoadPageAsync(name, id, reset: false);
+        if (_afterName == name && _afterId == id)
+        {
+            _previousPages.Pop();
+            PreviousPageButton.IsEnabled = _previousPages.Count > 0;
         }
     }
 

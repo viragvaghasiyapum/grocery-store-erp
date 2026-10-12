@@ -17,6 +17,10 @@ public partial class AssetsPage : Page
     private readonly IClock _clock;
     private readonly PurchasingService _purchasing;
     private AssetItem? _editingAsset;
+    private readonly Stack<(bool? Disposed, string? Name, long? Id)> _previousPages = new();
+    private (bool? Disposed, string? Name, long? Id) _cursor;
+    private AssetPage? _page;
+    private bool _loadingPage;
 
     public AssetsPage() : this(null, null, null) { }
 
@@ -125,18 +129,56 @@ public partial class AssetsPage : Page
         AssetName.Focus();
     }
 
-    private async Task RefreshAsync()
+    private Task RefreshAsync()
     {
+        _previousPages.Clear();
+        return LoadPageAsync(null, null, null);
+    }
+
+    private async Task LoadPageAsync(bool? disposed, string? name, long? id)
+    {
+        using var timing = UiRefreshProbe.Track("assets", this);
+        if (_loadingPage) return;
+        _loadingPage = true;
         try
         {
             long? selectedId = _editingAsset?.Id;
-            IReadOnlyList<AssetItem> assets = await _assets.GetAssetsAsync();
+            AssetPage page = await _assets.GetAssetPageAsync(AssetSearchBox.Text,
+                IncludeDisposedBox.IsChecked == true, disposed, name, id);
+            _page = page;
+            _cursor = (disposed, name, id);
             AssetVendor.ItemsSource = await _purchasing.GetVendorsAsync();
-            AssetGrid.ItemsSource = assets;
-            AssetGrid.SelectedItem = assets.FirstOrDefault(asset => asset.Id == selectedId);
+            timing.Bind(() => AssetGrid.ItemsSource = page.Items);
+            AssetGrid.SelectedItem = page.Items.FirstOrDefault(asset => asset.Id == selectedId);
             StatusText.Text = TranslationSource.Instance["MoneyOut_Ready"];
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        finally
+        {
+            _loadingPage = false;
+            PreviousAssetButton.IsEnabled = _previousPages.Count > 0;
+            NextAssetButton.IsEnabled = _page?.HasMore == true;
+        }
+    }
+
+    private async void AssetSearch_OnClick(object sender, RoutedEventArgs e) => await RefreshAsync();
+
+    private async void NextAsset_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_loadingPage || _page is not { HasMore: true, NextDisposed: not null, NextName: not null, NextId: not null } page) return;
+        (bool? Disposed, string? Name, long? Id) previous = _cursor;
+        await LoadPageAsync(page.NextDisposed, page.NextName, page.NextId);
+        if (_cursor == (page.NextDisposed, page.NextName, page.NextId)) _previousPages.Push(previous);
+        PreviousAssetButton.IsEnabled = _previousPages.Count > 0;
+    }
+
+    private async void PreviousAsset_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_loadingPage || _previousPages.Count == 0) return;
+        (bool? Disposed, string? Name, long? Id) previous = _previousPages.Peek();
+        await LoadPageAsync(previous.Disposed, previous.Name, previous.Id);
+        if (_cursor == previous) _previousPages.Pop();
+        PreviousAssetButton.IsEnabled = _previousPages.Count > 0;
     }
 
     private static decimal Parse(string? text)

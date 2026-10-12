@@ -42,7 +42,11 @@
             <Button Margin="0,0,8,0" Click="MarkDown_OnClick" Content="{l:Tr MoneyOut_MarkDown}" />
             <Button Click="PrintExpiry_OnClick" Content="{l:Tr MoneyOut_PrintVendorList}" />
           </WrapPanel>
-          <TabControl x:Name="ExpiryTabs">
+          <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
+            <Button x:Name="PreviousExpiryButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousExpiry_OnClick" Content="{l:Tr Sales_Previous}"/>
+            <Button x:Name="NextExpiryButton" IsEnabled="False" Click="NextExpiry_OnClick" Content="{l:Tr Sales_Next}"/>
+          </StackPanel>
+          <TabControl x:Name="ExpiryTabs" SelectionChanged="ExpiryTabs_OnSelectionChanged">
             <TabItem Header="{l:Tr MoneyOut_Expired}"><ListBox x:Name="ExpiredList" ItemTemplate="{StaticResource ExpiryLotTemplate}" SelectionMode="Extended"/></TabItem>
             <TabItem Header="{l:Tr MoneyOut_Critical}"><ListBox x:Name="CriticalList" ItemTemplate="{StaticResource ExpiryLotTemplate}" SelectionMode="Extended"/></TabItem>
             <TabItem Header="{l:Tr MoneyOut_Soon}"><ListBox x:Name="SoonList" ItemTemplate="{StaticResource ExpiryLotTemplate}" SelectionMode="Extended"/></TabItem>
@@ -51,14 +55,23 @@
       </TabItem>
       <TabItem Header="{l:Tr MoneyOut_Damages}">
         <DockPanel>
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+          <DatePicker x:Name="DamageFromBox" Width="130" Margin="0,0,6,0"/>
+          <DatePicker x:Name="DamageToBox" Width="130" Margin="0,0,6,0"/>
+          <Button Click="DamageFilter_OnClick" Content="Search history"/>
+        </WrapPanel>
         <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10" ItemHeight="64">
-          <StackPanel Width="260" Margin="0,0,8,0"><TextBlock Text="{l:Tr Stock_Lots}"/><ComboBox x:Name="DamageLot" IsTextSearchEnabled="True" TextSearch.TextPath="ProductName"><ComboBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding ProductName}"/><TextBlock FontSize="11" Text="{Binding LotCode}"/></StackPanel></DataTemplate></ComboBox.ItemTemplate></ComboBox></StackPanel>
+            <StackPanel Width="260" Margin="0,0,8,0"><TextBlock Text="{l:Tr Stock_Lots}"/><TextBox x:Name="DamageLotSearchBox" ToolTip="Product or lot"/><Button Click="SearchDamageLot_OnClick" Content="Search"/><ComboBox x:Name="DamageLot" IsTextSearchEnabled="True" TextSearch.TextPath="ProductName"><ComboBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding ProductName}"/><TextBlock FontSize="11" Text="{Binding LotCode}"/></StackPanel></DataTemplate></ComboBox.ItemTemplate></ComboBox></StackPanel>
           <StackPanel Width="95" Margin="0,0,8,0"><TextBlock Text="{l:Tr Stock_Quantity}"/><TextBox x:Name="DamageAnyQuantity"/></StackPanel>
           <StackPanel Width="150" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_Reason}"/><ComboBox x:Name="DamageAnyReason" SelectedIndex="0"><ComboBoxItem Tag="EXPIRED" Content="{l:Tr MoneyOut_ReasonExpired}"/><ComboBoxItem Tag="BROKEN" Content="{l:Tr MoneyOut_ReasonBroken}"/><ComboBoxItem Tag="SPOILED" Content="{l:Tr MoneyOut_ReasonSpoiled}"/><ComboBoxItem Tag="PEST" Content="{l:Tr MoneyOut_ReasonPest}"/><ComboBoxItem Tag="LOST" Content="{l:Tr MoneyOut_ReasonLost}"/><ComboBoxItem Tag="CUSTOMER_RETURN" Content="{l:Tr MoneyOut_ReasonReturn}"/><ComboBoxItem Tag="OTHER" Content="{l:Tr MoneyOut_ReasonOther}"/></ComboBox></StackPanel>
           <StackPanel Width="110" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_Recovered}"/><TextBox x:Name="DamageAnyRecovered" Text="0"/></StackPanel>
           <StackPanel Width="180" Margin="0,0,8,0"><TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="DamageNotes"/></StackPanel>
           <Button Margin="0,17,0,0" Click="RecordAnyDamage_OnClick" Content="{l:Tr MoneyOut_RecordDamage}"/>
         </WrapPanel>
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
+          <Button x:Name="PreviousDamageButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousDamage_OnClick" Content="{l:Tr Sales_Previous}"/>
+          <Button x:Name="NextDamageButton" IsEnabled="False" Click="NextDamage_OnClick" Content="{l:Tr Sales_Next}"/>
+        </StackPanel>
         <DataGrid x:Name="DamageGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
           <DataGrid.Columns>
             <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Document}" Binding="{Binding DocumentNumber}"/>
@@ -74,6 +87,11 @@
       </TabItem>
       <TabItem Header="{l:Tr MoneyOut_Expenses}">
         <DockPanel>
+          <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+            <DatePicker x:Name="ExpenseFromBox" Width="130" Margin="0,0,6,0"/>
+            <DatePicker x:Name="ExpenseToBox" Width="130" Margin="0,0,6,0"/>
+            <Button Click="ExpenseFilter_OnClick" Content="Search history"/>
+          </WrapPanel>
           <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10" ItemHeight="64">
             <StackPanel Width="140" Margin="0,0,8,4"><TextBlock Text="{l:Tr Purchasing_Date}"/><DatePicker x:Name="ExpenseDate" SelectedDateFormat="Short"/></StackPanel>
             <StackPanel Width="180" Margin="0,0,8,4"><TextBlock Text="{l:Tr Catalog_Category}"/><ComboBox x:Name="ExpenseCategory" DisplayMemberPath="Name" SelectedValuePath="Id"/></StackPanel>
@@ -106,6 +124,10 @@
             <Button Margin="0,17,8,0" Click="NewCategory_OnClick" Content="{l:Tr MoneyOut_New}"/>
             <Button Margin="0,17,0,0" Click="AddCategory_OnClick" Content="{l:Tr Common_Save}"/>
           </WrapPanel>
+          <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
+            <Button x:Name="PreviousExpenseButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousExpense_OnClick" Content="{l:Tr Sales_Previous}"/>
+            <Button x:Name="NextExpenseButton" IsEnabled="False" Click="NextExpense_OnClick" Content="{l:Tr Sales_Next}"/>
+          </StackPanel>
           <DataGrid x:Name="ExpenseGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
             <DataGrid.Columns>
               <DataGridTextColumn Width="110" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date}"/>

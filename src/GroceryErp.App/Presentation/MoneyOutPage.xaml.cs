@@ -20,6 +20,15 @@ public partial class MoneyOutPage : Page
     private readonly bool _loadOnShow;
     private long? _editingCategoryId;
     private long? _editingEmployeeId;
+    private readonly Dictionary<string, ExpiryPage> _expiryPages = new();
+    private readonly Dictionary<string, (DateOnly? Date, long? Id)> _expiryCursors = new();
+    private readonly Dictionary<string, Stack<(DateOnly? Date, long? Id)>> _expiryPrevious = new();
+    private readonly Stack<(DateOnly? Date, long? Id)> _damagePrevious = new();
+    private readonly Stack<(DateOnly? Date, long? Id)> _expensePrevious = new();
+    private (DateOnly? Date, long? Id) _damageCursor;
+    private (DateOnly? Date, long? Id) _expenseCursor;
+    private DamagePage? _damagePage;
+    private ExpensePage? _expensePage;
 
     public MoneyOutPage() : this(null, null, null) { }
 
@@ -36,12 +45,20 @@ public partial class MoneyOutPage : Page
         EmployeeJoinDate.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
         SalaryPayDate.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
         SalaryPeriod.Text = YearMonth.From(_clock.BusinessDate).ToString();
+        DateTime today = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
+        DamageFromBox.SelectedDate = ExpenseFromBox.SelectedDate = today.AddYears(-1);
+        DamageToBox.SelectedDate = ExpenseToBox.SelectedDate = today;
         if (loadOnShow) Loaded += async (_, _) => await RefreshAsync();
     }
 
     private async void Tabs_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (IsLoaded && _loadOnShow) await RefreshAsync();
+        if (ReferenceEquals(e.OriginalSource, MoneyOutTabs) && IsLoaded && _loadOnShow) await RefreshAsync();
+    }
+
+    private void ExpiryTabs_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ReferenceEquals(e.OriginalSource, ExpiryTabs)) UpdateExpiryButtons();
     }
 
     private async void RecordDamage_OnClick(object sender, RoutedEventArgs e)
@@ -100,8 +117,9 @@ public partial class MoneyOutPage : Page
     private async void MarkDown_OnClick(object sender, RoutedEventArgs e)
     {
         if (ActiveExpiryList().SelectedItem is not ExpiryLot expiry) return;
-        LotItem? lot = (await _inventory.GetLotsAsync(expiry.ProductId)).FirstOrDefault(item => item.Id == expiry.LotId);
-        if (lot is null) return;
+        IReadOnlyList<LotItem> lots = await _inventory.GetLotsByIdsAsync([expiry.LotId]);
+        if (lots.Count == 0) return;
+        LotItem lot = lots[0];
         var window = new LotPriceWindow(_inventory, lot) { Owner = Window.GetWindow(this) };
         window.ShowDialog();
     }
@@ -295,30 +313,180 @@ public partial class MoneyOutPage : Page
 
     private async Task RefreshAsync()
     {
+        using var timing = UiRefreshProbe.Track("money-out", this);
         try
         {
-            DateOnly today = _clock.BusinessDate;
-            ExpiredList.ItemsSource = await _service.GetExpiryAsync("EXPIRED");
-            CriticalList.ItemsSource = await _service.GetExpiryAsync("CRITICAL");
-            SoonList.ItemsSource = await _service.GetExpiryAsync("SOON");
-            if (Window.GetWindow(this) is ShellWindow shell)
-                shell.SetExpiryBadge(ExpiredList.Items.Count + CriticalList.Items.Count);
-            DamageGrid.ItemsSource = await _service.GetDamagesAsync(today.AddYears(-1), today);
-            ExpenseGrid.ItemsSource = await _service.GetExpensesAsync(today.AddYears(-1), today);
-            long? categoryId = ExpenseCategory.SelectedValue as long?;
-            ExpenseCategory.ItemsSource = await _service.GetExpenseCategoriesAsync();
-            ExpenseCategory.SelectedValue = categoryId;
-            if (ExpenseCategory.SelectedIndex < 0) ExpenseCategory.SelectedIndex = 0;
-            RepeatCategories.ItemsSource = ExpenseCategory.ItemsSource;
-            IReadOnlyList<ExpenseCategoryItem> categories = await _service.GetExpenseCategoriesAsync(includeInactive: true);
-            CategoryMaster.ItemsSource = categories;
-            CategoryMaster.SelectedItem = categories.FirstOrDefault(item => item.Id == _editingCategoryId);
-            IReadOnlyList<EmployeeItem> employees = await _service.GetEmployeesAsync(includeInactive: true);
-            EmployeeGrid.ItemsSource = employees;
-            EmployeeGrid.SelectedItem = employees.FirstOrDefault(item => item.Id == _editingEmployeeId);
-            DamageLot.ItemsSource = (await _inventory.GetLotsAsync()).Where(static lot => lot.IsActive && lot.OnHand > Quantity.Zero).ToList();
+            switch (MoneyOutTabs.SelectedIndex)
+            {
+                case 0:
+                    foreach (string bucket in new[] { "EXPIRED", "CRITICAL", "SOON" })
+                    {
+                        _expiryPrevious.Remove(bucket);
+                        await LoadExpiryPageAsync(bucket, null, null);
+                    }
+                    if (Window.GetWindow(this) is ShellWindow shell)
+                        shell.SetExpiryBadge(await _service.GetActionableExpiryCountAsync());
+                    break;
+                case 1:
+                    _damagePrevious.Clear();
+                    await LoadDamagePageAsync(null, null);
+                    await SearchDamageLotsAsync();
+                    break;
+                case 2:
+                    _expensePrevious.Clear();
+                    await LoadExpensePageAsync(null, null);
+                    long? categoryId = ExpenseCategory.SelectedValue as long?;
+                    ExpenseCategory.ItemsSource = await _service.GetExpenseCategoriesAsync();
+                    ExpenseCategory.SelectedValue = categoryId;
+                    if (ExpenseCategory.SelectedIndex < 0) ExpenseCategory.SelectedIndex = 0;
+                    RepeatCategories.ItemsSource = ExpenseCategory.ItemsSource;
+                    IReadOnlyList<ExpenseCategoryItem> categories = await _service.GetExpenseCategoriesAsync(includeInactive: true);
+                    CategoryMaster.ItemsSource = categories;
+                    CategoryMaster.SelectedItem = categories.FirstOrDefault(item => item.Id == _editingCategoryId);
+                    break;
+                case 3:
+                    IReadOnlyList<EmployeeItem> employees = await _service.GetEmployeesAsync(includeInactive: true);
+                    EmployeeGrid.ItemsSource = employees;
+                    EmployeeGrid.SelectedItem = employees.FirstOrDefault(item => item.Id == _editingEmployeeId);
+                    break;
+            }
             StatusText.Text = TranslationSource.Instance["MoneyOut_Ready"];
         }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async Task LoadExpiryPageAsync(string bucket, DateOnly? afterDate, long? afterId)
+    {
+        ExpiryPage page = await _service.GetExpiryPageAsync(bucket, afterDate, afterId);
+        _expiryPages[bucket] = page;
+        _expiryCursors[bucket] = (afterDate, afterId);
+        switch (bucket)
+        {
+            case "EXPIRED": UiRefreshProbe.RecordBinding("money-out", () => ExpiredList.ItemsSource = page.Items); break;
+            case "CRITICAL": UiRefreshProbe.RecordBinding("money-out", () => CriticalList.ItemsSource = page.Items); break;
+            case "SOON": UiRefreshProbe.RecordBinding("money-out", () => SoonList.ItemsSource = page.Items); break;
+        }
+        UpdateExpiryButtons();
+    }
+
+    private string ActiveExpiryBucket() => ExpiryTabs.SelectedIndex switch
+    {
+        1 => "CRITICAL", 2 => "SOON", _ => "EXPIRED",
+    };
+
+    private void UpdateExpiryButtons()
+    {
+        if (PreviousExpiryButton is null) return;
+        string bucket = ActiveExpiryBucket();
+        PreviousExpiryButton.IsEnabled = _expiryPrevious.GetValueOrDefault(bucket)?.Count > 0;
+        NextExpiryButton.IsEnabled = _expiryPages.GetValueOrDefault(bucket)?.HasMore == true;
+    }
+
+    private async void NextExpiry_OnClick(object sender, RoutedEventArgs e)
+    {
+        string bucket = ActiveExpiryBucket();
+        if (!_expiryPages.TryGetValue(bucket, out ExpiryPage? page) || !page.HasMore ||
+            page.NextDate is null || page.NextId is null) return;
+        (DateOnly? Date, long? Id) previous = _expiryCursors.GetValueOrDefault(bucket);
+        try
+        {
+            await LoadExpiryPageAsync(bucket, page.NextDate, page.NextId);
+            if (!_expiryPrevious.TryGetValue(bucket, out Stack<(DateOnly? Date, long? Id)>? stack))
+                _expiryPrevious[bucket] = stack = new();
+            stack.Push(previous);
+            UpdateExpiryButtons();
+        }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async void PreviousExpiry_OnClick(object sender, RoutedEventArgs e)
+    {
+        string bucket = ActiveExpiryBucket();
+        if (!_expiryPrevious.TryGetValue(bucket, out Stack<(DateOnly? Date, long? Id)>? stack) || stack.Count == 0) return;
+        (DateOnly? Date, long? Id) previous = stack.Peek();
+        try
+        {
+            await LoadExpiryPageAsync(bucket, previous.Date, previous.Id);
+            stack.Pop();
+            UpdateExpiryButtons();
+        }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async void SearchDamageLot_OnClick(object sender, RoutedEventArgs e)
+    {
+        try { await SearchDamageLotsAsync(); }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async Task SearchDamageLotsAsync() => DamageLot.ItemsSource =
+        (await _inventory.GetLotPageAsync(query: DamageLotSearchBox.Text, availableOnly: true)).Items;
+
+    private async Task LoadDamagePageAsync(DateOnly? beforeDate, long? beforeId)
+    {
+        DateOnly from = DateOnly.FromDateTime(DamageFromBox.SelectedDate ?? DateTime.MinValue);
+        DateOnly to = DateOnly.FromDateTime(DamageToBox.SelectedDate ?? DateTime.MaxValue);
+        DamagePage page = await _service.GetDamagePageAsync(from, to, beforeDate, beforeId);
+        _damagePage = page;
+        _damageCursor = (beforeDate, beforeId);
+        UiRefreshProbe.RecordBinding("money-out", () => DamageGrid.ItemsSource = page.Items);
+        PreviousDamageButton.IsEnabled = _damagePrevious.Count > 0;
+        NextDamageButton.IsEnabled = page.HasMore;
+    }
+
+    private async Task LoadExpensePageAsync(DateOnly? beforeDate, long? beforeId)
+    {
+        DateOnly from = DateOnly.FromDateTime(ExpenseFromBox.SelectedDate ?? DateTime.MinValue);
+        DateOnly to = DateOnly.FromDateTime(ExpenseToBox.SelectedDate ?? DateTime.MaxValue);
+        ExpensePage page = await _service.GetExpensePageAsync(from, to, beforeDate, beforeId);
+        _expensePage = page;
+        _expenseCursor = (beforeDate, beforeId);
+        UiRefreshProbe.RecordBinding("money-out", () => ExpenseGrid.ItemsSource = page.Items);
+        PreviousExpenseButton.IsEnabled = _expensePrevious.Count > 0;
+        NextExpenseButton.IsEnabled = page.HasMore;
+    }
+
+    private async void DamageFilter_OnClick(object sender, RoutedEventArgs e)
+    {
+        try { _damagePrevious.Clear(); await LoadDamagePageAsync(null, null); }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async void ExpenseFilter_OnClick(object sender, RoutedEventArgs e)
+    {
+        try { _expensePrevious.Clear(); await LoadExpensePageAsync(null, null); }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async void NextDamage_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_damagePage is not { HasMore: true, NextDate: not null, NextId: not null } page) return;
+        (DateOnly? Date, long? Id) previous = _damageCursor;
+        try { await LoadDamagePageAsync(page.NextDate, page.NextId); _damagePrevious.Push(previous); PreviousDamageButton.IsEnabled = true; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async void PreviousDamage_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_damagePrevious.Count == 0) return;
+        (DateOnly? Date, long? Id) previous = _damagePrevious.Peek();
+        try { await LoadDamagePageAsync(previous.Date, previous.Id); _damagePrevious.Pop(); PreviousDamageButton.IsEnabled = _damagePrevious.Count > 0; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async void NextExpense_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_expensePage is not { HasMore: true, NextDate: not null, NextId: not null } page) return;
+        (DateOnly? Date, long? Id) previous = _expenseCursor;
+        try { await LoadExpensePageAsync(page.NextDate, page.NextId); _expensePrevious.Push(previous); PreviousExpenseButton.IsEnabled = true; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async void PreviousExpense_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_expensePrevious.Count == 0) return;
+        (DateOnly? Date, long? Id) previous = _expensePrevious.Peek();
+        try { await LoadExpensePageAsync(previous.Date, previous.Id); _expensePrevious.Pop(); PreviousExpenseButton.IsEnabled = _expensePrevious.Count > 0; }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 

@@ -416,6 +416,50 @@ public sealed class SalesService(
             """).Select(static row => new HeldSale(row.Id, row.CreatedAt, row.Label, row.ItemCount,
                 Money.FromScaled(row.Total))).ToArray(), cancellationToken);
 
+    public Task<IReadOnlyList<HeldSale>> GetRecentHeldAsync(int limit = 10, CancellationToken cancellationToken = default)
+    {
+        if (limit is < 1 or > 50) throw new DomainException(ErrorCode.Validation, "Invalid held bill limit.");
+        return database.ReadAsync<IReadOnlyList<HeldSale>>(connection => connection.Query<HeldRow>("""
+            SELECT id AS Id,created_at AS CreatedAt,notes AS Label,line_count AS ItemCount,grand_total AS Total
+            FROM sale WHERE status='HELD' ORDER BY created_at DESC,id DESC LIMIT @limit
+            """, new { limit }).Select(static row => new HeldSale(row.Id, row.CreatedAt, row.Label, row.ItemCount,
+                Money.FromScaled(row.Total))).ToArray(), cancellationToken);
+    }
+
+    public Task<SavedBillPage> GetSavedBillPageAsync(bool includeDrafts, string? query = null,
+        string? beforeCreatedAt = null, long? beforeId = null, long? excludeId = null,
+        int limit = 50, CancellationToken cancellationToken = default)
+    {
+        if (beforeCreatedAt is null != (beforeId is null) || limit is < 1 or > 100)
+            throw new DomainException(ErrorCode.Validation, "Invalid saved bill page filter.");
+        string term = (query ?? string.Empty).Trim();
+        long? exactId = long.TryParse(term, out long parsed) && parsed > 0 ? parsed : null;
+        string pattern = "%" + term.Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal) + "%";
+        return database.ReadAsync(connection =>
+        {
+            List<HeldSale> rows = connection.Query<SavedBillRow>("""
+                SELECT id AS Id,created_at AS CreatedAt,notes AS Label,line_count AS ItemCount,
+                       grand_total AS Total,status AS Status
+                FROM sale
+                WHERE status IN ('HELD','DRAFT')
+                  AND (status='HELD' OR (@includeDrafts=1 AND (line_count>0 OR customer_id IS NOT NULL)))
+                  AND (@excludeId IS NULL OR id<>@excludeId)
+                  AND (@term='' OR id=@exactId OR notes LIKE @pattern ESCAPE '\')
+                  AND (@beforeCreatedAt IS NULL OR created_at<@beforeCreatedAt
+                       OR (created_at=@beforeCreatedAt AND id<@beforeId))
+                ORDER BY created_at DESC,id DESC LIMIT @take
+                """, new { includeDrafts, excludeId, term, exactId, pattern, beforeCreatedAt, beforeId,
+                    take = limit + 1 }).Select(static row => new HeldSale(row.Id, row.CreatedAt,
+                    row.Label, row.ItemCount, Money.FromScaled(row.Total)) { IsHeld = row.Status == "HELD" }).ToList();
+            bool hasMore = rows.Count > limit;
+            if (hasMore) rows.RemoveAt(limit);
+            HeldSale? last = rows.LastOrDefault();
+            return new SavedBillPage(rows, hasMore,
+                last?.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture), last?.Id);
+        }, cancellationToken);
+    }
+
     public Task<IReadOnlyList<HeldSale>> GetDraftsAsync(CancellationToken cancellationToken = default) =>
         database.ReadAsync<IReadOnlyList<HeldSale>>(connection => connection.Query<HeldRow>("""
             SELECT id AS Id,created_at AS CreatedAt,notes AS Label,line_count AS ItemCount,grand_total AS Total
@@ -1072,6 +1116,7 @@ public sealed class SalesService(
     private sealed class LineCheckRow { public long ProductId { get; init; } public long OnHand { get; init; } public bool AllowFraction { get; init; } }
     private sealed class StockRow { public long ProductId { get; init; } public long Quantity { get; init; } public long OnHand { get; init; } public DateOnly? Expiry { get; init; } public bool IsActive { get; init; } }
     private sealed class HeldRow { public long Id { get; init; } public DateTime CreatedAt { get; init; } public string? Label { get; init; } public int ItemCount { get; init; } public long Total { get; init; } }
+    private sealed class SavedBillRow { public long Id { get; init; } public DateTime CreatedAt { get; init; } public string? Label { get; init; } public int ItemCount { get; init; } public long Total { get; init; } public string Status { get; init; } = ""; }
     private sealed class HeldReviewRow { public long LineId { get; init; } public string ProductName { get; init; } = ""; public long Quantity { get; init; } public long PreviousPrice { get; init; } public long CurrentPrice { get; init; } public long? PreviousMrp { get; init; } public long? CurrentMrp { get; init; } public long CurrentCost { get; init; } public long Available { get; init; } public bool IsActive { get; init; } public DateOnly? ExpiryDate { get; init; } }
     private sealed class HistoryRow { public long Id { get; init; } public string? InvoiceNumber { get; init; } public string SaleDate { get; init; } = ""; public string Status { get; init; } = ""; public int LineCount { get; init; } public long GrandTotal { get; init; } public string PaymentModes { get; init; } = ""; public DateTime? CompletedAt { get; init; } public string? VoidReason { get; init; } }
     private sealed class ReturnActivityRow { public string ReturnNumber { get; init; } = ""; public DateOnly Date { get; init; } public string ProductName { get; init; } = ""; public long Quantity { get; init; } public long Refund { get; init; } public bool Resellable { get; init; } public string Reason { get; init; } = ""; }

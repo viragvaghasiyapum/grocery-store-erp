@@ -34,13 +34,48 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         DateRange period = new(from, to);
         return database.ReadAsync(connection =>
         {
+            DateOnly lastCompleteMonth = to.Day == DateTime.DaysInMonth(to.Year, to.Month)
+                ? to : to.AddMonths(-1);
             List<PnlRaw> raw = connection.Query<PnlRaw>("""
-                SELECT section AS Section, head_code AS HeadCode, ref_id AS ReferenceId, SUM(amount) AS Amount
-                FROM v_pnl_entry
-                WHERE entry_date BETWEEN @from AND @to
-                GROUP BY section, head_code, ref_id
-                ORDER BY CASE section WHEN 'INCOME' THEN 1 WHEN 'COGS' THEN 2 ELSE 3 END, head_code, ref_id
-                """, new { from = Iso(from), to = Iso(to) }).ToList();
+                WITH sale_totals AS MATERIALIZED (
+                    SELECT COUNT(*) AS bills,SUM(taxable_total) AS taxable,
+                           SUM(round_off) AS rounding,SUM(cost_total) AS cost
+                    FROM sale WHERE status='COMPLETED' AND sale_date BETWEEN @from AND @to
+                ), return_totals AS MATERIALIZED (
+                    SELECT COUNT(*) AS returns,SUM(taxable_total) AS taxable,SUM(cost_total) AS cost
+                    FROM sale_return WHERE return_date BETWEEN @from AND @to
+                ), entries AS (
+                    SELECT 'INCOME' AS section,'SALES' AS head_code,NULL AS ref_id,taxable AS amount
+                    FROM sale_totals WHERE bills>0
+                    UNION ALL SELECT 'INCOME','ROUND_OFF',NULL,rounding FROM sale_totals WHERE rounding<>0
+                    UNION ALL SELECT 'COGS','COGS',NULL,cost FROM sale_totals WHERE bills>0
+                    UNION ALL SELECT 'INCOME','SALES_RETURNS',NULL,-taxable FROM return_totals WHERE returns>0
+                    UNION ALL SELECT 'COGS','COGS',NULL,-cost FROM return_totals WHERE returns>0
+                    UNION ALL SELECT 'EXPENSE','DAMAGES',NULL,d.cost_value-d.recovered_amount
+                        FROM damage d WHERE d.damage_date BETWEEN @from AND @to
+                    UNION ALL SELECT 'EXPENSE','STOCK_ADJUSTMENT',NULL,
+                        -CAST(ROUND(m.qty*m.unit_cost/1000.0) AS INTEGER)
+                        FROM stock_movement m WHERE m.type_code='ADJUSTMENT' AND m.move_date BETWEEN @from AND @to
+                    UNION ALL SELECT 'EXPENSE','EXPENSE_CATEGORY',e.category_id,e.amount
+                        FROM expense e WHERE e.expense_date BETWEEN @from AND @to
+                    UNION ALL SELECT 'EXPENSE','SALARIES',NULL,sp.amount
+                        FROM salary_payment sp WHERE sp.period_month BETWEEN @firstMonth AND @lastCompleteMonth
+                    UNION ALL SELECT 'EXPENSE','DEPRECIATION',NULL,ad.amount
+                        FROM asset_depreciation ad WHERE ad.period_month BETWEEN @firstMonth AND @lastCompleteMonth
+                    UNION ALL SELECT 'OTHER','ASSET_DISPOSAL',a.id,
+                        a.disposal_value-COALESCE((SELECT ad.closing_value FROM asset_depreciation ad
+                            WHERE ad.asset_id=a.id ORDER BY ad.period_month DESC LIMIT 1),a.cost)
+                        FROM asset a WHERE a.disposed_date BETWEEN @from AND @to
+                    UNION ALL SELECT 'OTHER','VENDOR_RETURN_VARIANCE',NULL,
+                        vr.credit_before_tax+CASE WHEN vr.tax_mode='REGULAR' THEN 0 ELSE vr.tax_credit END-vr.cost_total
+                        FROM vendor_return vr WHERE vr.return_date BETWEEN @from AND @to
+                )
+                SELECT section AS Section,head_code AS HeadCode,ref_id AS ReferenceId,SUM(amount) AS Amount
+                FROM entries GROUP BY section,head_code,ref_id
+                ORDER BY CASE section WHEN 'INCOME' THEN 1 WHEN 'COGS' THEN 2 ELSE 3 END,head_code,ref_id
+                """, new { from = Iso(from), to = Iso(to),
+                    firstMonth = from.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                    lastCompleteMonth = lastCompleteMonth.ToString("yyyy-MM", CultureInfo.InvariantCulture) }).ToList();
             Dictionary<long, string> categories = connection.Query<NamedRow>(
                 "SELECT id AS Id,name AS Name,name_local AS LocalName FROM expense_category")
                 .ToDictionary(static x => x.Id, x => Pick(x.Name, x.LocalName));
@@ -155,12 +190,20 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                   FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
                   JOIN sale_line sl ON sl.id=rl.sale_line_id WHERE r.return_date BETWEEN @from AND @today
                 )
-                SELECT product_id AS ProductId,MAX(product_name) AS Name,MAX(product_name_local) AS LocalName,
-                       SUM(qty) AS Quantity,SUM(taxable_amount) AS Revenue,SUM(cost_amount) AS Cost,
-                       SUM(taxable_amount-cost_amount) AS Margin
-                FROM movements GROUP BY product_id
+                , totals AS (
+                  SELECT product_id AS ProductId,MAX(product_name) AS Name,MAX(product_name_local) AS LocalName,
+                         SUM(qty) AS Quantity,SUM(taxable_amount) AS Revenue,SUM(cost_amount) AS Cost,
+                         SUM(taxable_amount-cost_amount) AS Margin
+                  FROM movements GROUP BY product_id
+                ), ranked AS (
+                  SELECT *,ROW_NUMBER() OVER (ORDER BY Revenue DESC,ProductId) AS RevenueRank,
+                           ROW_NUMBER() OVER (ORDER BY Margin DESC,ProductId) AS MarginRank
+                  FROM totals
+                )
+                SELECT * FROM ranked WHERE RevenueRank<=10 OR MarginRank<=10
                 """, new { from = Iso(trendFrom), today = Iso(today) }).ToList();
-            return (all.OrderByDescending(static x => x.Revenue).Take(10).ToList(), all.OrderByDescending(static x => x.Margin).Take(10).ToList());
+            return (all.Where(static x => x.RevenueRank <= 10).OrderBy(static x => x.RevenueRank).ToList(),
+                all.Where(static x => x.MarginRank <= 10).OrderBy(static x => x.MarginRank).ToList());
         }, cancellationToken);
         await Task.WhenAll(core, payments, trend, top).ConfigureAwait(false);
         DashboardCore c = await core;
@@ -183,9 +226,9 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         DateOnly from = filter.From ?? to.AddDays(-29);
         DateRange period = new(from, to);
         if (kind == ReportKind.SalaryRegister)
-            return GetSalaryMatrixAsync(period, cancellationToken);
+            return GetSalaryMatrixAsync(period, Math.Min(filter.Limit, 500), cancellationToken);
         if (kind == ReportKind.AssetSchedule)
-            return GetAssetScheduleAsync(filter.AssetId, period, cancellationToken);
+            return GetAssetScheduleAsync(filter.AssetId, period, Math.Min(filter.Limit, 500), cancellationToken);
         int days = period.To.DayNumber - period.From.DayNumber + 1;
         DateOnly previousTo = period.From.AddDays(-1);
         DateOnly previousFrom = previousTo.AddDays(1 - days);
@@ -223,16 +266,29 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         }, cancellationToken);
     }
 
-    private Task<TabularReport> GetSalaryMatrixAsync(DateRange period, CancellationToken cancellationToken) =>
+    private Task<TabularReport> GetSalaryMatrixAsync(DateRange period, int limit, CancellationToken cancellationToken) =>
         database.ReadAsync(connection =>
         {
             List<string> months = MonthKeys(period);
+            if (months.Count > 24)
+                throw new DomainException(ErrorCode.Validation, "Salary register ranges are limited to 24 months. Narrow the dates to view other periods.");
+            string firstMonth = months[0];
+            DateOnly lastCompleteMonth = period.To.Day == DateTime.DaysInMonth(period.To.Year, period.To.Month)
+                ? period.To : period.To.AddMonths(-1);
+            string lastMonth = lastCompleteMonth.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+            List<long> employeeIds = connection.Query<long>("""
+                SELECT e.id FROM employee e JOIN salary_payment sp ON sp.employee_id=e.id
+                WHERE sp.period_month BETWEEN @firstMonth AND @lastMonth
+                GROUP BY e.id ORDER BY e.name COLLATE NOCASE,e.id LIMIT @take
+                """, new { firstMonth, lastMonth, take = limit + 1 }).ToList();
+            bool truncated = employeeIds.Count > limit;
+            if (truncated) employeeIds.RemoveAt(limit);
             List<SalaryMatrixRaw> raw = connection.Query<SalaryMatrixRaw>("""
                 SELECT e.id AS EmployeeId,e.name AS Employee,e.role AS Role,sp.period_month AS Month,SUM(sp.amount) AS Amount
                 FROM salary_payment sp JOIN employee e ON e.id=sp.employee_id
-                WHERE date(sp.period_month||'-01','+1 month','-1 day') BETWEEN @from AND @to
-                GROUP BY e.id,sp.period_month ORDER BY e.name,sp.period_month
-                """, new { from = Iso(period.From), to = Iso(period.To) }).ToList();
+                WHERE e.id IN @employeeIds AND sp.period_month BETWEEN @firstMonth AND @lastMonth
+                GROUP BY e.id,sp.period_month ORDER BY e.name COLLATE NOCASE,e.id,sp.period_month
+                """, new { employeeIds, firstMonth, lastMonth }).ToList();
             var columns = new List<ReportColumn>
             {
                 new("Employee", "Employee", ReportValueKind.Text),
@@ -256,10 +312,10 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                 {
                     Heading = column.Key.Length == 7 && column.Key[4] == '-'
                     ? column.Heading : Text($"Reports_Column_{column.Key}", column.Heading)
-                }).ToList(), rows, totals);
+                }).ToList(), rows, totals, truncated);
         }, cancellationToken);
 
-    private Task<TabularReport> GetAssetScheduleAsync(long? assetId, DateRange period, CancellationToken cancellationToken) =>
+    private Task<TabularReport> GetAssetScheduleAsync(long? assetId, DateRange period, int limit, CancellationToken cancellationToken) =>
         database.ReadAsync(connection =>
         {
             IReadOnlyList<ReportColumn> columns =
@@ -318,9 +374,11 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                     ["Opening"] = row.Opening,
                     ["Depreciation"] = row.Amount,
                     ["Closing"] = row.Closing,
-                })).ToList();
+                })).Take(limit + 1).ToList();
+            bool truncated = rows.Count > limit;
+            if (truncated) rows.RemoveAt(limit);
             Dictionary<string, decimal> totals = new() { ["Depreciation"] = rows.Sum(row => ScaledDecimal(row.Values["Depreciation"])) };
-            return new TabularReport($"{asset.Name} — depreciation schedule", period, columns, rows, totals);
+            return new TabularReport($"{asset.Name} — depreciation schedule", period, columns, rows, totals, truncated);
         }, cancellationToken);
 
     private static List<string> MonthKeys(DateRange period)
@@ -493,7 +551,7 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
     private sealed class DashboardCore { public long TodaySales { get; init; } public long TodayTaxableSales { get; init; } public int TodayBills { get; init; } public long TodayGrossProfit { get; init; } public long MonthSales { get; init; } public long PreviousMonthSales { get; init; } public int ExpiredLots { get; init; } public int CriticalLots { get; init; } public int SoonLots { get; init; } public int LowStockProducts { get; init; } public long StockValue { get; init; } public long Payables { get; init; } }
     private sealed class PaymentRaw { public string Mode { get; init; } = ""; public long Amount { get; init; } }
     private sealed class TrendRaw { public DateOnly Date { get; init; } public long Sales { get; init; } public int Bills { get; init; } public long GrossProfit { get; init; } }
-    private sealed class TopRaw { public long ProductId { get; init; } public string Name { get; init; } = ""; public string? LocalName { get; init; } public long Quantity { get; init; } public long Revenue { get; init; } public long Cost { get; init; } public long Margin { get; init; } }
+    private sealed class TopRaw { public long ProductId { get; init; } public string Name { get; init; } = ""; public string? LocalName { get; init; } public long Quantity { get; init; } public long Revenue { get; init; } public long Cost { get; init; } public long Margin { get; init; } public int RevenueRank { get; init; } public int MarginRank { get; init; } }
     private sealed class NamedRow { public long Id { get; init; } public string Name { get; init; } = ""; public string? LocalName { get; init; } }
     private sealed class SalaryMatrixRaw { public long EmployeeId { get; init; } public string Employee { get; init; } = ""; public string? Role { get; init; } public string Month { get; init; } = ""; public long Amount { get; init; } }
     private sealed class AssetRaw { public long Id { get; init; } public string Name { get; init; } = ""; public long Cost { get; init; } public long Salvage { get; init; } public long Rate { get; init; } public string Method { get; init; } = ""; public DateOnly InUseFrom { get; init; } public DateOnly? DisposedDate { get; init; } }

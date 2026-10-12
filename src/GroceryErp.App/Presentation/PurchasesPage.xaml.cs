@@ -12,6 +12,11 @@ namespace GroceryErp.App.Presentation;
 public partial class PurchasesPage : Page
 {
     private readonly PurchasingService _purchasing;
+    private readonly Stack<(DateOnly? Date, long? Id)> _previousPages = new();
+    private DateOnly? _beforeDate;
+    private long? _beforeId;
+    private PurchasePage? _currentPage;
+    private bool _loadingPage;
 
     public PurchasesPage() : this(null) { }
 
@@ -109,14 +114,52 @@ public partial class PurchasesPage : Page
         StatusText.Text = TranslationSource.Instance.Format("Purchasing_ReturnPosted", window.DocumentNumber ?? "");
     }
 
-    private async Task RefreshAsync()
+    private Task RefreshAsync() => LoadPageAsync(null, null, reset: true);
+
+    private async Task LoadPageAsync(DateOnly? beforeDate, long? beforeId, bool reset)
     {
+        using var timing = UiRefreshProbe.Track("purchases", this);
+        if (_loadingPage) return;
+        _loadingPage = true;
+        PreviousPurchaseButton.IsEnabled = false;
+        NextPurchaseButton.IsEnabled = false;
         try
         {
-            PurchasesGrid.ItemsSource = await _purchasing.GetPurchasesAsync();
+            PurchasePage page = await _purchasing.GetPurchasesPageAsync(beforeDate, beforeId);
+            if (reset) _previousPages.Clear();
+            _beforeDate = beforeDate;
+            _beforeId = beforeId;
+            _currentPage = page;
+            timing.Bind(() => PurchasesGrid.ItemsSource = page.Items);
             VendorsGrid.ItemsSource = await _purchasing.GetVendorsAsync();
             StatusText.Text = $"{PurchasesGrid.Items.Count} / {VendorsGrid.Items.Count}";
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        finally
+        {
+            _loadingPage = false;
+            PreviousPurchaseButton.IsEnabled = _previousPages.Count > 0;
+            NextPurchaseButton.IsEnabled = _currentPage?.HasMore == true;
+        }
+    }
+
+    private async void NextPurchase_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_loadingPage || _currentPage is not { HasMore: true, NextDate: not null, NextId: not null } page) return;
+        DateOnly? oldDate = _beforeDate;
+        long? oldId = _beforeId;
+        await LoadPageAsync(page.NextDate, page.NextId, reset: false);
+        if (_beforeDate == page.NextDate && _beforeId == page.NextId)
+            _previousPages.Push((oldDate, oldId));
+        PreviousPurchaseButton.IsEnabled = _previousPages.Count > 0;
+    }
+
+    private async void PreviousPurchase_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_loadingPage || _previousPages.Count == 0) return;
+        (DateOnly? date, long? id) = _previousPages.Peek();
+        await LoadPageAsync(date, id, reset: false);
+        if (_beforeDate == date && _beforeId == id) _previousPages.Pop();
+        PreviousPurchaseButton.IsEnabled = _previousPages.Count > 0;
     }
 }

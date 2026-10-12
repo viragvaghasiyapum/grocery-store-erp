@@ -43,6 +43,12 @@
         </DataGrid>
       </TabItem>
     </TabControl>
-    <TextBlock x:Name="StatusText" Grid.Row="3" Margin="0,10,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
+    <DockPanel Grid.Row="3" Margin="0,10,0,0">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <Button x:Name="PreviousPurchaseButton" IsEnabled="False" Margin="8,0" Click="PreviousPurchase_OnClick" Content="{l:Tr Sales_Previous}"/>
+        <Button x:Name="NextPurchaseButton" IsEnabled="False" Click="NextPurchase_OnClick" Content="{l:Tr Sales_Next}"/>
+      </StackPanel>
+      <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextWrapping="Wrap" />
+    </DockPanel>
   </Grid>
 </Page>

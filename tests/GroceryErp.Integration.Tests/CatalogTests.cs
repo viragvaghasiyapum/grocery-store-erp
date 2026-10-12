@@ -478,7 +478,7 @@ public sealed class CatalogTests
         {
             Settings.Dispose();
             Database.Dispose();
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            Factory.ClearPool();
             if (Directory.Exists(Root)) Directory.Delete(Root, recursive: true);
         }
     }

@@ -35,6 +35,7 @@ var productNames = new string[products + 1];
 var localNames = new string?[products + 1];
 var lotPools = Enumerable.Range(0, products + 1).Select(static _ => new List<GeneratedLot>()).ToArray();
 var random = new Random(seed);
+int[] purchaseLineCounts = BuildPurchaseLineCounts();
 Randomizer.Seed = new Random(seed);
 var faker = new Faker("en_IND");
 DateOnly end = new(2026, 9, 26);
@@ -48,7 +49,9 @@ try
 {
     using (SqliteConnection connection = factory.Open())
     {
-        connection.Execute("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
+        // Generation is an offline bulk load. Give this connection a larger page cache
+        // without increasing the interactive application's per-connection cache.
+        connection.Execute("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA cache_size=-65536;");
         connection.Execute("UPDATE setting SET value='Phase 7 Performance Store' WHERE key='store.name';");
         InsertMasters(connection);
         InsertPurchasesAndLots(connection);
@@ -65,7 +68,14 @@ try
             JOIN product_lot pl ON pl.id=sl.lot_id
             WHERE s.sale_date>pl.expiry_date
             """);
-        if (integrity != "ok" || foreignKeys != 0 || cacheMismatches != 0 || expiredSaleLines != 0)
+        int minPurchaseLines = connection.ExecuteScalar<int>(
+            "SELECT MIN(lines) FROM (SELECT COUNT(*) AS lines FROM purchase_line GROUP BY purchase_id)");
+        int maxPurchaseLines = connection.ExecuteScalar<int>(
+            "SELECT MAX(lines) FROM (SELECT COUNT(*) AS lines FROM purchase_line GROUP BY purchase_id)");
+        long paddedPlus = connection.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM product WHERE is_loose=1 AND plu_code LIKE '0%'");
+        if (integrity != "ok" || foreignKeys != 0 || cacheMismatches != 0 || expiredSaleLines != 0 ||
+            minPurchaseLines != 2 || maxPurchaseLines != 40 || paddedPlus != 0)
             throw new InvalidDataException($"Generated database failed verification: {integrity}, FK={foreignKeys}, cache={cacheMismatches}, expired sale lines={expiredSaleLines}.");
     }
 
@@ -115,7 +125,7 @@ void InsertMasters(SqliteConnection connection)
             brand = 1 + index % brands,
             uom = loose ? 2 : 1,
             loose = loose ? 1 : 0,
-            plu = loose ? index.ToString("D5", CultureInfo.InvariantCulture) : null,
+            plu = loose ? index.ToString(CultureInfo.InvariantCulture) : null,
             price,
             mrp = price + 10_000,
         }, transaction);
@@ -129,8 +139,6 @@ void InsertMasters(SqliteConnection connection)
 void InsertPurchasesAndLots(SqliteConnection connection)
 {
     int nextLot = 1;
-    int baseLines = lots / purchases;
-    int extraLines = lots % purchases;
     for (int batchStart = 1; batchStart <= purchases; batchStart += 1_000)
     {
         using SqliteTransaction transaction = connection.BeginTransaction();
@@ -139,7 +147,7 @@ void InsertPurchasesAndLots(SqliteConnection connection)
         {
             // Seed one lot per product before trading starts; later receipts follow Pareto demand.
             DateOnly received = nextLot <= products ? start : start.AddDays(random.Next(end.DayNumber - start.DayNumber + 1));
-            int lineCount = baseLines + (purchaseId <= extraLines ? 1 : 0);
+            int lineCount = purchaseLineCounts[purchaseId];
             long total = lineCount * 10_000_000L;
             connection.Execute("""
                 INSERT INTO purchase(id,doc_no,vendor_id,vendor_invoice_no,vendor_invoice_date,received_date,status,
@@ -197,6 +205,28 @@ void InsertPurchasesAndLots(SqliteConnection connection)
     }
     foreach (List<GeneratedLot> pool in lotPools)
         pool.Sort(static (left, right) => left.Received.CompareTo(right.Received));
+}
+
+int[] BuildPurchaseLineCounts()
+{
+    // Retain the exact lot target while covering small and 40-line supplier invoices.
+    var counts = new int[purchases + 1];
+    for (int id = 1; id <= purchases; id++) counts[id] = 2;
+    int remaining = lots - purchases * 2;
+    for (int id = Math.Min(1000, purchases); id <= purchases && remaining >= 38; id += 1000)
+    {
+        counts[id] = 40;
+        remaining -= 38;
+    }
+    var spread = new Random(seed + 1);
+    while (remaining > 0)
+    {
+        int id = spread.Next(1, purchases + 1);
+        if (id % 7 == 0 || counts[id] == 40) continue;
+        counts[id]++;
+        remaining--;
+    }
+    return counts;
 }
 
 void InsertSales(SqliteConnection connection)

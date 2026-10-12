@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using GroceryErp.Core;
@@ -7,7 +9,6 @@ using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Services;
 using GroceryErp.Localization;
-using GroceryErp.Reports;
 using GroceryErp.Sales;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Win32;
@@ -25,6 +26,8 @@ public partial class SalesHistoryPage : Page
     private DateOnly? _beforeDate;
     private long? _beforeId;
     private SaleDetails? _selectedDetails;
+    private bool _loadingHistory;
+    private CancellationTokenSource? _exportCancellation;
 
     public SalesHistoryPage() : this(
         ((App)Application.Current).Services.GetRequiredService<SalesService>(),
@@ -40,13 +43,17 @@ public partial class SalesHistoryPage : Page
         _clock = clock;
         FromPicker.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
         ToPicker.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
-        if (loadOnShow) Loaded += async (_, _) => await RefreshAsync();
+        if (loadOnShow) Loaded += async (_, _) => { await RefreshAsync(); };
         Loaded += (_, _) =>
         {
             TranslationSource.Instance.PropertyChanged -= OnLanguageChanged;
             TranslationSource.Instance.PropertyChanged += OnLanguageChanged;
         };
-        Unloaded += (_, _) => TranslationSource.Instance.PropertyChanged -= OnLanguageChanged;
+        Unloaded += (_, _) =>
+        {
+            TranslationSource.Instance.PropertyChanged -= OnLanguageChanged;
+            _exportCancellation?.Cancel();
+        };
         UpdateActions();
     }
 
@@ -59,20 +66,27 @@ public partial class SalesHistoryPage : Page
         }
     }
 
-    private async Task RefreshAsync(bool reset = true)
+    private async Task<bool> RefreshAsync(bool reset = true)
     {
+        using var timing = UiRefreshProbe.Track("sales-history", this);
+        if (_loadingHistory) return false;
+        _loadingHistory = true;
+        PreviousButton.IsEnabled = false;
+        NextButton.IsEnabled = false;
         try
         {
             if (reset) { _previous.Clear(); _beforeDate = null; _beforeId = null; }
             SaleHistoryFilter filter = CreateFilter(_beforeDate, _beforeId, PageSize);
             IReadOnlyList<SaleHistoryItem> items = await _sales.GetHistoryAsync(filter);
-            HistoryGrid.ItemsSource = items;
+            timing.Bind(() => HistoryGrid.ItemsSource = items);
             StatusText.Text = TranslationSource.Instance.Format("Sales_ResultCount", items.Count);
             PreviousButton.IsEnabled = _previous.Count > 0;
             NextButton.IsEnabled = items.Count == PageSize;
             UpdateActions();
+            return true;
         }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); return false; }
+        finally { _loadingHistory = false; }
     }
 
     private SaleHistoryFilter CreateFilter(DateOnly? beforeDate, long? beforeId, int limit)
@@ -112,18 +126,24 @@ public partial class SalesHistoryPage : Page
 
     private async void Next_OnClick(object sender, RoutedEventArgs e)
     {
+        if (_loadingHistory) return;
         if (HistoryGrid.ItemsSource is not IReadOnlyList<SaleHistoryItem> { Count: PageSize } items) return;
-        _previous.Push((_beforeDate, _beforeId));
+        (DateOnly? oldDate, long? oldId) = (_beforeDate, _beforeId);
         _beforeDate = items[^1].SaleDate;
         _beforeId = items[^1].Id;
-        await RefreshAsync(reset: false);
+        if (await RefreshAsync(reset: false)) _previous.Push((oldDate, oldId));
+        else { _beforeDate = oldDate; _beforeId = oldId; }
+        PreviousButton.IsEnabled = _previous.Count > 0;
     }
 
     private async void Previous_OnClick(object sender, RoutedEventArgs e)
     {
-        if (_previous.Count == 0) return;
-        (_beforeDate, _beforeId) = _previous.Pop();
-        await RefreshAsync(reset: false);
+        if (_loadingHistory || _previous.Count == 0) return;
+        (DateOnly? oldDate, long? oldId) = (_beforeDate, _beforeId);
+        (_beforeDate, _beforeId) = _previous.Peek();
+        if (await RefreshAsync(reset: false)) _previous.Pop();
+        else { _beforeDate = oldDate; _beforeId = oldId; }
+        PreviousButton.IsEnabled = _previous.Count > 0;
     }
 
     private async void HistoryGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -238,41 +258,74 @@ public partial class SalesHistoryPage : Page
 
     private async void Export_OnClick(object sender, RoutedEventArgs e)
     {
-        var picker = new SaveFileDialog { Filter = "Excel workbook (*.xlsx)|*.xlsx", FileName = "sales-history.xlsx" };
+        if (_exportCancellation is not null) return;
+        var picker = new SaveFileDialog { Filter = "CSV (*.csv)|*.csv", FileName = "sales-history.csv" };
         if (picker.ShowDialog() != true) return;
+        string temporary = picker.FileName + "." + Guid.NewGuid().ToString("N") + ".partial";
+        using var cancellation = new CancellationTokenSource();
+        _exportCancellation = cancellation;
+        ExportButton.IsEnabled = false;
+        CancelExportButton.IsEnabled = true;
         try
         {
-            var all = new List<SaleHistoryItem>();
+            SaleHistoryFilter filter = CreateFilter(null, null, 500);
+            string[] headings = [TranslationSource.Instance["Sales_Date"], TranslationSource.Instance["Sales_Invoice"],
+                TranslationSource.Instance["Purchasing_Status"], TranslationSource.Instance["Sales_Items"],
+                TranslationSource.Instance["Purchasing_Mode"], TranslationSource.Instance["Purchasing_Total"]];
+            var statusNames = Enum.GetValues<SaleStatus>().ToDictionary(status => status,
+                status => TranslationSource.Instance[$"Sales_Status_{status}"]);
+            long exported = 0;
+            await using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
+            await using (var writer = new StreamWriter(file, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true), 64 * 1024))
+            {
+            await writer.WriteLineAsync(string.Join(',', headings.Select(Csv)));
             DateOnly? beforeDate = null;
             long? beforeId = null;
             while (true)
             {
-                IReadOnlyList<SaleHistoryItem> page = await _sales.GetHistoryAsync(CreateFilter(beforeDate, beforeId, 500));
-                all.AddRange(page);
+                cancellation.Token.ThrowIfCancellationRequested();
+                IReadOnlyList<SaleHistoryItem> page = await _sales.GetHistoryAsync(
+                    filter with { BeforeDate = beforeDate, BeforeId = beforeId }, cancellation.Token);
+                var chunk = new StringBuilder(page.Count * 96);
+                foreach (SaleHistoryItem item in page)
+                {
+                    chunk.Append(Csv(item.SaleDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))).Append(',')
+                        .Append(Csv(item.InvoiceNumber)).Append(',')
+                        .Append(Csv(statusNames[item.Status])).Append(',')
+                        .Append(item.LineCount.ToString(CultureInfo.InvariantCulture)).Append(',')
+                        .Append(Csv(item.PaymentModes)).Append(',')
+                        .Append(item.GrandTotal.Value.ToString("0.00", CultureInfo.InvariantCulture)).AppendLine();
+                }
+                await writer.WriteAsync(chunk.ToString().AsMemory(), cancellation.Token);
+                exported += page.Count;
+                if (exported % 5000 == 0) StatusText.Text = TranslationSource.Instance.Format("Sales_Exported", exported);
                 if (page.Count < 500) break;
                 beforeDate = page[^1].SaleDate;
                 beforeId = page[^1].Id;
             }
-            var report = new TabularReport(TranslationSource.Instance["Sales_History_Title"], null,
-                [new("Date", TranslationSource.Instance["Sales_Date"], ReportValueKind.Date),
-                 new("Invoice", TranslationSource.Instance["Sales_Invoice"], ReportValueKind.Text),
-                 new("Status", TranslationSource.Instance["Purchasing_Status"], ReportValueKind.Text),
-                 new("Items", TranslationSource.Instance["Sales_Items"], ReportValueKind.Count),
-                 new("Payment", TranslationSource.Instance["Purchasing_Mode"], ReportValueKind.Text),
-                 new("Amount", TranslationSource.Instance["Purchasing_Total"], ReportValueKind.Money)],
-                all.Select(item => new ReportRow(new Dictionary<string, object?>
-                {
-                    ["Date"] = item.SaleDate,
-                    ["Invoice"] = item.InvoiceNumber,
-                    ["Status"] = TranslationSource.Instance[$"Sales_Status_{item.Status}"],
-                    ["Items"] = item.LineCount,
-                    ["Payment"] = item.PaymentModes,
-                    ["Amount"] = item.GrandTotal.Scaled,
-                })).ToArray(), new Dictionary<string, decimal>());
-            var output = ((App)Application.Current).Services.GetRequiredService<ReportOutputService>();
-            await Task.Run(() => output.ExportExcel(report, picker.FileName));
-            StatusText.Text = TranslationSource.Instance.Format("Sales_Exported", all.Count);
+            await writer.FlushAsync(cancellation.Token);
+            await file.FlushAsync(cancellation.Token);
+            }
+            File.Move(temporary, picker.FileName, overwrite: true);
+            StatusText.Text = TranslationSource.Instance.Format("Sales_Exported", exported);
         }
+        catch (OperationCanceledException) { StatusText.Text = "Export cancelled."; }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+            _exportCancellation = null;
+            ExportButton.IsEnabled = true;
+            CancelExportButton.IsEnabled = false;
+        }
+    }
+
+    private void CancelExport_OnClick(object sender, RoutedEventArgs e) => _exportCancellation?.Cancel();
+
+    private static string Csv(string? text)
+    {
+        text ??= string.Empty;
+        return '"' + text.Replace("\"", "\"\"", StringComparison.Ordinal) + '"';
     }
 }

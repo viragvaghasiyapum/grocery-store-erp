@@ -28,6 +28,48 @@ public sealed class AssetService(
             ORDER BY a.disposed_date IS NOT NULL,a.name COLLATE NOCASE
             """, new { includeDisposed = includeDisposed ? 1 : 0 }).Select(static row => row.ToModel()).ToList(), cancellationToken);
 
+    public Task<AssetPage> GetAssetPageAsync(string? query = null, bool includeDisposed = true,
+        bool? afterDisposed = null, string? afterName = null, long? afterId = null,
+        int limit = 100, CancellationToken cancellationToken = default)
+    {
+        if (limit is < 1 or > 200 || (afterDisposed is null) != (afterName is null) ||
+            (afterDisposed is null) != (afterId is null))
+            throw new DomainException(ErrorCode.Validation, "Invalid asset page filter.");
+        string pattern = "%" + (query ?? string.Empty).Trim().Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal) + "%";
+        return database.ReadAsync(connection =>
+        {
+            List<AssetItem> rows = connection.Query<AssetRow>("""
+                WITH visible AS MATERIALIZED (
+                    SELECT a.id,a.name,(a.disposed_date IS NOT NULL) AS disposed
+                    FROM asset a
+                    WHERE (@includeDisposed=1 OR a.disposed_date IS NULL)
+                      AND (a.name LIKE @pattern ESCAPE '\' OR a.category LIKE @pattern ESCAPE '\')
+                      AND (@afterDisposed IS NULL OR (a.disposed_date IS NOT NULL)>@afterDisposed
+                           OR ((a.disposed_date IS NOT NULL)=@afterDisposed AND
+                               (a.name COLLATE NOCASE>@afterName COLLATE NOCASE OR
+                                (a.name COLLATE NOCASE=@afterName COLLATE NOCASE AND a.id>@afterId))))
+                    ORDER BY disposed,a.name COLLATE NOCASE,a.id LIMIT @take
+                )
+                SELECT a.id AS Id,a.name AS Name,a.category AS Category,a.purchase_date AS PurchaseDate,
+                       a.in_use_from AS InUseFrom,a.cost AS Cost,a.vendor_id AS VendorId,v.name AS VendorName,
+                       a.method AS Method,a.rate_pct AS Rate,a.salvage_value AS SalvageValue,
+                       a.disposed_date AS DisposedDate,a.disposal_value AS DisposalValue,a.notes AS Notes,
+                       COALESCE((SELECT SUM(d.amount) FROM asset_depreciation d WHERE d.asset_id=a.id),0) AS Accumulated,
+                       COALESCE((SELECT d.closing_value FROM asset_depreciation d WHERE d.asset_id=a.id
+                                 ORDER BY d.period_month DESC LIMIT 1),a.cost) AS BookValue
+                FROM visible page JOIN asset a ON a.id=page.id LEFT JOIN vendor v ON v.id=a.vendor_id
+                ORDER BY page.disposed,page.name COLLATE NOCASE,page.id
+                """, new { includeDisposed, pattern, afterDisposed, afterName, afterId, take = limit + 1 })
+                .Select(static row => row.ToModel()).ToList();
+            bool hasMore = rows.Count > limit;
+            if (hasMore) rows.RemoveAt(limit);
+            AssetItem? last = rows.LastOrDefault();
+            return new AssetPage(rows, hasMore, last is null ? null : last.DisposedDate is not null,
+                last?.Name, last?.Id);
+        }, cancellationToken);
+    }
+
     public Task<long> SaveAssetAsync(long? id, AssetInput input, CancellationToken cancellationToken = default)
     {
         Validate(input);

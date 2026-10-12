@@ -15,6 +15,49 @@ public sealed class PrintJobJournalTests
     private static readonly JsonSerializerOptions Json = PrintJobJson.Options;
 
     [Fact]
+    public async Task ClearingAnotherStorePool_DoesNotInterruptJournalWork()
+    {
+        string printRoot = Path.Combine(Path.GetTempPath(), $"grocery-erp-print-{Guid.NewGuid():N}");
+        string otherRoot = Path.Combine(Path.GetTempPath(), $"grocery-erp-other-{Guid.NewGuid():N}");
+        try
+        {
+            var printFactory = new SqliteConnectionFactory(new AppPaths(new SettingsBootstrap(printRoot)));
+            var otherFactory = new SqliteConnectionFactory(new AppPaths(new SettingsBootstrap(otherRoot)));
+            new MigrationRunner(printFactory, NullMigrationBackup.Instance).Run();
+            new MigrationRunner(otherFactory, NullMigrationBackup.Instance).Run();
+            var journal = new PrintJobJournal(printFactory);
+            var saved = new SavedPrintJob("RECEIPT", "Counter printer", "Concurrent journal", "{}");
+
+            Task otherStore = Task.Run(() =>
+            {
+                for (int index = 0; index < 100; index++)
+                {
+                    using (var connection = otherFactory.Open())
+                        connection.ExecuteScalar<int>("SELECT COUNT(*) FROM print_job").ShouldBe(0);
+                    otherFactory.ClearPool();
+                }
+            }, TestContext.Current.CancellationToken);
+            for (int index = 0; index < 100; index++)
+            {
+                long id = await journal.AddAsync(saved);
+                journal.MarkSending(id);
+                journal.RecoverInterrupted().ShouldBe(1);
+                journal.ClaimOldestReview(id)!.Id.ShouldBe(id);
+                journal.Remove(id);
+            }
+            await otherStore;
+            journal.ReviewCount().ShouldBe(0);
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearPoolForDataRoot(printRoot);
+            SqliteConnectionFactory.ClearPoolForDataRoot(otherRoot);
+            if (Directory.Exists(printRoot)) Directory.Delete(printRoot, recursive: true);
+            if (Directory.Exists(otherRoot)) Directory.Delete(otherRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task InterruptedJobs_RemainForReview_AndRetryKeepsOriginalSnapshot()
     {
         string root = Path.Combine(Path.GetTempPath(), $"grocery-erp-print-{Guid.NewGuid():N}");
@@ -57,7 +100,7 @@ public sealed class PrintJobJournalTests
         }
         finally
         {
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            SqliteConnectionFactory.ClearPoolForDataRoot(root);
             if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
         }
     }
@@ -93,7 +136,7 @@ public sealed class PrintJobJournalTests
         }
         finally
         {
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            SqliteConnectionFactory.ClearPoolForDataRoot(root);
             if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
         }
     }

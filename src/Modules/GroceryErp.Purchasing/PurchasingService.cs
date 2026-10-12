@@ -57,6 +57,34 @@ public sealed class PurchasingService(
             """, new { limit }).Select(static row => row.ToModel()).ToList(), cancellationToken);
     }
 
+    public Task<PurchasePage> GetPurchasesPageAsync(DateOnly? beforeDate = null, long? beforeId = null,
+        DateOnly? from = null, DateOnly? to = null, long? vendorId = null, int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        if (beforeDate is null != (beforeId is null) || limit is < 1 or > 200 || from > to)
+            throw new DomainException(ErrorCode.Validation, "Invalid purchase page filter.");
+        return database.ReadAsync(connection =>
+        {
+            List<PurchaseListItem> rows = connection.Query<PurchaseListRow>("""
+                SELECT p.id AS Id,p.doc_no AS DocumentNumber,v.name AS VendorName,
+                       p.vendor_invoice_no AS VendorInvoiceNumber,p.received_date AS ReceivedDate,
+                       p.status AS Status,p.grand_total AS GrandTotal,p.vendor_bill_total AS VendorBillTotal
+                FROM purchase p JOIN vendor v ON v.id=p.vendor_id
+                WHERE (@from IS NULL OR p.received_date>=@from)
+                  AND (@to IS NULL OR p.received_date<=@to)
+                  AND (@vendorId IS NULL OR p.vendor_id=@vendorId)
+                  AND (@beforeDate IS NULL OR p.received_date<@beforeDate
+                       OR (p.received_date=@beforeDate AND p.id<@beforeId))
+                ORDER BY p.received_date DESC,p.id DESC LIMIT @take
+                """, new { beforeDate, beforeId, from, to, vendorId, take = limit + 1 })
+                .Select(static row => row.ToModel()).ToList();
+            bool hasMore = rows.Count > limit;
+            if (hasMore) rows.RemoveAt(limit);
+            PurchaseListItem? last = rows.LastOrDefault();
+            return new PurchasePage(rows, hasMore, last?.ReceivedDate, last?.Id);
+        }, cancellationToken);
+    }
+
     public Task<long> CreateVendorAsync(VendorInput input, CancellationToken cancellationToken = default)
     {
         ValidVendor vendor = ValidateVendor(input);

@@ -62,6 +62,7 @@ public partial class DashboardPage : Page
 
     private async Task RefreshAsync()
     {
+        using var timing = UiRefreshProbe.Track("dashboard", this);
         try
         {
             _summary = await _reports.GetDashboardAsync();
@@ -85,8 +86,11 @@ public partial class DashboardPage : Page
                     _summary.Payments.Select(payment => $"{PaymentLabel(payment.Mode)} ₹{payment.Amount.Value:N3}"));
             Backup.Text = TranslationSource.Instance.Format("Dashboard_BackupDetails",
                 _summary.LastBackup ?? "—", _summary.LastUsbExport ?? "—");
-            RevenueGrid.ItemsSource = _summary.TopProductsByRevenue.Select(ToDisplay).ToList();
-            MarginGrid.ItemsSource = _summary.TopProductsByMargin.Select(ToDisplay).ToList();
+            timing.Bind(() =>
+            {
+                RevenueGrid.ItemsSource = _summary.TopProductsByRevenue.Select(ToDisplay).ToList();
+                MarginGrid.ItemsSource = _summary.TopProductsByMargin.Select(ToDisplay).ToList();
+            });
             TrendDates.Text = TranslationSource.Instance.Format("Dashboard_TrendDates",
                 _summary.AsOf.AddDays(-29).ToString("dd-MM-yyyy", CultureInfo.InvariantCulture),
                 _summary.AsOf.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture));

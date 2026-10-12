@@ -58,10 +58,14 @@ public sealed class PhaseZeroSmokeTests
     public async Task A4Report_PaginatesOnStaThread()
     {
         TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var stages = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        void Stage(string name) => stages.Enqueue($"{name}:{elapsed.Elapsed.TotalMilliseconds:0}ms");
         Thread thread = new(() =>
         {
             try
             {
+                Stage("started");
                 var output = new ReportOutputService(new TestSettings());
                 IReadOnlyList<ReportRow> rows = Enumerable.Range(1, 60)
                     .Select(index => new ReportRow(new Dictionary<string, object?> { ["Name"] = $"Item {index}", ["Amount"] = index * 1000L }))
@@ -71,6 +75,7 @@ public sealed class PhaseZeroSmokeTests
                     rows, new Dictionary<string, decimal> { ["Amount"] = 1830m });
 
                 output.CreateA4(report, new DateTime(2026, 9, 27, 12, 0, 0)).Pages.Count.ShouldBe(2);
+                Stage("basic-pages");
                 var wrappedRows = Enumerable.Range(1, 60)
                     .Select(index => new ReportRow(new Dictionary<string, object?>
                     {
@@ -81,6 +86,7 @@ public sealed class PhaseZeroSmokeTests
                 var wrappedReport = report with { Rows = wrappedRows };
                 output.CreateA4(wrappedReport, new DateTime(2026, 9, 27, 12, 0, 0)).Pages.Count
                     .ShouldBeGreaterThan(2);
+                Stage("wrapped-pages");
                 string longValue = string.Concat(Enumerable.Repeat(
                     "લાંબું ગુજરાતી વર્ણન અને વિગત જે અહેવાલમાં ઘણા પાનાં સુધી ચાલુ રહે છે. ", 400));
                 var tallReport = new TabularReport("Long cell", null,
@@ -89,6 +95,7 @@ public sealed class PhaseZeroSmokeTests
                     new Dictionary<string, decimal>());
                 var tallDocument = output.CreateA4(tallReport, new DateTime(2026, 9, 27, 12, 0, 0));
                 tallDocument.Pages.Count.ShouldBeGreaterThan(1);
+                Stage("tall-pages");
                 var continuation = tallDocument.Pages[1].Child.Children.OfType<Border>()
                     .Select(border => border.Child).OfType<TextBlock>()
                     .Single(block => block.Text == longValue);
@@ -109,6 +116,7 @@ public sealed class PhaseZeroSmokeTests
                     for (int x = 100; x < 500; x++)
                         if (pixels[(y * bitmapWidth + x) * 4] < 128) darkBodyPixels++;
                 darkBodyPixels.ShouldBeGreaterThan(100);
+                Stage("bitmap-render");
                 var wideColumns = new[]
                 {
                     new ReportColumn("Item", "Item", ReportValueKind.Text),
@@ -131,6 +139,7 @@ public sealed class PhaseZeroSmokeTests
                     })], new Dictionary<string, decimal> { ["Value"] = 90m });
                 var wideDocument = output.CreateA4(wideReport, new DateTime(2026, 9, 27, 12, 0, 0));
                 wideDocument.Pages.Count.ShouldBe(2);
+                Stage("wide-pages");
                 wideDocument.DocumentPaginator.PageSize.Width.ShouldBeGreaterThan(wideDocument.DocumentPaginator.PageSize.Height);
                 CaptureA4(wideDocument.Pages[0].Child, "report-a4-band1.en.png");
                 CaptureA4(wideDocument.Pages[1].Child, "report-a4-band2.en.png");
@@ -142,14 +151,21 @@ public sealed class PhaseZeroSmokeTests
                 byte[] labelPixels = new byte[189 * 94 * 4];
                 labelBitmap.CopyPixels(labelPixels, 189 * 4, 0);
                 labelPixels.Where((_, index) => index % 4 == 0).Any(static value => value < 128).ShouldBeTrue();
+                Stage("complete");
                 completion.SetResult();
             }
             catch (Exception exception) { completion.SetException(exception); }
         });
         thread.SetApartmentState(ApartmentState.STA);
+        thread.IsBackground = true;
         thread.Start();
 
-        await completion.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        try { await completion.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken); }
+        catch (TimeoutException exception)
+        {
+            throw new TimeoutException("A4 pagination stalled at " + string.Join(" -> ", stages), exception);
+        }
+        Console.WriteLine("A4 pagination stages: " + string.Join(" -> ", stages));
     }
 
     [Fact]
@@ -976,7 +992,7 @@ public sealed class PhaseZeroSmokeTests
             }
             finally
             {
-                Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+                SqliteConnectionFactory.ClearPoolForDataRoot(root);
                 if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
             }
         });

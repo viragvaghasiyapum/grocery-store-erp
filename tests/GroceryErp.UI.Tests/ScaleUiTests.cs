@@ -86,11 +86,13 @@ public sealed class ScaleUiTests
                         $"Timeout {label}; windows={windows}; shell children={children}{Environment.NewLine}");
                     throw;
                 }
+                double controlFoundMilliseconds = timer.Elapsed.TotalMilliseconds;
                 await Task.Delay(1500, TestContext.Current.CancellationToken);
                 using Process? process = Process.GetProcessesByName("GroceryErp.App")
                     .OrderByDescending(static item => item.StartTime).FirstOrDefault();
                 process?.Refresh();
-                var record = new { page = label, milliseconds = timer.Elapsed.TotalMilliseconds,
+                var record = new { page = label, controlFoundMilliseconds,
+                    settledMilliseconds = timer.Elapsed.TotalMilliseconds,
                     workingSet = process?.WorkingSet64, peakWorkingSet = process?.PeakWorkingSet64,
                     alive = !app.HasExited };
                 records.Add(record);

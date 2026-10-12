@@ -12,6 +12,9 @@ public sealed record AssetItem(
     long? VendorId, string? VendorName, DepreciationMethod Method, Percent Rate, Money SalvageValue,
     DateOnly? DisposedDate, Money? DisposalValue, Money AccumulatedDepreciation, Money BookValue, string? Notes);
 
+public sealed record AssetPage(IReadOnlyList<AssetItem> Items, bool HasMore,
+    bool? NextDisposed, string? NextName, long? NextId);
+
 public sealed record DepreciationEntry(
     long Id, long AssetId, YearMonth Period, Money OpeningValue, Money Amount, Money ClosingValue, DateTime PostedAt);
 

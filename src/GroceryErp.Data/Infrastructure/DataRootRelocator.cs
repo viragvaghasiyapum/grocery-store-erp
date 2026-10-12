@@ -78,7 +78,13 @@ public static class DataRootRelocator
             File.WriteAllText(Path.Combine(staging, ReadyMarkerName), JsonSerializer.Serialize(
                 new ReadyMove(source, target, HashFile(database))));
             if (Directory.Exists(target)) Directory.Delete(target);
-            Directory.Move(staging, target);
+            // Windows indexers can briefly retain a handle after VerifyCopy closes the database.
+            for (int attempt = 0; ; attempt++)
+            {
+                try { Directory.Move(staging, target); break; }
+                catch (IOException) when (attempt < 5) { Thread.Sleep(100 * (attempt + 1)); }
+                catch (UnauthorizedAccessException) when (attempt < 5) { Thread.Sleep(100 * (attempt + 1)); }
+            }
             SettingsBootstrap.Save(target, bootstrapFile);
             File.Delete(marker);
             File.Delete(Path.Combine(target, ReadyMarkerName));

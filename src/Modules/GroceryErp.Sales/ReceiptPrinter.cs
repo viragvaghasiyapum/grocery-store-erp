@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using System.Printing;
 using System.Text.Json;
@@ -7,6 +8,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using GroceryErp.Core.Numerics;
+using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
 using GroceryErp.Localization;
 using GroceryErp.Printing;
@@ -106,6 +108,8 @@ public sealed class ReceiptPrinter
         while (jobs.Reader.WaitToReadAsync().AsTask().GetAwaiter().GetResult())
             while (jobs.Reader.TryRead(out PrintJob? job))
             {
+                PerformanceMetrics.PrintQueueMilliseconds.Record(
+                    Stopwatch.GetElapsedTime(job.EnqueuedAt).TotalMilliseconds);
                 try
                 {
                     if (job.JournalId != 0) journal!.MarkSending(job.JournalId);
@@ -136,7 +140,11 @@ public sealed class ReceiptPrinter
             throw new InvalidOperationException("A receipt printer has not been configured.");
     }
 
-    private sealed record PrintJob(Action Action, TaskCompletionSource? Completion, long JournalId = 0, bool Retryable = true);
+    private sealed record PrintJob(Action Action, TaskCompletionSource? Completion, long JournalId = 0,
+        bool Retryable = true)
+    {
+        public long EnqueuedAt { get; } = Stopwatch.GetTimestamp();
+    }
 
     public Task<bool> IsReadyAsync() => Task.Run(() =>
     {

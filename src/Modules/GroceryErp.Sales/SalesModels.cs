@@ -59,7 +59,13 @@ public sealed record SaleDetails(
     DateTime? CompletedAt,
     string? VoidReason);
 
-public sealed record HeldSale(long Id, DateTime CreatedAt, string? Label, int ItemCount, Money Total);
+public sealed record HeldSale(long Id, DateTime CreatedAt, string? Label, int ItemCount, Money Total)
+{
+    public bool IsHeld { get; init; } = true;
+}
+
+public sealed record SavedBillPage(IReadOnlyList<HeldSale> Items, bool HasMore,
+    string? NextCreatedAt, long? NextId);
 
 public sealed record HeldBillReviewLine(long LineId, string ProductName, Quantity Quantity,
     Money PreviousPrice, Money CurrentPrice, Money? PreviousMrp, Money? CurrentMrp,

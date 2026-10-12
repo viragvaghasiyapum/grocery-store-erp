@@ -79,8 +79,7 @@ public partial class ShellWindow : FluentWindow
             RootNavigation.Navigate(typeof(DashboardPage));
             if (moneyOut is not null)
             {
-                IReadOnlyList<ExpiryLot> actionable = await moneyOut.GetExpiryAsync();
-                int count = actionable.Count(static lot => lot.Bucket is "EXPIRED" or "CRITICAL");
+                int count = await moneyOut.GetActionableExpiryCountAsync();
                 _expiryInfoBadge.Value = count.ToString(CultureInfo.InvariantCulture);
                 string today = clock?.BusinessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "";
                 string lastPopup = settings?.Current.Values.GetValueOrDefault("expiry.last_popup_date", "") ?? "";
@@ -183,6 +182,8 @@ public partial class ShellWindow : FluentWindow
     }
 
     private void TouchActivity() => _lastActivity = _clock?.Now ?? _lastActivity;
+
+    internal bool IsIdleFor(TimeSpan interval) => _clock is null || _clock.Now - _lastActivity >= interval;
 
     private void CheckIdle()
     {

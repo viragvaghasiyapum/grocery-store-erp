@@ -198,7 +198,7 @@ public sealed class MoneyOutTests
         public void Dispose()
         {
             Database.Dispose();
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            SqliteConnectionFactory.ClearPoolForDataRoot(Root);
             if (Directory.Exists(Root)) Directory.Delete(Root, true);
         }
     }

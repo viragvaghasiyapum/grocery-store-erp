@@ -51,7 +51,6 @@ public partial class PurchaseEntryWindow : Window
             _taxIsCost = !string.Equals(services.GetRequiredService<ISettings>().Current.TaxMode,
                 "REGULAR", StringComparison.Ordinal);
             VendorBox.ItemsSource = await _purchasing.GetVendorsAsync();
-            _availableProducts.AddRange(await _catalog.SearchAsync(new ProductSearchFilter(Limit: 5000)));
             ProductColumn.ItemsSource = _availableProducts;
             if (_openingDraftId is long draftId)
             {
@@ -67,6 +66,7 @@ public partial class PurchaseEntryWindow : Window
                 NotesBox.Text = input.Notes ?? "";
                 foreach (PurchaseLineInput line in input.Lines)
                 {
+                    await EnsureProductChoiceAsync(line.ProductId);
                     PurchaseEditLine editLine = PurchaseEditLine.FromInput(line);
                     PurchaseLineDefaults defaults = await _purchasing.GetLineDefaultsAsync(input.VendorId,
                         line.ProductId, input.ReceivedDate);

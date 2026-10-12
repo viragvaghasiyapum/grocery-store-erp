@@ -373,7 +373,7 @@
   <data name="Stock_SourceId" xml:space="preserve"><value>Source ID</value></data>
   <data name="Stock_ChangePrice" xml:space="preserve"><value>Change price</value></data>
   <data name="Stock_BlockToggle" xml:space="preserve"><value>Block / unblock lot</value></data>
-  <data name="Stock_PrintCount" xml:space="preserve"><value>Print count sheet</value></data>
+  <data name="Stock_PrintCount" xml:space="preserve"><value>Print current page</value></data>
   <data name="Stock_Valuation" xml:space="preserve"><value>Valuation</value></data>
   <data name="Stock_SellingValue" xml:space="preserve"><value>Value at selling price</value></data>
   <data name="Stock_MrpValue" xml:space="preserve"><value>Value at MRP</value></data>
@@ -741,7 +741,7 @@
   <data name="Sales_DiscountInvalid" xml:space="preserve"><value>Enter an amount within the subtotal or a percent from 0 to 100.</value></data>
   <data name="Sales_ReturnsTab" xml:space="preserve"><value>Returns</value></data>
   <data name="Sales_MovementsTab" xml:space="preserve"><value>Stock movements</value></data>
-  <data name="Sales_Export" xml:space="preserve"><value>Export Excel</value></data>
+  <data name="Sales_Export" xml:space="preserve"><value>Export CSV</value></data>
   <data name="Sales_Exported" xml:space="preserve"><value>Exported {0} bills.</value></data>
   <data name="Sales_Bills" xml:space="preserve"><value>Bills</value></data>
   <data name="Sales_Payable" xml:space="preserve"><value>Payable</value></data>

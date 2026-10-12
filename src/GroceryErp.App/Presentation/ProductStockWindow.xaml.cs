@@ -14,6 +14,12 @@ public partial class ProductStockWindow : Window
 {
     private readonly InventoryService _inventory;
     private readonly long _productId;
+    private readonly Stack<long?> _lotPrevious = new();
+    private readonly Stack<long?> _ledgerPrevious = new();
+    private long? _lotCursor;
+    private long? _ledgerCursor;
+    private LotPage? _lotPage;
+    private LedgerPage? _ledgerPage;
 
     public ProductStockWindow(InventoryService inventory, ProductListItem product, bool showLedger, bool loadOnShow = true)
     {
@@ -25,6 +31,7 @@ public partial class ProductStockWindow : Window
         ProductNameText.Text = product.Name;
         SkuText.Text = product.Sku;
         StockTabs.SelectedIndex = showLedger ? 1 : 0;
+        StockTabs.SelectionChanged += (_, _) => UpdatePageButtons();
         if (loadOnShow) Loaded += async (_, _) => await RefreshAsync();
     }
 
@@ -32,11 +39,75 @@ public partial class ProductStockWindow : Window
     {
         try
         {
-            LotsGrid.ItemsSource = await _inventory.GetLotsAsync(_productId);
-            LedgerGrid.ItemsSource = await _inventory.GetLedgerAsync(_productId, DateOnly.MinValue, DateOnly.MaxValue);
+            _lotPrevious.Clear();
+            _ledgerPrevious.Clear();
+            await LoadLotsAsync(null);
+            await LoadLedgerAsync(null);
             StatusText.Text = string.Empty;
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async Task LoadLotsAsync(long? beforeId)
+    {
+        LotPage page = await _inventory.GetLotPageAsync(_productId, beforeId: beforeId);
+        _lotPage = page;
+        _lotCursor = beforeId;
+        LotsGrid.ItemsSource = page.Items;
+        UpdatePageButtons();
+    }
+
+    private async Task LoadLedgerAsync(long? beforeId)
+    {
+        LedgerPage page = await _inventory.GetLedgerPageAsync(_productId, DateOnly.MinValue, DateOnly.MaxValue, beforeId);
+        _ledgerPage = page;
+        _ledgerCursor = beforeId;
+        LedgerGrid.ItemsSource = page.Items;
+        UpdatePageButtons();
+    }
+
+    private void UpdatePageButtons()
+    {
+        if (PreviousLotButton is null) return;
+        bool lots = StockTabs.SelectedIndex == 0;
+        PreviousLotButton.Visibility = NextLotButton.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
+        PreviousLedgerButton.Visibility = NextLedgerButton.Visibility = lots ? Visibility.Collapsed : Visibility.Visible;
+        PreviousLotButton.IsEnabled = _lotPrevious.Count > 0;
+        NextLotButton.IsEnabled = _lotPage?.HasMore == true;
+        PreviousLedgerButton.IsEnabled = _ledgerPrevious.Count > 0;
+        NextLedgerButton.IsEnabled = _ledgerPage?.HasMore == true;
+    }
+
+    private async void NextLot_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_lotPage is not { HasMore: true, NextId: not null } page) return;
+        long? previous = _lotCursor;
+        await LoadLotsAsync(page.NextId);
+        _lotPrevious.Push(previous);
+        UpdatePageButtons();
+    }
+
+    private async void PreviousLot_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_lotPrevious.Count == 0) return;
+        await LoadLotsAsync(_lotPrevious.Pop());
+        UpdatePageButtons();
+    }
+
+    private async void NextLedger_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_ledgerPage is not { HasMore: true, NextId: not null } page) return;
+        long? previous = _ledgerCursor;
+        await LoadLedgerAsync(page.NextId);
+        _ledgerPrevious.Push(previous);
+        UpdatePageButtons();
+    }
+
+    private async void PreviousLedger_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_ledgerPrevious.Count == 0) return;
+        await LoadLedgerAsync(_ledgerPrevious.Pop());
+        UpdatePageButtons();
     }
 
     private void LotsGrid_OnSelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
