@@ -641,6 +641,11 @@
   <data name="Settings_RestoreRunning" xml:space="preserve"><value>સુરક્ષા બેકઅપ બનાવીને પુનઃસ્થાપન કરી રહ્યા છીએ…</value><comment>MT – needs review</comment></data>
   <data name="Settings_RestoreRestart" xml:space="preserve"><value>પુનઃસ્થાપન થયું. એપ હવે બંધ થશે. પુનઃસ્થાપિત ડેટા તપાસવા અથવા પાછું ફેરવવા ફરી ખોલો.</value><comment>MT – needs review</comment></data>
   <data name="Error_BackupInvalid" xml:space="preserve"><value>બેકઅપ અમાન્ય અથવા બગડેલો છે.</value><comment>MT – needs review</comment></data>
+  <data name="Error_DatabaseBusy" xml:space="preserve"><value>સ્ટોરનો ડેટાબેઝ વ્યસ્ત છે. અન્ય ડેટાબેઝ સાધનો બંધ કરી ફરી પ્રયાસ કરો. વેચાણ પૂર્ણ થયું હોઈ શકે તો ચુકવણી ફરી કરતા પહેલાં વેચાણ ઇતિહાસ તપાસો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_DiskFull" xml:space="preserve"><value>ડેટા ડ્રાઇવ ભરાઈ ગઈ છે. જગ્યા ખાલી કરો, પછી ફરી પ્રયાસ કરતા પહેલાં છેલ્લો દસ્તાવેજ તપાસો. આગળ વધતા પહેલાં ચકાસેલું બેકઅપ રાખો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_DatabaseCorrupt" xml:space="preserve"><value>સ્ટોરનો ડેટાબેઝ સુરક્ષિત રીતે વાંચી શકાયો નથી. આ ડેટા ફોલ્ડરનો ઉપયોગ બંધ કરો અને ચકાસેલું બેકઅપ પુનઃસ્થાપિત કરો અથવા સહાય મેળવો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_RestoreRecovered" xml:space="preserve"><value>પુનઃસ્થાપિત ડેટાબેઝ શરૂઆતની તપાસમાં નિષ્ફળ ગયો. અગાઉનો સ્ટોર પાછો મેળવાયો છે. એપ ફરી શરૂ કરો અને ફરી પ્રયાસ કરતા પહેલાં બેકઅપ તપાસો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_DatabaseIo" xml:space="preserve"><value>ડેટા ડ્રાઇવ ક્રિયા પૂર્ણ કરી શકી નથી. ફરી પ્રયાસ કરતા પહેલાં છેલ્લો દસ્તાવેજ તપાસો, ખાસ કરીને ચુકવણી પછી, અને ડ્રાઇવની ભૂલ ચાલુ રહે તો સહાય મેળવો.</value><comment>MT – needs review</comment></data>
   <data name="Error_DatabaseNewerThanApp" xml:space="preserve"><value>આ બેકઅપ માટે Grocery ERPનું નવું સંસ્કરણ જરૂરી છે.</value><comment>MT – needs review</comment></data>
   <data name="Setup_PrintTest" xml:space="preserve"><value>પરીક્ષણ છાપો</value><comment>MT – needs review</comment></data>
   <data name="Setup_TestDocument" xml:space="preserve"><value>પ્રિન્ટર પરીક્ષણ</value><comment>MT – needs review</comment></data>

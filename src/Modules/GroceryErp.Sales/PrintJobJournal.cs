@@ -10,6 +10,8 @@ public sealed class PrintJobJournal(SqliteConnectionFactory factory)
 {
     private static readonly JsonSerializerOptions Json = PrintJobJson.Options;
 
+    public IDisposable EnterPrintWork() => factory.EnterOperation();
+
     public int RecoverInterrupted()
     {
         using var connection = factory.Open();

@@ -112,6 +112,7 @@ public sealed class ReceiptPrinter
                     Stopwatch.GetElapsedTime(job.EnqueuedAt).TotalMilliseconds);
                 try
                 {
+                    using IDisposable? printWork = journal?.EnterPrintWork();
                     if (job.JournalId != 0) journal!.MarkSending(job.JournalId);
                     job.Action();
                     if (job.JournalId != 0) journal!.Remove(job.JournalId);

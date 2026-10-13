@@ -132,6 +132,18 @@ public sealed class ScaleUiTests
                 if (label is "Products" or "Reports" or "Dashboard")
                     shell.CaptureToFile(Path.Combine(root, "scale-audit-ui-" + label.ToLowerInvariant().Replace(' ', '-') + ".png"));
                 Assert.False(app.HasExited, $"App exited on {label}");
+                if (label == "Billing (POS)" &&
+                    Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_SAVED_BILLS") == "1")
+                {
+                    // Populated fixtures can open the saved-bill picker on entry.
+                    // Dismiss it before navigating to another shell page.
+                    Window savedBills = await WaitWindowAsync(app, automation, "BillsGrid", TimeSpan.FromSeconds(15));
+                    (savedBills.FindFirstDescendant(cf => cf.ByName("Cancel"))
+                        ?? throw new InvalidOperationException("Saved-bill picker has no Cancel action.")).Click();
+                    await WaitUntilAsync(() => app.GetAllTopLevelWindows(automation).All(window =>
+                        window.FindFirstDescendant(cf => cf.ByAutomationId("BillsGrid")) is null),
+                        TimeSpan.FromSeconds(10));
+                }
             }
             if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_DIALOGS") == "1")
                 await AuditDialogsAsync(app, automation, shell, root);

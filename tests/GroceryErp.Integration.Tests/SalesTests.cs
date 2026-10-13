@@ -78,6 +78,37 @@ public sealed class SalesTests
     }
 
     [Fact]
+    public async Task FailedReceiptAfterCommittedSale_RemainsReviewableWithoutRepostingSale()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One,
+            cancellationToken: ct);
+        string operation = OperationGuard.NewId();
+        CompletedSale completed = await fixture.Sales.CompleteAsync(new(saleId,
+            [new(PaymentMode.Cash, new Money(118))], operation), ct);
+        await fixture.Settings.SaveAsync(new Dictionary<string, string>
+        {
+            ["printer.receipt.name"] = $"missing-printer-{Guid.NewGuid():N}",
+            ["printer.receipt.mode"] = "TEXT",
+        }, ct);
+        var journal = new PrintJobJournal(fixture.Factory);
+        var printer = new ReceiptPrinter(fixture.Settings, journal);
+        ReceiptData receipt = await fixture.Sales.GetReceiptAsync(saleId, cancellationToken: ct);
+        await Should.ThrowAsync<Exception>(() => printer.PrintAsync(receipt));
+        journal.ReviewCount().ShouldBe(1);
+        CompletedSale replay = await fixture.Sales.CompleteAsync(new(saleId,
+            [new(PaymentMode.Cash, new Money(118))], operation), ct);
+        replay.WasReplay.ShouldBeTrue();
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sale_payment WHERE sale_id=@saleId", new { saleId })
+            .ShouldBe(1L);
+        connection.ExecuteScalar<string>("SELECT status FROM sale WHERE id=@saleId", new { saleId })
+            .ShouldBe("COMPLETED");
+        completed.InvoiceNumber.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
     public async Task Return_ProrationReconciles_AndNonResellableStockBecomesDamage()
     {
         using var fixture = new SalesFixture();

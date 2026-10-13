@@ -641,6 +641,11 @@
   <data name="Settings_RestoreRunning" xml:space="preserve"><value>Creating a safety backup and applying the restore…</value></data>
   <data name="Settings_RestoreRestart" xml:space="preserve"><value>Restore applied. The app will close now. Open it again to check the restored data or undo the restore.</value></data>
   <data name="Error_BackupInvalid" xml:space="preserve"><value>The backup is invalid or damaged.</value></data>
+  <data name="Error_DatabaseBusy" xml:space="preserve"><value>The store database is busy. Close other database tools and try again. If a sale may have completed, check Sales History before retrying payment.</value></data>
+  <data name="Error_DiskFull" xml:space="preserve"><value>The data drive is full. Free space, then check the last document before retrying. Keep a verified backup before continuing.</value></data>
+  <data name="Error_DatabaseCorrupt" xml:space="preserve"><value>The store database could not be read safely. Stop using this data folder and restore a verified backup or contact support.</value></data>
+  <data name="Error_RestoreRecovered" xml:space="preserve"><value>The restored database failed its startup check. The previous store was recovered. Restart the app and inspect the backup before trying again.</value></data>
+  <data name="Error_DatabaseIo" xml:space="preserve"><value>The data drive could not complete the operation. Check the last document before retrying, especially after payment, and contact support if the drive error continues.</value></data>
   <data name="Error_DatabaseNewerThanApp" xml:space="preserve"><value>This backup needs a newer version of Grocery ERP.</value></data>
   <data name="Setup_PrintTest" xml:space="preserve"><value>Print test</value></data>
   <data name="Setup_TestDocument" xml:space="preserve"><value>Printer test</value></data>

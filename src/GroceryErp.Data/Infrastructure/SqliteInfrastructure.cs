@@ -2,6 +2,7 @@ using Dapper;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Data;
 using System.Runtime.CompilerServices;
 using GroceryErp.Core.Errors;
@@ -13,9 +14,16 @@ public sealed class SqliteConnectionFactory
 {
     private readonly string _connectionString;
     private readonly string _walFile;
-    private readonly object _connectionGate = new();
-    private int _activeConnections;
-    private bool _exclusive;
+    // All factories for one file (including print-journal and test factories) share
+    // the restore barrier. A per-instance counter would permit a late connection
+    // from a second factory to open while the files are being renamed.
+    private static readonly ConcurrentDictionary<string, ConnectionBarrier> Barriers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConnectionBarrier _barrier;
+    private sealed class ConnectionBarrier
+    {
+        public int ActiveConnections;
+        public SqliteConnectionFactory? ExclusiveOwner;
+    }
     private static readonly AsyncLocal<string?> TraceOperation = new();
     private SQLitePCL.strdelegate_trace? _traceCallback;
 
@@ -23,7 +31,8 @@ public sealed class SqliteConnectionFactory
     // only on disposable synthetic stores and keep the output out of app logs.
     public Action<string, string>? SqlTrace { get; set; }
 
-    public bool IsExclusive { get { lock (_connectionGate) return _exclusive; } }
+    public bool IsExclusive { get { lock (_barrier) return _barrier.ExclusiveOwner is not null; } }
+    public bool OwnsExclusive { get { lock (_barrier) return _barrier.ExclusiveOwner == this; } }
 
     // Clearing every SQLite pool can interrupt work against an unrelated store in the
     // same process (including parallel tests). Keep cleanup scoped to this database.
@@ -55,6 +64,7 @@ public sealed class SqliteConnectionFactory
     {
         ArgumentNullException.ThrowIfNull(paths);
         _walFile = paths.DatabaseFile + "-wal";
+        _barrier = Barriers.GetOrAdd(Path.GetFullPath(paths.DatabaseFile), static _ => new ConnectionBarrier());
         _connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = paths.DatabaseFile,
@@ -68,6 +78,7 @@ public sealed class SqliteConnectionFactory
     internal SqliteConnectionFactory(string databaseFile, bool pooling = true)
     {
         _walFile = databaseFile + "-wal";
+        _barrier = Barriers.GetOrAdd(Path.GetFullPath(databaseFile), static _ => new ConnectionBarrier());
         _connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = databaseFile,
@@ -80,36 +91,64 @@ public sealed class SqliteConnectionFactory
 
     public SqliteConnection Open()
     {
-        lock (_connectionGate)
-        {
-            if (_exclusive) throw new InvalidOperationException("The database is being restored. Restart the application before continuing.");
-            _activeConnections++;
-        }
+        EnterTrackedWork();
         return OpenCore(tracked: true);
+    }
+
+    // Long-running work such as sending a saved print job participates in the
+    // restore drain even while it does not hold a SQLite connection.
+    public IDisposable EnterOperation()
+    {
+        EnterTrackedWork();
+        return new OperationLease(_barrier);
+    }
+
+    private void EnterTrackedWork()
+    {
+        lock (_barrier)
+        {
+            if (_barrier.ExclusiveOwner is not null)
+                throw new InvalidOperationException("The database is being restored. Restart the application before continuing.");
+            _barrier.ActiveConnections++;
+        }
+    }
+
+    private sealed class OperationLease(ConnectionBarrier barrier) : IDisposable
+    {
+        private int _released;
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _released, 1) != 0) return;
+            lock (barrier)
+            {
+                barrier.ActiveConnections--;
+                Monitor.PulseAll(barrier);
+            }
+        }
     }
 
     public SqliteConnection OpenExclusive()
     {
-        lock (_connectionGate)
-            if (!_exclusive || _activeConnections != 0)
+        lock (_barrier)
+            if (_barrier.ExclusiveOwner != this || _barrier.ActiveConnections != 0)
                 throw new InvalidOperationException("An exclusive restore barrier is required.");
         return OpenCore(tracked: false);
     }
 
     public void BeginExclusive()
     {
-        lock (_connectionGate)
+        lock (_barrier)
         {
-            if (_exclusive) throw new InvalidOperationException("A database restore is already in progress.");
-            _exclusive = true;
+            if (_barrier.ExclusiveOwner is not null) throw new InvalidOperationException("A database restore is already in progress.");
+            _barrier.ExclusiveOwner = this;
             DateTime deadline = DateTime.UtcNow.AddSeconds(30);
-            while (_activeConnections > 0)
+            while (_barrier.ActiveConnections > 0)
             {
                 TimeSpan remaining = deadline - DateTime.UtcNow;
-                if (remaining <= TimeSpan.Zero || !Monitor.Wait(_connectionGate, remaining))
+                if (remaining <= TimeSpan.Zero || !Monitor.Wait(_barrier, remaining))
                 {
-                    _exclusive = false;
-                    Monitor.PulseAll(_connectionGate);
+                    _barrier.ExclusiveOwner = null;
+                    Monitor.PulseAll(_barrier);
                     throw new TimeoutException("Database work did not finish before the restore window. Close open work and retry.");
                 }
             }
@@ -118,10 +157,12 @@ public sealed class SqliteConnectionFactory
 
     public void EndExclusive()
     {
-        lock (_connectionGate)
+        lock (_barrier)
         {
-            _exclusive = false;
-            Monitor.PulseAll(_connectionGate);
+            if (_barrier.ExclusiveOwner != this)
+                throw new InvalidOperationException("This factory does not own the restore barrier.");
+            _barrier.ExclusiveOwner = null;
+            Monitor.PulseAll(_barrier);
         }
     }
 
@@ -132,10 +173,10 @@ public sealed class SqliteConnectionFactory
         void Release()
         {
             if (!tracked || Interlocked.Exchange(ref released, 1) != 0) return;
-            lock (_connectionGate)
+            lock (_barrier)
             {
-                _activeConnections--;
-                Monitor.PulseAll(_connectionGate);
+                _barrier.ActiveConnections--;
+                Monitor.PulseAll(_barrier);
             }
         }
         connection.StateChange += (_, args) =>
@@ -223,6 +264,10 @@ public sealed class DbExecutor(SqliteConnectionFactory factory) : IDisposable
                 return result;
             }, cancellationToken).ConfigureAwait(false);
         }
+        catch (SqliteException exception)
+        {
+            throw SqliteErrorMapper.Map(exception);
+        }
         finally
         {
             ReadMilliseconds.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds,
@@ -247,7 +292,10 @@ public sealed class DbExecutor(SqliteConnectionFactory factory) : IDisposable
             {
                 using var traceScope = factory.BeginSqlTraceOperation(operation);
                 using SqliteConnection connection = factory.Open();
-                using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+                // Retrying BEGIN is safe: the delegate has not executed and there is
+                // no possible committed outcome to replay. Never retry the delegate
+                // or Commit, whose outcome may be ambiguous after an I/O failure.
+                using SqliteTransaction transaction = BeginImmediateWithRetry(connection, cancellationToken);
                 long transactionStarted = Stopwatch.GetTimestamp();
                 try
                 {
@@ -286,6 +334,20 @@ public sealed class DbExecutor(SqliteConnectionFactory factory) : IDisposable
         _writeGate.Dispose();
     }
 
+    private static SqliteTransaction BeginImmediateWithRetry(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try { return connection.BeginTransaction(deferred: false); }
+            catch (SqliteException exception) when (exception.SqliteErrorCode is 5 or 6 && attempt < 2)
+            {
+                PerformanceMetrics.BusyRetries.Add(1);
+                Thread.Sleep(100 * (attempt + 1));
+            }
+        }
+    }
+
     private static class ReadRowsProperty<T>
     {
         public static readonly System.Reflection.PropertyInfo? Property =
@@ -313,6 +375,10 @@ public static class SqliteErrorMapper
 
     public static Exception Map(SqliteException exception)
     {
+        if (exception.SqliteErrorCode is 5 or 6) return new DomainException(ErrorCode.DatabaseBusy);
+        if (exception.SqliteErrorCode == 10) return new DomainException(ErrorCode.DatabaseIo);
+        if (exception.SqliteErrorCode == 13) return new DomainException(ErrorCode.DiskFull);
+        if (exception.SqliteErrorCode is 11 or 26) return new DomainException(ErrorCode.DatabaseCorrupt);
         if (exception.SqliteErrorCode == 19)
             foreach ((string fragment, ErrorCode code) in Rules)
                 if (exception.Message.Contains(fragment, StringComparison.Ordinal))

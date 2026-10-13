@@ -8,7 +8,8 @@ public enum ErrorCode
     BarcodeNotFound, BarcodeExists, InvalidBarcode, EmptyBill, PaymentShort,
     OverpaymentNonCash, CreditNeedsCustomer, DiscountExceedsLine, ReturnQtyExceedsSold,
     VoidNotAllowed, CancelNotAllowed, DatabaseNewerThanApp, ClockBehindLastBill,
-    WrongPassword, BackupInvalid, StockCountReviewChanged
+    WrongPassword, BackupInvalid, StockCountReviewChanged, DatabaseBusy, DiskFull, DatabaseCorrupt,
+    RestoreRecovered, DatabaseIo
 }
 
 public sealed class DomainException(ErrorCode code, params object[] arguments) : Exception(code.ToString())

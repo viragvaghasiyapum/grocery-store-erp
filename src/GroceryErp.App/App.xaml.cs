@@ -5,6 +5,7 @@ using System.Windows.Markup;
 using GroceryErp.App.Presentation;
 using GroceryErp.Assets;
 using GroceryErp.Catalog;
+using GroceryErp.Core.Errors;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Backup;
 using GroceryErp.Data.Infrastructure;
@@ -280,7 +281,9 @@ public partial class App : Application
             else
             {
                 MessageBox.Show(
-                    TranslationSource.Instance["Startup_Failed"],
+                    exception is Microsoft.Data.Sqlite.SqliteException or IOException or DomainException
+                        ? UserError.Message(exception)
+                        : TranslationSource.Instance["Startup_Failed"],
                     TranslationSource.Instance["App_Title"],
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);

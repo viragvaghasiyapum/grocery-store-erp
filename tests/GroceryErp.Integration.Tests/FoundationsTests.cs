@@ -9,6 +9,8 @@ using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Security;
 using GroceryErp.Data.Services;
 using GroceryErp.Localization;
+using GroceryErp.Sales;
+using Microsoft.Data.Sqlite;
 using Shouldly;
 using Xunit;
 
@@ -140,6 +142,187 @@ public sealed class FoundationsTests
     }
 
     [Fact]
+    public async Task Restore_BarrierCoversEveryFactoryAndLiveInspection()
+    {
+        using var fixture = new FoundationFixture();
+        using var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
+        await settings.LoadAsync(TestContext.Current.CancellationToken);
+        var backup = new BackupService(fixture.Paths, fixture.Factory,
+            new GroceryErp.Core.Time.SystemClock(settings), settings);
+        var secondFactory = new SqliteConnectionFactory(fixture.Paths);
+        RestoreCandidate candidate = backup.InspectRestore(backup.Create("manual").Path);
+        using var held = secondFactory.Open();
+        Task apply = Task.Run(() => backup.ApplyRestore(candidate), TestContext.Current.CancellationToken);
+        try
+        {
+            SpinWait.SpinUntil(() => secondFactory.IsExclusive, TimeSpan.FromSeconds(10)).ShouldBeTrue();
+            apply.IsCompleted.ShouldBeFalse();
+            Should.Throw<InvalidOperationException>(() => secondFactory.Open());
+            Should.Throw<InvalidOperationException>(() => backup.InspectCurrent());
+            await Should.ThrowAsync<InvalidOperationException>(() => fixture.Database.ReadAsync(
+                connection => connection.ExecuteScalar<long>("SELECT 1"), TestContext.Current.CancellationToken));
+            await Should.ThrowAsync<InvalidOperationException>(() => fixture.Database.WriteAsync(
+                transaction => transaction.Connection.ExecuteScalar<long>("SELECT 1", transaction: transaction.Transaction),
+                TestContext.Current.CancellationToken));
+        }
+        finally { held.Dispose(); }
+        await apply.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        // Simulate the new process after a restore restart: its factory must
+        // acquire a barrier before it can move the prior database back.
+        fixture.Factory.EndExclusive();
+        var restarted = new BackupService(fixture.Paths, secondFactory,
+            new GroceryErp.Core.Time.SystemClock(settings), settings);
+        restarted.UndoPendingRestore();
+        using var reopened = secondFactory.Open();
+        reopened.ExecuteScalar<string>("PRAGMA quick_check").ShouldBe("ok");
+    }
+
+    [Fact]
+    public async Task Restore_DrainsActiveWriteAndRejectsWriteAlreadyQueuedBehindIt()
+    {
+        using var fixture = new FoundationFixture();
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        Task active = fixture.Database.WriteAsync(tx =>
+        {
+            entered.Set();
+            if (!release.Wait(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken))
+                throw new TimeoutException("Write was not released.");
+            tx.Connection.Execute("UPDATE setting SET value = 'committed-first' WHERE key = 'store.name'",
+                transaction: tx.Transaction);
+        }, TestContext.Current.CancellationToken);
+        entered.Wait(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken).ShouldBeTrue();
+        Task queued = fixture.Database.WriteAsync(tx => tx.Connection.Execute(
+            "UPDATE setting SET value = 'must-not-run' WHERE key = 'store.name'", transaction: tx.Transaction),
+            TestContext.Current.CancellationToken);
+        Task barrier = Task.Run(fixture.Factory.BeginExclusive, TestContext.Current.CancellationToken);
+        try
+        {
+            SpinWait.SpinUntil(() => fixture.Factory.IsExclusive, TimeSpan.FromSeconds(10)).ShouldBeTrue();
+            barrier.IsCompleted.ShouldBeFalse();
+        }
+        finally { release.Set(); }
+        await active.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        await barrier.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        try
+        {
+            await Should.ThrowAsync<InvalidOperationException>(() => queued);
+            using var exclusive = fixture.Factory.OpenExclusive();
+            exclusive.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'store.name'")
+                .ShouldBe("committed-first");
+        }
+        finally { fixture.Factory.EndExclusive(); }
+    }
+
+    [Fact]
+    public async Task Restore_WaitsForActivePrintWorkAndRejectsNewJournalRefresh()
+    {
+        using var fixture = new FoundationFixture();
+        var journal = new PrintJobJournal(new SqliteConnectionFactory(fixture.Paths));
+        IDisposable printWork = journal.EnterPrintWork();
+        Task barrier = Task.Run(fixture.Factory.BeginExclusive, TestContext.Current.CancellationToken);
+        try
+        {
+            SpinWait.SpinUntil(() => fixture.Factory.IsExclusive, TimeSpan.FromSeconds(10)).ShouldBeTrue();
+            barrier.IsCompleted.ShouldBeFalse();
+            Should.Throw<InvalidOperationException>(() => journal.ReviewCount());
+        }
+        finally { printWork.Dispose(); }
+        await barrier.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        try { Should.Throw<InvalidOperationException>(() => journal.EnterPrintWork()); }
+        finally { fixture.Factory.EndExclusive(); }
+        journal.ReviewCount().ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Restore_DiskFullAfterCandidateMoveRecoversOriginalAndReleasesBarrier()
+    {
+        using var fixture = new FoundationFixture();
+        using var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
+        await settings.LoadAsync(TestContext.Current.CancellationToken);
+        var backup = new BackupService(fixture.Paths, fixture.Factory,
+            new GroceryErp.Core.Time.SystemClock(settings), settings);
+        RestoreCandidate candidate = backup.InspectRestore(backup.Create("manual").Path);
+        await fixture.Database.WriteAsync(tx => tx.Connection.Execute(
+            "UPDATE setting SET value = 'original-after-backup' WHERE key = 'store.name'",
+            transaction: tx.Transaction), TestContext.Current.CancellationToken);
+        backup.RestoreBoundary = step =>
+        {
+            if (step == "candidate-installed")
+                throw new IOException("The disk is full.", unchecked((int)0x80070070));
+        };
+
+        Should.Throw<IOException>(() => backup.ApplyRestore(candidate));
+        backup.HasPendingRestore.ShouldBeFalse();
+        using var recovered = fixture.Factory.Open();
+        recovered.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'store.name'")
+            .ShouldBe("original-after-backup");
+        recovered.ExecuteScalar<string>("PRAGMA quick_check").ShouldBe("ok");
+        recovered.Query("PRAGMA foreign_key_check").ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Write_RetriesOnlyBeforeWorkWhenExternalWriterReleasesLock()
+    {
+        using var fixture = new FoundationFixture();
+        var builder = new SqliteConnectionStringBuilder
+        {
+            DataSource = fixture.Paths.DatabaseFile,
+            Pooling = false,
+        };
+        using var external = new SqliteConnection(builder.ToString());
+        external.Open();
+        using var lockTransaction = external.BeginTransaction(deferred: false);
+        int executions = 0;
+        Task write = fixture.Database.WriteAsync(transaction =>
+        {
+            Interlocked.Increment(ref executions);
+            transaction.Connection.Execute("UPDATE setting SET value = 'after-lock' WHERE key = 'store.name'",
+                transaction: transaction.Transaction);
+        }, TestContext.Current.CancellationToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(5400), TestContext.Current.CancellationToken);
+        lockTransaction.Rollback();
+        await write.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        executions.ShouldBe(1);
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'store.name'").ShouldBe("after-lock");
+    }
+
+    [Fact]
+    public async Task FullDatabase_ReportsDiskFullWithoutCommittingPartialWrite()
+    {
+        using var fixture = new FoundationFixture();
+        using (var connection = fixture.Factory.Open())
+        {
+            long pages = connection.ExecuteScalar<long>("PRAGMA page_count");
+            connection.Execute($"PRAGMA max_page_count = {pages}");
+        }
+        var failure = await Should.ThrowAsync<GroceryErp.Core.Errors.DomainException>(() =>
+            fixture.Database.WriteAsync(transaction =>
+                transaction.Connection.Execute("""
+                    INSERT INTO audit_log(entity, entity_id, action, changes)
+                    VALUES ('fault', 0, 'FULL', @changes)
+                    """, new { changes = new string('x', 2_000_000) }, transaction.Transaction),
+                TestContext.Current.CancellationToken));
+        failure.Code.ShouldBe(GroceryErp.Core.Errors.ErrorCode.DiskFull);
+        using var check = fixture.Factory.Open();
+        check.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity = 'fault'").ShouldBe(0L);
+    }
+
+    [Fact]
+    public async Task CorruptStore_ReportsRecoveryAction()
+    {
+        using var fixture = new FoundationFixture();
+        fixture.Factory.ClearPool();
+        using (var file = new FileStream(fixture.Paths.DatabaseFile, FileMode.Open, FileAccess.Write, FileShare.None))
+            file.Write(new byte[16]);
+        var failure = await Should.ThrowAsync<GroceryErp.Core.Errors.DomainException>(() =>
+            fixture.Database.ReadAsync(connection => connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sale"),
+                TestContext.Current.CancellationToken));
+        failure.Code.ShouldBe(GroceryErp.Core.Errors.ErrorCode.DatabaseCorrupt);
+    }
+
+    [Fact]
     public async Task RestoreUndo_PutsBackDatabaseThatWasReplaced()
     {
         using var fixture = new FoundationFixture();
@@ -168,7 +351,71 @@ public sealed class FoundationsTests
     }
 
     [Fact]
-    public async Task RecoverInterruptedRestore_PreparingMarkerRestoresOriginalBeforeStartup()
+    public async Task Restore_RejectsStagedFileChangedAfterInspectionAndReopensStore()
+    {
+        using var fixture = new FoundationFixture();
+        using var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
+        await settings.LoadAsync(TestContext.Current.CancellationToken);
+        var backup = new BackupService(fixture.Paths, fixture.Factory,
+            new GroceryErp.Core.Time.SystemClock(settings), settings);
+        RestoreCandidate candidate = backup.InspectRestore(backup.Create("manual").Path);
+        try
+        {
+            using (var file = File.Open(candidate.StagedDatabase, FileMode.Append)) file.WriteByte(1);
+            Should.Throw<GroceryErp.Core.Errors.DomainException>(() => backup.ApplyRestore(candidate));
+            backup.HasPendingRestore.ShouldBeFalse();
+            using var connection = fixture.Factory.Open();
+            connection.ExecuteScalar<string>("PRAGMA quick_check").ShouldBe("ok");
+        }
+        finally { backup.DiscardRestoreCandidate(candidate); }
+    }
+
+    [Fact]
+    public async Task PendingRestore_ColdLaunchFinishesUnderFreshFactoryBarrier()
+    {
+        using var fixture = new FoundationFixture();
+        using var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
+        await settings.LoadAsync(TestContext.Current.CancellationToken);
+        var clock = new GroceryErp.Core.Time.SystemClock(settings);
+        var backup = new BackupService(fixture.Paths, fixture.Factory, clock, settings);
+        backup.ApplyRestore(backup.InspectRestore(backup.Create("manual").Path));
+        fixture.Factory.EndExclusive(); // Simulate process exit after the swap.
+        var freshFactory = new SqliteConnectionFactory(fixture.Paths);
+        var resumed = new BackupService(fixture.Paths, freshFactory, clock, settings);
+        resumed.FinishPendingRestore();
+        resumed.HasPendingRestore.ShouldBeFalse();
+        using var connection = freshFactory.Open();
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity = 'restore'").ShouldBe(1L);
+    }
+
+    [Fact]
+    public async Task PendingRestore_CorruptInstalledStoreAutomaticallyRecoversPreviousStore()
+    {
+        using var fixture = new FoundationFixture();
+        using var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
+        await settings.LoadAsync(TestContext.Current.CancellationToken);
+        var clock = new GroceryErp.Core.Time.SystemClock(settings);
+        var backup = new BackupService(fixture.Paths, fixture.Factory, clock, settings);
+        RestoreCandidate candidate = backup.InspectRestore(backup.Create("manual").Path);
+        await fixture.Database.WriteAsync(transaction => transaction.Connection.Execute(
+            "UPDATE setting SET value = 'original-latest' WHERE key = 'store.name'",
+            transaction: transaction.Transaction), TestContext.Current.CancellationToken);
+        backup.ApplyRestore(candidate);
+        fixture.Factory.EndExclusive(); // Simulate a stopped process before validation.
+        using (var file = new FileStream(fixture.Paths.DatabaseFile, FileMode.Open, FileAccess.Write, FileShare.None))
+            file.Write(new byte[16]);
+        var freshFactory = new SqliteConnectionFactory(fixture.Paths);
+        var resumed = new BackupService(fixture.Paths, freshFactory, clock, settings);
+        var failure = Should.Throw<GroceryErp.Core.Errors.DomainException>(() => resumed.FinishPendingRestore());
+        failure.Code.ShouldBe(GroceryErp.Core.Errors.ErrorCode.RestoreRecovered);
+        resumed.HasPendingRestore.ShouldBeFalse();
+        using var connection = freshFactory.Open();
+        connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'store.name'")
+            .ShouldBe("original-latest");
+    }
+
+    [Fact]
+    public async Task RecoverInterruptedRestore_InstalledCandidateRestoresOriginalBeforeStartup()
     {
         using var fixture = new FoundationFixture();
         var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
@@ -186,15 +433,43 @@ public sealed class FoundationsTests
         backup.ApplyRestore(backup.InspectRestore(saved.Path));
         string markerPath = Path.Combine(fixture.Paths.DbDir, "restore.pending.json");
         JsonNode marker = JsonNode.Parse(File.ReadAllText(markerPath))!;
-        marker["stage"] = "preparing";
+        marker["stage"] = "original-moved";
         File.WriteAllText(markerPath, marker.ToJsonString(ManifestJson));
 
-        backup.RecoverInterruptedRestoreBeforeStartup();
+        fixture.Factory.EndExclusive(); // The interrupted process no longer owns the barrier.
+        var restarted = new BackupService(fixture.Paths, new SqliteConnectionFactory(fixture.Paths),
+            new GroceryErp.Core.Time.SystemClock(settings), settings);
+        restarted.RecoverInterruptedRestoreBeforeStartup();
 
         backup.HasPendingRestore.ShouldBeFalse();
         using var connection = fixture.Factory.Open();
         connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'store.name'")
             .ShouldBe("latest-state");
+    }
+
+    [Fact]
+    public async Task RecoverInterruptedRestore_MarkerBeforeFirstMoveKeepsOriginal()
+    {
+        using var fixture = new FoundationFixture();
+        using var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
+        await settings.LoadAsync(TestContext.Current.CancellationToken);
+        var backup = new BackupService(fixture.Paths, fixture.Factory,
+            new GroceryErp.Core.Time.SystemClock(settings), settings);
+        BackupInfo saved = backup.Create("manual");
+        string replaced = Path.Combine(fixture.Paths.DbDir, "replaced-before-first-move");
+        Directory.CreateDirectory(replaced);
+        string marker = Path.Combine(fixture.Paths.DbDir, "restore.pending.json");
+        File.WriteAllText(marker, JsonSerializer.Serialize(new
+        {
+            sourceZip = saved.Path,
+            replacedDirectory = replaced,
+            manifest = saved.Manifest,
+            stage = "preparing",
+        }, ManifestJson));
+        backup.RecoverInterruptedRestoreBeforeStartup();
+        backup.HasPendingRestore.ShouldBeFalse();
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<string>("PRAGMA quick_check").ShouldBe("ok");
     }
 
     [Fact]

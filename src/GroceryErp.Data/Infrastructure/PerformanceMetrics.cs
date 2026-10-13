@@ -13,6 +13,7 @@ public static class PerformanceMetrics
     public static readonly Histogram<double> BackupMilliseconds = Meter.CreateHistogram<double>("backup.duration", "ms");
     public static readonly Histogram<double> MaintenanceMilliseconds = Meter.CreateHistogram<double>("maintenance.duration", "ms");
     public static readonly Histogram<double> CheckpointMilliseconds = Meter.CreateHistogram<double>("db.checkpoint.duration", "ms");
+    public static readonly Counter<long> BusyRetries = Meter.CreateCounter<long>("db.busy.retries");
     public static readonly Histogram<double> PrintQueueMilliseconds = Meter.CreateHistogram<double>("print.queue.age", "ms");
     public static readonly Histogram<double> UiRefreshMilliseconds = Meter.CreateHistogram<double>("ui.refresh.duration", "ms");
     public static readonly Histogram<double> UiRenderQueueMilliseconds = Meter.CreateHistogram<double>("ui.render.queue", "ms");

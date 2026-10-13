@@ -20,7 +20,7 @@ using GroceryErp.Reports;
 using GroceryErp.Sales;
 
 if (args.Length < 1)
-    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|shape-profile|report-profile|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|restore-race|export|history-export|verify|data-shape|ui-setup] [output.json]");
+    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|restore-race|restore-crash|restore-recover|export|history-export|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
 
 string root = Path.GetFullPath(args[0]);
 string mode = args.Length > 1 ? args[1] : "read";
@@ -46,8 +46,11 @@ if (mode == "data-move")
     return;
 }
 var paths = new AppPaths(new SettingsBootstrap(root));
-if (!File.Exists(paths.DatabaseFile)) throw new FileNotFoundException("Benchmark database is missing.", paths.DatabaseFile);
+if (mode is not ("restore-recover" or "restore-crash") && !File.Exists(paths.DatabaseFile))
+    throw new FileNotFoundException("Benchmark database is missing.", paths.DatabaseFile);
 DapperSetup.Register();
+if (mode == "restore-crash" && !File.Exists(paths.DatabaseFile))
+    new MigrationRunner(new SqliteConnectionFactory(paths), NullMigrationBackup.Instance).Run();
 var metricSamples = new System.Collections.Concurrent.ConcurrentBag<MetricSample>();
 using var meterListener = new MeterListener();
 meterListener.InstrumentPublished = (instrument, listener) =>
@@ -83,7 +86,7 @@ if (mode is "shape-profile" or "report-profile" or "gap-read" or "feature-write"
 using var database = new DbExecutor(factory);
 var audit = new AuditLog();
 using var settings = new SettingsService(database, paths, audit);
-await settings.LoadAsync();
+if (mode != "restore-recover") await settings.LoadAsync();
 var clock = new AuditClock(new DateTime(2026, 9, 26, 12, 0, 0));
 var numbers = new DocNumberService(settings);
 var periods = new PeriodGuard(settings);
@@ -98,9 +101,69 @@ var reports = new ReportService(database, settings, clock);
 var scans = new ScanResolver(database);
 var backups = new BackupService(paths, factory, clock, settings);
 var maintenance = new MaintenanceService(paths, factory, database, backups, clock, audit);
+if (mode == "restore-crash")
+{
+    if (args.Length < 4) throw new ArgumentException("restore-crash needs a boundary name as the fourth argument.");
+    string target = args[3];
+    bool duringUndo = target is "marker-undoing" or "candidate-discarded" or "candidate-discarded-wal" or
+        "candidate-discarded-shm" or "original-restored" or "original-restored-wal" or "original-restored-shm";
+    await database.WriteAsync(tx => tx.Connection.Execute(
+        "UPDATE setting SET value = 'phase2-candidate' WHERE key = 'store.name'", transaction: tx.Transaction));
+    BackupInfo saved = backups.Create("restore-crash");
+    RestoreCandidate candidate = backups.InspectRestore(saved.Path);
+    await database.WriteAsync(tx => tx.Connection.Execute(
+        "UPDATE setting SET value = 'phase2-original' WHERE key = 'store.name'", transaction: tx.Transaction));
+    using (var before = factory.Open())
+    {
+        string[] tables = ["sale", "sale_line", "sale_payment", "stock_movement", "operation", "print_job"];
+        File.WriteAllText(Path.Combine(paths.TempDir, "restore-crash-expected.json"),
+            JsonSerializer.Serialize(tables.ToDictionary(table => table,
+                table => before.ExecuteScalar<long>($"SELECT COUNT(*) FROM {table}"))));
+    }
+    void StopAtBoundary(string step)
+    {
+        if (step != target) return;
+        Console.WriteLine($"KILL_AT {step}");
+        Console.Out.Flush();
+        Process.GetCurrentProcess().Kill();
+        Thread.Sleep(Timeout.Infinite);
+    }
+    if (duringUndo)
+    {
+        backups.ApplyRestore(candidate);
+        backups.RestoreBoundary = StopAtBoundary;
+        backups.UndoPendingRestore();
+    }
+    else
+    {
+        backups.RestoreBoundary = StopAtBoundary;
+        backups.ApplyRestore(candidate);
+    }
+    throw new InvalidOperationException($"Restore boundary '{target}' was not reached.");
+}
+if (mode == "restore-recover")
+{
+    backups.RecoverInterruptedRestoreBeforeStartup();
+    if (backups.HasPendingRestore) backups.UndoPendingRestore();
+    using var recovered = factory.Open();
+    if (recovered.ExecuteScalar<string>("PRAGMA quick_check") != "ok" ||
+        recovered.Query("PRAGMA foreign_key_check").Any() ||
+        recovered.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'store.name'") != "phase2-original")
+        throw new InvalidDataException("The pre-restore store was not recovered intact.");
+    var expected = JsonSerializer.Deserialize<Dictionary<string, long>>(
+        File.ReadAllText(Path.Combine(paths.TempDir, "restore-crash-expected.json")))
+        ?? throw new InvalidDataException("The pre-crash row counts are missing.");
+    foreach ((string table, long count) in expected)
+        if (recovered.ExecuteScalar<long>($"SELECT COUNT(*) FROM {table}") != count)
+            throw new InvalidDataException($"Recovered {table} row count changed.");
+    Console.WriteLine("OK restore-recover: original store, quick check, foreign keys and document counts");
+    return;
+}
 var results = new List<Measurement>();
 var queryPlans = new List<QueryPlan>();
 var profileSamples = new System.Collections.Concurrent.ConcurrentBag<ProfileSample>();
+var resourceSamples = new System.Collections.Concurrent.ConcurrentQueue<ResourceSample>();
+SustainedSalesCheck? sustainedSalesCheck = null;
 using var process = Process.GetCurrentProcess();
 var auditElapsed = Stopwatch.StartNew();
 long databaseBytes = new FileInfo(paths.DatabaseFile).Length;
@@ -372,7 +435,32 @@ switch (mode)
         break;
     }
     case "profile":
+    case "sustained-profile":
     {
+        bool sustained = mode == "sustained-profile";
+        int durationSeconds = sustained && args.Length > 3
+            ? int.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture) : 600;
+        if (sustained && durationSeconds is < 120 or > 3600)
+            throw new ArgumentException("Use 120 to 3600 duration seconds.", nameof(args));
+        long startedAt = Stopwatch.GetTimestamp();
+        using var sampleStop = new CancellationTokenSource();
+        Task sampler = sustained ? Task.Run(async () =>
+        {
+            while (!sampleStop.IsCancellationRequested)
+            {
+                process.Refresh();
+                string walPath = paths.DatabaseFile + "-wal";
+                resourceSamples.Enqueue(new(Stopwatch.GetElapsedTime(startedAt).TotalSeconds,
+                    File.Exists(walPath) ? new FileInfo(walPath).Length : 0, process.WorkingSet64));
+                try { await Task.Delay(1000, sampleStop.Token); }
+                catch (OperationCanceledException) { break; }
+            }
+        }) : Task.CompletedTask;
+        Task backup = sustained ? Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30));
+            await Measure("sustained-backup", () => Task.Run(() => backups.Create("sustained-profile")), static _ => 1);
+        }) : Task.CompletedTask;
         using var secondDatabase = new DbExecutor(new SqliteConnectionFactory(paths));
         var secondSales = new SalesService(secondDatabase, ledger, numbers, periods, settings, audit, clock);
         long productId;
@@ -394,7 +482,8 @@ switch (mode)
         };
         async Task Reader(int reader)
         {
-            for (int iteration = 0; iteration < 80; iteration++)
+            for (int iteration = 0; !sustained ? iteration < 80 :
+                Stopwatch.GetElapsedTime(startedAt).TotalSeconds < durationSeconds; iteration++)
             {
                 var operation = operations[(iteration + reader * 2) % operations.Length];
                 long started = Stopwatch.GetTimestamp();
@@ -406,14 +495,21 @@ switch (mode)
                 catch (Exception exception)
                 {
                     profileSamples.Add(new(operation.Name, Stopwatch.GetElapsedTime(started).TotalMilliseconds, 0,
-                        exception.GetType().Name));
+                        exception.GetType().Name + ": " + exception.Message));
+                    if (sustained)
+                    {
+                        Console.WriteLine($"SUSTAINED reader failed: {operation.Name}: {exception.GetType().Name}: {exception.Message}");
+                        break;
+                    }
                 }
             }
         }
         async Task Writer(SalesService terminal)
         {
-            for (int iteration = 0; iteration < 10; iteration++)
+            for (int iteration = 0; !sustained ? iteration < 10 :
+                Stopwatch.GetElapsedTime(startedAt).TotalSeconds < durationSeconds; iteration++)
             {
+                if (sustained) await Task.Delay(1000);
                 long started = Stopwatch.GetTimestamp();
                 try
                 {
@@ -426,12 +522,33 @@ switch (mode)
                 catch (Exception exception)
                 {
                     profileSamples.Add(new("sale-add-complete", Stopwatch.GetElapsedTime(started).TotalMilliseconds, 0,
-                        exception.GetType().Name));
+                        exception.GetType().Name + ": " + exception.Message));
+                    if (sustained)
+                    {
+                        Console.WriteLine($"SUSTAINED writer failed: {exception.GetType().Name}: {exception.Message}");
+                        break;
+                    }
                 }
             }
         }
         await Task.WhenAll(Enumerable.Range(0, 4).Select(Reader)
             .Append(Writer(sales)).Append(Writer(secondSales)));
+        await backup;
+        sampleStop.Cancel();
+        await sampler;
+        if (sustained)
+        {
+            using var connection = factory.Open();
+            long afterSales = connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sale");
+            long successfulSales = profileSamples.Count(static sample =>
+                sample.Name == "sale-add-complete" && sample.Error is null);
+            long failedSales = profileSamples.Count(static sample =>
+                sample.Name == "sale-add-complete" && sample.Error is not null);
+            sustainedSalesCheck = new(rowCounts["sale"], successfulSales, failedSales, afterSales);
+            Console.WriteLine($"SUSTAINED sales before={rowCounts["sale"]}, after={afterSales}, " +
+                $"successful={successfulSales}, WAL peak={resourceSamples.Max(static sample => sample.WalBytes)}, " +
+                $"working peak={resourceSamples.Max(static sample => sample.WorkingSetBytes)}");
+        }
         foreach (var group in profileSamples.GroupBy(static sample => sample.Name).OrderBy(static group => group.Key))
         {
             double[] times = group.Select(static sample => sample.Milliseconds).Order().ToArray();
@@ -1782,6 +1899,8 @@ switch (mode)
     {
         BackupInfo backup = backups.Create("restore-race");
         RestoreCandidate candidate = backups.InspectRestore(backup.Path);
+        var otherFactory = new SqliteConnectionFactory(paths);
+        var printJournal = new PrintJobJournal(otherFactory);
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         Task reader = database.ReadAsync(connection =>
@@ -1794,30 +1913,45 @@ switch (mode)
             return 1;
         });
         if (!entered.Wait(TimeSpan.FromSeconds(30))) throw new TimeoutException("The reader did not start.");
+        Task apply = Task.Run(() => backups.ApplyRestore(candidate));
         try
         {
-            await Measure("restore-with-active-reader-rejected", () => Task.Run(() =>
+            // A full-size pre-restore backup is deliberately completed before the
+            // barrier, so its duration must not be mistaken for a barrier failure.
+            if (!SpinWait.SpinUntil(() => otherFactory.IsExclusive, TimeSpan.FromMinutes(5)))
+                throw new TimeoutException("Restore did not enter the exclusive barrier.");
+            if (apply.IsCompleted) throw new InvalidDataException("Restore did not wait for the active reader.");
+            try { printJournal.ReviewCount(); throw new InvalidDataException("Print journal entered the restore barrier."); }
+            catch (InvalidOperationException) { }
+            try { otherFactory.Open().Dispose(); throw new InvalidDataException("A second factory entered the restore barrier."); }
+            catch (InvalidOperationException) { }
+            await Measure("restore-active-reader-drain", async () =>
             {
-                try
-                {
-                    backups.ApplyRestore(candidate);
-                    throw new InvalidDataException("Restore unexpectedly succeeded with an active reader.");
-                }
-                catch (Exception exception) when (exception is not InvalidDataException)
-                {
-                    Console.WriteLine("RESTORE_REJECTION " + exception.GetType().Name + ": " + exception.Message);
-                    if (backups.HasPendingRestore)
-                        throw new InvalidDataException("A failed restore left a pending marker.");
-                    return 1;
-                }
-            }), static x => x);
+                release.Set();
+                await reader;
+                await apply;
+                return backups.HasPendingRestore ? 1 : 0;
+            }, static x => x);
+            if (!backups.HasPendingRestore) throw new InvalidDataException("Restore marker is missing.");
+            backups.UndoPendingRestore();
+            using var restored = otherFactory.Open();
+            if (restored.ExecuteScalar<string>("PRAGMA quick_check") != "ok" ||
+                restored.Query("PRAGMA foreign_key_check").Any())
+                throw new InvalidDataException("Recovered database failed validation.");
+            foreach ((string table, long expected) in rowCounts)
+                if (restored.ExecuteScalar<long>($"SELECT COUNT(*) FROM {table}") != expected)
+                    throw new InvalidDataException($"Recovered {table} row count changed.");
         }
         finally
         {
             release.Set();
             await reader;
-            backups.DiscardRestoreCandidate(candidate);
-            if (backups.HasPendingRestore) backups.UndoPendingRestore();
+            try { await apply; }
+            finally
+            {
+                backups.DiscardRestoreCandidate(candidate);
+                if (backups.HasPendingRestore) backups.UndoPendingRestore();
+            }
         }
         break;
     }
@@ -2049,6 +2183,8 @@ File.WriteAllText(output, JsonSerializer.Serialize(new
                 Percentile(times, .99), group.Count(static sample => sample.Error is not null),
                 group.Max(static sample => sample.Rows));
         }),
+    resourceSamples,
+    sustainedSalesCheck,
     metrics = metricSamples.GroupBy(static sample => sample.Name).OrderBy(static group => group.Key)
         .Select(group =>
         {
@@ -2058,6 +2194,12 @@ File.WriteAllText(output, JsonSerializer.Serialize(new
         }),
 }, new JsonSerializerOptions { WriteIndented = true }));
 Console.WriteLine($"RESULTS {output}");
+if ((mode is "verify" or "restore-race" or "sustained-profile") &&
+    (results.Any(static result => result.Error is not null) ||
+     (mode == "sustained-profile" && (profileSamples.Any(static sample => sample.Error is not null) ||
+        sustainedSalesCheck is null || sustainedSalesCheck.Failed != 0 ||
+        sustainedSalesCheck.After != sustainedSalesCheck.Before + sustainedSalesCheck.Successful))))
+    throw new InvalidDataException($"{mode} recorded a failed verification step; see {output}.");
 
 string GetSqliteVersion() { using var connection = factory.Open(); return connection.ExecuteScalar<string>("SELECT sqlite_version()") ?? "unknown"; }
 long GetUserVersion() { using var connection = factory.Open(); return connection.ExecuteScalar<long>("PRAGMA user_version"); }
@@ -2069,6 +2211,8 @@ internal sealed record Measurement(string Name, double Milliseconds, int Rows, l
 
 internal sealed record QueryPlan(string Name, IReadOnlyList<string> Details, string Sql, string? Error = null);
 internal sealed record ProfileSample(string Name, double Milliseconds, int Rows, string? Error);
+internal sealed record ResourceSample(double ElapsedSeconds, long WalBytes, long WorkingSetBytes);
+internal sealed record SustainedSalesCheck(long Before, long Successful, long Failed, long After);
 internal sealed record ProfileSummary(string Name, int Samples, double P50Milliseconds, double P95Milliseconds,
     double P99Milliseconds, int Errors, int MaximumRows);
 internal sealed record MetricSample(string Name, double Value);
