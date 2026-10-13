@@ -546,6 +546,12 @@
   <data name="Reports_Navigation" xml:space="preserve"><value>અહેવાલો</value></data>
   <data name="Reports_Title" xml:space="preserve"><value>અહેવાલો અને નફા-નુકસાન</value></data>
   <data name="Reports_ExportExcel" xml:space="preserve"><value>એક્સેલ નિકાસ</value></data>
+  <data name="Common_Open" xml:space="preserve"><value>ખોલો</value></data>
+  <data name="Purchasing_Filter" xml:space="preserve"><value>ફિલ્ટર</value></data>
+  <data name="Purchasing_ClearFilters" xml:space="preserve"><value>ફિલ્ટર હટાવો</value></data>
+  <data name="Reports_ExportFullCsv" xml:space="preserve"><value>આખો CSV એક્સપોર્ટ કરો</value></data>
+  <data name="Reports_CancelExport" xml:space="preserve"><value>એક્સપોર્ટ રદ કરો</value></data>
+  <data name="Reports_ExportedRows" xml:space="preserve"><value>{0} લાઇન એક્સપોર્ટ થઈ.</value></data>
   <data name="Reports_PrintA4" xml:space="preserve"><value>A4 પૂર્વદર્શન / છાપો</value></data>
   <data name="Reports_Particulars" xml:space="preserve"><value>વિગતો</value></data>
   <data name="Reports_Amount" xml:space="preserve"><value>રકમ</value></data>

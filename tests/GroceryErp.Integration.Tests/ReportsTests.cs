@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using ClosedXML.Excel;
 using Dapper;
+using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
@@ -13,6 +14,75 @@ namespace GroceryErp.Integration.Tests;
 
 public sealed class ReportsTests
 {
+    [Fact]
+    public async Task FullCsvExport_StreamsBeyondInteractiveRowLimitAndKeepsNumericValues()
+    {
+        using var fixture = new ReportFixture();
+        fixture.SeedGoldenScenario();
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("""
+                INSERT INTO sale(invoice_no,sale_date,status,line_count,taxable_total,tax_total,
+                                 round_off,grand_total,cost_total)
+                VALUES ('S2','2026-09-11','COMPLETED',1,2000000,0,0,2000000,1000000),
+                       ('S3','2026-09-12','COMPLETED',1,3000000,0,0,3000000,1500000);
+                """);
+        var filter = new ReportFilter(From: new(2026, 9, 1), To: new(2026, 9, 30), Limit: 1);
+        TabularReport interactive = await fixture.Reports.GetReportAsync(ReportKind.SalesRegister,
+            filter, TestContext.Current.CancellationToken);
+        interactive.Rows.Count.ShouldBe(1);
+        interactive.IsTruncated.ShouldBeTrue();
+
+        string path = Path.Combine(fixture.Root, "full.csv");
+        long rows = await fixture.Reports.ExportCsvAsync(ReportKind.SalesRegister,
+            filter, path, cancellationToken: TestContext.Current.CancellationToken);
+        rows.ShouldBe(3);
+        string[] lines = await File.ReadAllLinesAsync(path, TestContext.Current.CancellationToken);
+        lines.Length.ShouldBe(4);
+        lines[1].ShouldContain(",1000,");
+        lines[3].ShouldContain(",3000,");
+        Directory.GetFiles(fixture.Root, "*.partial").ShouldBeEmpty();
+
+        await File.WriteAllTextAsync(path, "previous export", TestContext.Current.CancellationToken);
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        await Should.ThrowAsync<OperationCanceledException>(() => fixture.Reports.ExportCsvAsync(
+            ReportKind.SalesRegister, filter, path, cancellationToken: cancelled.Token));
+        (await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken)).ShouldBe("previous export");
+        Directory.GetFiles(fixture.Root, "*.partial").ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task AssetScheduleCsv_ExportsAllPeriodsBeyondInteractiveLimit()
+    {
+        using var fixture = new ReportFixture();
+        fixture.SeedGoldenScenario();
+        var filter = new ReportFilter(From: new(2026, 1, 1), To: new(2070, 12, 31), AssetId: 1);
+        TabularReport preview = await fixture.Reports.GetReportAsync(ReportKind.AssetSchedule,
+            filter, TestContext.Current.CancellationToken);
+        preview.Rows.Count.ShouldBe(500);
+        preview.IsTruncated.ShouldBeTrue();
+
+        string path = Path.Combine(fixture.Root, "asset-full.csv");
+        long count = await fixture.Reports.ExportCsvAsync(ReportKind.AssetSchedule, filter, path,
+            cancellationToken: TestContext.Current.CancellationToken);
+        count.ShouldBe(532);
+        string[] lines = await File.ReadAllLinesAsync(path, TestContext.Current.CancellationToken);
+        lines.Length.ShouldBe(533);
+        lines[1].ShouldContain("2026-09");
+        lines[^1].ShouldContain("2070-12");
+        foreach (int index in new[] { 0, 499 })
+        {
+            string[] cells = lines[index + 1].Split(',');
+            cells[0].Trim('"').ShouldBe(preview.Rows[index].Values["Period"]);
+            foreach ((string key, int column) in new[] { ("Opening", 2), ("Depreciation", 3), ("Closing", 4) })
+            {
+                decimal csvValue = decimal.Parse(cells[column], System.Globalization.CultureInfo.InvariantCulture);
+                long scaled = Convert.ToInt64(preview.Rows[index].Values[key], System.Globalization.CultureInfo.InvariantCulture);
+                csvValue.ShouldBe(Money.FromScaled(scaled).Value);
+            }
+        }
+        Directory.GetFiles(fixture.Root, "*.partial").ShouldBeEmpty();
+    }
     [Fact]
     public async Task PnlAggregate_MatchesEntryViewForFullAndPartialMonths()
     {
@@ -97,6 +167,13 @@ public sealed class ReportsTests
             TabularReport report = await fixture.Reports.GetReportAsync(kind,
                 new(From: new(2026, 9, 1), To: new(2026, 9, 30)), TestContext.Current.CancellationToken);
             report.Title.ShouldNotBeNullOrWhiteSpace();
+            string csvPath = Path.Combine(fixture.Root, $"report-{kind}.csv");
+            long exported = await fixture.Reports.ExportCsvAsync(kind,
+                new(From: new(2026, 9, 1), To: new(2026, 9, 30)), csvPath,
+                cancellationToken: TestContext.Current.CancellationToken);
+            exported.ShouldBeGreaterThanOrEqualTo(0);
+            File.Exists(csvPath).ShouldBeTrue();
+            File.ReadLines(csvPath).LongCount().ShouldBe(exported + 1);
         }
     }
 

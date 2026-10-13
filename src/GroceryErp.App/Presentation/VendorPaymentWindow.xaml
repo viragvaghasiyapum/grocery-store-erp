@@ -7,7 +7,13 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto">
       <StackPanel Margin="0,0,18,0">
     <TextBlock Text="{l:Tr Purchasing_Vendor}"/><ComboBox x:Name="VendorBox" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="VendorBox_OnSelectionChanged" Margin="0,4,0,10"/>
-    <TextBlock Text="{l:Tr Purchasing_OptionalPurchase}"/><ComboBox x:Name="PurchaseBox" DisplayMemberPath="Label" SelectedValuePath="Id" Margin="0,4,0,10"/>
+    <TextBlock Text="{l:Tr Purchasing_OptionalPurchase}"/>
+    <TextBox x:Name="PurchaseSearchBox" Margin="0,4,0,6" TextChanged="PurchaseSearch_OnChanged" ToolTip="Search document or vendor invoice"/>
+    <ComboBox x:Name="PurchaseBox" DisplayMemberPath="Label" SelectedValuePath="Id" Margin="0,0,0,6"/>
+    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+      <Button x:Name="PurchasePreviousButton" IsEnabled="False" Click="PurchasePrevious_OnClick" Content="{l:Tr Sales_Previous}" Margin="0,0,8,0"/>
+      <Button x:Name="PurchaseNextButton" IsEnabled="False" Click="PurchaseNext_OnClick" Content="{l:Tr Sales_Next}"/>
+    </StackPanel>
     <TextBlock Text="{l:Tr Purchasing_Received}"/><DatePicker x:Name="DateBox" Margin="0,4,0,10"/>
     <TextBlock Text="{l:Tr Purchasing_Amount}"/><TextBox x:Name="AmountBox" Margin="0,4,0,10"/>
     <TextBlock Text="{l:Tr Purchasing_Mode}"/><ComboBox x:Name="ModeBox" Margin="0,4,0,10"><ComboBoxItem Content="CASH"/><ComboBoxItem Content="UPI"/><ComboBoxItem Content="BANK"/><ComboBoxItem Content="CHEQUE"/><ComboBoxItem Content="OTHER"/></ComboBox>

@@ -143,7 +143,7 @@ internal static class ReportDefinitions
                        SUM(CASE WHEN sp.kind='SALARY' THEN sp.amount ELSE 0 END) AS Salary,
                        SUM(CASE WHEN sp.kind<>'SALARY' THEN sp.amount ELSE 0 END) AS Other,SUM(sp.amount) AS Total
                 FROM salary_payment sp JOIN employee e ON e.id=sp.employee_id
-                WHERE date(sp.period_month||'-01','+1 month','-1 day') BETWEEN @from AND @to
+                WHERE sp.period_month BETWEEN @firstMonth AND @lastMonth
                 GROUP BY e.id,sp.period_month ORDER BY e.name,sp.period_month LIMIT @Limit
                 """, [T("Employee", "Employee"), T("Role", "Role"), T("Month", "Month"), M("Salary", "Salary"), M("Other", "Other"), M("Total", "Total")]),
 

@@ -10,7 +10,7 @@
       <TextBlock x:Name="VendorTitle" FontSize="24" FontWeight="SemiBold"/>
       <TextBlock Text="{l:Tr Purchasing_LedgerHint}" Margin="0,4,0,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
     </StackPanel>
-    <TabControl Grid.Row="1">
+    <TabControl x:Name="HistoryTabs" Grid.Row="1" SelectionChanged="HistoryTabs_OnSelectionChanged">
       <TabItem Header="{l:Tr Purchasing_Purchases}">
         <DataGrid x:Name="PurchasesGrid" Style="{StaticResource CatalogGrid}">
           <DataGrid.Columns>
@@ -68,7 +68,11 @@
     </TabControl>
     <Grid Grid.Row="2" Margin="0,14,0,0">
       <TextBlock x:Name="ErrorText" Foreground="Crimson" VerticalAlignment="Center" TextWrapping="Wrap"/>
-      <Button HorizontalAlignment="Right" Click="Close_OnClick" Content="{l:Tr Common_Close}"/>
+      <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+        <Button x:Name="PreviousPageButton" Margin="0,0,8,0" IsEnabled="False" Click="PreviousPage_OnClick" Content="{l:Tr Sales_Previous}"/>
+        <Button x:Name="NextPageButton" Margin="0,0,8,0" IsEnabled="False" Click="NextPage_OnClick" Content="{l:Tr Sales_Next}"/>
+        <Button Click="Close_OnClick" Content="{l:Tr Common_Close}"/>
+      </StackPanel>
     </Grid>
   </Grid>
 </Window>

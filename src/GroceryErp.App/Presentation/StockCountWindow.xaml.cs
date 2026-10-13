@@ -28,7 +28,7 @@ public partial class StockCountWindow : Window
     private long _countId;
     private bool _reviewed;
     private bool _loadingRows;
-    private Dictionary<long, long> _reviewedMovements = [];
+    private long? _reviewedMovementHighWaterMark;
     private readonly Stack<long?> _pageBack = new();
     private long? _pageAfter;
     private long? _pageNext;
@@ -66,16 +66,8 @@ public partial class StockCountWindow : Window
             if (!_reviewed) throw new InvalidOperationException(TranslationSource.Instance["Stock_ReviewFirst"]);
             SetBusy(true);
             await SaveCountsAsync(requireComplete: true);
-            StockCountDetails latest = await _inventory.GetStockCountAsync(_countId);
-            if (latest.Lines.Any(line => !_reviewedMovements.TryGetValue(line.LotId, out long quantity) ||
-                                         quantity != line.MovementSinceSnapshot.Scaled))
-            {
-                await LoadPageAsync();
-                InvalidateReview();
-                throw new InvalidOperationException(TranslationSource.Instance["Stock_MovementsChanged"]);
-            }
-            await _inventory.PostStockCountAsync(_countId, OperationGuard.NewId(),
-                reviewedMovements: _reviewedMovements);
+            await _inventory.PostReviewedStockCountAsync(_countId, OperationGuard.NewId(),
+                _reviewedMovementHighWaterMark ?? throw new InvalidOperationException());
             DialogResult = true;
         }
         catch (DomainException exception) when (exception.Code == ErrorCode.StockCountReviewChanged)
@@ -107,19 +99,16 @@ public partial class StockCountWindow : Window
                 ErrorText.Text = TranslationSource.Instance.Format("Stock_NewLotsAdded", added);
                 return;
             }
-            StockCountDetails current = await _inventory.GetStockCountAsync(_countId);
-            if (current.Lines.Any(static line => line.Counted is null))
+            StockCountReview review = await _inventory.GetStockCountReviewAsync(_countId);
+            if (review.Total == 0 || review.Counted != review.Total)
                 throw new InvalidOperationException(TranslationSource.Instance["Stock_CompleteEveryLot"]);
             await LoadPageAsync();
-            _reviewedMovements = current.Lines.ToDictionary(static line => line.LotId,
-                static line => line.MovementSinceSnapshot.Scaled);
+            _reviewedMovementHighWaterMark = review.MovementHighWaterMark;
             _reviewed = true;
             PostButton.IsEnabled = true;
-            int differences = current.Lines.Count(static line => line.Difference != Quantity.Zero);
             var formatter = new DisplayFormatter();
-            Money net = current.Lines.Aggregate(Money.Zero, static (sum, line) => sum + line.DifferenceValue);
-            ReviewText.Text = TranslationSource.Instance.Format("Stock_ReviewSummary", differences,
-                formatter.Number(net.Value));
+            ReviewText.Text = TranslationSource.Instance.Format("Stock_ReviewSummary", review.Differences,
+                formatter.Number(review.NetDifferenceValue.Value));
             ErrorText.Text = "";
         }
         catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
@@ -195,7 +184,7 @@ public partial class StockCountWindow : Window
     {
         if (_loadingRows) return;
         _reviewed = false;
-        _reviewedMovements.Clear();
+        _reviewedMovementHighWaterMark = null;
         PostButton.IsEnabled = false;
         ReviewText.Text = "";
         UpdateProgress();

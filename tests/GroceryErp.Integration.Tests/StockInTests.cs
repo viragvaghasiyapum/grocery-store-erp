@@ -1,4 +1,5 @@
 using Dapper;
+using GroceryErp.Catalog;
 using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Infrastructure;
@@ -13,6 +14,147 @@ namespace GroceryErp.Integration.Tests;
 
 public sealed class StockInTests
 {
+    [Fact]
+    public async Task LowStockProjection_TracksReorderAndLotMovements()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using (var connection = fixture.Factory.Open())
+        {
+            connection.Execute("UPDATE product SET reorder_level=12000 WHERE id=@id",
+                new { id = fixture.ProductId });
+            connection.ExecuteScalar<long>("SELECT is_low FROM product_stock_total WHERE product_id=@id",
+                new { id = fixture.ProductId }).ShouldBe(1);
+        }
+        long draft = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("LOW-PROJECTION"), ct);
+        PostedPurchase purchase = await fixture.Purchasing.PostAsync(draft, OperationGuard.NewId(), ct);
+        using (var connection = fixture.Factory.Open())
+        {
+            connection.ExecuteScalar<long>("SELECT is_low FROM product_stock_total WHERE product_id=@id",
+                new { id = fixture.ProductId }).ShouldBe(1);
+            connection.Execute("UPDATE product SET reorder_level=10000 WHERE id=@id",
+                new { id = fixture.ProductId });
+            connection.ExecuteScalar<long>("SELECT is_low FROM product_stock_total WHERE product_id=@id",
+                new { id = fixture.ProductId }).ShouldBe(0);
+        }
+        await fixture.Inventory.AdjustAsync(purchase.LotIds[0], fixture.Date,
+            new Quantity(-2), "Projection test", OperationGuard.NewId(), ct);
+        using var verify = fixture.Factory.Open();
+        verify.ExecuteScalar<long>("SELECT is_low FROM product_stock_total WHERE product_id=@id",
+            new { id = fixture.ProductId }).ShouldBe(1);
+        verify.ExecuteScalar<long>("SELECT is_low FROM v_product_stock WHERE product_id=@id",
+            new { id = fixture.ProductId }).ShouldBe(1);
+        var catalog = new CatalogService(fixture.Database, new AuditLog(), fixture.Settings);
+        (await catalog.SearchPageAsync(new ProductSearchFilter(LowStockOnly: true),
+            cancellationToken: ct)).Items.Select(static item => item.Id).ShouldContain(fixture.ProductId);
+    }
+
+    [Fact]
+    public async Task VendorHistory_PagesReachOldPurchasesAndKeepBalances()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        var posted = new List<PostedPurchase>();
+        for (int index = 0; index < 4; index++)
+        {
+            long draft = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase($"INV-PAGE-{index}"), ct);
+            posted.Add(await fixture.Purchasing.PostAsync(draft, OperationGuard.NewId(), ct));
+        }
+        await fixture.Purchasing.RecordPaymentAsync(new(fixture.VendorId, posted[0].Id,
+            fixture.Date, new Money(500), "CASH", "PAGE-PAYMENT", null), OperationGuard.NewId(), ct);
+
+        VendorLedgerPage first = await fixture.Purchasing.GetVendorLedgerPageAsync(fixture.VendorId, limit: 2,
+            cancellationToken: ct);
+        first.Items.Count.ShouldBe(2);
+        first.HasMore.ShouldBeTrue();
+        first.Items[0].Balance.ShouldBe(new Money(10500));
+        var ledger = first.Items.ToList();
+        VendorLedgerPage page = first;
+        while (page.HasMore)
+        {
+            page = await fixture.Purchasing.GetVendorLedgerPageAsync(fixture.VendorId,
+                page.NextDate, page.NextKind, page.NextId, limit: 2, cancellationToken: ct);
+            ledger.AddRange(page.Items);
+        }
+        ledger.Count.ShouldBe(5);
+        ledger[^1].Kind.ShouldBe("PAYMENT");
+        ledger[^1].Balance.ShouldBe(new Money(-400));
+
+        VendorLedgerPage purchasesOnly = await fixture.Purchasing.GetVendorLedgerPageAsync(
+            fixture.VendorId, limit: 2, filterKind: "PURCHASE", cancellationToken: ct);
+        purchasesOnly.Items.Count.ShouldBe(2);
+        purchasesOnly.Items.All(static item => item.Kind == "PURCHASE").ShouldBeTrue();
+        VendorLedgerPage olderPurchases = await fixture.Purchasing.GetVendorLedgerPageAsync(
+            fixture.VendorId, purchasesOnly.NextDate, purchasesOnly.NextKind, purchasesOnly.NextId,
+            limit: 2, filterKind: "PURCHASE", cancellationToken: ct);
+        olderPurchases.Items.Count.ShouldBe(2);
+        olderPurchases.HasMore.ShouldBeFalse();
+        olderPurchases.Items[^1].Balance.ShouldBe(ledger.Single(item =>
+            item.Kind == "PURCHASE" && item.Reference == olderPurchases.Items[^1].Reference).Balance);
+        VendorLedgerPage paymentsOnly = await fixture.Purchasing.GetVendorLedgerPageAsync(
+            fixture.VendorId, filterKind: "PAYMENT", cancellationToken: ct);
+        paymentsOnly.Items.Single().Balance.ShouldBe(new Money(-400));
+
+        VendorPurchasePage choices = await fixture.Purchasing.GetVendorPurchasePageAsync(
+            fixture.VendorId, limit: 2, cancellationToken: ct);
+        choices.Items.Count.ShouldBe(2);
+        choices.HasMore.ShouldBeTrue();
+        VendorPurchasePage older = await fixture.Purchasing.GetVendorPurchasePageAsync(
+            fixture.VendorId, beforeDate: choices.NextDate, beforeId: choices.NextId, limit: 2,
+            cancellationToken: ct);
+        older.Items.Select(static item => item.Id).ShouldContain(posted[0].Id);
+        VendorPurchasePage searched = await fixture.Purchasing.GetVendorPurchasePageAsync(
+            fixture.VendorId, "INV-PAGE-0", cancellationToken: ct);
+        searched.Items.Single().Id.ShouldBe(posted[0].Id);
+
+        VendorLotPage lots = await fixture.Purchasing.GetVendorLotPageAsync(fixture.VendorId, limit: 2,
+            cancellationToken: ct);
+        lots.Items.Count.ShouldBe(2);
+        lots.HasMore.ShouldBeTrue();
+        (await fixture.Purchasing.GetVendorLotPageAsync(fixture.VendorId, lots.NextDate,
+            lots.NextId, limit: 2, cancellationToken: ct)).Items.Count.ShouldBe(2);
+
+        PurchasePage firstPurchases = await fixture.Purchasing.GetPurchasesPageAsync(limit: 2,
+            cancellationToken: ct);
+        long newerDraft = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("INV-NEW"), ct);
+        PostedPurchase newer = await fixture.Purchasing.PostAsync(newerDraft, OperationGuard.NewId(), ct);
+        PurchasePage middle = await fixture.Purchasing.GetPurchasesPageAsync(
+            firstPurchases.NextDate, firstPurchases.NextId, vendorId: fixture.VendorId,
+            limit: 2, cancellationToken: ct);
+        middle.Items.Select(static item => item.Id).ShouldContain(posted[0].Id);
+        middle.Items.Select(static item => item.Id).ShouldNotContain(newer.Id);
+        PurchasePage dated = await fixture.Purchasing.GetPurchasesPageAsync(
+            from: fixture.Date, to: fixture.Date, vendorId: fixture.VendorId,
+            limit: 2, cancellationToken: ct);
+        dated.Items.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task CountReview_UsesBoundedSummaryAndRejectsScopedMovementAfterReview()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long draft = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("REVIEW-PAGE"), ct);
+        PostedPurchase posted = await fixture.Purchasing.PostAsync(draft, OperationGuard.NewId(), ct);
+        long countId = await fixture.Inventory.CreateStockCountAsync(fixture.Date, null, null, ct);
+        await fixture.Inventory.SetCountedQuantityAsync(countId, posted.LotIds[0], new Quantity(11), ct);
+        StockCountReview review = await fixture.Inventory.GetStockCountReviewAsync(countId, ct);
+        review.Total.ShouldBe(1);
+        review.Counted.ShouldBe(1);
+        review.Differences.ShouldBe(0);
+        (await fixture.Inventory.GetDraftCountPageAsync(cancellationToken: ct)).Items.Single().CountedCount.ShouldBe(1);
+
+        await fixture.Inventory.AdjustAsync(posted.LotIds[0], fixture.Date, new Quantity(-1),
+            "After review", OperationGuard.NewId(), ct);
+        DomainException stale = await Should.ThrowAsync<DomainException>(() =>
+            fixture.Inventory.PostReviewedStockCountAsync(countId, OperationGuard.NewId(),
+                review.MovementHighWaterMark, ct));
+        stale.Code.ShouldBe(ErrorCode.StockCountReviewChanged);
+        StockCountReview refreshed = await fixture.Inventory.GetStockCountReviewAsync(countId, ct);
+        refreshed.Differences.ShouldBe(1);
+        await fixture.Inventory.PostReviewedStockCountAsync(countId, OperationGuard.NewId(),
+            refreshed.MovementHighWaterMark, ct);
+    }
     [Fact]
     public void LandedCost_AllocatesChargesAndFreeQuantityExactly()
     {

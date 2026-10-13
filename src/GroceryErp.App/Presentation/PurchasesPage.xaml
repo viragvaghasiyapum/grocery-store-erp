@@ -10,13 +10,19 @@
     <WrapPanel Grid.Row="1" Margin="0,16,0,4">
       <Button Margin="0,0,8,8" Click="NewPurchase_OnClick" Content="{l:Tr Purchasing_NewPurchase}" />
       <Button Margin="0,0,8,8" Click="NewVendor_OnClick" Content="{l:Tr Purchasing_NewVendor}" />
-      <Button Margin="0,0,8,8" Click="Payment_OnClick" Content="{l:Tr Purchasing_Payment}" />
+      <Button x:Name="PaymentButton" Margin="0,0,8,8" Click="Payment_OnClick" Content="{l:Tr Purchasing_Payment}" />
       <Button x:Name="OpenDraftButton" IsEnabled="False" Margin="0,0,8,8" Click="OpenDraft_OnClick" Content="{l:Tr Purchasing_EditDraft}" />
       <Button x:Name="EditVendorButton" IsEnabled="False" Margin="0,0,8,8" Click="EditVendor_OnClick" Content="{l:Tr Purchasing_EditVendor}" />
       <Button x:Name="VendorLedgerButton" IsEnabled="False" Margin="0,0,8,8" Click="VendorLedger_OnClick" Content="{l:Tr Purchasing_VendorLedger}" />
       <Button x:Name="CancelPurchaseButton" IsEnabled="False" Margin="0,0,8,8" Click="CancelPurchase_OnClick" Content="{l:Tr Purchasing_CancelPurchase}" />
       <Button x:Name="VendorReturnButton" IsEnabled="False" Margin="0,0,8,8" Click="VendorReturn_OnClick" Content="{l:Tr Purchasing_VendorReturn}" />
       <Button Margin="0,0,8,8" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
+      <DatePicker x:Name="PurchaseFromBox" Width="130" Margin="0,0,8,8" ToolTip="{l:Tr Reports_From}"/>
+      <DatePicker x:Name="PurchaseToBox" Width="130" Margin="0,0,8,8" ToolTip="{l:Tr Reports_To}"/>
+      <ComboBox x:Name="PurchaseVendorFilter" Width="170" Margin="0,0,8,8"
+                DisplayMemberPath="Name" SelectedValuePath="Id" ToolTip="{l:Tr Purchasing_Vendor}"/>
+      <Button Margin="0,0,8,8" Click="FilterPurchases_OnClick" Content="{l:Tr Purchasing_Filter}"/>
+      <Button Margin="0,0,8,8" Click="ClearPurchaseFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
     </WrapPanel>
     <TabControl Grid.Row="2" Margin="0,8,0,0">
       <TabItem Header="{l:Tr Purchasing_Purchases}">

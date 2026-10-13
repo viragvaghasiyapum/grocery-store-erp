@@ -29,7 +29,7 @@ public sealed class InventoryService(
                 SELECT p.id AS ProductId,p.sku AS Sku,p.name AS Name,
                        COALESCE(t.quantity,0) AS Quantity,COALESCE(t.cost_value,0) AS CostValue,
                        p.reorder_level AS ReorderLevel,
-                       (p.reorder_level>0 AND COALESCE(t.quantity,0)<=p.reorder_level) AS IsLow
+                       COALESCE(t.is_low,0) AS IsLow
                 FROM product p LEFT JOIN product_stock_total t ON t.product_id=p.id
                 WHERE p.is_active=1 AND (p.name LIKE @pattern ESCAPE '\' OR p.sku LIKE @pattern ESCAPE '\')
                   AND (@afterName IS NULL OR p.name COLLATE NOCASE>@afterName COLLATE NOCASE
@@ -496,6 +496,31 @@ public sealed class InventoryService(
             WHERE sc.status='DRAFT' GROUP BY sc.id ORDER BY sc.id DESC
             """).ToList(), cancellationToken);
 
+    public Task<DraftCountPage> GetDraftCountPageAsync(long? beforeId = null, int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        if (beforeId <= 0 || limit is < 1 or > 100)
+            throw new DomainException(ErrorCode.Validation, "Invalid draft count page.");
+        return database.ReadAsync(connection =>
+        {
+            List<StockCountSummary> rows = connection.Query<StockCountSummary>("""
+                WITH visible AS MATERIALIZED (
+                    SELECT id,count_date FROM stock_count
+                    WHERE status='DRAFT' AND (@beforeId IS NULL OR id<@beforeId)
+                    ORDER BY id DESC LIMIT @take
+                )
+                SELECT v.id AS Id,v.count_date AS Date,
+                       (SELECT COUNT(*) FROM stock_count_line scl WHERE scl.stock_count_id=v.id) AS LotCount,
+                       (SELECT COUNT(*) FROM stock_count_line scl WHERE scl.stock_count_id=v.id
+                            AND scl.counted_qty IS NOT NULL) AS CountedCount
+                FROM visible v ORDER BY v.id DESC
+                """, new { beforeId, take = limit + 1 }).ToList();
+            bool hasMore = rows.Count > limit;
+            if (hasMore) rows.RemoveAt(limit);
+            return new DraftCountPage(rows, hasMore, rows.LastOrDefault()?.Id);
+        }, cancellationToken);
+    }
+
     public Task SetCountedQuantityAsync(long countId, long lotId, Quantity counted, CancellationToken cancellationToken = default) =>
         SetCountedQuantitiesAsync(countId, new Dictionary<long, Quantity> { [lotId] = counted }, cancellationToken);
 
@@ -581,6 +606,34 @@ public sealed class InventoryService(
             more ? rows[^1].Id : null, progress.Total, progress.Counted);
     }, cancellationToken);
 
+    public Task<StockCountReview> GetStockCountReviewAsync(long countId,
+        CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
+    {
+        string? status = connection.QuerySingleOrDefault<string>(
+            "SELECT status FROM stock_count WHERE id=@countId", new { countId });
+        if (status != "DRAFT") throw new DomainException(ErrorCode.Validation, "Stock count is not an active draft.");
+        CountReviewRow row = connection.QuerySingle<CountReviewRow>("""
+            WITH balances AS MATERIALIZED (
+                SELECT scl.expected_qty AS Expected,scl.counted_qty AS Counted,
+                       scl.unit_cost AS UnitCost,
+                       COALESCE((SELECT SUM(m.qty) FROM stock_movement m
+                                 WHERE m.lot_id=scl.lot_id AND m.id>sc.snapshot_movement_id),0) AS Movement
+                FROM stock_count_line scl JOIN stock_count sc ON sc.id=scl.stock_count_id
+                WHERE scl.stock_count_id=@countId
+            )
+            SELECT COUNT(*) AS Total,COUNT(Counted) AS Counted,
+                   COALESCE(SUM(CASE WHEN Counted IS NOT NULL AND Counted<>Expected+Movement
+                                     THEN 1 ELSE 0 END),0) AS Differences,
+                   COALESCE(SUM(CASE WHEN Counted IS NOT NULL THEN
+                       CAST(ROUND((Counted-Expected-Movement)*UnitCost/1000.0) AS INTEGER)
+                       ELSE 0 END),0) AS NetValue,
+                   (SELECT COALESCE(MAX(id),0) FROM stock_movement) AS MovementHighWaterMark
+            FROM balances
+            """, new { countId });
+        return new StockCountReview(row.Total, row.Counted, row.Differences,
+            Money.FromScaled(row.NetValue), row.MovementHighWaterMark);
+    }, cancellationToken);
+
     public Task<long?> FindStockCountLineAsync(long countId, string query, long? productId = null,
         long? lotId = null, CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
     {
@@ -606,8 +659,17 @@ public sealed class InventoryService(
             """, new { countId, pattern = "%" + normalized.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%" });
     }, cancellationToken);
 
-    public async Task PostStockCountAsync(long countId, string operationId,
-        IReadOnlyDictionary<long, long>? reviewedMovements = null, CancellationToken cancellationToken = default)
+    public Task PostStockCountAsync(long countId, string operationId,
+        IReadOnlyDictionary<long, long>? reviewedMovements = null, CancellationToken cancellationToken = default) =>
+        PostStockCountCoreAsync(countId, operationId, reviewedMovements, null, cancellationToken);
+
+    public Task PostReviewedStockCountAsync(long countId, string operationId,
+        long reviewedMovementHighWaterMark, CancellationToken cancellationToken = default) =>
+        PostStockCountCoreAsync(countId, operationId, null, reviewedMovementHighWaterMark, cancellationToken);
+
+    private async Task PostStockCountCoreAsync(long countId, string operationId,
+        IReadOnlyDictionary<long, long>? reviewedMovements, long? reviewedMovementHighWaterMark,
+        CancellationToken cancellationToken)
     {
         var products = new HashSet<long>();
         await database.WriteAsync(transaction =>
@@ -630,6 +692,13 @@ public sealed class InventoryService(
                   AND NOT EXISTS (SELECT 1 FROM stock_count_line scl
                                   WHERE scl.stock_count_id=@countId AND scl.lot_id=l.id)
                 """, new { countId }, transaction.Transaction) > 0)
+                throw new DomainException(ErrorCode.StockCountReviewChanged);
+            if (reviewedMovementHighWaterMark is long watermark &&
+                transaction.Connection.ExecuteScalar<long>("""
+                    SELECT COUNT(*) FROM stock_movement m
+                    JOIN stock_count_line scl ON scl.lot_id=m.lot_id
+                    WHERE scl.stock_count_id=@countId AND m.id>@watermark
+                    """, new { countId, watermark }, transaction.Transaction) > 0)
                 throw new DomainException(ErrorCode.StockCountReviewChanged);
             List<CountPostRow> lines = transaction.Connection.Query<CountPostRow>("""
                 SELECT scl.product_id AS ProductId,scl.lot_id AS LotId,scl.expected_qty AS Expected,
@@ -719,6 +788,7 @@ public sealed class InventoryService(
     private sealed class LotIdentity { public long ProductId { get; init; } public long UnitCost { get; init; } }
     private sealed class CountHeader { public long Id { get; init; } public DateOnly Date { get; init; } public string Status { get; init; } = ""; public string? Notes { get; init; } public long Snapshot { get; init; } }
     private sealed class CountProgress { public long Total { get; init; } public long Counted { get; init; } }
+    private sealed class CountReviewRow { public long Total { get; init; } public long Counted { get; init; } public long Differences { get; init; } public long NetValue { get; init; } public long MovementHighWaterMark { get; init; } }
     private sealed class CountPostRow { public long ProductId { get; init; } public long LotId { get; init; } public long Expected { get; init; } public long? Counted { get; init; } public long UnitCost { get; init; } public long Movement { get; init; } }
     private sealed class CountUnitRule { public long LotId { get; init; } public bool AllowFraction { get; init; } }
     private sealed class CountLineRow { public long Id { get; init; } public long ProductId { get; init; } public string ProductName { get; init; } = ""; public long LotId { get; init; } public string LotCode { get; init; } = ""; public long Expected { get; init; } public long? Counted { get; init; } public long UnitCost { get; init; } public long Movement { get; init; } public StockCountLine ToModel() { long difference = Counted is null ? 0 : Counted.Value - (Expected + Movement); return new(Id, ProductId, ProductName, LotId, LotCode, Quantity.FromScaled(Expected), Counted is null ? null : Quantity.FromScaled(Counted.Value), Money.FromScaled(UnitCost), Quantity.FromScaled(Movement), Quantity.FromScaled(difference), new Money(Fx3.FromScaled(difference) * Fx3.FromScaled(UnitCost))); } }

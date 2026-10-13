@@ -29,6 +29,16 @@ public partial class PurchasesPage : Page
 
     private async void Refresh_OnClick(object sender, RoutedEventArgs e) => await RefreshAsync();
 
+    private async void FilterPurchases_OnClick(object sender, RoutedEventArgs e) => await RefreshAsync();
+
+    private async void ClearPurchaseFilters_OnClick(object sender, RoutedEventArgs e)
+    {
+        PurchaseFromBox.SelectedDate = null;
+        PurchaseToBox.SelectedDate = null;
+        PurchaseVendorFilter.SelectedValue = null;
+        await RefreshAsync();
+    }
+
     private async void NewVendor_OnClick(object sender, RoutedEventArgs e)
     {
         var window = new VendorEditorWindow(_purchasing) { Owner = Window.GetWindow(this) };
@@ -125,13 +135,23 @@ public partial class PurchasesPage : Page
         NextPurchaseButton.IsEnabled = false;
         try
         {
-            PurchasePage page = await _purchasing.GetPurchasesPageAsync(beforeDate, beforeId);
+            PurchasePage page = await _purchasing.GetPurchasesPageAsync(beforeDate, beforeId,
+                PurchaseFromBox.SelectedDate is { } from ? DateOnly.FromDateTime(from) : null,
+                PurchaseToBox.SelectedDate is { } to ? DateOnly.FromDateTime(to) : null,
+                PurchaseVendorFilter.SelectedValue as long?);
             if (reset) _previousPages.Clear();
             _beforeDate = beforeDate;
             _beforeId = beforeId;
             _currentPage = page;
             timing.Bind(() => PurchasesGrid.ItemsSource = page.Items);
-            VendorsGrid.ItemsSource = await _purchasing.GetVendorsAsync();
+            if (reset)
+            {
+                long? selectedVendor = PurchaseVendorFilter.SelectedValue as long?;
+                IReadOnlyList<VendorItem> vendors = await _purchasing.GetVendorsAsync(includeInactive: true);
+                VendorsGrid.ItemsSource = vendors;
+                PurchaseVendorFilter.ItemsSource = vendors;
+                PurchaseVendorFilter.SelectedValue = selectedVendor;
+            }
             StatusText.Text = $"{PurchasesGrid.Items.Count} / {VendorsGrid.Items.Count}";
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }

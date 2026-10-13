@@ -5,9 +5,10 @@
  Title="{l:Tr Sales_ChooseLot}" Width="760" Height="500" MinWidth="650" MinHeight="420"
  WindowStartupLocation="CenterOwner" NumberSubstitution.Substitution="European">
  <Grid Margin="24">
-  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <TextBlock FontSize="22" FontWeight="SemiBold" Text="{l:Tr Sales_ChooseLot}"/>
-  <DataGrid x:Name="LotsGrid" Grid.Row="1" Margin="0,16,0,16" Style="{StaticResource CatalogGrid}"
+  <TextBox x:Name="SearchBox" Grid.Row="1" Margin="0,10,0,0" TextChanged="SearchBox_OnChanged" ToolTip="Search lot code or batch"/>
+  <DataGrid x:Name="LotsGrid" Grid.Row="2" Margin="0,16,0,16" Style="{StaticResource CatalogGrid}"
             MouseDoubleClick="LotsGrid_OnDoubleClick">
    <DataGrid.Columns>
     <DataGridTextColumn Width="140" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
@@ -18,7 +19,9 @@
     <DataGridTextColumn Width="90" Header="{l:Tr Stock_Mrp}" Binding="{Binding Mrp}"/>
    </DataGrid.Columns>
   </DataGrid>
-  <StackPanel Grid.Row="2" HorizontalAlignment="Right" Orientation="Horizontal">
+  <StackPanel Grid.Row="3" HorizontalAlignment="Right" Orientation="Horizontal">
+   <Button x:Name="PreviousButton" IsEnabled="False" Click="Previous_OnClick" Content="{l:Tr Sales_Previous}" Margin="0,0,8,0"/>
+   <Button x:Name="NextButton" IsEnabled="False" Click="Next_OnClick" Content="{l:Tr Sales_Next}" Margin="0,0,8,0"/>
    <Button Width="100" IsCancel="True" Content="{l:Tr Common_Cancel}"/>
    <Button Width="120" Margin="8,0,0,0" IsDefault="True" Click="Select_OnClick" Content="{l:Tr Sales_UseLot}"/>
   </StackPanel>

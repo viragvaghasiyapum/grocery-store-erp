@@ -30,6 +30,7 @@ public partial class ReportsPage : Page
     private readonly bool _loadOnShow;
     private int _refreshVersion;
     private bool _expiryStatusChoices;
+    private CancellationTokenSource? _exportCancellation;
 
     public ReportsPage() : this(
         ((App)Application.Current).Services.GetRequiredService<ReportService>(),
@@ -98,7 +99,11 @@ public partial class ReportsPage : Page
             UpdateFilterAvailability();
             await RefreshAsync();
         };
-        if (loadOnShow) Unloaded += (_, _) => TranslationSource.Instance.PropertyChanged -= OnTranslationChanged;
+        if (loadOnShow) Unloaded += (_, _) =>
+        {
+            TranslationSource.Instance.PropertyChanged -= OnTranslationChanged;
+            _exportCancellation?.Cancel();
+        };
     }
 
     private async Task RefreshAsync()
@@ -410,6 +415,52 @@ public partial class ReportsPage : Page
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
+
+    private async void ExportFullCsv_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_exportCancellation is not null || _currentReport is null ||
+            ReportPicker.SelectedItem is not ReportChoice { Kind: ReportKind kind }) return;
+        var dialog = new SaveFileDialog { Filter = "CSV (*.csv)|*.csv", FileName = "report-full.csv" };
+        if (dialog.ShowDialog() != true) return;
+        using var cancellation = new CancellationTokenSource();
+        _exportCancellation = cancellation;
+        FullCsvButton.IsEnabled = false;
+        CancelExportButton.IsEnabled = true;
+        try
+        {
+            DateOnly from = FromPicker.SelectedDate is { } fromDate
+                ? DateOnly.FromDateTime(fromDate) : _clock.BusinessDate;
+            DateOnly to = ToPicker.SelectedDate is { } toDate
+                ? DateOnly.FromDateTime(toDate) : _clock.BusinessDate;
+            if (!int.TryParse(SlowDaysFilter.Text, NumberStyles.None, CultureInfo.InvariantCulture,
+                out int slowDays)) throw new ArgumentException(TranslationSource.Instance["Reports_InvalidFilter"]);
+            var filter = new ReportFilter(From: from, To: to,
+                ProductId: ParseId(ProductFilter.Text), LotId: ParseId(LotFilter.Text),
+                VendorId: ParseId(VendorFilter.Text), AssetId: ParseId(AssetFilter.Text),
+                Status: ((FilterChoice?)StatusPicker.SelectedItem)?.Code,
+                PaymentMode: ((FilterChoice?)PaymentPicker.SelectedItem)?.Code,
+                Entity: Clean(EntityFilter.Text), Action: Clean(ActionFilter.Text),
+                SlowMoverDays: slowDays);
+            var progress = new Progress<long>(count =>
+                StatusText.Text = TranslationSource.Instance.Format("Reports_ExportedRows", count));
+            long rows = await _reports.ExportCsvAsync(kind, filter, dialog.FileName,
+                progress, cancellation.Token);
+            StatusText.Text = TranslationSource.Instance.Format("Reports_ExportedRows", rows);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text = TranslationSource.Instance["Reports_CancelExport"];
+        }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        finally
+        {
+            _exportCancellation = null;
+            FullCsvButton.IsEnabled = true;
+            CancelExportButton.IsEnabled = false;
+        }
+    }
+
+    private void CancelExport_OnClick(object sender, RoutedEventArgs e) => _exportCancellation?.Cancel();
 
     private void Preview_OnClick(object sender, RoutedEventArgs e)
     {

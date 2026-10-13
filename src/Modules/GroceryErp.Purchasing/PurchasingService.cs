@@ -412,6 +412,71 @@ public sealed class PurchasingService(
         }, cancellationToken);
     }
 
+    public Task<VendorLedgerPage> GetVendorLedgerPageAsync(long vendorId, DateOnly? beforeDate = null,
+        string? beforeKind = null, long? beforeId = null, int limit = 100, string? filterKind = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (vendorId <= 0 || limit is < 1 or > 200 ||
+            (beforeDate is null) != (beforeKind is null) || (beforeDate is null) != (beforeId is null) ||
+            beforeKind is not null and not ("PURCHASE" or "PAYMENT" or "VENDOR_RETURN") ||
+            filterKind is not null and not ("PURCHASE" or "PAYMENT" or "VENDOR_RETURN"))
+            throw new DomainException(ErrorCode.Validation, "Invalid vendor ledger page.");
+        return database.ReadAsync(connection =>
+        {
+            long opening = connection.QuerySingleOrDefault<long?>(
+                "SELECT opening_balance FROM vendor WHERE id=@vendorId", new { vendorId })
+                ?? throw new DomainException(ErrorCode.NotFound, "vendor", vendorId);
+            List<LedgerRow> rows = connection.Query<LedgerRow>("""
+                SELECT * FROM (
+                    SELECT received_date AS Date,'PURCHASE' AS Kind,doc_no AS Reference,
+                           grand_total AS Debit,0 AS Credit,id AS SortId
+                    FROM purchase WHERE vendor_id=@vendorId AND status='POSTED'
+                        AND (@filterKind IS NULL OR @filterKind='PURCHASE')
+                    UNION ALL
+                    SELECT pay_date,'PAYMENT',reference,0,amount,id
+                    FROM vendor_payment WHERE vendor_id=@vendorId
+                        AND (@filterKind IS NULL OR @filterKind='PAYMENT')
+                    UNION ALL
+                    SELECT return_date,'VENDOR_RETURN',doc_no,0,credit_total,id
+                    FROM vendor_return WHERE vendor_id=@vendorId
+                        AND (@filterKind IS NULL OR @filterKind='VENDOR_RETURN')
+                )
+                WHERE @beforeDate IS NULL OR Date<@beforeDate
+                   OR (Date=@beforeDate AND (Kind<@beforeKind OR (Kind=@beforeKind AND SortId<@beforeId)))
+                ORDER BY Date DESC,Kind DESC,SortId DESC LIMIT @take
+                """, new { vendorId, beforeDate, beforeKind, beforeId, filterKind, take = limit + 1 }).ToList();
+            bool hasMore = rows.Count > limit;
+            if (hasMore) rows.RemoveAt(limit);
+            if (rows.Count == 0)
+                return new VendorLedgerPage([], false, null, null, null);
+            LedgerRow first = rows[0];
+            long firstBalance = opening + connection.ExecuteScalar<long>("""
+                SELECT COALESCE((SELECT SUM(grand_total) FROM purchase
+                    WHERE vendor_id=@vendorId AND status='POSTED' AND
+                        (received_date<@date OR (received_date=@date AND
+                         ('PURCHASE'<@kind OR ('PURCHASE'=@kind AND id<=@id))))),0)
+                     - COALESCE((SELECT SUM(amount) FROM vendor_payment
+                    WHERE vendor_id=@vendorId AND
+                        (pay_date<@date OR (pay_date=@date AND
+                         ('PAYMENT'<@kind OR ('PAYMENT'=@kind AND id<=@id))))),0)
+                     - COALESCE((SELECT SUM(credit_total) FROM vendor_return
+                    WHERE vendor_id=@vendorId AND
+                        (return_date<@date OR (return_date=@date AND
+                         ('VENDOR_RETURN'<@kind OR ('VENDOR_RETURN'=@kind AND id<=@id))))),0)
+                """, new { vendorId, date = first.Date, kind = first.Kind, id = first.SortId });
+            var items = new List<VendorLedgerItem>(rows.Count);
+            long balance = firstBalance;
+            foreach (LedgerRow row in rows)
+            {
+                items.Add(new(row.Date, row.Kind, row.Reference, Money.FromScaled(row.Debit),
+                    Money.FromScaled(row.Credit), Money.FromScaled(balance)));
+                balance -= row.Debit - row.Credit;
+            }
+            LedgerRow last = rows[^1];
+            return new VendorLedgerPage(items, hasMore, last.Date, last.Kind, last.SortId);
+        }, cancellationToken);
+    }
+
     public Task<IReadOnlyList<VendorLedgerItem>> GetVendorLedgerAsync(long vendorId, CancellationToken cancellationToken = default) =>
         database.ReadAsync(connection =>
         {
@@ -586,6 +651,62 @@ public sealed class PurchasingService(
                 string.IsNullOrWhiteSpace(row.InvoiceNumber) ? row.DocumentNumber : $"{row.DocumentNumber} · {row.InvoiceNumber}"))
                 .ToList(), cancellationToken);
 
+    public Task<VendorPurchasePage> GetVendorPurchasePageAsync(long vendorId, string? query = null,
+        DateOnly? beforeDate = null, long? beforeId = null, int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        if (vendorId <= 0 || (beforeDate is null) != (beforeId is null) || limit is < 1 or > 200)
+            throw new DomainException(ErrorCode.Validation, "Invalid vendor purchase page.");
+        string term = (query ?? string.Empty).Trim();
+        if (term.Length > 120) throw new DomainException(ErrorCode.Validation, "Search term is too long.");
+        string pattern = "%" + term.Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal).Replace("_", "\\_", StringComparison.Ordinal) + "%";
+        return database.ReadAsync(connection =>
+        {
+            List<VendorPurchaseChoiceRow> rows = connection.Query<VendorPurchaseChoiceRow>("""
+                SELECT id AS Id,doc_no AS DocumentNumber,vendor_invoice_no AS InvoiceNumber,
+                       received_date AS ReceivedDate
+                FROM purchase WHERE vendor_id=@vendorId AND status='POSTED'
+                  AND (@term='' OR doc_no LIKE @pattern ESCAPE '\' OR vendor_invoice_no LIKE @pattern ESCAPE '\')
+                  AND (@beforeDate IS NULL OR received_date<@beforeDate
+                       OR (received_date=@beforeDate AND id<@beforeId))
+                ORDER BY received_date DESC,id DESC LIMIT @take
+                """, new { vendorId, term, pattern, beforeDate, beforeId, take = limit + 1 }).ToList();
+            bool hasMore = rows.Count > limit;
+            if (hasMore) rows.RemoveAt(limit);
+            VendorPurchaseChoiceRow? last = rows.LastOrDefault();
+            return new VendorPurchasePage(rows.Select(static row => new VendorPurchaseChoice(row.Id,
+                string.IsNullOrWhiteSpace(row.InvoiceNumber) ? row.DocumentNumber :
+                    $"{row.DocumentNumber} · {row.InvoiceNumber}")).ToList(),
+                hasMore, last?.ReceivedDate, last?.Id);
+        }, cancellationToken);
+    }
+
+    public Task<VendorLotPage> GetVendorLotPageAsync(long vendorId, DateOnly? beforeDate = null,
+        long? beforeId = null, int limit = 100, CancellationToken cancellationToken = default)
+    {
+        if (vendorId <= 0 || (beforeDate is null) != (beforeId is null) || limit is < 1 or > 200)
+            throw new DomainException(ErrorCode.Validation, "Invalid vendor lot page.");
+        return database.ReadAsync(connection =>
+        {
+            List<VendorLotRow> rows = connection.Query<VendorLotRow>("""
+                SELECT l.id AS Id,p.name AS ProductName,l.lot_code AS LotCode,
+                       l.batch_no AS BatchNumber,l.received_date AS ReceivedDate,
+                       l.expiry_date AS ExpiryDate,l.qty_on_hand AS OnHand
+                FROM product_lot l JOIN product p ON p.id=l.product_id
+                WHERE l.vendor_id=@vendorId AND (@beforeDate IS NULL OR l.received_date<@beforeDate
+                      OR (l.received_date=@beforeDate AND l.id<@beforeId))
+                ORDER BY l.received_date DESC,l.id DESC LIMIT @take
+                """, new { vendorId, beforeDate, beforeId, take = limit + 1 }).ToList();
+            bool hasMore = rows.Count > limit;
+            if (hasMore) rows.RemoveAt(limit);
+            VendorLotRow? last = rows.LastOrDefault();
+            return new VendorLotPage(rows.Select(static row => new VendorLotItem(row.ProductName,
+                row.LotCode, row.BatchNumber, row.ReceivedDate, row.ExpiryDate,
+                Quantity.FromScaled(row.OnHand))).ToList(), hasMore, last?.ReceivedDate, last?.Id);
+        }, cancellationToken);
+    }
+
     public Task<IReadOnlyList<VendorLotItem>> GetVendorLotsAsync(long vendorId,
         CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
             (IReadOnlyList<VendorLotItem>)connection.Query<VendorLotRow>("""
@@ -759,8 +880,8 @@ public sealed class PurchasingService(
     private sealed class CancelLotRow { public long LotId { get; init; } public long ProductId { get; init; } public long Received { get; init; } public long OnHand { get; init; } public long UnitCost { get; init; } public long PurchaseLineId { get; init; } public long MovementCount { get; init; } }
     private sealed class PostedRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public long Subtotal { get; init; } public long Discount { get; init; } public long Tax { get; init; } public long OtherCharges { get; init; } public long RoundOff { get; init; } public long GrandTotal { get; init; } public long? VendorBillTotal { get; init; } }
     private sealed class LedgerRow { public DateOnly Date { get; init; } public string Kind { get; init; } = ""; public string? Reference { get; init; } public long Debit { get; init; } public long Credit { get; init; } public long SortId { get; init; } }
-    private sealed class VendorPurchaseChoiceRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public string? InvoiceNumber { get; init; } }
-    private sealed class VendorLotRow { public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public string? BatchNumber { get; init; } public DateOnly ReceivedDate { get; init; } public DateOnly? ExpiryDate { get; init; } public long OnHand { get; init; } }
+    private sealed class VendorPurchaseChoiceRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public string? InvoiceNumber { get; init; } public DateOnly ReceivedDate { get; init; } }
+    private sealed class VendorLotRow { public long Id { get; init; } public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public string? BatchNumber { get; init; } public DateOnly ReceivedDate { get; init; } public DateOnly? ExpiryDate { get; init; } public long OnHand { get; init; } }
     private sealed class VendorReturnLotRow
     {
         public long LotId { get; init; }

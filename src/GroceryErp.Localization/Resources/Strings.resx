@@ -546,6 +546,12 @@
   <data name="Reports_Navigation" xml:space="preserve"><value>Reports</value></data>
   <data name="Reports_Title" xml:space="preserve"><value>Reports and profit &amp; loss</value></data>
   <data name="Reports_ExportExcel" xml:space="preserve"><value>Export Excel</value></data>
+  <data name="Common_Open" xml:space="preserve"><value>Open</value></data>
+  <data name="Purchasing_Filter" xml:space="preserve"><value>Filter</value></data>
+  <data name="Purchasing_ClearFilters" xml:space="preserve"><value>Clear filters</value></data>
+  <data name="Reports_ExportFullCsv" xml:space="preserve"><value>Export full CSV</value></data>
+  <data name="Reports_CancelExport" xml:space="preserve"><value>Cancel export</value></data>
+  <data name="Reports_ExportedRows" xml:space="preserve"><value>Exported {0} rows.</value></data>
   <data name="Reports_PrintA4" xml:space="preserve"><value>Preview / print A4</value></data>
   <data name="Reports_Particulars" xml:space="preserve"><value>Particulars</value></data>
   <data name="Reports_Amount" xml:space="preserve"><value>Amount</value></data>

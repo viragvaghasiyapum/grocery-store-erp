@@ -10,7 +10,7 @@
   <Grid>
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <Grid>
-    <TextBox x:Name="SearchBox" Height="36" ToolTip="{l:Tr Sales_FindCustomer}"/>
+    <TextBox x:Name="SearchBox" Height="36" TextChanged="SearchBox_OnChanged" ToolTip="{l:Tr Sales_FindCustomer}"/>
     <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="Gray" IsHitTestVisible="False"
                Text="{l:Tr Sales_FindCustomer}">
      <TextBlock.Style>

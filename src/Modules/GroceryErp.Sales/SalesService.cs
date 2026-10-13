@@ -312,12 +312,25 @@ public sealed class SalesService(
         CancellationToken cancellationToken = default) => database.ReadAsync<IReadOnlyList<CustomerItem>>(connection =>
     {
         string search = (query ?? string.Empty).Trim();
+        if (search.Length > 120) throw new DomainException(ErrorCode.Validation, "Customer search is too long.");
+        if (search.Length > 0 && search.All(char.IsAsciiDigit))
+            return connection.Query<CustomerItem>("""
+                SELECT id AS Id,name AS Name,phone AS Phone,gstin AS Gstin FROM customer
+                WHERE is_active=1 AND phone>=@prefix AND phone<@upper
+                ORDER BY phone,id LIMIT 100
+                """, new { prefix = search, upper = search + ":" }).ToArray();
         return connection.Query<CustomerItem>("""
             SELECT id AS Id,name AS Name,phone AS Phone,gstin AS Gstin FROM customer
             WHERE is_active=1 AND (@search='' OR name LIKE @pattern OR phone LIKE @pattern)
-            ORDER BY name,id LIMIT 100
+            ORDER BY name COLLATE NOCASE,id LIMIT 100
             """, new { search, pattern = $"%{search}%" }).ToArray();
     }, cancellationToken);
+
+    public Task<CustomerItem?> GetCustomerAsync(long customerId, CancellationToken cancellationToken = default) =>
+        database.ReadAsync(connection => connection.QuerySingleOrDefault<CustomerItem>("""
+            SELECT id AS Id,name AS Name,phone AS Phone,gstin AS Gstin FROM customer
+            WHERE id=@customerId AND is_active=1
+            """, new { customerId }), cancellationToken);
 
     public Task<long> CreateCustomerAsync(string name, string? phone, string? gstin,
         CancellationToken cancellationToken = default) => database.WriteAsync(transaction =>
@@ -689,32 +702,71 @@ public sealed class SalesService(
         ArgumentNullException.ThrowIfNull(filter);
         string? status = filter.Status is null ? null : StatusCode(filter.Status.Value);
         string? payment = filter.PaymentMode is null ? null : PaymentCode(filter.PaymentMode.Value);
-        return connection.Query<HistoryRow>("""
+        string? invoice = Clean(filter.InvoiceNumber);
+        int limit = Math.Clamp(filter.Limit, 1, 500);
+        if (filter.BeforeDate is not null && filter.BeforeId is null)
+            throw new ArgumentException("A history cursor requires both a date and an ID.", nameof(filter));
+        List<string> conditions = [];
+        if (status is not null) conditions.Add("s.status=@status");
+        if (payment is not null) conditions.Add("EXISTS(SELECT 1 FROM sale_payment p WHERE p.sale_id=s.id AND p.mode=@payment)");
+        if (filter.MinimumAmount is not null) conditions.Add("s.grand_total>=@minimum");
+        if (filter.MaximumAmount is not null) conditions.Add("s.grand_total<=@maximum");
+        if (invoice is not null) conditions.Add("s.invoice_no LIKE @invoice || '%'");
+        const string select = """
             SELECT s.id AS Id,s.invoice_no AS InvoiceNumber,s.sale_date AS SaleDate,s.status AS Status,
                    s.line_count AS LineCount,s.grand_total AS GrandTotal,s.completed_at AS CompletedAt,
                    s.void_reason AS VoidReason,
                    COALESCE((SELECT group_concat(DISTINCT p.mode) FROM sale_payment p WHERE p.sale_id=s.id),'') AS PaymentModes
             FROM sale s
-            WHERE (@fromDate IS NULL OR s.sale_date>=@fromDate) AND (@toDate IS NULL OR s.sale_date<=@toDate)
-              AND (@status IS NULL OR s.status=@status)
-              AND (@payment IS NULL OR EXISTS(SELECT 1 FROM sale_payment p WHERE p.sale_id=s.id AND p.mode=@payment))
-              AND (@minimum IS NULL OR s.grand_total>=@minimum) AND (@maximum IS NULL OR s.grand_total<=@maximum)
-              AND (@invoice IS NULL OR s.invoice_no LIKE @invoice || '%')
-              AND (@beforeDate IS NULL OR (s.sale_date,s.id)<(@beforeDate,@beforeId))
-            ORDER BY s.sale_date DESC,s.id DESC LIMIT @limit
-            """, new
+            """;
+        HistoryRow[] QueryPage(string? cursorCondition, int pageLimit)
         {
-            fromDate = filter.From is null ? null : DateText(filter.From.Value),
-            toDate = filter.To is null ? null : DateText(filter.To.Value),
-            status,
-            payment,
-            minimum = filter.MinimumAmount?.Scaled,
-            maximum = filter.MaximumAmount?.Scaled,
-            invoice = Clean(filter.InvoiceNumber),
-            beforeDate = filter.BeforeDate is null ? null : DateText(filter.BeforeDate.Value),
-            beforeId = filter.BeforeId,
-            limit = Math.Clamp(filter.Limit, 1, 500),
-        }).Select(static row => new SaleHistoryItem(row.Id, row.InvoiceNumber, ParseDate(row.SaleDate),
+            var predicates = new List<string>(conditions);
+            if (cursorCondition is null)
+            {
+                if (filter.From is not null && filter.From == filter.To)
+                    predicates.Add("s.sale_date=@fromDate");
+                else
+                {
+                    if (filter.From is not null) predicates.Add("s.sale_date>=@fromDate");
+                    if (filter.To is not null) predicates.Add("s.sale_date<=@toDate");
+                }
+            }
+            else predicates.Add(cursorCondition);
+            string where = predicates.Count == 0 ? "" : " WHERE " + string.Join(" AND ", predicates);
+            return connection.Query<HistoryRow>(select + where +
+                " ORDER BY s.sale_date DESC,s.id DESC LIMIT @limit", new
+            {
+                fromDate = filter.From is null ? null : DateText(filter.From.Value),
+                toDate = filter.To is null ? null : DateText(filter.To.Value),
+                status,
+                payment,
+                minimum = filter.MinimumAmount?.Scaled,
+                maximum = filter.MaximumAmount?.Scaled,
+                invoice,
+                beforeDate = filter.BeforeDate is null ? null : DateText(filter.BeforeDate.Value),
+                beforeId = filter.BeforeId,
+                limit = pageLimit,
+            }).ToArray();
+        }
+
+        HistoryRow[] rows;
+        if (filter.BeforeDate is null) rows = QueryPage(null, limit);
+        else
+        {
+            bool dateInRange = (filter.From is null || filter.BeforeDate >= filter.From)
+                && (filter.To is null || filter.BeforeDate <= filter.To);
+            rows = dateInRange ? QueryPage("s.sale_date=@beforeDate AND s.id<@beforeId", limit) : [];
+            if (rows.Length < limit)
+            {
+                string older = filter.To < filter.BeforeDate
+                    ? "s.sale_date<=@toDate" : "s.sale_date<@beforeDate";
+                rows = [.. rows, .. QueryPage(older, limit - rows.Length)];
+            }
+            if (filter.From is not null)
+                rows = rows.Where(row => string.CompareOrdinal(row.SaleDate, DateText(filter.From.Value)) >= 0).ToArray();
+        }
+        return rows.Select(static row => new SaleHistoryItem(row.Id, row.InvoiceNumber, ParseDate(row.SaleDate),
             ParseStatus(row.Status), row.LineCount, Money.FromScaled(row.GrandTotal), row.PaymentModes,
             row.CompletedAt, row.VoidReason)).ToArray();
     }, cancellationToken);

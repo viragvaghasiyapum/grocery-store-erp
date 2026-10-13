@@ -11,7 +11,15 @@
  <Grid Margin="20">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
    <RowDefinition Height="250"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Sales_History_Title}"/>
+  <Grid Grid.Row="0">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Sales_History_Title}"/>
+   <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+    <TextBlock x:Name="StatusText" MaxWidth="220" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+    <Button x:Name="ExportButton" Margin="8,0,0,0" Click="Export_OnClick" Content="{l:Tr Sales_Export}"/>
+    <Button x:Name="CancelExportButton" Margin="6,0,0,0" IsEnabled="False" Click="CancelExport_OnClick" Content="Cancel"/>
+   </StackPanel>
+  </Grid>
   <WrapPanel Grid.Row="1" Margin="0,12,0,8">
    <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Sales_From}"/><DatePicker x:Name="FromPicker" Width="135" SelectedDateFormat="Short"/></StackPanel>
    <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Sales_To}"/><DatePicker x:Name="ToPicker" Width="135" SelectedDateFormat="Short"/></StackPanel>
@@ -89,7 +97,6 @@
   <Grid Grid.Row="4">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-    <TextBlock x:Name="StatusText" VerticalAlignment="Center"/>
     <Button x:Name="PreviousButton" Margin="12,0,0,0" Click="Previous_OnClick" Content="{l:Tr Sales_Previous}"/>
     <Button x:Name="NextButton" Margin="6,0,0,0" Click="Next_OnClick" Content="{l:Tr Sales_Next}"/>
    </StackPanel>
@@ -97,8 +104,6 @@
     <Button x:Name="ReprintButton" Margin="0,0,8,0" Click="Reprint_OnClick" Content="{l:Tr Sales_Reprint}"/>
     <Button x:Name="VoidButton" Margin="0,0,8,0" Click="Void_OnClick" Content="{l:Tr Sales_Void}"/>
     <Button x:Name="ReturnButton" Click="Return_OnClick" Content="{l:Tr Sales_Return}"/>
-    <Button x:Name="ExportButton" Margin="8,0,0,0" Click="Export_OnClick" Content="{l:Tr Sales_Export}"/>
-    <Button x:Name="CancelExportButton" Margin="6,0,0,0" IsEnabled="False" Click="CancelExport_OnClick" Content="Cancel"/>
    </StackPanel>
   </Grid>
  </Grid>

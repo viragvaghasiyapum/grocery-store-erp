@@ -20,7 +20,7 @@ using GroceryErp.Reports;
 using GroceryErp.Sales;
 
 if (args.Length < 1)
-    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [profile|shape-profile|report-profile|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|restore-race|export|history-export|verify|data-shape|ui-setup] [output.json]");
+    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|shape-profile|report-profile|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|restore-race|export|history-export|verify|data-shape|ui-setup] [output.json]");
 
 string root = Path.GetFullPath(args[0]);
 string mode = args.Length > 1 ? args[1] : "read";
@@ -850,6 +850,250 @@ switch (mode)
             }), static x => x);
         using (var connection = factory.Open()) connection.Execute("PRAGMA optimize");
         break;
+    case "phase1-low-seed":
+    {
+        await Measure("seed-low-stock", () => database.WriteAsync(transaction =>
+        {
+            int changed = transaction.Connection.Execute("""
+                UPDATE product SET reorder_level=1000000000 WHERE id%10=0
+                """, transaction: transaction.Transaction);
+            long low = transaction.Connection.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM product_stock_total WHERE is_low=1", transaction: transaction.Transaction);
+            if (low == 0) throw new InvalidDataException("The low stock seed had no matches.");
+            return changed;
+        }), static x => x);
+        break;
+    }
+    case "phase1-export":
+    {
+        string csv = Path.Combine(paths.ExportsDir, "phase1-full-sales.csv");
+        await Measure("full-sales-csv", async () =>
+        {
+            long count = await reports.ExportCsvAsync(ReportKind.SalesRegister,
+                new ReportFilter(From: new DateOnly(2020, 1, 1), To: end, Limit: 100), csv);
+            using var connection = factory.Open();
+            long expected = connection.ExecuteScalar<long>("""
+                SELECT COUNT(*) FROM sale WHERE sale_date BETWEEN '2020-01-01' AND '2026-09-26'
+                  AND status IN ('COMPLETED','VOID')
+                """);
+            if (count != expected || File.ReadLines(csv).LongCount() != expected + 1)
+                throw new InvalidDataException($"CSV rows {count} do not match expected {expected}.");
+            if (Directory.GetFiles(paths.ExportsDir, "*.partial").Length != 0)
+                throw new InvalidDataException("Partial export files remain.");
+            return checked((int)count);
+        }, static x => x);
+        break;
+    }
+    case "phase1-history-hot":
+    {
+        using var historyConnection = factory.Open();
+        DateOnly today = DateOnly.ParseExact(historyConnection.ExecuteScalar<string>(
+            "SELECT MAX(sale_date) FROM sale")!, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        await Measure("history-500-today", () => sales.GetHistoryAsync(
+            new SaleHistoryFilter(From: today, To: today, Limit: 500)), static x => x.Count);
+        await Measure("history-500-range", () => sales.GetHistoryAsync(
+            new SaleHistoryFilter(From: new DateOnly(1900, 1, 1), To: today, Limit: 500)), static x => x.Count);
+        await Measure("history-500-middle", () => sales.GetHistoryAsync(
+            new SaleHistoryFilter(From: today, To: today, BeforeDate: today,
+                BeforeId: 2_500_000, Limit: 500)), static x => x.Count);
+        await Measure("history-500-oldest", () => sales.GetHistoryAsync(
+            new SaleHistoryFilter(From: today, To: today, BeforeDate: today,
+                BeforeId: 100_000, Limit: 500)), static x => x.Count);
+        await Measure("history-500-middle-unbounded", () => sales.GetHistoryAsync(
+            new SaleHistoryFilter(BeforeDate: today, BeforeId: 2_500_000, Limit: 500)), static x => x.Count);
+        await Measure("history-500-middle-range", () => sales.GetHistoryAsync(
+            new SaleHistoryFilter(From: new DateOnly(1900, 1, 1), To: today,
+                BeforeDate: today, BeforeId: 2_500_000, Limit: 500)), static x => x.Count);
+        await Measure("history-500-transition-range", () => sales.GetHistoryAsync(
+            new SaleHistoryFilter(From: new DateOnly(1900, 1, 1), To: today,
+                BeforeDate: today, BeforeId: 64_001, Limit: 500)), static x => x.Count);
+        await Measure("history-20-pages-today", async () =>
+        {
+            DateOnly? beforeDate = null;
+            long? beforeId = null;
+            int count = 0;
+            for (int pageNumber = 0; pageNumber < 20; pageNumber++)
+            {
+                IReadOnlyList<SaleHistoryItem> page = await sales.GetHistoryAsync(
+                    new SaleHistoryFilter(From: today, To: today, BeforeDate: beforeDate,
+                        BeforeId: beforeId, Limit: 500));
+                count += page.Count;
+                if (page.Count < 500) break;
+                beforeDate = page[^1].SaleDate;
+                beforeId = page[^1].Id;
+            }
+            return count;
+        }, static x => x);
+        CapturePlan("history-500-today", $"""
+            SELECT s.id FROM sale s
+            WHERE s.sale_date='{today:yyyy-MM-dd}'
+            ORDER BY s.sale_date DESC,s.id DESC LIMIT 500
+            """);
+        CapturePlan("history-500-middle", $"""
+            SELECT s.id FROM sale s
+            WHERE s.sale_date='{today:yyyy-MM-dd}' AND s.id<2500000
+            ORDER BY s.sale_date DESC,s.id DESC LIMIT 500
+            """);
+        break;
+    }
+    case "phase1-history-seed":
+    {
+        using var connection = factory.Open();
+        long existing = connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sale");
+        if (existing > 5_000_000) throw new InvalidDataException("The sale fixture exceeds five million rows.");
+        string saleDate = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        const int batchSize = 50_000;
+        for (long offset = existing; offset < 5_000_000; offset += batchSize)
+        {
+            int take = (int)Math.Min(batchSize, 5_000_000 - offset);
+            using var transaction = connection.BeginTransaction();
+            connection.Execute("""
+                WITH RECURSIVE n(value) AS (
+                    SELECT 1 UNION ALL SELECT value+1 FROM n WHERE value<@take
+                )
+                INSERT INTO sale(invoice_no,sale_date,status,line_count,taxable_total,grand_total)
+                SELECT 'PHASE1-'||(value+@offset),@saleDate,'COMPLETED',0,1000,1000 FROM n
+                """, new { take, offset, saleDate }, transaction, commandTimeout: 300);
+            transaction.Commit();
+            if ((offset / batchSize) % 10 == 0) Console.WriteLine($"SEEDED {offset + take} / 5000000");
+        }
+        long actual = connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sale");
+        if (actual != 5_000_000) throw new InvalidDataException($"Seeded {actual} sales, expected 5000000.");
+        Console.WriteLine($"HISTORY_ROWS {actual} DATE {saleDate}");
+        break;
+    }
+    case "phase1-count":
+    {
+        long countId = await inventory.CreateStockCountAsync(end, null, "Phase 1 whole-store paging audit");
+        await Measure("draft-count-page-after-create", () => inventory.GetDraftCountPageAsync(),
+            static x => x.Items.Count);
+        await Measure("whole-count-first-page", () => inventory.GetStockCountPageAsync(countId),
+            static x => x.Lines.Count);
+        await Measure("whole-count-review", () => inventory.GetStockCountReviewAsync(countId),
+            static x => checked((int)x.Total));
+        break;
+    }
+    case "phase1-read":
+    {
+        await Measure("catalog-visible-page", async () =>
+        {
+            ProductSearchPage page = await catalog.SearchPageAsync(new ProductSearchFilter(Limit: 100));
+            if (page.Items.Count > 100) throw new InvalidDataException("Catalog page exceeded its bound.");
+            return page.Items.Count;
+        }, static x => x);
+        await Measure("catalog-visible-page-warm", () =>
+            catalog.SearchPageAsync(new ProductSearchFilter(Limit: 100)), static x => x.Items.Count);
+        await Measure("catalog-low-stock-page", () =>
+            catalog.SearchPageAsync(new ProductSearchFilter(LowStockOnly: true, Limit: 100)),
+            static x => x.Items.Count);
+        await Measure("catalog-low-stock-traversal", async () =>
+        {
+            string? afterName = null;
+            long? afterId = null;
+            var seen = new HashSet<long>();
+            while (true)
+            {
+                ProductSearchPage page = await catalog.SearchPageAsync(
+                    new ProductSearchFilter(LowStockOnly: true, Limit: 100), afterName, afterId);
+                foreach (ProductListItem item in page.Items)
+                    if (!seen.Add(item.Id)) throw new InvalidDataException("Duplicate low stock page row.");
+                if (!page.HasMore) break;
+                afterName = page.NextName;
+                afterId = page.NextId;
+            }
+            using var connection = factory.Open();
+            int expected = connection.ExecuteScalar<int>("""
+                SELECT COUNT(*) FROM product p JOIN product_stock_total t ON t.product_id=p.id
+                WHERE p.is_active=1 AND t.is_low=1
+                """);
+            if (seen.Count != expected) throw new InvalidDataException($"Reached {seen.Count} of {expected} low products.");
+            return seen.Count;
+        }, static x => x);
+        await Measure("catalog-short-page", () =>
+            catalog.SearchPageAsync(new ProductSearchFilter("gr", Limit: 100)),
+            static x => x.Items.Count);
+        await Measure("catalog-fts-page", () =>
+            catalog.SearchPageAsync(new ProductSearchFilter("grocery item", Limit: 100)),
+            static x => x.Items.Count);
+        await Measure("stock-visible-page", async () =>
+        {
+            StockOverviewPage page = await inventory.GetOverviewPageAsync(limit: 100);
+            if (page.Items.Count > 100) throw new InvalidDataException("Stock page exceeded its bound.");
+            return page.Items.Count;
+        }, static x => x);
+        await Measure("expiry-visible-page", async () =>
+        {
+            ExpiryPage page = await moneyOut.GetExpiryPageAsync("EXPIRED", limit: 100);
+            if (page.Items.Count > 100) throw new InvalidDataException("Expiry page exceeded its bound.");
+            return page.Items.Count;
+        }, static x => x);
+        await Measure("vendor-ledger-page", async () =>
+        {
+            VendorLedgerPage page = await purchasing.GetVendorLedgerPageAsync(1);
+            if (page.Items.Count > 100) throw new InvalidDataException("Vendor ledger page exceeded its bound.");
+            return page.Items.Count;
+        }, static x => x);
+        await Measure("vendor-lot-page", async () =>
+        {
+            VendorLotPage page = await purchasing.GetVendorLotPageAsync(1);
+            if (page.Items.Count > 100) throw new InvalidDataException("Vendor lot page exceeded its bound.");
+            return page.Items.Count;
+        }, static x => x);
+        await Measure("vendor-purchase-search", async () =>
+        {
+            VendorPurchasePage page = await purchasing.GetVendorPurchasePageAsync(1, "SCALE-GRN-");
+            if (page.Items.Count > 100) throw new InvalidDataException("Vendor purchase page exceeded its bound.");
+            return page.Items.Count;
+        }, static x => x);
+        await Measure("vendor-purchase-traversal", async () =>
+        {
+            DateOnly? beforeDate = null;
+            long? beforeId = null;
+            var seen = new HashSet<long>();
+            while (true)
+            {
+                VendorPurchasePage page = await purchasing.GetVendorPurchasePageAsync(1,
+                    beforeDate: beforeDate, beforeId: beforeId);
+                foreach (VendorPurchaseChoice choice in page.Items)
+                    if (!seen.Add(choice.Id)) throw new InvalidDataException("Duplicate vendor purchase page row.");
+                if (!page.HasMore) break;
+                beforeDate = page.NextDate;
+                beforeId = page.NextId;
+            }
+            using var connection = factory.Open();
+            int expected = connection.ExecuteScalar<int>(
+                "SELECT COUNT(*) FROM purchase WHERE vendor_id=1 AND status='POSTED'");
+            if (seen.Count != expected) throw new InvalidDataException($"Reached {seen.Count} of {expected} purchases.");
+            return seen.Count;
+        }, static x => x);
+        await Measure("draft-count-page", async () =>
+        {
+            DraftCountPage page = await inventory.GetDraftCountPageAsync();
+            if (page.Items.Count > 50) throw new InvalidDataException("Draft count page exceeded its bound.");
+            return page.Items.Count;
+        }, static x => x);
+        using (var connection = factory.Open())
+        {
+            long lowMismatch = connection.ExecuteScalar<long>("""
+                SELECT COUNT(*) FROM product p LEFT JOIN product_stock_total t ON t.product_id=p.id
+                WHERE t.product_id IS NULL OR t.is_low != CASE WHEN p.reorder_level>0
+                    AND t.quantity<=p.reorder_level THEN 1 ELSE 0 END
+                """);
+            if (lowMismatch != 0) throw new InvalidDataException($"Low-stock projection mismatches: {lowMismatch}.");
+            long? countId = connection.ExecuteScalar<long?>(
+                "SELECT id FROM stock_count WHERE status='DRAFT' ORDER BY id DESC LIMIT 1");
+            if (countId is long id)
+                await Measure("stock-count-review", () => inventory.GetStockCountReviewAsync(id),
+                    static x => checked((int)x.Total));
+            CapturePlan("vendor-purchase-page", "SELECT id FROM purchase WHERE vendor_id=1 AND status='POSTED' ORDER BY received_date DESC,id DESC LIMIT 100");
+            CapturePlan("draft-count-page", "SELECT id FROM stock_count WHERE status='DRAFT' ORDER BY id DESC LIMIT 50");
+            CapturePlan("customer-name-page", "SELECT id FROM customer WHERE is_active=1 ORDER BY name COLLATE NOCASE,id LIMIT 100");
+            CapturePlan("customer-phone-prefix", "SELECT id FROM customer WHERE is_active=1 AND phone>='90000' AND phone<'90000:' ORDER BY phone,id LIMIT 100");
+            CapturePlan("catalog-low-stock", "SELECT p.id FROM product_stock_total t JOIN product p ON p.id=t.product_id WHERE t.is_low=1 AND p.is_active=1 ORDER BY p.name COLLATE NOCASE,p.id LIMIT 100");
+            CapturePlan("catalog-low-stock-name-order", "SELECT p.id FROM product p INDEXED BY ix_product_name CROSS JOIN product_stock_total t ON t.product_id=p.id AND t.is_low=1 WHERE p.is_active=1 ORDER BY p.name COLLATE NOCASE,p.id LIMIT 100");
+        }
+        break;
+    }
     case "optimized-read":
         await Measure("startup-health", () => maintenance.CheckBeforeShellAsync(), static _ => 1);
         await Measure("catalog-first-page", () => catalog.SearchPageAsync(new ProductSearchFilter(Limit: 100)), static x => x.Items.Count);

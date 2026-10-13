@@ -440,9 +440,8 @@ public partial class BillingPage : Page, IDisposable
         if (_saleId is null || BillGrid.SelectedItem is not SaleLine line) return;
         try
         {
-            IReadOnlyList<LotItem> lots = await _inventory.GetLotsAsync(line.ProductId);
-            LotItem[] available = lots.Where(lot => lot.IsActive && lot.OnHand > Quantity.Zero).ToArray();
-            var picker = new LotPickerWindow(available, line.LotId) { Owner = Window.GetWindow(this) };
+            var picker = new LotPickerWindow(_inventory, line.ProductId, line.LotId)
+                { Owner = Window.GetWindow(this) };
             if (picker.ShowDialog() != true || picker.SelectedLot is not { } selected) return;
             await _sales.ChangeLineLotAsync(_saleId.Value, line.Id, selected.Id);
             await RefreshAsync();

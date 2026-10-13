@@ -10,6 +10,7 @@ public partial class CustomerWindow : Window
 {
     private readonly SalesService _sales;
     private readonly long? _currentCustomerId;
+    private int _searchVersion;
 
     public CustomerWindow(SalesService sales, long? currentCustomerId, bool loadOnShow = true)
     {
@@ -23,14 +24,31 @@ public partial class CustomerWindow : Window
 
     private async Task SearchAsync()
     {
+        int version = ++_searchVersion;
         try
         {
             IReadOnlyList<CustomerItem> customers = await _sales.SearchCustomersAsync(InputNormalizer.Normalize(SearchBox.Text));
-            CustomersGrid.ItemsSource = customers;
-            CustomersGrid.SelectedItem = customers.FirstOrDefault(customer => customer.Id == _currentCustomerId);
+            if (version != _searchVersion) return;
+            var visible = customers.ToList();
+            if (_currentCustomerId is long id && visible.All(customer => customer.Id != id))
+            {
+                CustomerItem? selected = await _sales.GetCustomerAsync(id);
+                if (version != _searchVersion) return;
+                if (selected is not null) visible.Insert(0, selected);
+            }
+            CustomersGrid.ItemsSource = visible;
+            CustomersGrid.SelectedItem = visible.FirstOrDefault(customer => customer.Id == _currentCustomerId);
             ErrorText.Text = "";
         }
         catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
+    }
+
+    private async void SearchBox_OnChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        int version = ++_searchVersion;
+        await Task.Delay(180);
+        if (version == _searchVersion) await SearchAsync();
     }
 
     private async void Search_OnClick(object sender, RoutedEventArgs e) => await SearchAsync();

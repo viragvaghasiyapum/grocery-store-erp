@@ -65,13 +65,19 @@ public sealed record PurchaseTotals(
 public sealed record PostedPurchase(long Id, string DocumentNumber, PurchaseTotals Totals, IReadOnlyList<long> LotIds, bool WasReplay = false);
 
 public sealed record VendorLedgerItem(DateOnly Date, string Kind, string? Reference, Money Debit, Money Credit, Money Balance);
+public sealed record VendorLedgerPage(IReadOnlyList<VendorLedgerItem> Items, bool HasMore,
+    DateOnly? NextDate, string? NextKind, long? NextId);
 
 public sealed record VendorPaymentInput(long VendorId, long? PurchaseId, DateOnly Date, Money Amount, string Mode, string? Reference, string? Notes);
 
 public sealed record VendorPurchaseChoice(long Id, string Label);
+public sealed record VendorPurchasePage(IReadOnlyList<VendorPurchaseChoice> Items, bool HasMore,
+    DateOnly? NextDate, long? NextId);
 
 public sealed record VendorLotItem(string ProductName, string LotCode, string? BatchNumber,
     DateOnly ReceivedDate, DateOnly? ExpiryDate, Quantity OnHand);
+public sealed record VendorLotPage(IReadOnlyList<VendorLotItem> Items, bool HasMore,
+    DateOnly? NextDate, long? NextId);
 
 public sealed record VendorReturnLot(long LotId, long ProductId, string ProductName, string LotCode,
     Quantity Received, Quantity OnHand, Quantity Returnable, Money OriginalBeforeTax,

@@ -17,7 +17,8 @@ using Microsoft.Win32;
 namespace GroceryErp.App.Presentation;
 
 public sealed class LabelBatchRow(
-    string name, string? localName, string source, string barcode, decimal price, decimal? mrp, string copiesText, bool isSelected)
+    string name, string? localName, string source, string barcode, decimal price, decimal? mrp, string copiesText,
+    bool isSelected, bool isLot = false)
 {
     public string Name { get; } = name;
     public string? LocalName { get; } = localName;
@@ -27,6 +28,7 @@ public sealed class LabelBatchRow(
     public decimal? Mrp { get; } = mrp;
     public string CopiesText { get; set; } = copiesText;
     public bool IsSelected { get; set; } = isSelected;
+    public bool IsLot { get; } = isLot;
 }
 
 public partial class LabelBatchWindow : Window
@@ -38,6 +40,10 @@ public partial class LabelBatchWindow : Window
     private readonly IReadOnlyList<long> _lotIds;
     private readonly int _width;
     private readonly int _height;
+    private readonly long[] _lotProductIds;
+    private int _lotProductIndex;
+    private long? _lotBeforeId;
+    private bool _loadingLots;
     public ObservableCollection<LabelBatchRow> Rows { get; } = [];
 
     public LabelBatchWindow(CatalogService catalog, InventoryService inventory, ISettings settings,
@@ -48,6 +54,7 @@ public partial class LabelBatchWindow : Window
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _productIds = productIds ?? [];
         _lotIds = lotIds ?? [];
+        _lotProductIds = _productIds.Distinct().ToArray();
         (_width, _height) = ParseSize(settings.Current.LabelSize);
         InitializeComponent();
         LabelsGrid.ItemsSource = Rows;
@@ -78,7 +85,7 @@ public partial class LabelBatchWindow : Window
             }
             else
             {
-                foreach (long id in _productIds.Distinct())
+                foreach (long id in _lotProductIds)
                 {
                     ProductDetails product = await GetProductAsync(id, products);
                     if (!product.IsActive) continue;
@@ -91,15 +98,46 @@ public partial class LabelBatchWindow : Window
                             TranslationSource.Instance["Catalog_LabelProduct"], barcode, price.Value,
                             product.Product.DefaultMrp?.Value, "1", isSelected: true));
                     }
-                    foreach (LotItem lot in (await _inventory.GetLotsAsync(id)).Where(static item => item.IsActive && item.OnHand.Value > 0))
-                        await AddLotAsync(product, lot, isSelected: false);
                 }
+                await LoadMoreLotsAsync(products);
             }
             if (Rows.Count > 0) LabelsGrid.SelectedIndex = 0;
             StatusText.Text = Rows.Count == 0 ? TranslationSource.Instance["Catalog_NoLabels"] : string.Empty;
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
         finally { SaveButton.IsEnabled = PrintButton.IsEnabled = Rows.Count > 0; }
+    }
+
+    private async void LoadMoreLots_OnClick(object sender, RoutedEventArgs e)
+    {
+        try { await LoadMoreLotsAsync(new Dictionary<long, ProductDetails>()); }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async Task LoadMoreLotsAsync(Dictionary<long, ProductDetails> products)
+    {
+        if (_loadingLots || _lotProductIndex >= _lotProductIds.Length) return;
+        _loadingLots = true;
+        LoadMoreLotsButton.IsEnabled = false;
+        try
+        {
+            for (int index = Rows.Count - 1; index >= 0; index--)
+                if (Rows[index].IsLot && !Rows[index].IsSelected) Rows.RemoveAt(index);
+            while (_lotProductIndex < _lotProductIds.Length)
+            {
+                long productId = _lotProductIds[_lotProductIndex];
+                LotPage page = await _inventory.GetLotPageAsync(productId, beforeId: _lotBeforeId,
+                    limit: 100, availableOnly: true);
+                ProductDetails product = await GetProductAsync(productId, products);
+                foreach (LotItem lot in page.Items)
+                    await AddLotAsync(product, lot, isSelected: false);
+                if (page.HasMore) _lotBeforeId = page.NextId;
+                else { _lotProductIndex++; _lotBeforeId = null; }
+                if (page.Items.Count > 0) break;
+            }
+            LoadMoreLotsButton.IsEnabled = _lotProductIndex < _lotProductIds.Length;
+        }
+        finally { _loadingLots = false; }
     }
 
     private async Task<ProductDetails> GetProductAsync(long id, Dictionary<long, ProductDetails> cache)
@@ -116,7 +154,7 @@ public partial class LabelBatchWindow : Window
         string copies = Math.Max(1, Math.Ceiling(lot.Received.Value)).ToString(CultureInfo.InvariantCulture);
         Rows.Add(new LabelBatchRow(product.Product.Name, product.Product.NameLocal,
             $"{TranslationSource.Instance["Stock_LotCode"]} {lot.LotCode}", barcode,
-            lot.SellingPrice.Value, lot.Mrp?.Value, copies, isSelected));
+            lot.SellingPrice.Value, lot.Mrp?.Value, copies, isSelected, isLot: true));
     }
 
     private void LabelsGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e) => UpdatePreview();

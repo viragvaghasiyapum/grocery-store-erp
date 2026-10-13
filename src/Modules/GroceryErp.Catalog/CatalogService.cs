@@ -446,14 +446,21 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                 parameters.Add("prefix", (query.Length >= 3 ? "%" : "") + escaped + "%");
             }
 
-            string stockJoin = filter.LowStockOnly ? "LEFT JOIN product_stock_total stock ON stock.product_id=p.id" : string.Empty;
-            string lowStockFilter = filter.LowStockOnly
-                ? "AND p.reorder_level>0 AND COALESCE(stock.quantity,0)<=p.reorder_level"
+            bool broadLowStock = filter.LowStockOnly && query.Length == 0 &&
+                filter.CategoryId is null && filter.BrandId is null &&
+                !filter.NoBarcodeOnly && !filter.MissingLocalNameOnly && !filter.LooseOnly;
+            bool nameOrderedLowStock = broadLowStock && connection.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM product_stock_total WHERE is_low=1") > 500;
+            string productIndex = nameOrderedLowStock ? "INDEXED BY ix_product_name" : string.Empty;
+            string stockJoin = filter.LowStockOnly
+                ? (nameOrderedLowStock ? "CROSS JOIN" : "JOIN") +
+                  " product_stock_total stock ON stock.product_id=p.id AND stock.is_low=1"
                 : string.Empty;
+            string lowStockFilter = string.Empty;
 
             string sql = $$"""
                 WITH visible AS MATERIALIZED (
-                    SELECT p.id,p.name FROM product p {{join}} {{stockJoin}}
+                    SELECT p.id,p.name FROM product p {{productIndex}} {{join}} {{stockJoin}}
                     WHERE (@IncludeArchived=1 OR p.is_active=1)
                       AND (@CategoryId IS NULL OR p.category_id=@CategoryId)
                       AND (@BrandId IS NULL OR p.brand_id=@BrandId)

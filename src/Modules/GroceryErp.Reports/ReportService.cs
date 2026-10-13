@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO;
+using System.Text;
 using Dapper;
 using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
@@ -14,6 +15,8 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
 {
     private static readonly string[] LocalizedCodeKeys =
         ["Status", "Direction", "PaymentMode", "Method", "Weekday", "Type", "ReferenceType", "Reason", "Action", "Entity"];
+    private static readonly string[] AssetScheduleColumns =
+        ["Period", "Status", "Opening", "Depreciation", "Closing"];
     public DateRange ResolvePeriod(PnlPeriodKind kind, DateOnly? customFrom = null, DateOnly? customTo = null)
     {
         DateOnly today = clock.BusinessDate;
@@ -249,6 +252,9 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                 previousFrom = Iso(previousFrom),
                 previousTo = Iso(previousTo),
                 slowFrom = Iso(to.AddDays(-filter.SlowMoverDays)),
+                firstMonth = from.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                lastMonth = (to.Day == DateTime.DaysInMonth(to.Year, to.Month) ? to : to.AddMonths(-1))
+                    .ToString("yyyy-MM", CultureInfo.InvariantCulture),
                 Limit = filter.Limit + 1
             });
             List<ReportRow> rows = queried.Select(static row => new ReportRow(
@@ -264,6 +270,171 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
             return new TabularReport(Text($"Reports_Kind_{kind}", definition.Title),
                 definition.UsesPeriod ? period : null, columns, rows, totals, truncated);
         }, cancellationToken);
+    }
+
+    public async Task<long> ExportCsvAsync(ReportKind kind, ReportFilter filter, string path,
+        IProgress<long>? progress = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        DateOnly to = filter.To ?? clock.BusinessDate;
+        DateOnly from = filter.From ?? to.AddDays(-29);
+        DateRange period = new(from, to);
+        if (filter.SlowMoverDays is < 1 or > 3650)
+            throw new DomainException(ErrorCode.Validation, "Invalid report filter.");
+        string fullPath = Path.GetFullPath(path);
+        string temporary = fullPath + "." + Guid.NewGuid().ToString("N") + ".partial";
+        try
+        {
+            long exported;
+            if (kind == ReportKind.AssetSchedule)
+            {
+                exported = await ExportAssetScheduleCsvAsync(filter.AssetId, period, temporary,
+                    progress, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                ReportDefinition definition = Definition(kind);
+                int days = period.To.DayNumber - period.From.DayNumber + 1;
+                DateOnly previousTo = period.From.AddDays(-1);
+                DateOnly previousFrom = previousTo.AddDays(1 - days);
+                exported = await database.ReadAsync(connection =>
+                {
+                    using var writer = new StreamWriter(temporary, false, new UTF8Encoding(true), 64 * 1024);
+                    writer.WriteLine(string.Join(',', definition.Columns.Select(column => CsvText(
+                        Text($"Reports_Column_{column.Key}", column.Heading)))));
+                    var parameters = new
+                    {
+                        from = Iso(from), to = Iso(to), filter.ProductId, filter.LotId,
+                        filter.VendorId, filter.Status, filter.PaymentMode, filter.Entity, filter.Action,
+                        previousFrom = Iso(previousFrom), previousTo = Iso(previousTo),
+                        slowFrom = Iso(to.AddDays(-filter.SlowMoverDays)),
+                        firstMonth = from.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                        lastMonth = (to.Day == DateTime.DaysInMonth(to.Year, to.Month) ? to : to.AddMonths(-1))
+                            .ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                        Limit = int.MaxValue,
+                    };
+                    long count = 0;
+                    var command = new CommandDefinition(definition.Sql, parameters, commandTimeout: 300,
+                        flags: CommandFlags.None, cancellationToken: cancellationToken);
+                    foreach (dynamic row in connection.Query<dynamic>(command))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var values = (IDictionary<string, object?>)row;
+                        writer.WriteLine(string.Join(',', definition.Columns.Select(column =>
+                        {
+                            values.TryGetValue(column.Key, out object? value);
+                            return CsvValue(value, column.Kind);
+                        })));
+                        count++;
+                        if (count % 1000 == 0) progress?.Report(count);
+                    }
+                    return count;
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(temporary, fullPath, overwrite: true);
+            progress?.Report(exported);
+            return exported;
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+        }
+    }
+
+    private Task<long> ExportAssetScheduleCsvAsync(long? assetId, DateRange period, string temporary,
+        IProgress<long>? progress, CancellationToken cancellationToken) => database.ReadAsync(connection =>
+    {
+        using var writer = new StreamWriter(temporary, false, new UTF8Encoding(true), 64 * 1024);
+        writer.WriteLine(string.Join(',', AssetScheduleColumns
+            .Select(key => CsvText(Text($"Reports_Column_{key}", key)))));
+        if (assetId is null) return 0L;
+        AssetRaw? asset = connection.QuerySingleOrDefault<AssetRaw>("""
+            SELECT id AS Id,name AS Name,cost AS Cost,salvage_value AS Salvage,rate_pct AS Rate,
+                   method AS Method,in_use_from AS InUseFrom,disposed_date AS DisposedDate
+            FROM asset WHERE id=@assetId
+            """, new { assetId });
+        if (asset is null) return 0L;
+        List<AssetPeriodRaw> posted = connection.Query<AssetPeriodRaw>("""
+            SELECT period_month AS Period,opening_value AS Opening,amount AS Amount,closing_value AS Closing
+            FROM asset_depreciation WHERE asset_id=@assetId ORDER BY period_month
+            """, new { assetId }).ToList();
+        long count = 0;
+        void WriteRow(string month, string status, long opening, long amount, long closing)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            writer.WriteLine(string.Join(',', CsvText(month), CsvText(status),
+                CsvValue(opening, ReportValueKind.Money), CsvValue(amount, ReportValueKind.Money),
+                CsvValue(closing, ReportValueKind.Money)));
+            count++;
+            if (count % 1000 == 0) progress?.Report(count);
+        }
+        string postedStatus = Text("Reports_Value_POSTED", "POSTED");
+        string projectedStatus = Text("Reports_Value_PROJECTED", "PROJECTED");
+        foreach (AssetPeriodRaw row in posted)
+        {
+            YearMonth month = YearMonth.Parse(row.Period);
+            if (month.LastDay >= period.From && month.FirstDay <= period.To)
+                WriteRow(row.Period, postedStatus, row.Opening, row.Amount, row.Closing);
+        }
+        YearMonth cursor = posted.Count == 0 ? YearMonth.From(asset.InUseFrom)
+            : YearMonth.Parse(posted[^1].Period).AddMonths(1);
+        YearMonth target = YearMonth.From(period.To);
+        if (asset.DisposedDate is { } disposed && YearMonth.From(disposed) < target)
+            target = YearMonth.From(disposed);
+        long openingValue = posted.Count == 0 ? asset.Cost : posted[^1].Closing;
+        var info = new AssetDepreciationInfo(Money.FromScaled(asset.Cost), Money.FromScaled(asset.Salvage),
+            Percent.FromScaled(asset.Rate), asset.Method == "WDV" ? DepreciationMethod.Wdv : DepreciationMethod.Slm,
+            asset.InUseFrom, asset.DisposedDate);
+        YearMonth fiscalMonth = YearMonth.From(FiscalYear.Range(
+            FiscalYear.StartYear(cursor.FirstDay, settings.Current.FyStartMonth),
+            settings.Current.FyStartMonth).From);
+        long fiscalOpening = asset.Cost;
+        long charged = 0;
+        foreach (AssetPeriodRaw row in posted)
+        {
+            YearMonth month = YearMonth.Parse(row.Period);
+            if (month < fiscalMonth) fiscalOpening = row.Closing;
+            else if (month < cursor) charged += row.Amount;
+        }
+        while (cursor <= target)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            YearMonth currentFiscal = YearMonth.From(FiscalYear.Range(
+                FiscalYear.StartYear(cursor.FirstDay, settings.Current.FyStartMonth),
+                settings.Current.FyStartMonth).From);
+            if (currentFiscal != fiscalMonth)
+            {
+                fiscalMonth = currentFiscal;
+                fiscalOpening = openingValue;
+                charged = 0;
+            }
+            Money charge = Depreciation.MonthlyCharge(info, cursor, Money.FromScaled(openingValue),
+                Money.FromScaled(fiscalOpening), Money.FromScaled(charged), settings.Current.FyStartMonth);
+            long closing = openingValue - charge.Scaled;
+            if (cursor.LastDay >= period.From && cursor.FirstDay <= period.To)
+                WriteRow(cursor.ToString(), projectedStatus, openingValue, charge.Scaled, closing);
+            charged += charge.Scaled;
+            openingValue = closing;
+            if (cursor == target) break;
+            cursor = cursor.AddMonths(1);
+        }
+        return count;
+    }, cancellationToken);
+
+    private static string CsvValue(object? value, ReportValueKind kind) => kind switch
+    {
+        ReportValueKind.Money or ReportValueKind.Quantity or ReportValueKind.Percent =>
+            ScaledDecimal(value).ToString("0.###", CultureInfo.InvariantCulture),
+        ReportValueKind.Count => Convert.ToString(value, CultureInfo.InvariantCulture) ?? "0",
+        _ => CsvText(Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty),
+    };
+
+    private static string CsvText(string value)
+    {
+        if (value.Length > 0 && (value[0] is '=' or '+' or '-' or '@' or '\t' or '\r')) value = "'" + value;
+        return '"' + value.Replace("\"", "\"\"", StringComparison.Ordinal) + '"';
     }
 
     private Task<TabularReport> GetSalaryMatrixAsync(DateRange period, int limit, CancellationToken cancellationToken) =>
@@ -334,47 +505,77 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                 FROM asset WHERE id=@assetId
                 """, new { assetId });
             if (asset is null) return new TabularReport(Text("Reports_Kind_AssetSchedule", "Asset depreciation schedule"), period, columns, [], new Dictionary<string, decimal>());
+            AssetPeriodRaw? latest = connection.QueryFirstOrDefault<AssetPeriodRaw>("""
+                SELECT period_month AS Period,opening_value AS Opening,amount AS Amount,closing_value AS Closing
+                FROM asset_depreciation WHERE asset_id=@assetId ORDER BY period_month DESC LIMIT 1
+                """, new { assetId });
             List<AssetPeriodRaw> posted = connection.Query<AssetPeriodRaw>("""
                 SELECT period_month AS Period,opening_value AS Opening,amount AS Amount,closing_value AS Closing
-                FROM asset_depreciation WHERE asset_id=@assetId ORDER BY period_month
-                """, new { assetId }).ToList();
-            var schedule = posted.ToDictionary(static row => YearMonth.Parse(row.Period));
-            var calculated = new List<AssetPeriodRaw>(posted);
-            YearMonth cursor = posted.Count == 0 ? YearMonth.From(asset.InUseFrom) : YearMonth.Parse(posted[^1].Period).AddMonths(1);
+                FROM asset_depreciation WHERE asset_id=@assetId
+                  AND period_month BETWEEN @firstMonth AND @lastMonth
+                ORDER BY period_month LIMIT @take
+                """, new
+            {
+                assetId,
+                firstMonth = YearMonth.From(period.From).ToString(),
+                lastMonth = YearMonth.From(period.To).ToString(),
+                take = limit + 1,
+            }).ToList();
+            var rows = new List<ReportRow>(Math.Min(posted.Count + 1, limit + 1));
+            string postedStatus = Text("Reports_Value_POSTED", "POSTED");
+            string projectedStatus = Text("Reports_Value_PROJECTED", "PROJECTED");
+            void AddRow(AssetPeriodRaw row, string status) => rows.Add(new ReportRow(new Dictionary<string, object?>
+            {
+                ["Period"] = row.Period,
+                ["Status"] = status,
+                ["Opening"] = row.Opening,
+                ["Depreciation"] = row.Amount,
+                ["Closing"] = row.Closing,
+            }));
+            foreach (AssetPeriodRaw row in posted) AddRow(row, postedStatus);
+            YearMonth cursor = latest is null ? YearMonth.From(asset.InUseFrom) : YearMonth.Parse(latest.Period).AddMonths(1);
             YearMonth target = YearMonth.From(period.To);
             if (asset.DisposedDate is { } disposed && YearMonth.From(disposed) < target) target = YearMonth.From(disposed);
-            long opening = posted.Count == 0 ? asset.Cost : posted[^1].Closing;
+            long opening = latest?.Closing ?? asset.Cost;
             var info = new AssetDepreciationInfo(Money.FromScaled(asset.Cost), Money.FromScaled(asset.Salvage),
                 Percent.FromScaled(asset.Rate), asset.Method == "WDV" ? DepreciationMethod.Wdv : DepreciationMethod.Slm,
                 asset.InUseFrom, asset.DisposedDate);
-            while (cursor <= target)
+            YearMonth fiscalMonth = YearMonth.From(FiscalYear.Range(
+                FiscalYear.StartYear(cursor.FirstDay, settings.Current.FyStartMonth),
+                settings.Current.FyStartMonth).From);
+            string fiscalKey = fiscalMonth.ToString();
+            string cursorKey = cursor.ToString();
+            long fiscalOpening = connection.ExecuteScalar<long?>("""
+                SELECT closing_value FROM asset_depreciation
+                WHERE asset_id=@assetId AND period_month<@fiscalKey
+                ORDER BY period_month DESC LIMIT 1
+                """, new { assetId, fiscalKey }) ?? asset.Cost;
+            long charged = connection.ExecuteScalar<long>("""
+                SELECT COALESCE(SUM(amount),0) FROM asset_depreciation
+                WHERE asset_id=@assetId AND period_month>=@fiscalKey AND period_month<@cursorKey
+                """, new { assetId, fiscalKey, cursorKey });
+            while (cursor <= target && rows.Count <= limit)
             {
-                int fiscalStartYear = FiscalYear.StartYear(cursor.FirstDay, settings.Current.FyStartMonth);
-                (DateOnly fiscalFrom, _) = FiscalYear.Range(fiscalStartYear, settings.Current.FyStartMonth);
-                YearMonth fiscalMonth = YearMonth.From(fiscalFrom);
-                long fiscalOpening = calculated.Where(row => YearMonth.Parse(row.Period) < fiscalMonth)
-                    .Select(static row => row.Closing).LastOrDefault(asset.Cost);
-                long charged = calculated.Where(row =>
-                    YearMonth.Parse(row.Period) >= fiscalMonth && YearMonth.Parse(row.Period) < cursor).Sum(static row => row.Amount);
+                cancellationToken.ThrowIfCancellationRequested();
+                YearMonth currentFiscal = YearMonth.From(FiscalYear.Range(
+                    FiscalYear.StartYear(cursor.FirstDay, settings.Current.FyStartMonth),
+                    settings.Current.FyStartMonth).From);
+                if (currentFiscal != fiscalMonth)
+                {
+                    fiscalMonth = currentFiscal;
+                    fiscalOpening = opening;
+                    charged = 0;
+                }
                 Money charge = Depreciation.MonthlyCharge(info, cursor, Money.FromScaled(opening), Money.FromScaled(fiscalOpening),
                     Money.FromScaled(charged), settings.Current.FyStartMonth);
                 long closing = opening - charge.Scaled;
                 var projected = new AssetPeriodRaw { Period = cursor.ToString(), Opening = opening, Amount = charge.Scaled, Closing = closing };
-                calculated.Add(projected);
+                if (cursor.LastDay >= period.From && cursor.FirstDay <= period.To) AddRow(projected, projectedStatus);
+                charged += charge.Scaled;
                 opening = closing;
+                if (cursor == target) break;
                 cursor = cursor.AddMonths(1);
             }
-            List<ReportRow> rows = calculated.Where(row =>
-                YearMonth.Parse(row.Period).LastDay >= period.From && YearMonth.Parse(row.Period).FirstDay <= period.To)
-                .Select(row => new ReportRow(new Dictionary<string, object?>
-                {
-                    ["Period"] = row.Period,
-                    ["Status"] = schedule.ContainsKey(YearMonth.Parse(row.Period))
-                        ? Text("Reports_Value_POSTED", "POSTED") : Text("Reports_Value_PROJECTED", "PROJECTED"),
-                    ["Opening"] = row.Opening,
-                    ["Depreciation"] = row.Amount,
-                    ["Closing"] = row.Closing,
-                })).Take(limit + 1).ToList();
             bool truncated = rows.Count > limit;
             if (truncated) rows.RemoveAt(limit);
             Dictionary<string, decimal> totals = new() { ["Depreciation"] = rows.Sum(row => ScaledDecimal(row.Values["Depreciation"])) };

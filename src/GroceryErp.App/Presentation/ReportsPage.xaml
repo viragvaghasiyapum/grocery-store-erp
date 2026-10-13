@@ -15,6 +15,8 @@
     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,0,0,6">
      <Button Margin="0,0,6,0" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
      <Button Margin="0,0,6,0" Click="Export_OnClick" Content="{l:Tr Reports_ExportExcel}"/>
+     <Button x:Name="FullCsvButton" Margin="0,0,6,0" Click="ExportFullCsv_OnClick" Content="{l:Tr Reports_ExportFullCsv}"/>
+     <Button x:Name="CancelExportButton" IsEnabled="False" Margin="0,0,6,0" Click="CancelExport_OnClick" Content="{l:Tr Reports_CancelExport}"/>
      <Button Click="Preview_OnClick" Content="{l:Tr Reports_PrintA4}"/>
     </StackPanel>
    </WrapPanel>

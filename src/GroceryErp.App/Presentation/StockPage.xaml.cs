@@ -73,10 +73,9 @@ public partial class StockPage : Page
     {
         try
         {
-            IReadOnlyList<StockCountSummary> drafts = await _inventory.GetDraftCountsAsync();
-            StockCountSummary? draft = drafts.Count == 0 ? null : drafts[0];
-            if (draft is null) { StatusText.Text = TranslationSource.Instance["Stock_NoDraftCount"]; return; }
-            var window = new StockCountWindow(_inventory, draft.Id) { Owner = Window.GetWindow(this) };
+            var picker = new DraftCountPickerWindow(_inventory) { Owner = Window.GetWindow(this) };
+            if (picker.ShowDialog() != true || picker.SelectedCountId is not long countId) return;
+            var window = new StockCountWindow(_inventory, countId) { Owner = Window.GetWindow(this) };
             if (window.ShowDialog() == true) await RefreshAsync();
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }

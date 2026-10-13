@@ -17,6 +17,43 @@ namespace GroceryErp.Integration.Tests;
 public sealed class SalesTests
 {
     [Fact]
+    public async Task HistoryCursor_ReachesSameAndOlderDatesWithoutDuplicates()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("""
+                INSERT INTO sale(sale_date,status) VALUES
+                    ('2026-09-26','DRAFT'),('2026-09-27','DRAFT'),
+                    ('2026-09-27','DRAFT'),('2026-09-27','DRAFT')
+                """);
+
+        var seen = new List<long>();
+        DateOnly? beforeDate = null;
+        long? beforeId = null;
+        while (true)
+        {
+            IReadOnlyList<SaleHistoryItem> page = await fixture.Sales.GetHistoryAsync(
+                new SaleHistoryFilter(From: new DateOnly(2026, 9, 26), To: new DateOnly(2026, 9, 27),
+                    BeforeDate: beforeDate, BeforeId: beforeId, Limit: 2), ct);
+            seen.AddRange(page.Select(static item => item.Id));
+            if (page.Count < 2) break;
+            beforeDate = page[^1].SaleDate;
+            beforeId = page[^1].Id;
+        }
+        seen.ShouldBe([4L, 3L, 2L, 1L]);
+
+        IReadOnlyList<SaleHistoryItem> sameDate = await fixture.Sales.GetHistoryAsync(
+            new SaleHistoryFilter(From: new DateOnly(2026, 9, 27), To: new DateOnly(2026, 9, 27),
+                BeforeDate: new DateOnly(2026, 9, 27), BeforeId: 3, Limit: 2), ct);
+        sameDate.Select(static item => item.Id).ShouldBe([2L]);
+        IReadOnlyList<SaleHistoryItem> ended = await fixture.Sales.GetHistoryAsync(
+            new SaleHistoryFilter(From: new DateOnly(2026, 9, 27), To: new DateOnly(2026, 9, 27),
+                BeforeDate: new DateOnly(2026, 9, 26), BeforeId: 1, Limit: 2), ct);
+        ended.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task Complete_IsIdempotent_AndPostsStockAtomically()
     {
         using var fixture = new SalesFixture();

@@ -22,5 +22,7 @@
     <EmbeddedResource Include="../../011_product_lot_product_lookup.sql" Link="db/011_product_lot_product_lookup.sql" />
     <EmbeddedResource Include="../../012_product_stock_projection.sql" Link="db/012_product_stock_projection.sql" />
     <EmbeddedResource Include="../../013_hot_query_indexes.sql" Link="db/013_hot_query_indexes.sql" />
+    <EmbeddedResource Include="../../014_interactive_picker_indexes.sql" Link="db/014_interactive_picker_indexes.sql" />
+    <EmbeddedResource Include="../../015_low_stock_projection.sql" Link="db/015_low_stock_projection.sql" />
   </ItemGroup>
 </Project>
