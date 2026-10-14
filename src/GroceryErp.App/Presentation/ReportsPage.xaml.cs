@@ -29,6 +29,7 @@ public partial class ReportsPage : Page
     private bool _suppressRefresh;
     private readonly bool _loadOnShow;
     private int _refreshVersion;
+    private CancellationTokenSource? _refreshCancellation;
     private bool _expiryStatusChoices;
     private CancellationTokenSource? _exportCancellation;
 
@@ -102,13 +103,23 @@ public partial class ReportsPage : Page
         if (loadOnShow) Unloaded += (_, _) =>
         {
             TranslationSource.Instance.PropertyChanged -= OnTranslationChanged;
+            _refreshVersion++;
+            _refreshCancellation?.Cancel();
             _exportCancellation?.Cancel();
         };
     }
 
     private async Task RefreshAsync()
     {
-        using var timing = UiRefreshProbe.Track("reports", this);
+        DateTime selectedFrom = FromPicker.SelectedDate ?? _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
+        DateTime selectedTo = ToPicker.SelectedDate ?? _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
+        string timingPage = ReportPicker.SelectedIndex == 0 && MatrixCheck.IsChecked != true
+            ? (selectedTo - selectedFrom).TotalDays > 45 ? "reports-pnl-long" : "reports-pnl-short"
+            : "reports";
+        using var timing = UiRefreshProbe.Track(timingPage, this);
+        _refreshCancellation?.Cancel();
+        using var cancellation = new CancellationTokenSource();
+        _refreshCancellation = cancellation;
         int version = ++_refreshVersion;
         try
         {
@@ -121,7 +132,7 @@ public partial class ReportsPage : Page
             {
                 if (MatrixCheck.IsChecked == true)
                 {
-                    PnlMatrix matrix = await _reports.GetPnlMatrixAsync(from, to);
+                    PnlMatrix matrix = await _reports.GetPnlMatrixAsync(from, to, cancellation.Token);
                     if (version != _refreshVersion) return;
                     _currentReport = ToReport(matrix);
                     _currentPnl = null;
@@ -135,10 +146,10 @@ public partial class ReportsPage : Page
                     return;
                 }
                 PnlComparison? comparison = CompareCheck.IsChecked == true
-                    ? await _reports.GetPnlComparisonAsync(from, to)
+                    ? await _reports.GetPnlComparisonAsync(from, to, cancellation.Token)
                     : null;
                 if (version != _refreshVersion) return;
-                _currentPnl = comparison?.Current ?? await _reports.GetPnlAsync(from, to);
+                _currentPnl = comparison?.Current ?? await _reports.GetPnlAsync(from, to, cancellation.Token);
                 if (version != _refreshVersion) return;
                 _currentReport = null;
                 timing.Bind(() => PnlGrid.ItemsSource = PnlRows(_currentPnl));
@@ -163,7 +174,8 @@ public partial class ReportsPage : Page
             TabularReport report = await _reports.GetReportAsync(kind, new(From: from, To: to,
                 ProductId: ParseId(ProductFilter.Text), LotId: ParseId(LotFilter.Text), VendorId: ParseId(VendorFilter.Text),
                 AssetId: ParseId(AssetFilter.Text), Status: status, PaymentMode: payment,
-                Entity: Clean(EntityFilter.Text), Action: Clean(ActionFilter.Text), SlowMoverDays: slowDays, Limit: 500));
+                Entity: Clean(EntityFilter.Text), Action: Clean(ActionFilter.Text), SlowMoverDays: slowDays, Limit: 500),
+                cancellation.Token);
             if (version != _refreshVersion) return;
             _currentReport = report with { Title = ((ReportChoice)ReportPicker.SelectedItem).ToString() };
             _currentPnl = null;
@@ -185,6 +197,7 @@ public partial class ReportsPage : Page
             TotalsText.Text = string.Join(" · ", _currentReport.Columns.Where(column => _currentReport.Totals.ContainsKey(column.Key))
                 .Select(column => $"{column.Heading}: {_currentReport.Totals[column.Key].ToString("N3", CultureInfo.GetCultureInfo("en-IN"))}"));
         }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception exception)
         {
             if (version != _refreshVersion) return;
@@ -193,6 +206,10 @@ public partial class ReportsPage : Page
             HourlyPanel.Visibility = Visibility.Collapsed;
             TotalsText.Text = "";
             StatusText.Text = UserError.Message(exception);
+        }
+        finally
+        {
+            if (ReferenceEquals(_refreshCancellation, cancellation)) _refreshCancellation = null;
         }
     }
 

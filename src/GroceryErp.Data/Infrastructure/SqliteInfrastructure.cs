@@ -33,6 +33,8 @@ public sealed class SqliteConnectionFactory
 
     public bool IsExclusive { get { lock (_barrier) return _barrier.ExclusiveOwner is not null; } }
     public bool OwnsExclusive { get { lock (_barrier) return _barrier.ExclusiveOwner == this; } }
+    public int ActiveConnections { get { lock (_barrier) return _barrier.ActiveConnections; } }
+
 
     // Clearing every SQLite pool can interrupt work against an unrelated store in the
     // same process (including parallel tests). Keep cleanup scoped to this database.
@@ -226,8 +228,9 @@ public sealed class SqliteConnectionFactory
 
 public readonly record struct DbTx(SqliteConnection Connection, SqliteTransaction Transaction);
 
-public sealed class DbExecutor(SqliteConnectionFactory factory) : IDisposable
+public sealed class DbExecutor : IDisposable
 {
+    private readonly SqliteConnectionFactory factory;
     private static readonly Meter Meter = new("GroceryErp.Database");
     private static readonly Histogram<double> ReadMilliseconds = Meter.CreateHistogram<double>("db.read.duration", "ms");
     private static readonly Histogram<double> WriteMilliseconds = Meter.CreateHistogram<double>("db.write.duration", "ms");
@@ -237,8 +240,16 @@ public sealed class DbExecutor(SqliteConnectionFactory factory) : IDisposable
     private static readonly ObservableGauge<int> ActiveReaderGauge = Meter.CreateObservableGauge("db.read.active", () => Volatile.Read(ref _activeReaders));
     private static int _activeReaders;
     private static long _writeSamples;
-    private readonly SemaphoreSlim _readGate = new(4, 4);
+    private readonly SemaphoreSlim _readGate;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
+
+    public DbExecutor(SqliteConnectionFactory factory, int readConcurrency = 4)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(readConcurrency);
+        this.factory = factory;
+        _readGate = new SemaphoreSlim(readConcurrency, readConcurrency);
+    }
 
     public async Task<T> ReadAsync<T>(Func<SqliteConnection, T> work, CancellationToken cancellationToken = default,
         [CallerMemberName] string operation = "")
@@ -256,13 +267,28 @@ public sealed class DbExecutor(SqliteConnectionFactory factory) : IDisposable
             {
                 using var traceScope = factory.BeginSqlTraceOperation(operation);
                 cancellationToken.ThrowIfCancellationRequested();
+                long opening = Stopwatch.GetTimestamp();
                 using SqliteConnection connection = factory.Open();
+                connection.DefaultTimeout = 30;
+                using CancellationTokenRegistration interrupt = cancellationToken.Register(
+                    () => SQLitePCL.raw.sqlite3_interrupt(connection.Handle));
+                cancellationToken.ThrowIfCancellationRequested();
+                PerformanceMetrics.ReadOpenMilliseconds.Record(Stopwatch.GetElapsedTime(opening).TotalMilliseconds,
+                    new KeyValuePair<string, object?>("operation", operation));
+                long working = Stopwatch.GetTimestamp();
                 T result = work(connection);
+                cancellationToken.ThrowIfCancellationRequested();
+                PerformanceMetrics.ReadWorkMilliseconds.Record(Stopwatch.GetElapsedTime(working).TotalMilliseconds,
+                    new KeyValuePair<string, object?>("operation", operation));
                 object? rows = result is null ? null : result is ICollection ? result : ReadRowsProperty<T>.Property?.GetValue(result);
                 if (rows is ICollection collection) ReturnedRows.Record(collection.Count,
                     new KeyValuePair<string, object?>("operation", operation));
                 return result;
             }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (SqliteException exception) when (cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException("Database read was canceled.", exception, cancellationToken);
         }
         catch (SqliteException exception)
         {

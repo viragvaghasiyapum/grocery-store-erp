@@ -64,6 +64,8 @@ public partial class App : Application
                 string expectedPrefix = Path.Combine(Path.GetTempPath(), "grocery-erp-packaged-ui-");
                 if (!Path.GetFullPath(testRoot).StartsWith(expectedPrefix, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("The packaged UI test data root must be temporary.");
+                if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_ACCEPTANCE") == "1")
+                    _skipCloseBackup = true; // The isolated acceptance setup already verified its backup.
             }
             if (testRoot is null) DataRootRelocator.ApplyPending();
             HostApplicationBuilder builder = Host.CreateApplicationBuilder(e.Args);

@@ -96,10 +96,13 @@ internal sealed class PerformanceRecorder(AppPaths paths) : IHostedService, IDis
 
     public void Dispose()
     {
-        _stop?.Cancel();
-        _timer?.Dispose();
-        _listener?.Dispose();
-        _stop?.Dispose();
+        if (Interlocked.Exchange(ref _stop, null) is { } stop)
+        {
+            stop.Cancel();
+            stop.Dispose();
+        }
+        Interlocked.Exchange(ref _timer, null)?.Dispose();
+        Interlocked.Exchange(ref _listener, null)?.Dispose();
     }
 
     private sealed class Window

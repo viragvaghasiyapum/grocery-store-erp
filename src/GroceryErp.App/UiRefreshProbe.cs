@@ -66,6 +66,8 @@ internal sealed class UiRefreshProbe(string page, FrameworkElement? visual = nul
             frameSeen = true;
             PerformanceMetrics.UiFrameMilliseconds.Record(
                 Stopwatch.GetElapsedTime(assigned).TotalMilliseconds, tag);
+            PerformanceMetrics.UiFirstFrameTotalMilliseconds.Record(
+                Stopwatch.GetElapsedTime(_started).TotalMilliseconds, tag);
             CompositionTarget.Rendering -= frame;
             if (layoutSeen) Stop();
         };

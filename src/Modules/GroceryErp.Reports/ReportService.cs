@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using Dapper;
@@ -13,6 +14,7 @@ namespace GroceryErp.Reports;
 
 public sealed class ReportService(DbExecutor database, ISettings settings, IClock clock, TranslationSource? translations = null)
 {
+    private DateOnly? _ensuredTopWindowDate;
     private static readonly string[] LocalizedCodeKeys =
         ["Status", "Direction", "PaymentMode", "Method", "Weekday", "Type", "ReferenceType", "Reason", "Action", "Entity"];
     private static readonly string[] AssetScheduleColumns =
@@ -35,18 +37,21 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
     public Task<PnlStatement> GetPnlAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
     {
         DateRange period = new(from, to);
+        string operation = to.DayNumber - from.DayNumber > 45 ? "pnl.long-range" : "pnl.short-range";
         return database.ReadAsync(connection =>
         {
             DateOnly lastCompleteMonth = to.Day == DateTime.DaysInMonth(to.Year, to.Month)
                 ? to : to.AddMonths(-1);
+            long queryStarted = Stopwatch.GetTimestamp();
             List<PnlRaw> raw = connection.Query<PnlRaw>("""
                 WITH sale_totals AS MATERIALIZED (
-                    SELECT COUNT(*) AS bills,SUM(taxable_total) AS taxable,
-                           SUM(round_off) AS rounding,SUM(cost_total) AS cost
-                    FROM sale WHERE status='COMPLETED' AND sale_date BETWEEN @from AND @to
+                    SELECT SUM(bills) AS bills,SUM(taxable) AS taxable,
+                           SUM(rounding) AS rounding,SUM(cost) AS cost
+                    FROM pnl_day WHERE day BETWEEN @from AND @to
                 ), return_totals AS MATERIALIZED (
-                    SELECT COUNT(*) AS returns,SUM(taxable_total) AS taxable,SUM(cost_total) AS cost
-                    FROM sale_return WHERE return_date BETWEEN @from AND @to
+                    SELECT SUM(returns) AS returns,SUM(return_taxable) AS taxable,
+                           SUM(return_cost) AS cost
+                    FROM pnl_day WHERE day BETWEEN @from AND @to
                 ), entries AS (
                     SELECT 'INCOME' AS section,'SALES' AS head_code,NULL AS ref_id,taxable AS amount
                     FROM sale_totals WHERE bills>0
@@ -79,11 +84,21 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                 """, new { from = Iso(from), to = Iso(to),
                     firstMonth = from.ToString("yyyy-MM", CultureInfo.InvariantCulture),
                     lastCompleteMonth = lastCompleteMonth.ToString("yyyy-MM", CultureInfo.InvariantCulture) }).ToList();
+            var stageTag = new KeyValuePair<string, object?>("operation", operation + ".entries");
+            PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(queryStarted).TotalMilliseconds, stageTag);
+            PerformanceMetrics.ReportStageRows.Record(raw.Count, stageTag);
+            long categoriesStarted = Stopwatch.GetTimestamp();
             Dictionary<long, string> categories = connection.Query<NamedRow>(
                 "SELECT id AS Id,name AS Name,name_local AS LocalName FROM expense_category")
                 .ToDictionary(static x => x.Id, x => Pick(x.Name, x.LocalName));
-            return BuildStatement(period, raw, categories);
-        }, cancellationToken);
+            PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(categoriesStarted).TotalMilliseconds,
+                new KeyValuePair<string, object?>("operation", operation + ".categories"));
+            long buildStarted = Stopwatch.GetTimestamp();
+            PnlStatement statement = BuildStatement(period, raw, categories);
+            PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(buildStarted).TotalMilliseconds,
+                new KeyValuePair<string, object?>("operation", operation + ".build"));
+            return statement;
+        }, cancellationToken, operation);
     }
 
     public async Task<PnlComparison> GetPnlComparisonAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
@@ -152,36 +167,80 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
     public async Task<DashboardSummary> GetDashboardAsync(CancellationToken cancellationToken = default)
     {
         DateOnly today = clock.BusinessDate;
+        await EnsureTopWindowAsync(today, cancellationToken).ConfigureAwait(false);
         DateOnly monthStart = new(today.Year, today.Month, 1);
         DateOnly previousStart = monthStart.AddMonths(-1);
         DateOnly previousThrough = previousStart.AddDays(Math.Min(today.Day, DateTime.DaysInMonth(previousStart.Year, previousStart.Month)) - 1);
         DateOnly trendFrom = today.AddDays(-29);
         Task<DashboardCore> core = database.ReadAsync(connection => connection.QuerySingle<DashboardCore>("""
+            WITH today_sales AS MATERIALIZED (
+              SELECT sales,bills,taxable,taxable-cost AS gross_profit
+              FROM pnl_day WHERE day=@today
+            ), expiry_bounds AS MATERIALIZED (
+              SELECT date('now','localtime') AS day,MAX(alert_days) AS max_days FROM (
+                SELECT COALESCE(MAX(expiry_alert_days),0) AS alert_days FROM product
+                UNION ALL SELECT COALESCE(MAX(expiry_alert_days),0) FROM category
+                UNION ALL SELECT COALESCE(CAST(value AS INTEGER),30)
+                  FROM setting WHERE key='expiry.default_alert_days'
+                UNION ALL SELECT 30
+              )
+            ), expiry_near AS MATERIALIZED (
+              SELECT COUNT(*) FILTER (WHERE l.expiry_date<=date(b.day,'+7 days')) AS critical,
+                     COUNT(*) FILTER (WHERE l.expiry_date>date(b.day,'+7 days')) AS soon
+              FROM expiry_bounds b JOIN product_lot l
+                ON l.qty_on_hand>0 AND l.expiry_date IS NOT NULL
+               AND l.expiry_date BETWEEN b.day
+                   AND COALESCE(date(b.day,'+'||b.max_days||' days'),'9999-12-31')
+              JOIN product p ON p.id=l.product_id
+              JOIN category c ON c.id=p.category_id
+              LEFT JOIN category pc ON pc.id=c.parent_id
+              WHERE l.expiry_date<=COALESCE(date(b.day,'+'||COALESCE(
+                  p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
+                  CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30
+                )||' days'),'9999-12-31')
+            ), expiry AS MATERIALIZED (
+              SELECT (SELECT COUNT(*) FROM product_lot l
+                      WHERE l.qty_on_hand>0 AND l.expiry_date IS NOT NULL
+                        AND l.expiry_date<b.day) AS expired,
+                     n.critical,n.soon
+              FROM expiry_bounds b CROSS JOIN expiry_near n
+            ), stock AS MATERIALIZED (
+              SELECT COUNT(*) FILTER (WHERE t.is_low=1) AS low_products,
+                     COALESCE(SUM(t.cost_value),0) AS stock_value
+              FROM product_stock_total t JOIN product p ON p.id=t.product_id
+              WHERE p.is_active=1
+            )
             SELECT
-              COALESCE((SELECT sales FROM v_daily_sales WHERE sale_date=@today),0) AS TodaySales,
-              COALESCE((SELECT SUM(taxable_total) FROM sale WHERE status='COMPLETED' AND sale_date=@today),0) AS TodayTaxableSales,
-              COALESCE((SELECT bills FROM v_daily_sales WHERE sale_date=@today),0) AS TodayBills,
-              COALESCE((SELECT gross_profit FROM v_daily_sales WHERE sale_date=@today),0) AS TodayGrossProfit,
-              COALESCE((SELECT SUM(grand_total) FROM sale WHERE status='COMPLETED' AND sale_date BETWEEN @monthStart AND @today),0) AS MonthSales,
-              COALESCE((SELECT SUM(grand_total) FROM sale WHERE status='COMPLETED' AND sale_date BETWEEN @previousStart AND @previousThrough),0) AS PreviousMonthSales,
-              COALESCE((SELECT COUNT(*) FROM v_expiry_alert WHERE bucket='EXPIRED'),0) AS ExpiredLots,
-              COALESCE((SELECT COUNT(*) FROM v_expiry_alert WHERE bucket='CRITICAL'),0) AS CriticalLots,
-              COALESCE((SELECT COUNT(*) FROM v_expiry_alert WHERE bucket='SOON'),0) AS SoonLots,
-              COALESCE((SELECT COUNT(*) FROM v_product_stock WHERE is_low=1),0) AS LowStockProducts,
-              COALESCE((SELECT SUM(stock_value) FROM v_product_stock),0) AS StockValue,
+              COALESCE(today_sales.sales,0) AS TodaySales,
+              COALESCE(today_sales.taxable,0) AS TodayTaxableSales,
+              COALESCE(today_sales.bills,0) AS TodayBills,
+              COALESCE(today_sales.gross_profit,0) AS TodayGrossProfit,
+              COALESCE((SELECT SUM(sales) FROM pnl_day WHERE day BETWEEN @monthStart AND @today),0) AS MonthSales,
+              COALESCE((SELECT SUM(sales) FROM pnl_day WHERE day BETWEEN @previousStart AND @previousThrough),0) AS PreviousMonthSales,
+              expiry.expired AS ExpiredLots,
+              expiry.critical AS CriticalLots,
+              expiry.soon AS SoonLots,
+              stock.low_products AS LowStockProducts,
+              stock.stock_value AS StockValue,
               COALESCE((SELECT SUM(balance_due) FROM v_vendor_balance),0) AS Payables
-            """, new { today = Iso(today), monthStart = Iso(monthStart), previousStart = Iso(previousStart), previousThrough = Iso(previousThrough) }), cancellationToken);
+            FROM (SELECT 1) AS anchor
+            LEFT JOIN today_sales ON 1=1
+            CROSS JOIN expiry
+            CROSS JOIN stock
+            """, new { today = Iso(today), monthStart = Iso(monthStart), previousStart = Iso(previousStart), previousThrough = Iso(previousThrough) }), cancellationToken, "dashboard.core");
         Task<List<PaymentRaw>> payments = database.ReadAsync(connection => connection.Query<PaymentRaw>("""
             SELECT sp.mode AS Mode,SUM(sp.amount) AS Amount FROM sale_payment sp
             JOIN sale s ON s.id=sp.sale_id WHERE s.status='COMPLETED' AND s.sale_date=@today GROUP BY sp.mode ORDER BY sp.mode
-            """, new { today = Iso(today) }).ToList(), cancellationToken);
+            """, new { today = Iso(today) }).ToList(), cancellationToken, "dashboard.payments");
         Task<List<TrendRaw>> trend = database.ReadAsync(connection => connection.Query<TrendRaw>("""
-            SELECT sale_date AS Date,sales AS Sales,bills AS Bills,gross_profit AS GrossProfit
-            FROM v_daily_sales WHERE sale_date BETWEEN @from AND @today ORDER BY sale_date
-            """, new { from = Iso(trendFrom), today = Iso(today) }).ToList(), cancellationToken);
+            SELECT day AS Date,sales AS Sales,bills AS Bills,taxable-cost AS GrossProfit
+            FROM pnl_day WHERE day BETWEEN @from AND @today AND bills>0 ORDER BY day
+            """, new { from = Iso(trendFrom), today = Iso(today) }).ToList(), cancellationToken, "dashboard.trend");
         Task<(List<TopRaw> Revenue, List<TopRaw> Margin)> top = database.ReadAsync(connection =>
         {
-            List<TopRaw> all = connection.Query<TopRaw>("""
+            string? cachedThrough = connection.ExecuteScalar<string>(
+                "SELECT to_day FROM dashboard_top_window WHERE id=1");
+            const string sourceSql = """
                 WITH movements AS (
                   SELECT sl.product_id,sl.product_name,sl.product_name_local,sl.qty,
                          sl.taxable_amount,sl.cost_amount
@@ -204,13 +263,38 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                   FROM totals
                 )
                 SELECT * FROM ranked WHERE RevenueRank<=10 OR MarginRank<=10
-                """, new { from = Iso(trendFrom), today = Iso(today) }).ToList();
+                """;
+            const string summarySql = """
+                WITH totals AS (
+                  SELECT product_id AS ProductId,MAX(name) AS Name,
+                         MAX(CASE WHEN local_is_null=0 THEN local_name END) AS LocalName,
+                         SUM(qty) AS Quantity,SUM(revenue) AS Revenue,SUM(cost) AS Cost,
+                         SUM(revenue-cost) AS Margin
+                  FROM dashboard_top_summary WHERE movements>0 GROUP BY product_id
+                ), ranked AS (
+                  SELECT *,ROW_NUMBER() OVER (ORDER BY Revenue DESC,ProductId) AS RevenueRank,
+                           ROW_NUMBER() OVER (ORDER BY Margin DESC,ProductId) AS MarginRank
+                  FROM totals
+                )
+                SELECT * FROM ranked WHERE RevenueRank<=10 OR MarginRank<=10
+                """;
+            List<TopRaw> all = connection.Query<TopRaw>(
+                cachedThrough == Iso(today) ? summarySql : sourceSql,
+                new { from = Iso(trendFrom), today = Iso(today) }).ToList();
             return (all.Where(static x => x.RevenueRank <= 10).OrderBy(static x => x.RevenueRank).ToList(),
                 all.Where(static x => x.MarginRank <= 10).OrderBy(static x => x.MarginRank).ToList());
-        }, cancellationToken);
+        }, cancellationToken, "dashboard.top-products");
         await Task.WhenAll(core, payments, trend, top).ConfigureAwait(false);
+        PerformanceMetrics.ReportStageRows.Record(1, new KeyValuePair<string, object?>("operation", "dashboard.core"));
+        PerformanceMetrics.ReportStageRows.Record((await payments).Count,
+            new KeyValuePair<string, object?>("operation", "dashboard.payments"));
+        PerformanceMetrics.ReportStageRows.Record((await trend).Count,
+            new KeyValuePair<string, object?>("operation", "dashboard.trend"));
+        PerformanceMetrics.ReportStageRows.Record((await top).Revenue.Count + (await top).Margin.Count,
+            new KeyValuePair<string, object?>("operation", "dashboard.top-products"));
+        long composing = Stopwatch.GetTimestamp();
         DashboardCore c = await core;
-        return new DashboardSummary(today, Money.FromScaled(c.TodaySales), Money.FromScaled(c.TodayTaxableSales), c.TodayBills,
+        DashboardSummary summary = new(today, Money.FromScaled(c.TodaySales), Money.FromScaled(c.TodayTaxableSales), c.TodayBills,
             c.TodayBills == 0 ? Money.Zero : new Money(Fx3.FromScaled(c.TodaySales) / c.TodayBills), Money.FromScaled(c.TodayGrossProfit),
             Money.FromScaled(c.MonthSales), Money.FromScaled(c.PreviousMonthSales),
             (await payments).Select(static x => new PaymentSplit(x.Mode, Money.FromScaled(x.Amount))).ToList(),
@@ -218,6 +302,22 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
             (await top).Revenue.Select(ToTop).ToList(), (await top).Margin.Select(ToTop).ToList(),
             c.ExpiredLots, c.CriticalLots, c.SoonLots, c.LowStockProducts, Money.FromScaled(c.StockValue),
             Money.FromScaled(c.Payables), LatestBackup(), settings.Current.LastUsbExport);
+        PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(composing).TotalMilliseconds,
+            new KeyValuePair<string, object?>("operation", "dashboard.compose"));
+        return summary;
+    }
+
+    private async Task EnsureTopWindowAsync(DateOnly today, CancellationToken cancellationToken)
+    {
+        if (_ensuredTopWindowDate == today) return;
+        await database.WriteAsync(transaction =>
+        {
+            string? cachedThrough = transaction.Connection.ExecuteScalar<string>(
+                "SELECT to_day FROM dashboard_top_window WHERE id=1", transaction: transaction.Transaction);
+            if (cachedThrough != Iso(today))
+                DashboardTopProjection.Rebuild(transaction.Connection, transaction.Transaction, today);
+        }, cancellationToken, "dashboard.top-window").ConfigureAwait(false);
+        _ensuredTopWindowDate = today;
     }
 
     public Task<TabularReport> GetReportAsync(ReportKind kind, ReportFilter filter, CancellationToken cancellationToken = default)

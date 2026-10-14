@@ -24,5 +24,9 @@
     <EmbeddedResource Include="../../013_hot_query_indexes.sql" Link="db/013_hot_query_indexes.sql" />
     <EmbeddedResource Include="../../014_interactive_picker_indexes.sql" Link="db/014_interactive_picker_indexes.sql" />
     <EmbeddedResource Include="../../015_low_stock_projection.sql" Link="db/015_low_stock_projection.sql" />
+    <EmbeddedResource Include="../../016_pnl_day.sql" Link="db/016_pnl_day.sql" />
+    <EmbeddedResource Include="../../017_sale_invoice_prefix.sql" Link="db/017_sale_invoice_prefix.sql" />
+    <EmbeddedResource Include="../../018_dashboard_daily_sales.sql" Link="db/018_dashboard_daily_sales.sql" />
+    <EmbeddedResource Include="../../019_dashboard_top_window.sql" Link="db/019_dashboard_top_window.sql" />
   </ItemGroup>
 </Project>

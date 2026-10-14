@@ -64,6 +64,14 @@ public sealed class ScaleUiTests
                          window.FindFirstDescendant(cf => cf.ByAutomationId("BackupStatusButton")) is null))
                 other.FindFirstDescendant(cf => cf.ByName("Later"))?.Click();
 
+            if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_ACCEPTANCE") == "1")
+            {
+                await AuditPopulatedAcceptanceAsync(shell, root);
+                shell.Close();
+                await WaitUntilAsync(() => app.HasExited, TimeSpan.FromMinutes(7));
+                return;
+            }
+
             foreach ((string label, string control) in new[]
             {
                 ("Products", "SearchBox"),
@@ -162,6 +170,137 @@ public sealed class ScaleUiTests
         }
     }
 
+    private static async Task AuditPopulatedAcceptanceAsync(Window shell, string root)
+    {
+        var records = new List<object>();
+        async Task CaptureAsync(string page, string readyControl, Func<AutomationElement, bool> ready)
+        {
+            var timer = Stopwatch.StartNew();
+            AutomationElement? navigation = shell.FindFirstDescendant(cf => cf.ByAutomationId("RootNavigation"));
+            (navigation?.FindFirstDescendant(cf => cf.ByName(page)) ??
+                shell.FindFirstDescendant(cf => cf.ByName(page)))!.Click();
+            AutomationElement? control = null;
+            try
+            {
+                await WaitUntilAsync(() =>
+                {
+                    control = shell.FindFirstDescendant(cf => cf.ByAutomationId(readyControl));
+                    return control is not null && ready(control);
+                }, TimeSpan.FromSeconds(30), 100);
+            }
+            catch (TimeoutException)
+            {
+                shell.CaptureToFile(Path.Combine(root,
+                    "phase2-acceptance-" + page.ToLowerInvariant().Replace(' ', '-') + "-timeout.png"));
+                throw;
+            }
+            records.Add(new { page, readyMilliseconds = timer.Elapsed.TotalMilliseconds,
+                visibleDataItems = control!.FindAllDescendants().Count(element =>
+                    element.ControlType == FlaUI.Core.Definitions.ControlType.DataItem) });
+            shell.CaptureToFile(Path.Combine(root, "phase2-acceptance-" + page.ToLowerInvariant().Replace(' ', '-') + ".png"));
+        }
+
+        await CaptureAsync("Dashboard", "RevenueGrid", element =>
+            element.FindAllDescendants().Any(item =>
+                item.ControlType == FlaUI.Core.Definitions.ControlType.DataItem));
+        await RepeatRefreshAsync(shell, 8, 900);
+        await CaptureAsync("Reports", "PnlGrid", _ => true);
+        shell.FindFirstDescendant(cf => cf.ByAutomationId("PeriodPicker"))!.AsComboBox().Select("Custom");
+        SetDate(shell, "FromPicker", "2026-09-01");
+        SetDate(shell, "ToPicker", "2026-09-26");
+        var monthTimer = Stopwatch.StartNew();
+        ClickRefresh(shell);
+        try
+        {
+            await WaitUntilAsync(() => GridHasRows(shell, "PnlGrid") &&
+                ControlNameContains(shell, "StatusText", "01-09-2026"), TimeSpan.FromSeconds(30), 100);
+        }
+        catch (TimeoutException)
+        {
+            File.WriteAllText(Path.Combine(root, "phase2-report-month-diagnostics.txt"),
+                $"from={DateText(shell, "FromPicker")}; to={DateText(shell, "ToPicker")}; " +
+                $"status={shell.FindFirstDescendant(cf => cf.ByAutomationId("StatusText"))?.Name}; " +
+                $"rows={GridRows(shell, "PnlGrid")}");
+            shell.CaptureToFile(Path.Combine(root, "phase2-report-month-timeout.png"));
+            throw;
+        }
+        records.Add(new { page = "P&L month", readyMilliseconds = monthTimer.Elapsed.TotalMilliseconds,
+            visibleDataItems = GridRows(shell, "PnlGrid") });
+        await RepeatRefreshAsync(shell, 8, 500);
+        SetDate(shell, "FromPicker", "2026-04-01");
+        var fiscalTimer = Stopwatch.StartNew();
+        ClickRefresh(shell);
+        await WaitUntilAsync(() => GridHasRows(shell, "PnlGrid") &&
+            ControlNameContains(shell, "StatusText", "01-04-2026"), TimeSpan.FromSeconds(30), 100);
+        records.Add(new { page = "P&L fiscal", readyMilliseconds = fiscalTimer.Elapsed.TotalMilliseconds,
+            visibleDataItems = GridRows(shell, "PnlGrid") });
+        await RepeatRefreshAsync(shell, 8, 500);
+        await CaptureAsync("Sales history", "HistoryGrid", _ => true);
+        SetDate(shell, "FromPicker", "2026-09-01");
+        SetDate(shell, "ToPicker", "2026-09-26");
+        var historyTimer = Stopwatch.StartNew();
+        ClickRefresh(shell);
+        await WaitUntilAsync(() => GridHasRows(shell, "HistoryGrid"), TimeSpan.FromSeconds(30), 100);
+        records.Add(new { page = "Sales history first page", readyMilliseconds = historyTimer.Elapsed.TotalMilliseconds,
+            visibleDataItems = GridRows(shell, "HistoryGrid") });
+        await RepeatRefreshAsync(shell, 8, 500);
+        await CaptureAsync("Products", "ProductsGrid", _ => true);
+        AutomationElement search = shell.FindFirstDescendant(cf => cf.ByAutomationId("SearchBox"))!;
+        for (int sample = 0; sample < 9; sample++)
+        {
+            search.AsTextBox().Text = "zzzz-no-such-product";
+            await WaitUntilAsync(() => GridRows(shell, "ProductsGrid") == 0,
+                TimeSpan.FromSeconds(30), 100);
+            var searchTimer = Stopwatch.StartNew();
+            search.AsTextBox().Text = "grocery item";
+            await WaitUntilAsync(() => GridHasRows(shell, "ProductsGrid"),
+                TimeSpan.FromSeconds(30), 100);
+            records.Add(new { page = "Product search", sample,
+                readyMilliseconds = searchTimer.Elapsed.TotalMilliseconds,
+                visibleDataItems = GridRows(shell, "ProductsGrid") });
+        }
+        File.WriteAllText(Path.Combine(root, "phase2-acceptance-ui.json"),
+            JsonSerializer.Serialize(records, JsonOptions));
+    }
+
+    private static int GridRows(Window shell, string id) =>
+        shell.FindFirstDescendant(cf => cf.ByAutomationId(id))?.FindAllDescendants().Count(element =>
+            element.ControlType == FlaUI.Core.Definitions.ControlType.DataItem) ?? 0;
+
+    private static bool GridHasRows(Window shell, string id) => GridRows(shell, id) > 0;
+
+    private static bool ControlNameContains(Window shell, string id, string value) =>
+        shell.FindFirstDescendant(cf => cf.ByAutomationId(id))?.Name.Contains(value,
+            StringComparison.OrdinalIgnoreCase) == true;
+
+    private static string? DateText(Window shell, string picker) =>
+        shell.FindFirstDescendant(cf => cf.ByAutomationId(picker))?
+            .FindFirstDescendant(cf => cf.ByAutomationId("PART_TextBox"))?.AsTextBox().Text;
+
+    private static void SetDate(Window shell, string picker, string value)
+    {
+        DateTime date = DateTime.ParseExact(value, "yyyy-MM-dd",
+            System.Globalization.CultureInfo.InvariantCulture);
+        shell.FindFirstDescendant(cf => cf.ByAutomationId(picker))!
+            .FindFirstDescendant(cf => cf.ByAutomationId("PART_TextBox"))!
+            .AsTextBox().Text = date.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture);
+        Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.TAB);
+    }
+
+    private static void ClickRefresh(Window shell) =>
+        (shell.FindAllDescendants().FirstOrDefault(element =>
+            element.ControlType == FlaUI.Core.Definitions.ControlType.Button && element.Name == "Refresh")
+        ?? throw new InvalidOperationException("The page has no Refresh button.")).Click();
+
+    private static async Task RepeatRefreshAsync(Window shell, int count, int settleMilliseconds)
+    {
+        for (int sample = 0; sample < count; sample++)
+        {
+            ClickRefresh(shell);
+            await Task.Delay(settleMilliseconds, TestContext.Current.CancellationToken);
+        }
+    }
+
     private static async Task AuditDialogsAsync(UiApplication app, UIA3Automation automation,
         Window shell, string root)
     {
@@ -214,7 +353,7 @@ public sealed class ScaleUiTests
                 System.Globalization.CultureInfo.InvariantCulture);
             AutomationElement input = shell.FindFirstDescendant(cf => cf.ByAutomationId(picker))!
                 .FindFirstDescendant(cf => cf.ByAutomationId("PART_TextBox"))!;
-            input.AsTextBox().Text = date.ToShortDateString();
+            input.AsTextBox().Text = date.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture);
             Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.TAB);
         }
         string path = Path.Combine(root, "phase1-five-million-history-" + Guid.NewGuid().ToString("N") + ".csv");
@@ -282,13 +421,13 @@ public sealed class ScaleUiTests
         return found!;
     }
 
-    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout, int pollMilliseconds = 1000)
     {
         var timer = Stopwatch.StartNew();
         while (!condition())
         {
             if (timer.Elapsed > timeout) throw new TimeoutException($"UI did not reach expected state within {timeout}.");
-            await Task.Delay(1000, TestContext.Current.CancellationToken);
+            await Task.Delay(pollMilliseconds, TestContext.Current.CancellationToken);
         }
     }
 }

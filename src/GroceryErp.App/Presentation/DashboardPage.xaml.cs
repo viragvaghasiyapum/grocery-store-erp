@@ -20,6 +20,8 @@ public partial class DashboardPage : Page
     private readonly ReportNavigationState _navigation;
     private readonly DispatcherTimer _refreshTimer;
     private DashboardSummary? _summary;
+    private CancellationTokenSource? _refreshCancellation;
+    private int _refreshVersion;
 
     public DashboardPage() : this(
         ((App)Application.Current).Services.GetRequiredService<ReportService>(),
@@ -56,6 +58,8 @@ public partial class DashboardPage : Page
         Unloaded += (_, _) =>
         {
             _refreshTimer.Stop();
+            _refreshVersion++;
+            _refreshCancellation?.Cancel();
             TranslationSource.Instance.PropertyChanged -= OnTranslationChanged;
         };
     }
@@ -63,9 +67,15 @@ public partial class DashboardPage : Page
     private async Task RefreshAsync()
     {
         using var timing = UiRefreshProbe.Track("dashboard", this);
+        _refreshCancellation?.Cancel();
+        using var cancellation = new CancellationTokenSource();
+        _refreshCancellation = cancellation;
+        int version = ++_refreshVersion;
         try
         {
-            _summary = await _reports.GetDashboardAsync();
+            DashboardSummary summary = await _reports.GetDashboardAsync(cancellation.Token);
+            if (version != _refreshVersion) return;
+            _summary = summary;
             decimal margin = _summary.TodayTaxableSales == GroceryErp.Core.Numerics.Money.Zero
                 ? 0m : _summary.TodayGrossProfit.Value * 100m / _summary.TodayTaxableSales.Value;
             TodaySales.Text = $"₹{_summary.TodaySales.Value:N3}";
@@ -96,7 +106,15 @@ public partial class DashboardPage : Page
                 _summary.AsOf.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture));
             DrawTrend();
         }
-        catch (Exception exception) { Attention.Text = UserError.Message(exception); }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        catch (Exception exception)
+        {
+            if (version == _refreshVersion) Attention.Text = UserError.Message(exception);
+        }
+        finally
+        {
+            if (ReferenceEquals(_refreshCancellation, cancellation)) _refreshCancellation = null;
+        }
     }
 
     private void DrawTrend()
@@ -121,6 +139,7 @@ public partial class DashboardPage : Page
     private void TrendCanvas_OnSizeChanged(object sender, SizeChangedEventArgs e) => DrawTrend();
     private void ScheduleRefresh()
     {
+        if (!IsLoaded) return;
         _refreshTimer.Stop();
         _refreshTimer.Start();
     }

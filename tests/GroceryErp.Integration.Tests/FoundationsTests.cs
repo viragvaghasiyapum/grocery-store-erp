@@ -77,6 +77,48 @@ public sealed class FoundationsTests
     }
 
     [Fact]
+    public void InterruptedPnlBackfill_RebuildsOnNextMigrationRun()
+    {
+        using var fixture = new FoundationFixture();
+        using (var connection = fixture.Factory.Open())
+        {
+            connection.Execute("""
+                INSERT INTO sale(invoice_no,sale_date,status,taxable_total,grand_total,cost_total)
+                VALUES('REBUILD-1','2026-08-31','COMPLETED',100000,100000,60000),
+                      ('REBUILD-2','2026-09-01','COMPLETED',200000,200000,120000);
+                DELETE FROM pnl_day;
+                PRAGMA user_version=15;
+                """);
+        }
+        new MigrationRunner(fixture.Factory, NullMigrationBackup.Instance).Run();
+        using var rebuilt = fixture.Factory.Open();
+        rebuilt.ExecuteScalar<long>("PRAGMA user_version").ShouldBe((long)MigrationRunner.LatestVersion);
+        rebuilt.ExecuteScalar<long>("SELECT SUM(taxable) FROM pnl_day").ShouldBe(300000);
+        rebuilt.ExecuteScalar<long>("SELECT SUM(bills) FROM pnl_day").ShouldBe(2);
+        rebuilt.ExecuteScalar<long>("SELECT SUM(sales) FROM pnl_day").ShouldBe(300000);
+    }
+
+    [Fact]
+    public void PnlRebuild_RepairsDriftFromAuthoritativeSales()
+    {
+        using var fixture = new FoundationFixture();
+        using (var connection = fixture.Factory.Open())
+        {
+            connection.Execute("""
+                INSERT INTO sale(invoice_no,sale_date,status,taxable_total,grand_total,cost_total)
+                VALUES('REPAIR-1','2026-09-01','COMPLETED',100000,100000,60000);
+                UPDATE pnl_day SET taxable=0,sales=0 WHERE day='2026-09-01';
+                """);
+        }
+        new MigrationRunner(fixture.Factory, NullMigrationBackup.Instance).RebuildPnlDays();
+        using var repaired = fixture.Factory.Open();
+        repaired.ExecuteScalar<long>("SELECT taxable FROM pnl_day WHERE day='2026-09-01'")
+            .ShouldBe(100000);
+        repaired.ExecuteScalar<long>("SELECT sales FROM pnl_day WHERE day='2026-09-01'")
+            .ShouldBe(100000);
+    }
+
+    [Fact]
     public async Task OperationGuard_SecondClaimReturnsOriginalReference()
     {
         using var fixture = new FoundationFixture();
@@ -175,6 +217,34 @@ public sealed class FoundationsTests
         restarted.UndoPendingRestore();
         using var reopened = secondFactory.Open();
         reopened.ExecuteScalar<string>("PRAGMA quick_check").ShouldBe("ok");
+    }
+
+    [Fact]
+    public async Task CanceledRead_InterruptsRunningSqlAndReleasesRestoreBarrier()
+    {
+        using var fixture = new FoundationFixture();
+        using var second = new DbExecutor(new SqliteConnectionFactory(fixture.Paths));
+        using var entered = new ManualResetEventSlim();
+        using var cancellation = new CancellationTokenSource();
+        Task<long> read = second.ReadAsync(connection =>
+        {
+            entered.Set();
+            return connection.ExecuteScalar<long>("""
+                WITH RECURSIVE numbers(value) AS (
+                  VALUES(1) UNION ALL SELECT value+1 FROM numbers WHERE value<100000000
+                ) SELECT SUM(value) FROM numbers
+                """);
+        }, cancellation.Token);
+        entered.Wait(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken).ShouldBeTrue();
+        await Task.Delay(100, TestContext.Current.CancellationToken);
+        cancellation.Cancel();
+        await Should.ThrowAsync<OperationCanceledException>(() =>
+            read.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        fixture.Factory.ActiveConnections.ShouldBe(0);
+        fixture.Factory.BeginExclusive();
+        fixture.Factory.EndExclusive();
+        (await fixture.Database.ReadAsync(connection => connection.ExecuteScalar<long>("SELECT 1"),
+            TestContext.Current.CancellationToken)).ShouldBe(1L);
     }
 
     [Fact]

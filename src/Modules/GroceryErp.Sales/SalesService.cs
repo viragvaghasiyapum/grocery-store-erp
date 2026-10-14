@@ -1,4 +1,5 @@
 using System.Data;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -706,12 +707,29 @@ public sealed class SalesService(
         int limit = Math.Clamp(filter.Limit, 1, 500);
         if (filter.BeforeDate is not null && filter.BeforeId is null)
             throw new ArgumentException("A history cursor requires both a date and an ID.", nameof(filter));
+        // Probe a bounded prefix range before choosing an access path. Rare or
+        // old invoices use the invoice index; broad prefixes retain date-order
+        // paging so SQLite need not sort the whole matching history.
+        string? invoicePattern = invoice is null ? null : invoice + "%";
+        bool selectiveInvoice = false;
+        if (invoicePattern is not null && invoice![0] is not ('%' or '_'))
+        {
+            const int invoiceIndexThreshold = 5000;
+            int matches = connection.ExecuteScalar<int>("""
+                SELECT COUNT(*) FROM (
+                    SELECT 1 FROM sale WHERE invoice_no LIKE @invoicePattern LIMIT @probeLimit
+                )
+                """, new { invoicePattern, probeLimit = invoiceIndexThreshold + 1 });
+            if (matches == 0) return [];
+            selectiveInvoice = matches <= invoiceIndexThreshold;
+        }
         List<string> conditions = [];
         if (status is not null) conditions.Add("s.status=@status");
         if (payment is not null) conditions.Add("EXISTS(SELECT 1 FROM sale_payment p WHERE p.sale_id=s.id AND p.mode=@payment)");
         if (filter.MinimumAmount is not null) conditions.Add("s.grand_total>=@minimum");
         if (filter.MaximumAmount is not null) conditions.Add("s.grand_total<=@maximum");
-        if (invoice is not null) conditions.Add("s.invoice_no LIKE @invoice || '%'");
+        if (invoice is not null) conditions.Add(selectiveInvoice
+            ? "s.invoice_no LIKE @invoicePattern" : "s.invoice_no LIKE @invoice || '%'");
         const string select = """
             SELECT s.id AS Id,s.invoice_no AS InvoiceNumber,s.sale_date AS SaleDate,s.status AS Status,
                    s.line_count AS LineCount,s.grand_total AS GrandTotal,s.completed_at AS CompletedAt,
@@ -719,6 +737,7 @@ public sealed class SalesService(
                    COALESCE((SELECT group_concat(DISTINCT p.mode) FROM sale_payment p WHERE p.sale_id=s.id),'') AS PaymentModes
             FROM sale s
             """;
+        string pageSelect = select + (selectiveInvoice ? " INDEXED BY ix_sale_invoice_nocase" : "");
         HistoryRow[] QueryPage(string? cursorCondition, int pageLimit)
         {
             var predicates = new List<string>(conditions);
@@ -734,7 +753,8 @@ public sealed class SalesService(
             }
             else predicates.Add(cursorCondition);
             string where = predicates.Count == 0 ? "" : " WHERE " + string.Join(" AND ", predicates);
-            return connection.Query<HistoryRow>(select + where +
+            long queryStarted = Stopwatch.GetTimestamp();
+            HistoryRow[] page = connection.Query<HistoryRow>(pageSelect + where +
                 " ORDER BY s.sale_date DESC,s.id DESC LIMIT @limit", new
             {
                 fromDate = filter.From is null ? null : DateText(filter.From.Value),
@@ -744,10 +764,16 @@ public sealed class SalesService(
                 minimum = filter.MinimumAmount?.Scaled,
                 maximum = filter.MaximumAmount?.Scaled,
                 invoice,
+                invoicePattern,
                 beforeDate = filter.BeforeDate is null ? null : DateText(filter.BeforeDate.Value),
                 beforeId = filter.BeforeId,
                 limit = pageLimit,
             }).ToArray();
+            PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(queryStarted).TotalMilliseconds,
+                new KeyValuePair<string, object?>("operation", "history.query-and-row-map"));
+            PerformanceMetrics.ReportStageRows.Record(page.Length,
+                new KeyValuePair<string, object?>("operation", "history.query-and-row-map"));
+            return page;
         }
 
         HistoryRow[] rows;
@@ -766,9 +792,13 @@ public sealed class SalesService(
             if (filter.From is not null)
                 rows = rows.Where(row => string.CompareOrdinal(row.SaleDate, DateText(filter.From.Value)) >= 0).ToArray();
         }
-        return rows.Select(static row => new SaleHistoryItem(row.Id, row.InvoiceNumber, ParseDate(row.SaleDate),
+        long mappingStarted = Stopwatch.GetTimestamp();
+        SaleHistoryItem[] mapped = rows.Select(static row => new SaleHistoryItem(row.Id, row.InvoiceNumber, ParseDate(row.SaleDate),
             ParseStatus(row.Status), row.LineCount, Money.FromScaled(row.GrandTotal), row.PaymentModes,
             row.CompletedAt, row.VoidReason)).ToArray();
+        PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(mappingStarted).TotalMilliseconds,
+            new KeyValuePair<string, object?>("operation", "history.service-map"));
+        return mapped;
     }, cancellationToken);
 
     public Task<SaleHistoryActivity> GetHistoryActivityAsync(long saleId,

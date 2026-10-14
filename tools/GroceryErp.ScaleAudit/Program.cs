@@ -3,6 +3,7 @@ using System.Diagnostics.Metrics;
 using System.Text.Json;
 using ClosedXML.Excel;
 using Dapper;
+using Microsoft.Data.Sqlite;
 using GroceryErp.Assets;
 using GroceryErp.Catalog;
 using GroceryErp.Catalog.Barcodes;
@@ -20,7 +21,7 @@ using GroceryErp.Reports;
 using GroceryErp.Sales;
 
 if (args.Length < 1)
-    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|restore-race|restore-crash|restore-recover|export|history-export|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
+    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
 
 string root = Path.GetFullPath(args[0]);
 string mode = args.Length > 1 ? args[1] : "read";
@@ -58,16 +59,23 @@ meterListener.InstrumentPublished = (instrument, listener) =>
     if (instrument.Meter.Name.StartsWith("GroceryErp.", StringComparison.Ordinal))
         listener.EnableMeasurementEvents(instrument);
 };
-meterListener.SetMeasurementEventCallback<double>((instrument, value, _, _) =>
-    metricSamples.Add(new(instrument.Name, value)));
-meterListener.SetMeasurementEventCallback<int>((instrument, value, _, _) =>
-    metricSamples.Add(new(instrument.Name, value)));
-meterListener.SetMeasurementEventCallback<long>((instrument, value, _, _) =>
-    metricSamples.Add(new(instrument.Name, value)));
+meterListener.SetMeasurementEventCallback<double>((instrument, value, tags, _) =>
+    metricSamples.Add(new(MetricName(instrument.Name, tags), value)));
+meterListener.SetMeasurementEventCallback<int>((instrument, value, tags, _) =>
+    metricSamples.Add(new(MetricName(instrument.Name, tags), value)));
+meterListener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
+    metricSamples.Add(new(MetricName(instrument.Name, tags), value)));
 meterListener.Start();
+static string MetricName(string name, ReadOnlySpan<KeyValuePair<string, object?>> tags)
+{
+    foreach (KeyValuePair<string, object?> tag in tags)
+        if (tag.Key is "operation" or "page" or "phase" && tag.Value is string label)
+            name += "." + label;
+    return name;
+}
 var factory = new SqliteConnectionFactory(paths);
 var tracedQueries = new System.Collections.Concurrent.ConcurrentDictionary<(string Operation, string Shape), string>();
-if (mode is "shape-profile" or "report-profile" or "gap-read" or "feature-write" or "weekly-maintenance-overlap" or "print-journal-profile")
+if (mode is "attribution-profile" or "history-profile" or "shape-profile" or "report-profile" or "gap-read" or "feature-write" or "weekly-maintenance-overlap" or "print-journal-profile")
     factory.SqlTrace = (operation, sql) =>
     {
         string statement = sql.Trim();
@@ -83,7 +91,11 @@ if (mode is "shape-profile" or "report-profile" or "gap-read" or "feature-write"
              statement.StartsWith("WITH", StringComparison.OrdinalIgnoreCase)))
             tracedQueries.TryAdd((operation, shape), statement);
     };
-using var database = new DbExecutor(factory);
+int readConcurrency = mode == "sustained-profile" && args.Length > 4
+    ? int.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture) : 4;
+if (readConcurrency is < 2 or > 8)
+    throw new ArgumentException("Use a reader limit from 2 to 8.", nameof(args));
+using var database = new DbExecutor(factory, readConcurrency);
 var audit = new AuditLog();
 using var settings = new SettingsService(database, paths, audit);
 if (mode != "restore-recover") await settings.LoadAsync();
@@ -204,6 +216,7 @@ async Task Measure<T>(string name, Func<Task<T>> action, Func<T, int> count)
             process.WorkingSet64, process.PeakWorkingSet64, exception.GetType().Name + ": " + exception.Message);
         lock (results) results.Add(result);
         Console.WriteLine($"FAIL {name}: {result.Milliseconds:0.0} ms, {result.Error}");
+        if (mode == "refresh-storm") Console.WriteLine(exception);
     }
     Console.Out.Flush();
 }
@@ -223,6 +236,185 @@ DateOnly monthStart = new(2026, 9, 1);
 DateOnly fiscalStart = new(2026, 4, 1);
 switch (mode)
 {
+    case "refresh-storm":
+    {
+        bool cancelObsolete = args.Length > 3 && bool.Parse(args[3]);
+        await Measure(cancelObsolete ? "refresh-storm-cancel" : "refresh-storm-all", async () =>
+        {
+            var cancellations = new List<CancellationTokenSource>();
+            var requests = new List<Task<int>>();
+            try
+            {
+                for (int index = 0; index < 12; index++)
+                {
+                    if (cancelObsolete && cancellations.Count > 0) cancellations[^1].Cancel();
+                    var cancellation = new CancellationTokenSource();
+                    cancellations.Add(cancellation);
+                    requests.Add(RunRefresh(cancellation));
+                    await Task.Delay(35);
+                }
+                return (await Task.WhenAll(requests)).Sum();
+            }
+            finally
+            {
+                foreach (var cancellation in cancellations) cancellation.Dispose();
+            }
+        }, static completed => completed);
+        break;
+
+        async Task<int> RunRefresh(CancellationTokenSource cancellation)
+        {
+            try { await reports.GetDashboardAsync(cancellation.Token); return 1; }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { return 0; }
+        }
+    }
+    case "history-profile":
+    {
+        string invoicePrefix;
+        string oldestInvoice;
+        DateOnly latestDate;
+        long latestFirstId;
+        DateOnly middleDate;
+        long middleId;
+        DateOnly oldestDate;
+        long oldestId;
+        using (var connection = factory.Open())
+        {
+            string invoice = connection.ExecuteScalar<string>(
+                "SELECT invoice_no FROM sale WHERE invoice_no IS NOT NULL ORDER BY id DESC LIMIT 1")
+                ?? throw new InvalidDataException("The history fixture has no invoice numbers.");
+            invoicePrefix = invoice[..Math.Min(5, invoice.Length)];
+            oldestInvoice = connection.ExecuteScalar<string>(
+                "SELECT invoice_no FROM sale WHERE invoice_no IS NOT NULL ORDER BY sale_date,id LIMIT 1")
+                ?? throw new InvalidDataException("The history fixture has no old invoice number.");
+            var latest = connection.QuerySingle<(string SaleDate, long FirstId)>(
+                "SELECT sale_date,MIN(id) FROM sale WHERE sale_date=(SELECT MAX(sale_date) FROM sale)");
+            latestFirstId = latest.FirstId;
+            latestDate = DateOnly.ParseExact(latest.SaleDate, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            var middle = connection.QuerySingle<(string SaleDate, long Id)>(
+                "SELECT sale_date,id FROM sale ORDER BY sale_date DESC,id DESC LIMIT 1 OFFSET 400000");
+            middleId = middle.Id;
+            middleDate = DateOnly.ParseExact(middle.SaleDate, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            var oldest = connection.QuerySingle<(string SaleDate, long Id)>(
+                "SELECT sale_date,id FROM sale ORDER BY sale_date,id LIMIT 1");
+            oldestId = oldest.Id;
+            oldestDate = DateOnly.ParseExact(oldest.SaleDate, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        }
+        var shapes = new (string Name, SaleHistoryFilter Filter)[]
+        {
+            ("history-first", new(Limit: 50)),
+            ("history-first-500", new(Limit: 500)),
+            ("history-current", new(From: monthStart, To: end, Limit: 50)),
+            ("history-old", new(From: new(2025, 4, 1), To: new(2025, 4, 30), Limit: 50)),
+            ("history-status", new(Status: SaleStatus.Completed, Limit: 50)),
+            ("history-payment", new(PaymentMode: PaymentMode.Cash, Limit: 50)),
+            ("history-invoice-match", new(InvoiceNumber: invoicePrefix, Limit: 50)),
+            ("history-invoice-old-exact", new(InvoiceNumber: oldestInvoice, Limit: 50)),
+            ("history-invoice-miss", new(InvoiceNumber: "ZZZZ-NO-MATCH", Limit: 50)),
+            ("history-invoice-broad", new(InvoiceNumber: "S", Limit: 50)),
+            ("history-amount", new(MinimumAmount: new Money(100), MaximumAmount: new Money(500), Limit: 50)),
+            ("history-combined", new(From: monthStart, To: end, Status: SaleStatus.Completed,
+                PaymentMode: PaymentMode.Cash, MinimumAmount: new Money(100), Limit: 50)),
+            ("history-middle", new(BeforeDate: middleDate, BeforeId: middleId, Limit: 50)),
+            ("history-oldest", new(BeforeDate: oldestDate, BeforeId: oldestId, Limit: 50)),
+            ("history-date-transition", new(BeforeDate: latestDate, BeforeId: latestFirstId, Limit: 50)),
+        };
+        foreach (var shape in shapes)
+            for (int iteration = 0; iteration < 9; iteration++)
+            {
+                long started = Stopwatch.GetTimestamp();
+                try
+                {
+                    int rows = (await sales.GetHistoryAsync(shape.Filter)).Count;
+                    profileSamples.Add(new(shape.Name + (iteration == 0 ? "-first" : "-warm"),
+                        Stopwatch.GetElapsedTime(started).TotalMilliseconds, rows, null));
+                }
+                catch (Exception exception)
+                {
+                    profileSamples.Add(new(shape.Name + (iteration == 0 ? "-first" : "-warm"),
+                        Stopwatch.GetElapsedTime(started).TotalMilliseconds, 0,
+                        exception.GetType().Name + ": " + exception.Message));
+                }
+            }
+        break;
+    }
+    case "attribution-profile":
+    {
+        // This process starts with an open database for settings and fixture metadata;
+        // the first measured service call is process-cold, not disk-cache-cold.
+        var emptyDayReports = new ReportService(database, settings,
+            new AuditClock(new DateTime(2030, 1, 1, 12, 0, 0)));
+        string invoicePrefix;
+        using (var connection = factory.Open())
+        {
+            string invoice = connection.ExecuteScalar<string>(
+                "SELECT invoice_no FROM sale WHERE invoice_no IS NOT NULL ORDER BY id DESC LIMIT 1")
+                ?? throw new InvalidDataException("The attribution fixture has no invoice numbers.");
+            invoicePrefix = invoice[..Math.Min(5, invoice.Length)];
+        }
+        var operations = new (string Name, Func<Task<int>> Run)[]
+        {
+            ("dashboard-populated", async () => { await reports.GetDashboardAsync(); return 1; }),
+            ("pnl-month", async () => (await reports.GetPnlAsync(monthStart, end)).Income.Count),
+            ("pnl-fiscal", async () => (await reports.GetPnlAsync(fiscalStart, end)).Income.Count),
+            ("history-first", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(Limit: 50))).Count),
+            ("history-current", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(From: monthStart, To: end, Limit: 50))).Count),
+            ("history-old", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(From: new(2025, 4, 1), To: new(2025, 4, 30), Limit: 50))).Count),
+            ("history-status", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(Status: SaleStatus.Completed, Limit: 50))).Count),
+            ("history-payment", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(PaymentMode: PaymentMode.Cash, Limit: 50))).Count),
+            ("history-invoice-match", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(InvoiceNumber: invoicePrefix, Limit: 50))).Count),
+            ("history-invoice-miss", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(InvoiceNumber: "ZZZZ-NO-MATCH", Limit: 50))).Count),
+            ("history-amount", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(MinimumAmount: new Money(100), MaximumAmount: new Money(500), Limit: 50))).Count),
+            ("history-combined", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(From: monthStart, To: end, Status: SaleStatus.Completed, PaymentMode: PaymentMode.Cash, MinimumAmount: new Money(100), Limit: 50))).Count),
+            ("dashboard-empty-day", async () => { await emptyDayReports.GetDashboardAsync(); return 1; }),
+        };
+        foreach (var operation in operations)
+            for (int iteration = 0; iteration < 11; iteration++)
+            {
+                long started = Stopwatch.GetTimestamp();
+                try
+                {
+                    int rows = await operation.Run();
+                    profileSamples.Add(new(operation.Name + (iteration == 0 ? "-first" : "-warm"),
+                        Stopwatch.GetElapsedTime(started).TotalMilliseconds, rows, null));
+                }
+                catch (Exception exception)
+                {
+                    profileSamples.Add(new(operation.Name + (iteration == 0 ? "-first" : "-warm"),
+                        Stopwatch.GetElapsedTime(started).TotalMilliseconds, 0,
+                        exception.GetType().Name + ": " + exception.Message));
+                }
+            }
+        foreach (var period in new[] { ("month", "2026-09-01", "2026-09-26"), ("fiscal", "2026-04-01", "2026-09-26") })
+        {
+            // One representative execution of each source branch, alongside the
+            // exact composite service statement and plan captured by SQL tracing.
+            var branches = new (string Name, string Sql)[]
+            {
+                ("sales", "SELECT COUNT(*) AS Rows,SUM(taxable_total) AS Amount FROM sale WHERE status='COMPLETED' AND sale_date BETWEEN @from AND @to"),
+                ("returns", "SELECT COUNT(*) AS Rows,SUM(taxable_total) AS Amount FROM sale_return WHERE return_date BETWEEN @from AND @to"),
+                ("damage", "SELECT COUNT(*) AS Rows,SUM(cost_value-recovered_amount) AS Amount FROM damage WHERE damage_date BETWEEN @from AND @to"),
+                ("adjustment", "SELECT COUNT(*) AS Rows,SUM(qty*unit_cost) AS Amount FROM stock_movement WHERE type_code='ADJUSTMENT' AND move_date BETWEEN @from AND @to"),
+                ("expenses", "SELECT COUNT(*) AS Rows,SUM(amount) AS Amount FROM expense WHERE expense_date BETWEEN @from AND @to"),
+                ("salary", "SELECT COUNT(*) AS Rows,SUM(amount) AS Amount FROM salary_payment WHERE period_month BETWEEN substr(@from,1,7) AND @lastCompleteMonth"),
+                ("depreciation", "SELECT COUNT(*) AS Rows,SUM(amount) AS Amount FROM asset_depreciation WHERE period_month BETWEEN substr(@from,1,7) AND @lastCompleteMonth"),
+                ("disposal", "SELECT COUNT(*) AS Rows,SUM(disposal_value) AS Amount FROM asset WHERE disposed_date BETWEEN @from AND @to"),
+                ("vendor-variance", "SELECT COUNT(*) AS Rows,SUM(credit_before_tax-cost_total) AS Amount FROM vendor_return WHERE return_date BETWEEN @from AND @to"),
+            };
+            foreach (var branch in branches)
+            {
+                string name = "pnl-branch-" + period.Item1 + "-" + branch.Name;
+                await Measure(name, () => Task.Run(() =>
+                {
+                    using var connection = factory.Open();
+                    return connection.QuerySingle<(long Rows, long? Amount)>(branch.Sql,
+                        new { from = period.Item2, to = period.Item3, lastCompleteMonth = "2026-08" });
+                }), static row => checked((int)row.Rows));
+                CapturePlan(name, branch.Sql, new { from = period.Item2, to = period.Item3, lastCompleteMonth = "2026-08" });
+            }
+        }
+        break;
+    }
     case "hot-plans":
     {
         CapturePlan("startup-last-sale-actual",
@@ -242,19 +434,60 @@ switch (mode)
         CapturePlan("expiry-badge-actual",
             "SELECT COUNT(*) FROM v_expiry_alert WHERE bucket IN ('EXPIRED','CRITICAL')");
         CapturePlan("dashboard-core-actual", """
+            WITH today_sales AS MATERIALIZED (
+              SELECT sales,bills,taxable,taxable-cost AS gross_profit
+              FROM pnl_day WHERE day=@today
+            ), expiry_bounds AS MATERIALIZED (
+              SELECT date('now','localtime') AS day,MAX(alert_days) AS max_days FROM (
+                SELECT COALESCE(MAX(expiry_alert_days),0) AS alert_days FROM product
+                UNION ALL SELECT COALESCE(MAX(expiry_alert_days),0) FROM category
+                UNION ALL SELECT COALESCE(CAST(value AS INTEGER),30)
+                  FROM setting WHERE key='expiry.default_alert_days'
+                UNION ALL SELECT 30
+              )
+            ), expiry_near AS MATERIALIZED (
+              SELECT COUNT(*) FILTER (WHERE l.expiry_date<=date(b.day,'+7 days')) AS critical,
+                     COUNT(*) FILTER (WHERE l.expiry_date>date(b.day,'+7 days')) AS soon
+              FROM expiry_bounds b JOIN product_lot l
+                ON l.qty_on_hand>0 AND l.expiry_date IS NOT NULL
+               AND l.expiry_date BETWEEN b.day
+                   AND COALESCE(date(b.day,'+'||b.max_days||' days'),'9999-12-31')
+              JOIN product p ON p.id=l.product_id
+              JOIN category c ON c.id=p.category_id
+              LEFT JOIN category pc ON pc.id=c.parent_id
+              WHERE l.expiry_date<=COALESCE(date(b.day,'+'||COALESCE(
+                  p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
+                  CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30
+                )||' days'),'9999-12-31')
+            ), expiry AS MATERIALIZED (
+              SELECT (SELECT COUNT(*) FROM product_lot l
+                      WHERE l.qty_on_hand>0 AND l.expiry_date IS NOT NULL
+                        AND l.expiry_date<b.day) AS expired,
+                     n.critical,n.soon
+              FROM expiry_bounds b CROSS JOIN expiry_near n
+            ), stock AS MATERIALIZED (
+              SELECT COUNT(*) FILTER (WHERE t.is_low=1) AS low_products,
+                     COALESCE(SUM(t.cost_value),0) AS stock_value
+              FROM product_stock_total t JOIN product p ON p.id=t.product_id
+              WHERE p.is_active=1
+            )
             SELECT
-              COALESCE((SELECT sales FROM v_daily_sales WHERE sale_date=@today),0) AS TodaySales,
-              COALESCE((SELECT SUM(taxable_total) FROM sale WHERE status='COMPLETED' AND sale_date=@today),0) AS TodayTaxableSales,
-              COALESCE((SELECT bills FROM v_daily_sales WHERE sale_date=@today),0) AS TodayBills,
-              COALESCE((SELECT gross_profit FROM v_daily_sales WHERE sale_date=@today),0) AS TodayGrossProfit,
-              COALESCE((SELECT SUM(grand_total) FROM sale WHERE status='COMPLETED' AND sale_date BETWEEN @monthStart AND @today),0) AS MonthSales,
-              COALESCE((SELECT SUM(grand_total) FROM sale WHERE status='COMPLETED' AND sale_date BETWEEN @previousStart AND @previousThrough),0) AS PreviousMonthSales,
-              COALESCE((SELECT COUNT(*) FROM v_expiry_alert WHERE bucket='EXPIRED'),0) AS ExpiredLots,
-              COALESCE((SELECT COUNT(*) FROM v_expiry_alert WHERE bucket='CRITICAL'),0) AS CriticalLots,
-              COALESCE((SELECT COUNT(*) FROM v_expiry_alert WHERE bucket='SOON'),0) AS SoonLots,
-              COALESCE((SELECT COUNT(*) FROM v_product_stock WHERE is_low=1),0) AS LowStockProducts,
-              COALESCE((SELECT SUM(stock_value) FROM v_product_stock),0) AS StockValue,
+              COALESCE(today_sales.sales,0) AS TodaySales,
+              COALESCE(today_sales.taxable,0) AS TodayTaxableSales,
+              COALESCE(today_sales.bills,0) AS TodayBills,
+              COALESCE(today_sales.gross_profit,0) AS TodayGrossProfit,
+              COALESCE((SELECT SUM(sales) FROM pnl_day WHERE day BETWEEN @monthStart AND @today),0) AS MonthSales,
+              COALESCE((SELECT SUM(sales) FROM pnl_day WHERE day BETWEEN @previousStart AND @previousThrough),0) AS PreviousMonthSales,
+              expiry.expired AS ExpiredLots,
+              expiry.critical AS CriticalLots,
+              expiry.soon AS SoonLots,
+              stock.low_products AS LowStockProducts,
+              stock.stock_value AS StockValue,
               COALESCE((SELECT SUM(balance_due) FROM v_vendor_balance),0) AS Payables
+            FROM (SELECT 1) AS anchor
+            LEFT JOIN today_sales ON 1=1
+            CROSS JOIN expiry
+            CROSS JOIN stock
             """, new { today = "2026-09-26", monthStart = "2026-09-01",
                 previousStart = "2026-08-01", previousThrough = "2026-08-26" });
         CapturePlan("dashboard-payments-actual", """
@@ -262,33 +495,23 @@ switch (mode)
             JOIN sale s ON s.id=sp.sale_id WHERE s.status='COMPLETED' AND s.sale_date=@today GROUP BY sp.mode ORDER BY sp.mode
             """, new { today = "2026-09-26" });
         CapturePlan("dashboard-trend-actual", """
-            SELECT sale_date AS Date,sales AS Sales,bills AS Bills,gross_profit AS GrossProfit
-            FROM v_daily_sales WHERE sale_date BETWEEN @from AND @today ORDER BY sale_date
+            SELECT day AS Date,sales AS Sales,bills AS Bills,taxable-cost AS GrossProfit
+            FROM pnl_day WHERE day BETWEEN @from AND @today AND bills>0 ORDER BY day
             """, new { from = "2026-08-28", today = "2026-09-26" });
         CapturePlan("dashboard-top-products-actual", """
-            WITH movements AS (
-              SELECT sl.product_id,sl.product_name,sl.product_name_local,sl.qty,
-                     sl.taxable_amount,sl.cost_amount
-              FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
-              WHERE s.status='COMPLETED' AND s.sale_date BETWEEN @from AND @today
-              UNION ALL
-              SELECT sl.product_id,sl.product_name,sl.product_name_local,-rl.qty,
-                     -rl.taxable_amount,-rl.cost_amount
-              FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
-              JOIN sale_line sl ON sl.id=rl.sale_line_id WHERE r.return_date BETWEEN @from AND @today
-            )
-            , totals AS (
-              SELECT product_id AS ProductId,MAX(product_name) AS Name,MAX(product_name_local) AS LocalName,
-                     SUM(qty) AS Quantity,SUM(taxable_amount) AS Revenue,SUM(cost_amount) AS Cost,
-                     SUM(taxable_amount-cost_amount) AS Margin
-              FROM movements GROUP BY product_id
+            WITH totals AS (
+              SELECT product_id AS ProductId,MAX(name) AS Name,
+                     MAX(CASE WHEN local_is_null=0 THEN local_name END) AS LocalName,
+                     SUM(qty) AS Quantity,SUM(revenue) AS Revenue,SUM(cost) AS Cost,
+                     SUM(revenue-cost) AS Margin
+              FROM dashboard_top_summary WHERE movements>0 GROUP BY product_id
             ), ranked AS (
               SELECT *,ROW_NUMBER() OVER (ORDER BY Revenue DESC,ProductId) AS RevenueRank,
                        ROW_NUMBER() OVER (ORDER BY Margin DESC,ProductId) AS MarginRank
               FROM totals
             )
             SELECT * FROM ranked WHERE RevenueRank<=10 OR MarginRank<=10
-            """, new { from = "2026-08-28", today = "2026-09-26" });
+            """);
         break;
     }
     case "cold-warm":
@@ -304,6 +527,7 @@ switch (mode)
             ("history-recent", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(From: monthStart, To: end))).Count),
             ("expiry-badge", () => moneyOut.GetActionableExpiryCountAsync()),
             ("pnl-month", async () => (await reports.GetPnlAsync(monthStart, end)).Income.Count),
+            ("pnl-fiscal", async () => (await reports.GetPnlAsync(fiscalStart, end)).Income.Count),
             ("dashboard", async () => { await reports.GetDashboardAsync(); return 1; }),
         };
         foreach (var operation in operations)
@@ -446,12 +670,22 @@ switch (mode)
         using var sampleStop = new CancellationTokenSource();
         Task sampler = sustained ? Task.Run(async () =>
         {
+            TimeSpan priorCpu = process.TotalProcessorTime;
+            long priorSample = Stopwatch.GetTimestamp();
             while (!sampleStop.IsCancellationRequested)
             {
                 process.Refresh();
+                long now = Stopwatch.GetTimestamp();
+                TimeSpan cpu = process.TotalProcessorTime;
+                double elapsedSeconds = Stopwatch.GetElapsedTime(priorSample, now).TotalSeconds;
+                double cpuPercent = elapsedSeconds > 0
+                    ? (cpu - priorCpu).TotalSeconds / elapsedSeconds / Environment.ProcessorCount * 100 : 0;
+                priorCpu = cpu;
+                priorSample = now;
                 string walPath = paths.DatabaseFile + "-wal";
                 resourceSamples.Enqueue(new(Stopwatch.GetElapsedTime(startedAt).TotalSeconds,
-                    File.Exists(walPath) ? new FileInfo(walPath).Length : 0, process.WorkingSet64));
+                    File.Exists(walPath) ? new FileInfo(walPath).Length : 0, process.WorkingSet64,
+                    cpuPercent, factory.ActiveConnections));
                 try { await Task.Delay(1000, sampleStop.Token); }
                 catch (OperationCanceledException) { break; }
             }
@@ -461,7 +695,7 @@ switch (mode)
             await Task.Delay(TimeSpan.FromSeconds(30));
             await Measure("sustained-backup", () => Task.Run(() => backups.Create("sustained-profile")), static _ => 1);
         }) : Task.CompletedTask;
-        using var secondDatabase = new DbExecutor(new SqliteConnectionFactory(paths));
+        using var secondDatabase = new DbExecutor(new SqliteConnectionFactory(paths), readConcurrency);
         var secondSales = new SalesService(secondDatabase, ledger, numbers, periods, settings, audit, clock);
         long productId;
         using (var connection = factory.Open())
@@ -513,10 +747,16 @@ switch (mode)
                 long started = Stopwatch.GetTimestamp();
                 try
                 {
+                    long addStarted = Stopwatch.GetTimestamp();
                     long saleId = await terminal.AddProductAsync(null, productId, Quantity.One);
+                    profileSamples.Add(new("sale-add", Stopwatch.GetElapsedTime(addStarted).TotalMilliseconds, 1, null));
+                    long getStarted = Stopwatch.GetTimestamp();
                     SaleDetails details = await terminal.GetAsync(saleId);
+                    profileSamples.Add(new("sale-get", Stopwatch.GetElapsedTime(getStarted).TotalMilliseconds, 1, null));
+                    long commitStarted = Stopwatch.GetTimestamp();
                     await terminal.CompleteAsync(new(saleId,
                         [new PaymentInput(PaymentMode.Cash, details.Totals.GrandTotal)], OperationGuard.NewId()));
+                    profileSamples.Add(new("sale-commit", Stopwatch.GetElapsedTime(commitStarted).TotalMilliseconds, 1, null));
                     profileSamples.Add(new("sale-add-complete", Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1, null));
                 }
                 catch (Exception exception)
@@ -569,7 +809,7 @@ switch (mode)
             """, new { match = "\"grocery\" \"item\"" });
         CapturePlan("ledger-hot", "SELECT id FROM stock_movement WHERE product_id=@productId ORDER BY id DESC LIMIT 100", new { productId });
         CapturePlan("history-recent", "SELECT id FROM sale WHERE sale_date BETWEEN @from AND @to ORDER BY sale_date DESC,id DESC LIMIT 50", new { from = "2026-09-01", to = "2026-09-26" });
-        CapturePlan("pnl-sale-range", "SELECT SUM(taxable_total),SUM(cost_total) FROM sale WHERE status='COMPLETED' AND sale_date BETWEEN @from AND @to", new { from = "2026-09-01", to = "2026-09-26" });
+        CapturePlan("pnl-day-range", "SELECT SUM(bills),SUM(taxable),SUM(rounding),SUM(cost),SUM(returns),SUM(return_taxable),SUM(return_cost) FROM pnl_day WHERE day BETWEEN @from AND @to", new { from = "2026-09-01", to = "2026-09-26" });
         CapturePlan("expiry-first-page", "SELECT lot_id FROM v_expiry_alert WHERE bucket='EXPIRED' ORDER BY expiry_date,lot_id LIMIT 100");
         break;
     }
@@ -2050,7 +2290,19 @@ switch (mode)
                 INSERT INTO setting(key,value) VALUES ('expiry.popup_on_login','false')
                 ON CONFLICT(key) DO UPDATE SET value=excluded.value
                 """);
+            if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_ACCEPTANCE") == "1")
+                connection.Execute("""
+                    INSERT INTO setting(key,value) VALUES ('maintenance.integrity_last_run',@today)
+                    ON CONFLICT(key) DO UPDATE SET value=excluded.value
+                    """, new { today = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd",
+                        System.Globalization.CultureInfo.InvariantCulture) });
         }
+        if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_ACCEPTANCE") == "1")
+            await Measure("ui-setup-verified-daily-backup", () => Task.Run(() =>
+            {
+                new BackupService(paths, factory, new AuditClock(DateTime.Now), settings).Create("ui-setup");
+                return 1;
+            }), static x => x);
         break;
     case "data-shape":
         using (var connection = factory.Open())
@@ -2082,9 +2334,41 @@ switch (mode)
                     """)), static x => x);
         }
         break;
+    case "dashboard-reconcile":
+        using (var connection = factory.Open())
+        {
+            await Measure("dashboard-day-reconciliation", () => Task.Run(() =>
+            {
+                long drift = CountDashboardDayDrift(connection);
+                if (drift != 0) throw new InvalidDataException($"{drift} dashboard day totals differ from source sales.");
+                return 0;
+            }), static x => x);
+            if (connection.ExecuteScalar<int>("PRAGMA user_version") >= 19)
+                await Measure("dashboard-top-reconciliation", () => Task.Run(() =>
+                {
+                    long drift = CountDashboardTopDrift(connection);
+                    if (drift != 0) throw new InvalidDataException($"{drift} dashboard top rows differ from source lines.");
+                    return 0;
+                }), static x => x);
+        }
+        break;
     case "verify":
         using (var connection = factory.Open())
         {
+            if (connection.ExecuteScalar<int>("PRAGMA user_version") >= 18)
+                await Measure("dashboard-day-reconciliation", () => Task.Run(() =>
+                {
+                    long drift = CountDashboardDayDrift(connection);
+                    if (drift != 0) throw new InvalidDataException($"{drift} dashboard day totals differ from source sales.");
+                    return 0;
+                }), static x => x);
+            if (connection.ExecuteScalar<int>("PRAGMA user_version") >= 19)
+                await Measure("dashboard-top-reconciliation", () => Task.Run(() =>
+                {
+                    long drift = CountDashboardTopDrift(connection);
+                    if (drift != 0) throw new InvalidDataException($"{drift} dashboard top rows differ from source lines.");
+                    return 0;
+                }), static x => x);
             await Measure("integrity-check", () => Task.Run(() =>
             {
                 string value = connection.ExecuteScalar<string>("PRAGMA integrity_check") ?? "";
@@ -2128,7 +2412,7 @@ switch (mode)
         throw new ArgumentException($"Unknown mode '{mode}'.");
 }
 
-if (mode is "shape-profile" or "report-profile" or "gap-read" or "feature-write" or "weekly-maintenance-overlap" or "print-journal-profile")
+if (mode is "attribution-profile" or "history-profile" or "shape-profile" or "report-profile" or "gap-read" or "feature-write" or "weekly-maintenance-overlap" or "print-journal-profile")
 {
     // Freeze the service trace before audit metadata queries and plan collection.
     factory.SqlTrace = null;
@@ -2147,6 +2431,17 @@ if (mode is "shape-profile" or "report-profile" or "gap-read" or "feature-write"
                 exception.GetType().Name + ": " + exception.Message));
             Console.WriteLine($"PLAN-FAIL {name}: {exception.GetType().Name}");
         }
+        if (mode == "attribution-profile" && operation == "GetHistoryAsync")
+            await Measure("sql-only-" + name, () => Task.Run(() =>
+            {
+                using var connection = factory.Open();
+                using var command = connection.CreateCommand();
+                command.CommandText = sql;
+                using var reader = command.ExecuteReader();
+                int rows = 0;
+                while (reader.Read()) rows++;
+                return rows;
+            }), static rows => rows);
     }
 }
 
@@ -2157,6 +2452,7 @@ process.Refresh();
 File.WriteAllText(output, JsonSerializer.Serialize(new
 {
     mode,
+    readConcurrency,
     root,
     databaseBytes,
     databaseBytesAfter = new FileInfo(paths.DatabaseFile).Length,
@@ -2194,7 +2490,7 @@ File.WriteAllText(output, JsonSerializer.Serialize(new
         }),
 }, new JsonSerializerOptions { WriteIndented = true }));
 Console.WriteLine($"RESULTS {output}");
-if ((mode is "verify" or "restore-race" or "sustained-profile") &&
+if ((mode is "verify" or "restore-race" or "sustained-profile" or "refresh-storm") &&
     (results.Any(static result => result.Error is not null) ||
      (mode == "sustained-profile" && (profileSamples.Any(static sample => sample.Error is not null) ||
         sustainedSalesCheck is null || sustainedSalesCheck.Failed != 0 ||
@@ -2203,6 +2499,52 @@ if ((mode is "verify" or "restore-race" or "sustained-profile") &&
 
 string GetSqliteVersion() { using var connection = factory.Open(); return connection.ExecuteScalar<string>("SELECT sqlite_version()") ?? "unknown"; }
 long GetUserVersion() { using var connection = factory.Open(); return connection.ExecuteScalar<long>("PRAGMA user_version"); }
+static long CountDashboardDayDrift(SqliteConnection connection) => connection.ExecuteScalar<long>("""
+    WITH source AS (
+      SELECT sale_date AS day,COUNT(*) AS bills,SUM(grand_total) AS sales,
+             SUM(taxable_total) AS taxable,SUM(round_off) AS rounding,SUM(cost_total) AS cost
+      FROM sale WHERE status='COMPLETED' GROUP BY sale_date
+    )
+    SELECT (SELECT COUNT(*) FROM pnl_day p LEFT JOIN source s ON s.day=p.day
+            WHERE p.bills<>COALESCE(s.bills,0) OR p.sales<>COALESCE(s.sales,0)
+               OR p.taxable<>COALESCE(s.taxable,0) OR p.rounding<>COALESCE(s.rounding,0)
+               OR p.cost<>COALESCE(s.cost,0))
+         + (SELECT COUNT(*) FROM source s LEFT JOIN pnl_day p ON p.day=s.day
+            WHERE p.day IS NULL)
+    """);
+static long CountDashboardTopDrift(SqliteConnection connection) => connection.ExecuteScalar<long>("""
+    WITH movements AS (
+      SELECT sl.product_id,sl.product_name AS name,COALESCE(sl.product_name_local,'') AS local_name,
+             sl.product_name_local IS NULL AS local_is_null,1 AS movements,
+             sl.qty,sl.taxable_amount AS revenue,sl.cost_amount AS cost
+      FROM sale s JOIN sale_line sl ON sl.sale_id=s.id
+      JOIN dashboard_top_window w ON s.sale_date BETWEEN w.from_day AND w.to_day
+      WHERE s.status='COMPLETED'
+      UNION ALL
+      SELECT sl.product_id,sl.product_name,COALESCE(sl.product_name_local,''),
+             sl.product_name_local IS NULL,1,-rl.qty,-rl.taxable_amount,-rl.cost_amount
+      FROM sale_return r JOIN sale_return_line rl ON rl.sale_return_id=r.id
+      JOIN sale_line sl ON sl.id=rl.sale_line_id
+      JOIN dashboard_top_window w ON r.return_date BETWEEN w.from_day AND w.to_day
+    ), source AS (
+      SELECT product_id,name,local_name,local_is_null,SUM(movements) AS movements,
+             SUM(qty) AS qty,SUM(revenue) AS revenue,SUM(cost) AS cost
+      FROM movements GROUP BY product_id,name,local_name,local_is_null
+    )
+    SELECT COUNT(*) FROM (
+      SELECT * FROM (
+        SELECT product_id,name,local_name,local_is_null,movements,qty,revenue,cost FROM source
+        EXCEPT
+        SELECT product_id,name,local_name,local_is_null,movements,qty,revenue,cost FROM dashboard_top_summary
+      )
+      UNION ALL
+      SELECT * FROM (
+        SELECT product_id,name,local_name,local_is_null,movements,qty,revenue,cost FROM dashboard_top_summary
+        EXCEPT
+        SELECT product_id,name,local_name,local_is_null,movements,qty,revenue,cost FROM source
+      )
+    )
+    """, commandTimeout: 120);
 static double Percentile(double[] sorted, double fraction) => sorted.Length == 0 ? 0 :
     sorted[(int)Math.Ceiling(fraction * sorted.Length) - 1];
 
@@ -2211,7 +2553,8 @@ internal sealed record Measurement(string Name, double Milliseconds, int Rows, l
 
 internal sealed record QueryPlan(string Name, IReadOnlyList<string> Details, string Sql, string? Error = null);
 internal sealed record ProfileSample(string Name, double Milliseconds, int Rows, string? Error);
-internal sealed record ResourceSample(double ElapsedSeconds, long WalBytes, long WorkingSetBytes);
+internal sealed record ResourceSample(double ElapsedSeconds, long WalBytes, long WorkingSetBytes,
+    double CpuPercent, int ActiveConnections);
 internal sealed record SustainedSalesCheck(long Before, long Successful, long Failed, long After);
 internal sealed record ProfileSummary(string Name, int Samples, double P50Milliseconds, double P95Milliseconds,
     double P99Milliseconds, int Errors, int MaximumRows);

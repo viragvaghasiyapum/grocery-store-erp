@@ -21,7 +21,7 @@ public sealed class NullMigrationBackup : IMigrationBackup
 
 public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMigrationBackup backup)
 {
-    public const int LatestVersion = 15;
+    public const int LatestVersion = 19;
 
     public void Run()
     {
@@ -38,13 +38,123 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
         foreach (Script script in scripts.Where(item => item.Version > current))
         {
             using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
-            connection.Execute(script.Sql, transaction: transaction);
-            connection.Execute(
-                $"PRAGMA user_version = {script.Version.ToString(CultureInfo.InvariantCulture)};",
-                transaction: transaction);
+            string sql = script.Sql;
+            if (script.Version == 18 && connection.ExecuteScalar<long>(
+                    "SELECT COUNT(*) FROM pragma_table_info('pnl_day') WHERE name='sales'",
+                    transaction: transaction) != 0)
+                sql = sql.Replace("ALTER TABLE pnl_day ADD COLUMN sales INTEGER NOT NULL DEFAULT 0;",
+                    string.Empty, StringComparison.Ordinal);
+            connection.Execute(sql, transaction: transaction);
+            if (script.Version == 19)
+                DashboardTopProjection.Rebuild(connection, transaction, DateOnly.FromDateTime(DateTime.Now));
+            if (script.Version != 16)
+                connection.Execute(
+                    $"PRAGMA user_version = {script.Version.ToString(CultureInfo.InvariantCulture)};",
+                    transaction: transaction);
             transaction.Commit();
+            if (script.Version == 16)
+            {
+                // Each month commits independently. If interrupted, user_version stays
+                // at 15; the idempotent schema script and rebuild restart on next launch.
+                RebuildPnlDays(connection);
+                connection.Execute("PRAGMA user_version = 16;");
+            }
         }
         connection.Execute("PRAGMA optimize;");
+    }
+
+    // Offline repair path. A verified backup is taken by the production backup
+    // implementation, then the restore barrier drains all readers and writers.
+    public void RebuildPnlDays()
+    {
+        using (SqliteConnection check = factory.Open())
+            if (check.ExecuteScalar<long>("PRAGMA user_version") != LatestVersion)
+                throw new InvalidOperationException("Migrate the database before rebuilding P&L days.");
+        backup.CreateBeforeMigration("pre-pnl-day-rebuild");
+        factory.BeginExclusive();
+        try
+        {
+            using SqliteConnection connection = factory.OpenExclusive();
+            RebuildPnlDays(connection);
+        }
+        finally
+        {
+            factory.EndExclusive();
+        }
+    }
+
+    // Offline repair for a drifted top-products cache. The transaction either
+    // replaces the complete window or leaves the previous one intact.
+    public void RebuildDashboardTop(DateOnly through)
+    {
+        using (SqliteConnection check = factory.Open())
+            if (check.ExecuteScalar<long>("PRAGMA user_version") != LatestVersion)
+                throw new InvalidOperationException("Migrate the database before rebuilding dashboard products.");
+        backup.CreateBeforeMigration("pre-dashboard-top-rebuild");
+        factory.BeginExclusive();
+        try
+        {
+            using SqliteConnection connection = factory.OpenExclusive();
+            using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+            DashboardTopProjection.Rebuild(connection, transaction, through);
+            transaction.Commit();
+        }
+        finally
+        {
+            factory.EndExclusive();
+        }
+    }
+
+    private static void RebuildPnlDays(SqliteConnection connection)
+    {
+        bool includeSales = connection.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM pragma_table_info('pnl_day') WHERE name='sales'") != 0;
+        string? first = connection.ExecuteScalar<string>("""
+            SELECT MIN(day) FROM (SELECT MIN(sale_date) AS day FROM sale WHERE status='COMPLETED'
+                                 UNION ALL SELECT MIN(return_date) FROM sale_return)
+            """);
+        string? last = connection.ExecuteScalar<string>("""
+            SELECT MAX(day) FROM (SELECT MAX(sale_date) AS day FROM sale WHERE status='COMPLETED'
+                                 UNION ALL SELECT MAX(return_date) FROM sale_return)
+            """);
+        using (SqliteTransaction reset = connection.BeginTransaction(deferred: false))
+        {
+            connection.Execute("DELETE FROM pnl_day", transaction: reset);
+            reset.Commit();
+        }
+        if (first is null || last is null) return;
+        DateOnly month = DateOnly.ParseExact(first[..7] + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture);
+        DateOnly finalMonth = DateOnly.ParseExact(last[..7] + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture);
+        while (month <= finalMonth)
+        {
+            string from = month.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            string until = month.Year == 9999 && month.Month == 12 ? "9999-13-01" :
+                month.AddMonths(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            using SqliteTransaction chunk = connection.BeginTransaction(deferred: false);
+            connection.Execute(includeSales ? """
+                INSERT INTO pnl_day(day,bills,taxable,rounding,cost,sales)
+                SELECT sale_date,COUNT(*),SUM(taxable_total),SUM(round_off),SUM(cost_total),SUM(grand_total)
+                FROM sale WHERE status='COMPLETED' AND sale_date>=@from AND sale_date<@until
+                GROUP BY sale_date
+                """ : """
+                INSERT INTO pnl_day(day,bills,taxable,rounding,cost)
+                SELECT sale_date,COUNT(*),SUM(taxable_total),SUM(round_off),SUM(cost_total)
+                FROM sale WHERE status='COMPLETED' AND sale_date>=@from AND sale_date<@until
+                GROUP BY sale_date
+                """, new { from, until }, chunk);
+            connection.Execute("""
+                INSERT INTO pnl_day(day,returns,return_taxable,return_cost)
+                SELECT return_date,COUNT(*),SUM(taxable_total),SUM(cost_total)
+                FROM sale_return WHERE return_date>=@from AND return_date<@until
+                GROUP BY return_date
+                ON CONFLICT(day) DO UPDATE SET
+                    returns=excluded.returns,return_taxable=excluded.return_taxable,
+                    return_cost=excluded.return_cost
+                """, new { from, until }, chunk);
+            chunk.Commit();
+            if (month == finalMonth) break;
+            month = month.AddMonths(1);
+        }
     }
 
     private static List<Script> LoadEmbedded()

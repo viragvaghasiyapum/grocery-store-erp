@@ -11,7 +11,8 @@ namespace GroceryErp.App.Presentation;
 
 public partial class ProductsPage : Page
 {
-    private const int PageSize = 100;
+    private const int PageSize = 50;
+    private const int SearchPageSize = 20;
     private readonly CatalogService _catalog;
     private readonly ISettings _settings;
     private readonly ProductExcelImporter _importer;
@@ -23,6 +24,7 @@ public partial class ProductsPage : Page
     private long? _afterId;
     private ProductSearchPage? _currentPage;
     private bool _pageLoading;
+    private CancellationTokenSource? _pageLoadCancellation;
 
     public ProductsPage() : this(
         ((App)Application.Current).Services.GetRequiredService<CatalogService>(),
@@ -48,7 +50,14 @@ public partial class ProductsPage : Page
             }
             catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
         };
-        Unloaded += (_, _) => TranslationSource.Instance.PropertyChanged -= TranslationChanged;
+        Unloaded += (_, _) =>
+        {
+            TranslationSource.Instance.PropertyChanged -= TranslationChanged;
+            ++_searchVersion;
+            ++_refreshVersion;
+            _pageLoadCancellation?.Cancel();
+            _pageLoading = false;
+        };
     }
 
     private void TranslationChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -61,7 +70,14 @@ public partial class ProductsPage : Page
     {
         if (!IsLoaded) return;
         int version = ++_searchVersion;
-        await Task.Delay(180);
+        // Invalidate the current result as soon as the text changes. Waiting for
+        // the debounce would let an older query replace rows for the new search.
+        ++_refreshVersion;
+        _pageLoadCancellation?.Cancel();
+        _pageLoading = true;
+        PreviousPageButton.IsEnabled = false;
+        NextPageButton.IsEnabled = false;
+        await Task.Delay(40);
         if (version == _searchVersion && IsLoaded) await RefreshAsync();
     }
 
@@ -97,9 +113,12 @@ public partial class ProductsPage : Page
         CancellationToken cancellationToken = default)
     {
         using var timing = UiRefreshProbe.Track("products", this);
+        _pageLoadCancellation?.Cancel();
+        var request = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _pageLoadCancellation = request;
+        int version = ++_refreshVersion;
         try
         {
-            int version = ++_refreshVersion;
             _pageLoading = true;
             PreviousPageButton.IsEnabled = false;
             NextPageButton.IsEnabled = false;
@@ -112,7 +131,8 @@ public partial class ProductsPage : Page
                 MissingLocalNameOnly: MissingLocalFilter.IsChecked == true,
                 IncludeArchived: ArchivedFilter.IsChecked == true,
                 LooseOnly: LooseFilter.IsChecked == true,
-                Limit: PageSize), afterName, afterId, cancellationToken);
+                Limit: string.IsNullOrWhiteSpace(SearchBox.Text) ? PageSize : SearchPageSize),
+                afterName, afterId, request.Token);
             if (version != _refreshVersion || !IsLoaded) return;
             if (reset) _previousPages.Clear();
             _afterName = afterName;
@@ -124,11 +144,22 @@ public partial class ProductsPage : Page
             PreviousPageButton.IsEnabled = _previousPages.Count > 0;
             NextPageButton.IsEnabled = page.HasMore;
         }
+        catch (OperationCanceledException) when (request.IsCancellationRequested) { }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            if (IsLoaded) StatusText.Text = UserError.Message(exception);
+            if (version == _refreshVersion && IsLoaded)
+                StatusText.Text = UserError.Message(exception);
         }
-        finally { if (IsLoaded) _pageLoading = false; }
+        finally
+        {
+            if (ReferenceEquals(_pageLoadCancellation, request))
+                _pageLoadCancellation = null;
+            if (_refreshVersion == version)
+            {
+                _pageLoading = false;
+            }
+            request.Dispose();
+        }
     }
 
     private async void NextPage_OnClick(object sender, RoutedEventArgs e)

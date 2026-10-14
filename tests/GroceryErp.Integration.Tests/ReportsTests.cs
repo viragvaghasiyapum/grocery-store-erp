@@ -88,10 +88,22 @@ public sealed class ReportsTests
     {
         using var fixture = new ReportFixture();
         fixture.SeedGoldenScenario();
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("""
+                INSERT INTO sale(invoice_no,sale_date,status,taxable_total,grand_total,cost_total)
+                VALUES('PNL-2025','2025-12-31','COMPLETED',100000,100000,60000),
+                      ('PNL-2026','2026-04-01','COMPLETED',200000,200000,110000);
+                INSERT INTO sale_return(return_no,sale_id,return_date,refund_mode,taxable_total,refund_total,cost_total)
+                VALUES('PNL-RETURN',(SELECT id FROM sale WHERE invoice_no='PNL-2025'),
+                       '2026-01-02','CASH',25000,25000,15000);
+                """);
         foreach ((DateOnly from, DateOnly to) in new[]
                  { (new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30)),
                    (new DateOnly(2026, 9, 15), new DateOnly(2026, 9, 30)),
-                   (new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 15)) })
+                   (new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 15)),
+                   (new DateOnly(2026, 4, 1), new DateOnly(2026, 9, 30)),
+                   (new DateOnly(2025, 12, 15), new DateOnly(2026, 4, 15)),
+                   (new DateOnly(2030, 1, 1), new DateOnly(2030, 1, 31)) })
         {
             PnlStatement actual = await fixture.Reports.GetPnlAsync(from, to, TestContext.Current.CancellationToken);
             var lines = actual.Income.Concat(actual.CostOfGoodsSold).Concat(actual.Expenses)
@@ -115,6 +127,104 @@ public sealed class ReportsTests
         public string HeadCode { get; init; } = "";
         public long? ReferenceId { get; init; }
         public long Amount { get; init; }
+    }
+
+    [Fact]
+    public async Task PnlDay_TracksCompletionVoidAndBackdatedReturnCorrections()
+    {
+        using var fixture = new ReportFixture();
+        using var connection = fixture.Factory.Open();
+        connection.Execute("""
+            INSERT INTO sale(id,sale_date,status,taxable_total,tax_total,round_off,grand_total,cost_total)
+            VALUES(900,'2026-08-31','DRAFT',100000,0,0,100000,60000);
+            UPDATE sale SET sale_date='2026-09-01' WHERE id=900;
+            UPDATE sale SET status='COMPLETED',invoice_no='PNL-900' WHERE id=900;
+            INSERT INTO sale_return(id,return_no,sale_id,return_date,refund_mode,taxable_total,refund_total,cost_total)
+            VALUES(901,'PNL-R-901',900,'2026-09-02','CASH',20000,20000,12000);
+            UPDATE sale_return SET return_date='2026-08-31',taxable_total=25000,
+                refund_total=25000,cost_total=15000 WHERE id=901;
+            """);
+        connection.QuerySingle<long>("SELECT bills FROM pnl_day WHERE day='2026-09-01'").ShouldBe(1);
+        connection.QuerySingle<long>("SELECT sales FROM pnl_day WHERE day='2026-09-01'").ShouldBe(100000);
+        connection.QuerySingle<long>("SELECT returns FROM pnl_day WHERE day='2026-08-31'").ShouldBe(1);
+        connection.QuerySingle<long>("SELECT returns FROM pnl_day WHERE day='2026-09-02'").ShouldBe(0);
+        DashboardSummary beforeVoidDashboard = await fixture.Reports.GetDashboardAsync(TestContext.Current.CancellationToken);
+        beforeVoidDashboard.Trend.Count.ShouldBe(1);
+        beforeVoidDashboard.Trend[0].Sales.Scaled.ShouldBe(100000);
+        beforeVoidDashboard.Trend[0].GrossProfit.Scaled.ShouldBe(40000);
+        PnlStatement beforeVoid = await fixture.Reports.GetPnlAsync(new(2026, 8, 1), new(2026, 9, 30),
+            TestContext.Current.CancellationToken);
+        beforeVoid.NetSales.Scaled.ShouldBe(75000);
+
+        connection.Execute("UPDATE sale SET status='VOID',void_reason='Correction' WHERE id=900");
+        connection.QuerySingle<long>("SELECT bills FROM pnl_day WHERE day='2026-09-01'").ShouldBe(0);
+        connection.QuerySingle<long>("SELECT sales FROM pnl_day WHERE day='2026-09-01'").ShouldBe(0);
+        (await fixture.Reports.GetDashboardAsync(TestContext.Current.CancellationToken)).Trend.Count.ShouldBe(0);
+        PnlStatement afterVoid = await fixture.Reports.GetPnlAsync(new(2026, 8, 1), new(2026, 9, 30),
+            TestContext.Current.CancellationToken);
+        afterVoid.NetSales.Scaled.ShouldBe(-25000);
+        connection.Execute("DELETE FROM sale_return WHERE id=901");
+        connection.QuerySingle<long>("SELECT returns FROM pnl_day WHERE day='2026-08-31'").ShouldBe(0);
+        PnlStatement afterDelete = await fixture.Reports.GetPnlAsync(new(2026, 8, 1), new(2026, 9, 30),
+            TestContext.Current.CancellationToken);
+        afterDelete.NetSales.Scaled.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task DashboardTopWindow_TracksCompletionReturnVoidAndDateRollover()
+    {
+        using var fixture = new ReportFixture();
+        fixture.SeedGoldenScenario();
+        using var connection = fixture.Factory.Open();
+        connection.Execute("""
+            INSERT INTO sale(id,sale_date,status) VALUES (900,'2026-09-27','DRAFT');
+            INSERT INTO sale_line(id,sale_id,line_no,product_id,lot_id,product_name,qty,
+                unit_price,taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+            VALUES (901,900,1,1,1,'Rice',1000,100000,100000,0,100000,60000,60000);
+            UPDATE sale SET status='COMPLETED',invoice_no='TOP-900',line_count=1,
+                taxable_total=100000,grand_total=100000,cost_total=60000 WHERE id=900;
+            """);
+        DashboardSummary completed = await fixture.Reports.GetDashboardAsync(TestContext.Current.CancellationToken);
+        completed.TopProductsByRevenue.Single().Revenue.Scaled.ShouldBe(100000);
+        connection.Execute("""
+            INSERT INTO sale_return(id,return_no,sale_id,return_date,refund_mode,
+                taxable_total,refund_total,cost_total)
+            VALUES (902,'TOP-R-902',900,'2026-09-27','CASH',50000,50000,30000);
+            INSERT INTO sale_return_line(id,sale_return_id,sale_line_id,qty,taxable_amount,
+                tax_amount,refund_amount,cost_amount)
+            VALUES (903,902,901,500,50000,0,50000,30000);
+            """);
+        DashboardSummary returned = await fixture.Reports.GetDashboardAsync(TestContext.Current.CancellationToken);
+        returned.TopProductsByRevenue.Single().Revenue.Scaled.ShouldBe(50000);
+        returned.TopProductsByRevenue.Single().Quantity.Scaled.ShouldBe(500);
+        connection.Execute("UPDATE sale SET status='VOID',void_reason='Correction' WHERE id=900");
+        (await fixture.Reports.GetDashboardAsync(TestContext.Current.CancellationToken))
+            .TopProductsByRevenue.Single().Revenue.Scaled.ShouldBe(-50000);
+        connection.Execute("UPDATE sale_return SET return_date='2026-10-20' WHERE id=902");
+        (await fixture.Reports.GetDashboardAsync(TestContext.Current.CancellationToken))
+            .TopProductsByRevenue.ShouldBeEmpty();
+
+        var later = new ReportService(fixture.Database, fixture.Settings, new FixedClock(new(2026, 10, 20)));
+        (await later.GetDashboardAsync(TestContext.Current.CancellationToken))
+            .TopProductsByRevenue.Single().Revenue.Scaled.ShouldBe(-50000);
+        connection.Execute("UPDATE sale_return_line SET qty=400,taxable_amount=40000,cost_amount=24000 WHERE id=903");
+        (await later.GetDashboardAsync(TestContext.Current.CancellationToken))
+            .TopProductsByRevenue.Single().Revenue.Scaled.ShouldBe(-40000);
+        connection.Execute("DELETE FROM sale_return_line WHERE id=903");
+        (await later.GetDashboardAsync(TestContext.Current.CancellationToken))
+            .TopProductsByRevenue.ShouldBeEmpty();
+        (await fixture.Reports.GetDashboardAsync(TestContext.Current.CancellationToken))
+            .TopProductsByRevenue.ShouldBeEmpty();
+        connection.Execute("""
+            INSERT INTO dashboard_top_summary
+              (product_id,name,local_name,local_is_null,movements,qty,revenue,cost)
+            VALUES (1,'Stale','',1,1,1000,100000,60000)
+            """);
+        connection.Dispose();
+        new MigrationRunner(fixture.Factory, NullMigrationBackup.Instance)
+            .RebuildDashboardTop(new(2026, 10, 20));
+        (await later.GetDashboardAsync(TestContext.Current.CancellationToken))
+            .TopProductsByRevenue.ShouldBeEmpty();
     }
 
     [Fact]
@@ -175,6 +285,119 @@ public sealed class ReportsTests
             File.Exists(csvPath).ShouldBeTrue();
             File.ReadLines(csvPath).LongCount().ShouldBe(exported + 1);
         }
+    }
+
+    [Fact]
+    public async Task DashboardCore_PreservesSalesExpiryAndActiveStockTotals()
+    {
+        using var fixture = new ReportFixture();
+        DateOnly businessDate = new(2026, 9, 27);
+        using (var connection = fixture.Factory.Open())
+        {
+            connection.Execute("""
+                INSERT INTO sale(invoice_no,sale_date,status,taxable_total,tax_total,grand_total,cost_total)
+                VALUES ('TODAY-1','2026-09-27','COMPLETED',90000,10000,100000,60000),
+                       ('TODAY-2','2026-09-27','COMPLETED',180000,20000,200000,140000),
+                       ('MONTH','2026-09-10','COMPLETED',400000,0,400000,250000),
+                       ('PREVIOUS','2026-08-10','COMPLETED',300000,0,300000,200000),
+                       ('DRAFT','2026-09-27','DRAFT',900000,0,900000,100000);
+                """);
+            long category = connection.ExecuteScalar<long>("INSERT INTO category(name) VALUES ('Dashboard') RETURNING id");
+            long uom = connection.ExecuteScalar<long>("SELECT id FROM uom ORDER BY id LIMIT 1");
+            long active = connection.ExecuteScalar<long>("""
+                INSERT INTO product(sku,name,category_id,uom_id,reorder_level,expiry_alert_days)
+                VALUES ('D-A','Active',@category,@uom,5000,30) RETURNING id
+                """, new { category, uom });
+            long inactive = connection.ExecuteScalar<long>("""
+                INSERT INTO product(sku,name,category_id,uom_id,is_active,reorder_level,expiry_alert_days)
+                VALUES ('D-I','Inactive',@category,@uom,0,5000,30) RETURNING id
+                """, new { category, uom });
+            DateOnly localToday = DateOnly.FromDateTime(DateTime.Now);
+            connection.Execute("""
+                INSERT INTO product_lot(product_id,lot_code,received_date,expiry_date,unit_cost,selling_price,qty_received,qty_on_hand)
+                VALUES (@active,'EXPIRED','2026-09-01',@expired,2000,3000,1000,1000),
+                       (@active,'CRITICAL','2026-09-01',@critical,2000,3000,1000,1000),
+                       (@active,'SOON','2026-09-01',@soon,2000,3000,1000,1000),
+                       (@active,'OUTSIDE','2026-09-01',@outside,2000,3000,1000,1000),
+                       (@inactive,'INACTIVE','2026-09-01',@expired,1000,2000,1000,1000);
+                """, new
+            {
+                active,
+                inactive,
+                expired = localToday.AddDays(-2).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                critical = localToday.AddDays(3).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                soon = localToday.AddDays(15).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                outside = localToday.AddDays(40).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+            });
+        }
+
+        DashboardSummary dashboard = await fixture.Reports.GetDashboardAsync(TestContext.Current.CancellationToken);
+        dashboard.AsOf.ShouldBe(businessDate);
+        dashboard.TodaySales.Value.ShouldBe(300m);
+        dashboard.TodayTaxableSales.Value.ShouldBe(270m);
+        dashboard.TodayBills.ShouldBe(2);
+        dashboard.AverageBill.Value.ShouldBe(150m);
+        dashboard.TodayGrossProfit.Value.ShouldBe(70m);
+        dashboard.MonthSales.Value.ShouldBe(700m);
+        dashboard.PreviousComparableMonthSales.Value.ShouldBe(300m);
+        dashboard.ExpiredLots.ShouldBe(2);
+        dashboard.CriticalLots.ShouldBe(1);
+        dashboard.SoonLots.ShouldBe(1);
+        dashboard.LowStockProducts.ShouldBe(1);
+        dashboard.StockValue.Value.ShouldBe(8m);
+        dashboard.Payables.Value.ShouldBe(0m);
+
+        var emptyDay = new ReportService(fixture.Database, fixture.Settings,
+            new FixedClock(new DateOnly(2030, 1, 1)));
+        DashboardSummary noSales = await emptyDay.GetDashboardAsync(TestContext.Current.CancellationToken);
+        noSales.TodaySales.Value.ShouldBe(0m);
+        noSales.TodayBills.ShouldBe(0);
+        noSales.TodayGrossProfit.Value.ShouldBe(0m);
+        noSales.LowStockProducts.ShouldBe(1);
+        noSales.StockValue.Value.ShouldBe(8m);
+
+        async Task AssertExpiryParity()
+        {
+            (long Expired, long Critical, long Soon) expected;
+            using (var connection = fixture.Factory.Open())
+                expected = connection.QuerySingle<(long Expired, long Critical, long Soon)>("""
+                    SELECT COUNT(*) FILTER (WHERE bucket='EXPIRED'),
+                           COUNT(*) FILTER (WHERE bucket='CRITICAL'),
+                           COUNT(*) FILTER (WHERE bucket='SOON')
+                    FROM v_expiry_alert
+                    """);
+            DashboardSummary actual = await fixture.Reports.GetDashboardAsync(TestContext.Current.CancellationToken);
+            actual.ExpiredLots.ShouldBe((int)expected.Expired);
+            actual.CriticalLots.ShouldBe((int)expected.Critical);
+            actual.SoonLots.ShouldBe((int)expected.Soon);
+        }
+
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("""
+                UPDATE product SET expiry_alert_days=NULL WHERE sku IN ('D-A','D-I');
+                UPDATE category SET expiry_alert_days=5 WHERE name='Dashboard';
+                """);
+        await AssertExpiryParity();
+
+        using (var connection = fixture.Factory.Open())
+        {
+            connection.Execute("""
+                UPDATE category SET expiry_alert_days=NULL WHERE name='Dashboard';
+                UPDATE product SET expiry_alert_days=60 WHERE sku='D-A';
+                """);
+            connection.Execute("""
+                INSERT INTO product_lot(product_id,lot_code,received_date,expiry_date,unit_cost,
+                                        selling_price,qty_received,qty_on_hand)
+                VALUES (@productId,'LATE','2026-09-01',@expiry,2000,3000,1000,1000),
+                       (@productId,'SOLD-OUT','2026-09-01',@expiry,2000,3000,1000,0)
+                """, new
+            {
+                productId = connection.ExecuteScalar<long>("SELECT id FROM product WHERE sku='D-A'"),
+                expiry = DateOnly.FromDateTime(DateTime.Now).AddDays(45)
+                    .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+            });
+        }
+        await AssertExpiryParity();
     }
 
     [Fact]

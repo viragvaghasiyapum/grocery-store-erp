@@ -54,6 +54,92 @@ public sealed class SalesTests
     }
 
     [Fact]
+    public async Task HistoryInvoicePrefix_UsesIndexAndKeepsCaseInsensitiveFilteredResults()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using (var connection = fixture.Factory.Open())
+        {
+            connection.Execute("""
+                INSERT INTO sale(id,invoice_no,sale_date,status,taxable_total,grand_total) VALUES
+                    (101,'AbC-001','2026-09-27','COMPLETED',100000,100000),
+                    (102,'ABC-002','2026-09-26','COMPLETED',200000,200000),
+                    (103,'Else-003','2026-09-27','COMPLETED',300000,300000);
+                INSERT INTO sale(id,invoice_no,sale_date,status,void_reason)
+                    VALUES (104,'abc-004','2026-09-27','VOID','Fixture void');
+                INSERT INTO sale_payment(sale_id,mode,amount) VALUES
+                    (101,'CASH',50000),(101,'UPI',50000),(102,'CARD',200000);
+                """);
+            string[] plan = connection.Query("""
+                EXPLAIN QUERY PLAN
+                SELECT 1 FROM sale WHERE invoice_no LIKE @invoicePattern LIMIT 1
+                """, new { invoicePattern = "abc%" })
+                .Select(static row => Convert.ToString(((IDictionary<string, object>)row)["detail"],
+                    System.Globalization.CultureInfo.InvariantCulture) ?? "")
+                .ToArray();
+            plan.ShouldContain(detail => detail.Contains("ix_sale_invoice_nocase", StringComparison.Ordinal));
+        }
+
+        (await fixture.Sales.GetHistoryAsync(new SaleHistoryFilter(InvoiceNumber: "abc"), ct))
+            .Select(static item => item.Id).ShouldBe([104L, 101L, 102L]);
+        (await fixture.Sales.GetHistoryAsync(new SaleHistoryFilter(
+            InvoiceNumber: "abc", Status: SaleStatus.Completed), ct))
+            .Select(static item => item.Id).ShouldBe([101L, 102L]);
+        (await fixture.Sales.GetHistoryAsync(new SaleHistoryFilter(
+            InvoiceNumber: "abc", Status: SaleStatus.Void), ct))
+            .Select(static item => item.Id).ShouldBe([104L]);
+        IReadOnlyList<SaleHistoryItem> filtered = await fixture.Sales.GetHistoryAsync(new SaleHistoryFilter(
+            InvoiceNumber: "abc", PaymentMode: PaymentMode.Cash,
+            From: new DateOnly(2026, 9, 27), To: new DateOnly(2026, 9, 27)), ct);
+        filtered.Select(static item => item.Id).ShouldBe([101L]);
+        filtered[0].PaymentModes.ShouldContain("CASH");
+        filtered[0].PaymentModes.ShouldContain("UPI");
+        (await fixture.Sales.GetHistoryAsync(new SaleHistoryFilter(InvoiceNumber: "zzzz-no-match"), ct))
+            .ShouldBeEmpty();
+
+        IReadOnlyList<SaleHistoryItem> first = await fixture.Sales.GetHistoryAsync(
+            new SaleHistoryFilter(InvoiceNumber: "abc", Limit: 1), ct);
+        first.Select(static item => item.Id).ShouldBe([104L]);
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("""
+                INSERT INTO sale(id,invoice_no,sale_date,status,taxable_total,grand_total)
+                VALUES (105,'AbC-005','2026-09-28','COMPLETED',100000,100000)
+                """);
+        IReadOnlyList<SaleHistoryItem> next = await fixture.Sales.GetHistoryAsync(
+            new SaleHistoryFilter(InvoiceNumber: "abc", BeforeDate: first[0].SaleDate,
+                BeforeId: first[0].Id, Limit: 2), ct);
+        next.Select(static item => item.Id).ShouldBe([101L, 102L]);
+    }
+
+    [Fact]
+    public async Task HistoryPages_StayBoundedAndDoNotRepeatRowsAfterAnInsert()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("""
+                WITH RECURSIVE n(value) AS (
+                    VALUES(1) UNION ALL SELECT value+1 FROM n WHERE value<501
+                )
+                INSERT INTO sale(sale_date,status) SELECT '2026-09-27','DRAFT' FROM n
+                """);
+        IReadOnlyList<SaleHistoryItem> first = await fixture.Sales.GetHistoryAsync(
+            new SaleHistoryFilter(Limit: 1000), ct);
+        first.Count.ShouldBe(500);
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("""
+                DELETE FROM sale WHERE id=@id;
+                INSERT INTO sale(sale_date,status) VALUES ('2026-09-28','DRAFT');
+                """, new { id = first[0].Id });
+        IReadOnlyList<SaleHistoryItem> second = await fixture.Sales.GetHistoryAsync(
+            new SaleHistoryFilter(BeforeDate: first[^1].SaleDate, BeforeId: first[^1].Id, Limit: 500), ct);
+        second.Count.ShouldBe(1);
+        first.Select(static item => item.Id).Concat(second.Select(static item => item.Id))
+            .Distinct().Count().ShouldBe(501);
+        second[0].Id.ShouldBeLessThan(first[^1].Id);
+    }
+
+    [Fact]
     public async Task Complete_IsIdempotent_AndPostsStockAtomically()
     {
         using var fixture = new SalesFixture();
