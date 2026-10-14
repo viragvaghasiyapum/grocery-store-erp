@@ -24,7 +24,21 @@ public sealed class MoneyOutService(
 
     public Task<int> GetActionableExpiryCountAsync(CancellationToken cancellationToken = default) =>
         database.ReadAsync(connection => connection.ExecuteScalar<int>("""
-            SELECT COUNT(*) FROM v_expiry_alert WHERE bucket IN ('EXPIRED','CRITICAL')
+            SELECT
+              (SELECT COUNT(*) FROM product_lot l INDEXED BY ix_lot_expiry
+               WHERE l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date IS NOT NULL
+                 AND l.expiry_date<date('now','localtime'))
+              +
+              (SELECT COUNT(*) FROM product_lot l INDEXED BY ix_lot_expiry
+               JOIN product p ON p.id=l.product_id
+               JOIN category c ON c.id=p.category_id
+               LEFT JOIN category pc ON pc.id=c.parent_id
+               WHERE l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date IS NOT NULL
+                 AND l.expiry_date BETWEEN date('now','localtime') AND date('now','localtime','+7 days')
+                 AND l.expiry_date<=date('now','localtime','+'||COALESCE(
+                     p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
+                     CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30
+                 )||' days'))
             """), cancellationToken);
 
     public Task<IReadOnlyList<ExpiryLot>> GetExpiryAsync(string? bucket = null, CancellationToken cancellationToken = default)

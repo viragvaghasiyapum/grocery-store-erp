@@ -266,6 +266,66 @@ public sealed class ReportsTests
     }
 
     [Fact]
+    public async Task ItemSalesWindow_ExcludesPriorMonthAndMatchesSourceAfterReturn()
+    {
+        using var fixture = new ReportFixture();
+        fixture.SeedGoldenScenario();
+        using (var connection = fixture.Factory.Open())
+        {
+            long product = connection.ExecuteScalar<long>("SELECT id FROM product WHERE sku='RICE'");
+            long lot = connection.ExecuteScalar<long>("SELECT id FROM product_lot WHERE product_id=@product", new { product });
+            foreach (var item in new[] { (Date: "2026-08-30", Name: "Old rice", Invoice: "OLD"),
+                         (Date: "2026-09-10", Name: "New rice", Invoice: "NEW") })
+            {
+                long sale = connection.ExecuteScalar<long>("""
+                    INSERT INTO sale(sale_date,line_count,taxable_total,grand_total,cost_total)
+                    VALUES (@date,1,100000,100000,60000) RETURNING id
+                    """, new { date = item.Date });
+                connection.Execute("""
+                    INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,
+                        taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+                    VALUES (@sale,1,@product,@lot,@name,1000,100000,100000,0,100000,60000,60000)
+                    """, new { sale, product, lot, name = item.Name });
+                connection.Execute("UPDATE sale SET status='COMPLETED',invoice_no=@invoice WHERE id=@sale",
+                    new { sale, invoice = item.Invoice });
+                if (item.Invoice != "NEW") continue;
+                long returned = connection.ExecuteScalar<long>("""
+                    INSERT INTO sale_return(return_no,sale_id,return_date,refund_mode,taxable_total,
+                        refund_total,cost_total)
+                    VALUES ('RET-NEW',@sale,'2026-09-12','CASH',25000,25000,15000) RETURNING id
+                    """, new { sale });
+                long line = connection.ExecuteScalar<long>("SELECT id FROM sale_line WHERE sale_id=@sale", new { sale });
+                connection.Execute("""
+                    INSERT INTO sale_return_line(sale_return_id,sale_line_id,qty,taxable_amount,
+                        tax_amount,refund_amount,cost_amount)
+                    VALUES (@returned,@line,250,25000,0,25000,15000)
+                    """, new { returned, line });
+            }
+        }
+        await fixture.Reports.GetDashboardAsync(TestContext.Current.CancellationToken);
+        var filter = new ReportFilter(From: new(2026, 9, 1), To: new(2026, 9, 27), Limit: 100);
+        TabularReport projected = await fixture.Reports.GetReportAsync(ReportKind.ItemSales, filter,
+            TestContext.Current.CancellationToken);
+        TabularReport projectedCategories = await fixture.Reports.GetReportAsync(ReportKind.CategorySales, filter,
+            TestContext.Current.CancellationToken);
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("DELETE FROM dashboard_top_window");
+        TabularReport source = await fixture.Reports.GetReportAsync(ReportKind.ItemSales, filter,
+            TestContext.Current.CancellationToken);
+        TabularReport sourceCategories = await fixture.Reports.GetReportAsync(ReportKind.CategorySales, filter,
+            TestContext.Current.CancellationToken);
+        System.Text.Json.JsonSerializer.Serialize(projected.Rows).ShouldBe(
+            System.Text.Json.JsonSerializer.Serialize(source.Rows));
+        projected.Totals.ShouldBe(source.Totals);
+        System.Text.Json.JsonSerializer.Serialize(projectedCategories.Rows).ShouldBe(
+            System.Text.Json.JsonSerializer.Serialize(sourceCategories.Rows));
+        projectedCategories.Totals.ShouldBe(sourceCategories.Totals);
+        projected.Rows[0].Values["Product"].ShouldBe("New rice");
+        Convert.ToInt64(projected.Rows[0].Values["Revenue"], System.Globalization.CultureInfo.InvariantCulture)
+            .ShouldBe(75000);
+    }
+
+    [Fact]
     public async Task DashboardAndEveryReport_RunAgainstFreshSchema()
     {
         using var fixture = new ReportFixture();
@@ -377,6 +437,10 @@ public sealed class ReportsTests
                 UPDATE product SET expiry_alert_days=NULL WHERE sku IN ('D-A','D-I');
                 UPDATE category SET expiry_alert_days=5 WHERE name='Dashboard';
                 """);
+        await AssertExpiryParity();
+
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("UPDATE product_lot SET is_active=0 WHERE lot_code='EXPIRED'");
         await AssertExpiryParity();
 
         using (var connection = fixture.Factory.Open())

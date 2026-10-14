@@ -28,5 +28,10 @@
     <EmbeddedResource Include="../../017_sale_invoice_prefix.sql" Link="db/017_sale_invoice_prefix.sql" />
     <EmbeddedResource Include="../../018_dashboard_daily_sales.sql" Link="db/018_dashboard_daily_sales.sql" />
     <EmbeddedResource Include="../../019_dashboard_top_window.sql" Link="db/019_dashboard_top_window.sql" />
+    <EmbeddedResource Include="../../020_vendor_balance_projection.sql" Link="db/020_vendor_balance_projection.sql" />
+    <EmbeddedResource Include="../../021_expiry_covering_index.sql" Link="db/021_expiry_covering_index.sql" />
+    <EmbeddedResource Include="../../022_resumable_imports.sql" Link="db/022_resumable_imports.sql" />
+    <EmbeddedResource Include="../../023_movement_date_access.sql" Link="db/023_movement_date_access.sql" />
+    <EmbeddedResource Include="../../024_stock_value_projection.sql" Link="db/024_stock_value_projection.sql" />
   </ItemGroup>
 </Project>

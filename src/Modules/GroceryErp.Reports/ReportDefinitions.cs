@@ -2,6 +2,90 @@ namespace GroceryErp.Reports;
 
 internal static class ReportDefinitions
 {
+    // The dashboard's exact rolling window can answer an overlapping item report.
+    // Only the at-most-seven-day edge is read from sale/return lines.
+    public const string ItemSalesFromTopWindow = """
+        WITH movements AS (
+          SELECT product_id,name,local_name,local_is_null,movements,qty,revenue,cost
+          FROM dashboard_top_summary WHERE movements>0
+          UNION ALL
+          SELECT sl.product_id,sl.product_name,COALESCE(sl.product_name_local,''),
+                 sl.product_name_local IS NULL,@deltaSign,@deltaSign*sl.qty,
+                 @deltaSign*sl.taxable_amount,@deltaSign*sl.cost_amount
+          FROM sale s JOIN sale_line sl ON sl.sale_id=s.id
+          WHERE s.status='COMPLETED' AND s.sale_date BETWEEN @deltaFrom AND @deltaTo
+          UNION ALL
+          SELECT sl.product_id,sl.product_name,COALESCE(sl.product_name_local,''),
+                 sl.product_name_local IS NULL,@deltaSign,-@deltaSign*rl.qty,
+                 -@deltaSign*rl.taxable_amount,-@deltaSign*rl.cost_amount
+          FROM sale_return r JOIN sale_return_line rl ON rl.sale_return_id=r.id
+          JOIN sale_line sl ON sl.id=rl.sale_line_id
+          WHERE r.return_date BETWEEN @deltaFrom AND @deltaTo
+        ), snapshots AS (
+          SELECT product_id,name,local_name,local_is_null,
+                 SUM(qty) AS qty,SUM(revenue) AS revenue,SUM(cost) AS cost
+          FROM movements GROUP BY product_id,name,local_name,local_is_null
+          HAVING SUM(movements)>0
+        ), totals AS (
+          SELECT product_id,MAX(name) AS product_name,
+                 MAX(CASE WHEN local_is_null=0 THEN local_name END) AS product_name_local,
+                 SUM(qty) AS qty,SUM(revenue) AS revenue,SUM(cost) AS cost
+          FROM snapshots GROUP BY product_id
+        )
+        SELECT c.name AS Category,p.sku AS Sku,t.product_name AS Product,
+               t.product_name_local AS LocalName,t.qty AS Quantity,
+               t.revenue AS Revenue,t.cost AS Cost,t.revenue-t.cost AS Margin
+        FROM totals t JOIN product p ON p.id=t.product_id JOIN category c ON c.id=p.category_id
+        WHERE @ProductId IS NULL OR t.product_id=@ProductId
+        ORDER BY c.name,Revenue DESC LIMIT @Limit
+        """;
+
+    public const string CategorySalesFromTopWindow = """
+        WITH current_movements AS (
+          SELECT product_id,qty,revenue,cost FROM dashboard_top_summary WHERE movements>0
+          UNION ALL
+          SELECT sl.product_id,@deltaSign*sl.qty,@deltaSign*sl.taxable_amount,
+                 @deltaSign*sl.cost_amount
+          FROM sale s JOIN sale_line sl ON sl.sale_id=s.id
+          WHERE s.status='COMPLETED' AND s.sale_date BETWEEN @deltaFrom AND @deltaTo
+          UNION ALL
+          SELECT sl.product_id,-@deltaSign*rl.qty,-@deltaSign*rl.taxable_amount,
+                 -@deltaSign*rl.cost_amount
+          FROM sale_return r JOIN sale_return_line rl ON rl.sale_return_id=r.id
+          JOIN sale_line sl ON sl.id=rl.sale_line_id
+          WHERE r.return_date BETWEEN @deltaFrom AND @deltaTo
+        ), current_period AS (
+          SELECT c.id,SUM(m.qty) AS quantity,SUM(m.revenue) AS revenue,
+                 SUM(m.cost) AS cost,SUM(m.revenue-m.cost) AS margin
+          FROM current_movements m JOIN product p ON p.id=m.product_id
+          JOIN category c ON c.id=p.category_id GROUP BY c.id
+        ), previous_movements AS (
+          SELECT sl.product_id,sl.taxable_amount AS revenue,sl.cost_amount AS cost
+          FROM sale s JOIN sale_line sl ON sl.sale_id=s.id
+          WHERE s.status='COMPLETED' AND s.sale_date BETWEEN @previousFrom AND @previousTo
+          UNION ALL
+          SELECT sl.product_id,-rl.taxable_amount,-rl.cost_amount
+          FROM sale_return r JOIN sale_return_line rl ON rl.sale_return_id=r.id
+          JOIN sale_line sl ON sl.id=rl.sale_line_id
+          WHERE r.return_date BETWEEN @previousFrom AND @previousTo
+        ), previous_period AS (
+          SELECT c.id,SUM(m.revenue) AS revenue,SUM(m.revenue-m.cost) AS margin
+          FROM previous_movements m JOIN product p ON p.id=m.product_id
+          JOIN category c ON c.id=p.category_id GROUP BY c.id
+        )
+        SELECT c.name AS Category,c.name_local AS LocalName,
+               COALESCE(cp.quantity,0) AS Quantity,COALESCE(cp.revenue,0) AS Revenue,
+               COALESCE(cp.cost,0) AS Cost,COALESCE(cp.margin,0) AS Margin,
+               CASE WHEN COALESCE(cp.revenue,0)=0 THEN 0
+                    ELSE CAST(ROUND(cp.margin*100000.0/cp.revenue) AS INTEGER) END AS MarginPercent,
+               COALESCE(pp.revenue,0) AS PreviousRevenue,
+               COALESCE(pp.margin,0) AS PreviousMargin
+        FROM (SELECT id FROM current_period UNION SELECT id FROM previous_period) ids
+        JOIN category c ON c.id=ids.id LEFT JOIN current_period cp ON cp.id=ids.id
+        LEFT JOIN previous_period pp ON pp.id=ids.id
+        ORDER BY Revenue DESC LIMIT @Limit
+        """;
+
     private static ReportColumn T(string key, string heading) => new(key, heading, ReportValueKind.Text);
     private static ReportColumn D(string key, string heading) => new(key, heading, ReportValueKind.Date);
     private static ReportColumn I(string key, string heading) => new(key, heading, ReportValueKind.Count);
@@ -53,24 +137,22 @@ internal static class ReportDefinitions
                   SELECT sl.product_id,r.return_date,-rl.qty,-rl.taxable_amount,-rl.cost_amount
                   FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
                   JOIN sale_line sl ON sl.id=rl.sale_line_id WHERE r.return_date BETWEEN @previousFrom AND @to
-                ), current_period AS (
-                  SELECT c.id,c.name,c.name_local,SUM(m.qty) AS quantity,SUM(m.taxable_amount) AS revenue,
-                         SUM(m.cost_amount) AS cost,SUM(m.taxable_amount-m.cost_amount) AS margin
+                ), totals AS (
+                  SELECT c.id,c.name,c.name_local,
+                         SUM(CASE WHEN m.entry_date BETWEEN @from AND @to THEN m.qty ELSE 0 END) AS quantity,
+                         SUM(CASE WHEN m.entry_date BETWEEN @from AND @to THEN m.taxable_amount ELSE 0 END) AS revenue,
+                         SUM(CASE WHEN m.entry_date BETWEEN @from AND @to THEN m.cost_amount ELSE 0 END) AS cost,
+                         SUM(CASE WHEN m.entry_date BETWEEN @from AND @to THEN m.taxable_amount-m.cost_amount ELSE 0 END) AS margin,
+                         SUM(CASE WHEN m.entry_date BETWEEN @previousFrom AND @previousTo THEN m.taxable_amount ELSE 0 END) AS previous_revenue,
+                         SUM(CASE WHEN m.entry_date BETWEEN @previousFrom AND @previousTo THEN m.taxable_amount-m.cost_amount ELSE 0 END) AS previous_margin
                   FROM movements m JOIN product p ON p.id=m.product_id JOIN category c ON c.id=p.category_id
-                  WHERE m.entry_date BETWEEN @from AND @to GROUP BY c.id
-                ), previous_period AS (
-                  SELECT c.id,SUM(m.taxable_amount) AS revenue,SUM(m.taxable_amount-m.cost_amount) AS margin
-                  FROM movements m JOIN product p ON p.id=m.product_id JOIN category c ON c.id=p.category_id
-                  WHERE m.entry_date BETWEEN @previousFrom AND @previousTo GROUP BY c.id
+                  GROUP BY c.id
                 )
-                SELECT c.name AS Category,c.name_local AS LocalName,
-                       COALESCE(cp.quantity,0) AS Quantity,COALESCE(cp.revenue,0) AS Revenue,
-                       COALESCE(cp.cost,0) AS Cost,COALESCE(cp.margin,0) AS Margin,
-                       CASE WHEN COALESCE(cp.revenue,0)=0 THEN 0 ELSE CAST(ROUND(cp.margin*100000.0/cp.revenue) AS INTEGER) END AS MarginPercent,
-                       COALESCE(pp.revenue,0) AS PreviousRevenue,COALESCE(pp.margin,0) AS PreviousMargin
-                FROM (SELECT id FROM current_period UNION SELECT id FROM previous_period) ids
-                JOIN category c ON c.id=ids.id LEFT JOIN current_period cp ON cp.id=ids.id
-                LEFT JOIN previous_period pp ON pp.id=ids.id ORDER BY Revenue DESC LIMIT @Limit
+                SELECT name AS Category,name_local AS LocalName,
+                       quantity AS Quantity,revenue AS Revenue,cost AS Cost,margin AS Margin,
+                       CASE WHEN revenue=0 THEN 0 ELSE CAST(ROUND(margin*100000.0/revenue) AS INTEGER) END AS MarginPercent,
+                       previous_revenue AS PreviousRevenue,previous_margin AS PreviousMargin
+                FROM totals ORDER BY Revenue DESC LIMIT @Limit
                 """, [T("Category", "Category"), T("LocalName", "Local name"), Q("Quantity", "Quantity"), M("Revenue", "Revenue"), M("Cost", "Cost"), M("Margin", "Margin"), P("MarginPercent", "Margin %"), M("PreviousRevenue", "Previous revenue"), M("PreviousMargin", "Previous margin")]),
 
             [ReportKind.HourlySales] = new("Hourly sales heatmap", true, """
@@ -82,12 +164,12 @@ internal static class ReportDefinitions
 
             [ReportKind.StockValue] = new("Stock value", false, """
                 SELECT c.name AS Category,p.sku AS Sku,p.name AS Product,p.name_local AS LocalName,
-                       SUM(l.qty_on_hand) AS Quantity,
-                       SUM(CAST(ROUND(l.qty_on_hand*l.unit_cost/1000.0) AS INTEGER)) AS CostValue,
-                       SUM(CAST(ROUND(l.qty_on_hand*l.selling_price/1000.0) AS INTEGER)) AS SellingValue,
-                       SUM(CAST(ROUND(l.qty_on_hand*COALESCE(l.mrp,l.selling_price)/1000.0) AS INTEGER)) AS MrpValue
-                FROM product_lot l JOIN product p ON p.id=l.product_id JOIN category c ON c.id=p.category_id
-                WHERE l.qty_on_hand<>0 GROUP BY p.id ORDER BY c.name,p.name LIMIT @Limit
+                       t.quantity AS Quantity,t.cost_value AS CostValue,
+                       t.selling_value AS SellingValue,t.mrp_value AS MrpValue
+                FROM product_stock_total t JOIN product p ON p.id=t.product_id
+                JOIN category c ON c.id=p.category_id
+                WHERE t.quantity<>0 OR t.cost_value<>0 OR t.selling_value<>0 OR t.mrp_value<>0
+                ORDER BY c.name,p.name LIMIT @Limit
                 """, [T("Category", "Category"), T("Sku", "SKU"), T("Product", "Product"), T("LocalName", "Local name"), Q("Quantity", "Quantity"), M("CostValue", "Cost value"), M("SellingValue", "Selling value"), M("MrpValue", "MRP value")]),
 
             [ReportKind.StockLedger] = new("Stock ledger", true, """
@@ -158,11 +240,9 @@ internal static class ReportDefinitions
 
             [ReportKind.VendorPayables] = new("Vendor payables", false, """
                 SELECT v.name AS Vendor,v.gstin AS Gstin,v.phone AS Phone,v.opening_balance AS OpeningBalance,
-                       COALESCE((SELECT SUM(p.grand_total) FROM purchase p WHERE p.vendor_id=v.id AND p.status='POSTED'),0) AS Purchases,
-                       COALESCE((SELECT SUM(vp.amount) FROM vendor_payment vp WHERE vp.vendor_id=v.id),0) AS Payments,
-                       COALESCE((SELECT SUM(vr.credit_total) FROM vendor_return vr WHERE vr.vendor_id=v.id),0) AS Returns,
-                       b.balance_due AS BalanceDue
-                FROM v_vendor_balance b JOIN vendor v ON v.id=b.vendor_id
+                       t.purchases AS Purchases,t.payments AS Payments,t.returns AS Returns,
+                       v.opening_balance+t.purchases-t.payments-t.returns AS BalanceDue
+                FROM vendor v JOIN vendor_balance_total t ON t.vendor_id=v.id
                 WHERE (@VendorId IS NULL OR v.id=@VendorId) ORDER BY BalanceDue DESC LIMIT @Limit
                 """, [T("Vendor", "Vendor"), T("Gstin", "GSTIN"), T("Phone", "Phone"), M("OpeningBalance", "Opening balance"), M("Purchases", "Purchases"), M("Payments", "Payments"), M("Returns", "Supplier credits"), M("BalanceDue", "Balance due")]),
 

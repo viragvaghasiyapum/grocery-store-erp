@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Markup;
 using GroceryErp.App.Presentation;
 using GroceryErp.Assets;
@@ -202,8 +203,44 @@ public partial class App : Application
                     MessageBoxButton.YesNo, MessageBoxImage.Warning);
                 if (rebuild == MessageBoxResult.Yes)
                 {
-                    int corrected = await _host.Services.GetRequiredService<InventoryService>().RebuildStockCacheAsync();
-                    Log.Warning("Rebuilt cached quantities for {LotCount} lots", corrected);
+                    InventoryService inventory = _host.Services.GetRequiredService<InventoryService>();
+                    var bar = new ProgressBar { Minimum = 0, Maximum = 1, IsIndeterminate = true,
+                        Height = 20, Margin = new Thickness(16, 16, 16, 8) };
+                    var count = new TextBlock { Margin = new Thickness(16, 0, 16, 16),
+                        HorizontalAlignment = HorizontalAlignment.Center };
+                    var panel = new StackPanel();
+                    panel.Children.Add(bar);
+                    panel.Children.Add(count);
+                    var progressWindow = new Window
+                    {
+                        Title = TranslationSource.Instance["App_Title"], Content = panel,
+                        Width = 380, Height = 110, ResizeMode = ResizeMode.NoResize,
+                        WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                        ShowInTaskbar = false,
+                    };
+                    bool finished = false;
+                    progressWindow.Closing += (_, args) => { if (!finished) args.Cancel = true; };
+                    progressWindow.Show();
+                    try
+                    {
+                        if (!await inventory.IsStockCacheRebuildPendingAsync())
+                            await Task.Run(() => backups.Create("pre-stock-cache-rebuild"));
+                        bar.IsIndeterminate = false;
+                        var progress = new Progress<StockCacheRebuildProgress>(value =>
+                        {
+                            bar.Maximum = Math.Max(1, value.TotalLots);
+                            bar.Value = value.ProcessedLots;
+                            count.Text = string.Format(CultureInfo.CurrentCulture,
+                                "{0:N0} / {1:N0}", value.ProcessedLots, value.TotalLots);
+                        });
+                        int corrected = await inventory.RebuildStockCacheAsync(progress);
+                        Log.Warning("Rebuilt cached quantities for {LotCount} lots", corrected);
+                    }
+                    finally
+                    {
+                        finished = true;
+                        progressWindow.Close();
+                    }
                 }
                 else
                 {
@@ -383,11 +420,40 @@ public partial class App : Application
     private static async Task RunMaintenanceWhenIdleAsync(ShellWindow shell, MaintenanceService maintenance,
         AssetService assets, CancellationToken cancellationToken)
     {
-        while (!shell.IsIdleFor(TimeSpan.FromMinutes(2)))
-            await Task.Delay(TimeSpan.FromSeconds(15), cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
-        await maintenance.RunAfterShellAsync(cancellationToken);
-        await assets.PostDueDepreciationAsync(cancellationToken);
+        TimeSpan idleWindow = TimeSpan.FromMinutes(10);
+        while (true)
+        {
+            while (!shell.IsIdleFor(idleWindow))
+                await Task.Delay(TimeSpan.FromSeconds(15), cancellationToken);
+            using var workCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            Task activityMonitor = MonitorActivityAsync();
+            try
+            {
+                await maintenance.RunAfterShellAsync(workCancellation.Token);
+                await assets.PostDueDepreciationAsync(workCancellation.Token);
+                return;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // A customer returned during a large integrity read. Resume at
+                // the next idle window; completed backups remain usable.
+            }
+            finally
+            {
+                workCancellation.Cancel();
+                try { await activityMonitor; }
+                catch (OperationCanceledException) { }
+            }
+
+            async Task MonitorActivityAsync()
+            {
+                while (!workCancellation.IsCancellationRequested)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), workCancellation.Token);
+                    if (!shell.IsIdleFor(idleWindow)) workCancellation.Cancel();
+                }
+            }
+        }
     }
 
     internal void SkipCloseBackup() => _skipCloseBackup = true;

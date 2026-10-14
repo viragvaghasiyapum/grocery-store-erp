@@ -337,7 +337,7 @@
   <data name="Stock_FindLot" xml:space="preserve"><value>Find lot</value></data>
   <data name="Stock_CountLotNotFound" xml:space="preserve"><value>No matching lot is on this count sheet.</value></data>
   <data name="Stock_NewCount" xml:space="preserve"><value>New count</value></data>
-  <data name="Stock_ScopeHint" xml:space="preserve"><value>Choose which categories to count. The sheet snapshots every lot in that scope.</value></data>
+  <data name="Stock_ScopeHint" xml:space="preserve"><value>Choose categories to count. Counting all categories is a maintenance task; start it outside checkout hours.</value></data>
   <data name="Stock_AllCategories" xml:space="preserve"><value>All categories</value></data>
   <data name="Stock_SelectCategory" xml:space="preserve"><value>Select at least one category, or choose all categories.</value></data>
   <data name="Stock_CreateSheet" xml:space="preserve"><value>Create sheet</value></data>

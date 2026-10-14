@@ -9,6 +9,8 @@ using GroceryErp.Inventory.Contracts;
 
 namespace GroceryErp.Inventory;
 
+public sealed record StockCacheRebuildProgress(int ProcessedLots, int TotalLots, int CorrectedLots);
+
 public sealed class InventoryService(
     DbExecutor database,
     IStockLedger ledger,
@@ -141,27 +143,69 @@ public sealed class InventoryService(
 
     public Task<IReadOnlyList<StockValuationItem>> GetValuationAsync(CancellationToken cancellationToken = default) =>
         database.ReadAsync(connection => (IReadOnlyList<StockValuationItem>)connection.Query<ValuationRow>("""
-            SELECT c.id AS CategoryId,c.name AS CategoryName,COALESCE(SUM(l.qty_on_hand),0) AS Quantity,
-                   COALESCE(SUM(CAST(ROUND(l.qty_on_hand*l.unit_cost/1000.0) AS INTEGER)),0) AS CostValue,
-                   COALESCE(SUM(CAST(ROUND(l.qty_on_hand*l.selling_price/1000.0) AS INTEGER)),0) AS SellingValue,
-                   COALESCE(SUM(CAST(ROUND(l.qty_on_hand*COALESCE(l.mrp,l.selling_price)/1000.0) AS INTEGER)),0) AS MrpValue
+            SELECT c.id AS CategoryId,c.name AS CategoryName,COALESCE(SUM(t.quantity),0) AS Quantity,
+                   COALESCE(SUM(t.cost_value),0) AS CostValue,
+                   COALESCE(SUM(t.selling_value),0) AS SellingValue,
+                   COALESCE(SUM(t.mrp_value),0) AS MrpValue
             FROM category c JOIN product p ON p.category_id=c.id
-            JOIN product_lot l ON l.product_id=p.id AND l.qty_on_hand<>0
+            JOIN product_stock_total t ON t.product_id=p.id
+            WHERE t.quantity<>0 OR t.cost_value<>0 OR t.selling_value<>0 OR t.mrp_value<>0
             GROUP BY c.id,c.name ORDER BY c.name COLLATE NOCASE
             """).Select(static row => row.ToModel()).ToList(), cancellationToken);
 
+    public Task<bool> IsStockCacheRebuildPendingAsync(CancellationToken cancellationToken = default) =>
+        database.ReadAsync(connection => connection.ExecuteScalar<string?>(
+            "SELECT value FROM setting WHERE key='maintenance.stock_rebuild_pending'") == "1", cancellationToken);
+
     public Task<int> RebuildStockCacheAsync(CancellationToken cancellationToken = default) =>
-        database.WriteAsync(transaction =>
+        RebuildStockCacheAsync(null, cancellationToken);
+
+    public async Task<int> RebuildStockCacheAsync(IProgress<StockCacheRebuildProgress>? progress,
+        CancellationToken cancellationToken = default)
+    {
+        int total = await database.ReadAsync(connection => connection.ExecuteScalar<int>(
+            "SELECT COUNT(*) FROM product_lot"), cancellationToken).ConfigureAwait(false);
+        await database.WriteAsync(transaction => transaction.Connection.Execute("""
+            INSERT INTO setting(key,value) VALUES ('maintenance.stock_rebuild_pending','1')
+            ON CONFLICT(key) DO UPDATE SET value='1'
+            """, transaction: transaction.Transaction), cancellationToken).ConfigureAwait(false);
+        long after = 0;
+        int processed = 0;
+        int corrected = 0;
+        while (true)
         {
-            int changed = transaction.Connection.Execute("""
-                UPDATE product_lot SET qty_on_hand=COALESCE(
-                    (SELECT SUM(m.qty) FROM stock_movement m WHERE m.lot_id=product_lot.id),0)
-                WHERE qty_on_hand<>COALESCE(
-                    (SELECT SUM(m.qty) FROM stock_movement m WHERE m.lot_id=product_lot.id),0)
+            cancellationToken.ThrowIfCancellationRequested();
+            (long last, int scanned, int changed) = await database.WriteAsync(transaction =>
+            {
+                List<long> ids = transaction.Connection.Query<long>("""
+                    SELECT id FROM product_lot WHERE id>@after ORDER BY id LIMIT 1000
+                    """, new { after }, transaction.Transaction).ToList();
+                if (ids.Count == 0) return (after, 0, 0);
+                long last = ids[^1];
+                int changed = transaction.Connection.Execute("""
+                    UPDATE product_lot SET qty_on_hand=COALESCE(
+                        (SELECT SUM(m.qty) FROM stock_movement m WHERE m.lot_id=product_lot.id),0)
+                    WHERE id>@after AND id<=@last
+                      AND qty_on_hand<>COALESCE(
+                          (SELECT SUM(m.qty) FROM stock_movement m WHERE m.lot_id=product_lot.id),0)
+                    """, new { after, last }, transaction.Transaction);
+                return (last, ids.Count, changed);
+            }, cancellationToken).ConfigureAwait(false);
+            if (scanned == 0) break;
+            after = last;
+            processed += scanned;
+            corrected += changed;
+            progress?.Report(new(processed, total, corrected));
+        }
+        await database.WriteAsync(transaction =>
+        {
+            transaction.Connection.Execute("""
+                UPDATE setting SET value='0' WHERE key='maintenance.stock_rebuild_pending'
                 """, transaction: transaction.Transaction);
-            audit.Write(transaction, "stock_cache", 0, "REBUILD", new { lots = changed });
-            return changed;
-        }, cancellationToken);
+            audit.Write(transaction, "stock_cache", 0, "REBUILD", new { lots = corrected });
+        }, cancellationToken).ConfigureAwait(false);
+        return corrected;
+    }
 
     public Task<IReadOnlyList<LedgerItem>> GetLedgerAsync(long productId, DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
     {
@@ -350,13 +394,26 @@ public sealed class InventoryService(
     {
         ArgumentNullException.ThrowIfNull(lines);
         if (lines.Count == 0) throw new DomainException(ErrorCode.Validation, "Opening stock is empty.");
-        var changed = new HashSet<long>();
-        long result = await database.WriteAsync(transaction =>
+        foreach (OpeningStockLine line in lines)
         {
-            OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.OpeningStockImport);
-            if (replay is not null) return replay.RefId ?? 0;
+            ValidateOpening(line);
+            periods.EnsureOpen(line.ReceivedDate);
+        }
+        string fingerprint = ImportJobs.Fingerprint(lines);
+        OpeningStockLine[][] batches = lines.Chunk(100).ToArray();
+        ImportJobState state = await database.WriteAsync(tx => ImportJobs.Start(tx, operationId,
+            "OPENING_STOCK", fingerprint, batches.Length), cancellationToken);
+        if (state.Completed) return state.ResultId;
+        var changed = new HashSet<long>();
+        for (int batchNo = 0; batchNo < batches.Length; batchNo++)
+        {
+            int number = batchNo;
+            OpeningStockLine[] batch = batches[number];
+            await database.WriteAsync(transaction =>
+        {
+            if (ImportJobs.HasBatch(transaction, operationId, number)) return;
             long firstLot = 0;
-            foreach (OpeningStockLine line in lines)
+            foreach (OpeningStockLine line in batch)
             {
                 ValidateOpening(line);
                 periods.EnsureOpen(line.ReceivedDate);
@@ -387,10 +444,12 @@ public sealed class InventoryService(
                 firstLot = firstLot == 0 ? lotId : firstLot;
                 changed.Add(line.ProductId);
             }
-            audit.Write(transaction, "opening_stock", firstLot, "IMPORT", new { rows = lines.Count });
-            OperationGuard.Complete(transaction, operationId, "product_lot", firstLot);
-            return firstLot;
+            audit.Write(transaction, "opening_stock", firstLot, "IMPORT_BATCH", new { rows = batch.Length, batchNo = number });
+            ImportJobs.RecordBatch(transaction, operationId, number, created: batch.Length, firstLot: firstLot);
         }, cancellationToken);
+        }
+        long result = (await database.WriteAsync(tx => ImportJobs.Complete(tx, operationId,
+            batches.Length, openingStock: true), cancellationToken)).ResultId;
         if (changed.Count > 0) WeakReferenceMessenger.Default.Send(new StockChangedMessage(changed.ToArray()));
         return result;
     }
@@ -419,27 +478,59 @@ public sealed class InventoryService(
     }
 
     public Task ChangeLotPriceAsync(long lotId, Money sellingPrice, Money? mrp, CancellationToken cancellationToken = default)
+        => ChangeLotPriceCoreAsync(lotId, sellingPrice, mrp, null, null, false, cancellationToken);
+
+    public Task ChangeLotPriceAsync(long lotId, Money sellingPrice, Money? mrp,
+        Money expectedPrice, Money? expectedMrp, CancellationToken cancellationToken = default)
+        => ChangeLotPriceCoreAsync(lotId, sellingPrice, mrp, expectedPrice, expectedMrp, true, cancellationToken);
+
+    private Task ChangeLotPriceCoreAsync(long lotId, Money sellingPrice, Money? mrp,
+        Money? expectedPrice, Money? expectedMrp, bool checkExpected, CancellationToken cancellationToken)
     {
         if (sellingPrice < Money.Zero || (mrp is not null && sellingPrice > mrp.Value))
             throw new DomainException(ErrorCode.PriceAboveMrp);
         return database.WriteAsync(transaction =>
         {
             int changed = transaction.Connection.Execute(
-                "UPDATE product_lot SET selling_price=@price,mrp=@mrp WHERE id=@lotId",
-                new { lotId, price = sellingPrice.Scaled, mrp = mrp?.Scaled }, transaction.Transaction);
-            if (changed == 0) throw new DomainException(ErrorCode.NotFound, "lot", lotId);
+                """
+                UPDATE product_lot SET selling_price=@price,mrp=@mrp
+                WHERE id=@lotId AND (@checkExpected=0 OR (selling_price=@expectedPrice AND mrp IS @expectedMrp))
+                """,
+                new { lotId, price = sellingPrice.Scaled, mrp = mrp?.Scaled, expectedPrice = expectedPrice?.Scaled,
+                    expectedMrp = expectedMrp?.Scaled, checkExpected = checkExpected ? 1 : 0 }, transaction.Transaction);
+            if (changed == 0) ThrowLotEditConflict(transaction, lotId);
             audit.Write(transaction, "product_lot", lotId, "PRICE_CHANGE", new { price = sellingPrice.Scaled, mrp = mrp?.Scaled });
         }, cancellationToken);
     }
 
     public Task SetLotActiveAsync(long lotId, bool active, CancellationToken cancellationToken = default) =>
+        SetLotActiveCoreAsync(lotId, active, null, cancellationToken);
+
+    public Task SetLotActiveAsync(long lotId, bool active, bool expectedActive,
+        CancellationToken cancellationToken = default) =>
+        SetLotActiveCoreAsync(lotId, active, expectedActive, cancellationToken);
+
+    private Task SetLotActiveCoreAsync(long lotId, bool active, bool? expectedActive,
+        CancellationToken cancellationToken) =>
         database.WriteAsync(transaction =>
         {
-            int changed = transaction.Connection.Execute("UPDATE product_lot SET is_active=@active WHERE id=@lotId",
-                new { lotId, active = active ? 1 : 0 }, transaction.Transaction);
-            if (changed == 0) throw new DomainException(ErrorCode.NotFound, "lot", lotId);
+            int changed = transaction.Connection.Execute("""
+                UPDATE product_lot SET is_active=@active WHERE id=@lotId
+                  AND (@expectedActive IS NULL OR is_active=@expectedActive)
+                """, new { lotId, active = active ? 1 : 0,
+                    expectedActive = expectedActive is null ? (int?)null : expectedActive.Value ? 1 : 0 },
+                transaction.Transaction);
+            if (changed == 0) ThrowLotEditConflict(transaction, lotId);
             audit.Write(transaction, "product_lot", lotId, active ? "UNBLOCK" : "BLOCK", null);
         }, cancellationToken);
+
+    private static void ThrowLotEditConflict(DbTx transaction, long lotId)
+    {
+        if (transaction.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot WHERE id=@lotId",
+            new { lotId }, transaction.Transaction) == 0)
+            throw new DomainException(ErrorCode.NotFound, "lot", lotId);
+        throw new DomainException(ErrorCode.Validation, "This lot changed since it was loaded. Refresh it and try again.");
+    }
 
     public Task<long> CreateStockCountAsync(DateOnly date, IReadOnlyCollection<long>? categoryIds, string? notes,
         CancellationToken cancellationToken = default) => database.WriteAsync(transaction =>
@@ -649,14 +740,29 @@ public sealed class InventoryService(
                 ORDER BY id LIMIT 1
                 """, new { countId, productId });
         long? exact = connection.ExecuteScalar<long?>("""
-            SELECT scl.id FROM product_lot l JOIN stock_count_line scl ON scl.lot_id=l.id
-            WHERE scl.stock_count_id=@countId AND l.lot_code=@query COLLATE NOCASE LIMIT 1
+            SELECT scl.id FROM stock_count_line scl
+            WHERE scl.stock_count_id=@countId AND scl.lot_id=(
+                SELECT id FROM product_lot WHERE lot_code=upper(@query))
             """, new { countId, query = normalized });
-        return exact ?? connection.ExecuteScalar<long?>("""
+        if (exact is not null) return exact;
+        string pattern = "%" + normalized.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+        if (normalized.Length >= 3)
+        {
+            long? indexed = connection.ExecuteScalar<long?>("""
+                SELECT scl.id FROM product_fts f
+                JOIN product p ON p.id=f.rowid
+                JOIN stock_count_line scl ON scl.product_id=p.id
+                WHERE product_fts MATCH @match AND p.name LIKE @pattern ESCAPE '\'
+                  AND scl.stock_count_id=@countId
+                ORDER BY scl.id LIMIT 1
+                """, new { countId, match = "\"" + normalized.Replace("\"", "\"\"") + "\"", pattern });
+            if (indexed is not null) return indexed;
+        }
+        return connection.ExecuteScalar<long?>("""
             SELECT scl.id FROM product p JOIN stock_count_line scl ON scl.product_id=p.id
             WHERE scl.stock_count_id=@countId AND p.name LIKE @pattern ESCAPE '\'
             ORDER BY scl.id LIMIT 1
-            """, new { countId, pattern = "%" + normalized.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%" });
+            """, new { countId, pattern });
     }, cancellationToken);
 
     public Task PostStockCountAsync(long countId, string operationId,

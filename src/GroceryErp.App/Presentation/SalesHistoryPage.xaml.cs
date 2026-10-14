@@ -27,6 +27,7 @@ public partial class SalesHistoryPage : Page
     private long? _beforeId;
     private SaleDetails? _selectedDetails;
     private bool _loadingHistory;
+    private bool _pendingReset;
     private CancellationTokenSource? _exportCancellation;
 
     public SalesHistoryPage() : this(
@@ -66,18 +67,31 @@ public partial class SalesHistoryPage : Page
         }
     }
 
-    private async Task<bool> RefreshAsync(bool reset = true)
+    private async Task<bool> RefreshAsync(bool reset = true, DateOnly? requestedDate = null,
+        long? requestedId = null, bool forward = false, bool backward = false)
     {
         using var timing = UiRefreshProbe.Track("sales-history", this);
-        if (_loadingHistory) return false;
+        if (_loadingHistory)
+        {
+            if (reset) _pendingReset = true;
+            return false;
+        }
         _loadingHistory = true;
         PreviousButton.IsEnabled = false;
         NextButton.IsEnabled = false;
         try
         {
-            if (reset) { _previous.Clear(); _beforeDate = null; _beforeId = null; }
-            SaleHistoryFilter filter = CreateFilter(_beforeDate, _beforeId, PageSize);
+            DateOnly? pageDate = reset ? null : forward || backward ? requestedDate : _beforeDate;
+            long? pageId = reset ? null : forward || backward ? requestedId : _beforeId;
+            SaleHistoryFilter filter = CreateFilter(pageDate, pageId, PageSize);
             IReadOnlyList<SaleHistoryItem> items = await _sales.GetHistoryAsync(filter);
+            // Commit navigation only after the requested page succeeds. Rapid clicks
+            // cannot mutate a cursor while a previous request is in flight.
+            if (reset) _previous.Clear();
+            else if (forward) _previous.Push((_beforeDate, _beforeId));
+            else if (backward) _previous.Pop();
+            _beforeDate = pageDate;
+            _beforeId = pageId;
             timing.Bind(() => HistoryGrid.ItemsSource = items);
             StatusText.Text = TranslationSource.Instance.Format("Sales_ResultCount", items.Count);
             PreviousButton.IsEnabled = _previous.Count > 0;
@@ -85,8 +99,22 @@ public partial class SalesHistoryPage : Page
             UpdateActions();
             return true;
         }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); return false; }
-        finally { _loadingHistory = false; }
+        catch (Exception exception)
+        {
+            StatusText.Text = UserError.Message(exception);
+            PreviousButton.IsEnabled = _previous.Count > 0;
+            NextButton.IsEnabled = HistoryGrid.ItemsSource is IReadOnlyList<SaleHistoryItem> { Count: PageSize };
+            return false;
+        }
+        finally
+        {
+            _loadingHistory = false;
+            if (_pendingReset)
+            {
+                _pendingReset = false;
+                await RefreshAsync();
+            }
+        }
     }
 
     private SaleHistoryFilter CreateFilter(DateOnly? beforeDate, long? beforeId, int limit)
@@ -128,22 +156,15 @@ public partial class SalesHistoryPage : Page
     {
         if (_loadingHistory) return;
         if (HistoryGrid.ItemsSource is not IReadOnlyList<SaleHistoryItem> { Count: PageSize } items) return;
-        (DateOnly? oldDate, long? oldId) = (_beforeDate, _beforeId);
-        _beforeDate = items[^1].SaleDate;
-        _beforeId = items[^1].Id;
-        if (await RefreshAsync(reset: false)) _previous.Push((oldDate, oldId));
-        else { _beforeDate = oldDate; _beforeId = oldId; }
-        PreviousButton.IsEnabled = _previous.Count > 0;
+        await RefreshAsync(reset: false, requestedDate: items[^1].SaleDate,
+            requestedId: items[^1].Id, forward: true);
     }
 
     private async void Previous_OnClick(object sender, RoutedEventArgs e)
     {
         if (_loadingHistory || _previous.Count == 0) return;
-        (DateOnly? oldDate, long? oldId) = (_beforeDate, _beforeId);
-        (_beforeDate, _beforeId) = _previous.Peek();
-        if (await RefreshAsync(reset: false)) _previous.Pop();
-        else { _beforeDate = oldDate; _beforeId = oldId; }
-        PreviousButton.IsEnabled = _previous.Count > 0;
+        (DateOnly? date, long? id) = _previous.Peek();
+        await RefreshAsync(reset: false, requestedDate: date, requestedId: id, backward: true);
     }
 
     private async void HistoryGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)

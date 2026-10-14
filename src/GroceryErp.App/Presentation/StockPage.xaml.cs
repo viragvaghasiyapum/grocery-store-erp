@@ -48,7 +48,9 @@ public partial class StockPage : Page
             OpeningStockImportPreview preview = await importer.DryRunAsync(picker.FileName);
             var review = new OpeningStockPreviewWindow(preview) { Owner = Window.GetWindow(this) };
             if (review.ShowDialog() != true) return;
-            await importer.ImportAsync(preview, OperationGuard.NewId());
+            OpeningStockLine[] selectedLines = preview.Rows.Where(static row => row.IsValid)
+                .Select(static row => row.Line!).ToArray();
+            await importer.ImportAsync(preview, ImportJobs.OperationIdFor("OPENING_STOCK", selectedLines));
             await RefreshAsync();
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
@@ -128,7 +130,7 @@ public partial class StockPage : Page
     private async void ToggleLot_OnClick(object sender, RoutedEventArgs e)
     {
         if (LotsGrid.SelectedItem is not LotItem lot) return;
-        try { await _inventory.SetLotActiveAsync(lot.Id, !lot.IsActive); await RefreshAsync(); }
+        try { await _inventory.SetLotActiveAsync(lot.Id, !lot.IsActive, lot.IsActive); await RefreshAsync(); }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 

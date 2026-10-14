@@ -122,7 +122,9 @@ public partial class ProductImportWindow : Window
                 StatusText.Text = TranslationSource.Instance["Catalog_SelectForImport"];
                 return;
             }
-            ProductImportSummary summary = await _importer.ImportAsync(_preview, OperationGuard.NewId(), selected);
+            ProductImportRow[] selectedRows = _preview.Rows.Where(row => row.CanImport && selected.Contains(row.RowNumber)).ToArray();
+            string operationId = ImportJobs.OperationIdFor("PRODUCT", selectedRows);
+            ProductImportSummary summary = await _importer.ImportAsync(_preview, operationId, selected);
             MessageBox.Show(
                 TranslationSource.Instance.Format("Catalog_ImportComplete", summary.Created, summary.Updated, summary.Skipped),
                 TranslationSource.Instance["Catalog_ImportTitle"], MessageBoxButton.OK, MessageBoxImage.Information);

@@ -48,6 +48,7 @@ public sealed record ProductImportSummary(int Created, int Updated, int Skipped,
 
 public sealed class ProductExcelImporter(DbExecutor database, IAuditLog audit, ISettings settings)
 {
+    private const int MaxImportRows = 50_000;
     public static readonly string[] Headers =
     [
         "SKU*", "Name*", "Local name", "Aliases", "Category*", "Subcategory", "Brand", "Unit*",
@@ -106,10 +107,10 @@ public sealed class ProductExcelImporter(DbExecutor database, IAuditLog audit, I
             return new ImportLookups(units, taxes, barcodes);
         }, cancellationToken);
 
-        return await Task.Run(() => ReadWorkbook(path, lookups), cancellationToken);
+        return await Task.Run(() => ReadWorkbook(path, lookups, cancellationToken), cancellationToken);
     }
 
-    public Task<ProductImportSummary> ImportAsync(
+    public async Task<ProductImportSummary> ImportAsync(
         ProductImportPreview preview,
         string operationId,
         IReadOnlySet<int>? selectedRows = null,
@@ -119,13 +120,22 @@ public sealed class ProductExcelImporter(DbExecutor database, IAuditLog audit, I
         List<ProductImportRow> rows = preview.Rows
             .Where(row => row.CanImport && (selectedRows is null || selectedRows.Contains(row.RowNumber))).ToList();
         int skipped = preview.Rows.Count - rows.Count;
-        return database.WriteAsync(transaction =>
+        if (rows.Count == 0) return new ProductImportSummary(0, 0, skipped);
+        string fingerprint = ImportJobs.Fingerprint(rows);
+        ProductImportRow[][] batches = rows.Chunk(100).ToArray();
+        ImportJobState state = await database.WriteAsync(tx => ImportJobs.Start(tx, operationId,
+            "PRODUCT", fingerprint, batches.Length), cancellationToken);
+        if (state.Completed) return new ProductImportSummary(0, 0, skipped, true);
+        for (int batchNo = 0; batchNo < batches.Length; batchNo++)
         {
-            if (OperationGuard.Claim(transaction, operationId, OpType.ProductImport) is not null)
-                return new ProductImportSummary(0, 0, skipped, true);
+            int number = batchNo;
+            ProductImportRow[] batch = batches[number];
+            await database.WriteAsync(transaction =>
+        {
+            if (ImportJobs.HasBatch(transaction, operationId, number)) return;
             int created = 0;
             int updated = 0;
-            foreach (ProductImportRow row in rows)
+            foreach (ProductImportRow row in batch)
             {
                 long categoryId = FindOrCreateCategory(transaction, row.Category, null);
                 if (!string.IsNullOrWhiteSpace(row.Subcategory))
@@ -205,13 +215,16 @@ public sealed class ProductExcelImporter(DbExecutor database, IAuditLog audit, I
                         symbology = row.Barcode.Length == 8 ? "EAN8" : row.Barcode.Length == 12 ? "UPCA" : row.Barcode.Length == 13 ? "EAN13" : "CODE128",
                     }, transaction.Transaction);
             }
-            audit.Write(transaction, "product_import", 0, "IMPORT", new { created, updated, skipped });
-            OperationGuard.Complete(transaction, operationId, "product_import", created + updated);
-            return new ProductImportSummary(created, updated, skipped);
+            audit.Write(transaction, "product_import", 0, "IMPORT_BATCH", new { created, updated, batchNo = number });
+            ImportJobs.RecordBatch(transaction, operationId, number, created, updated);
         }, cancellationToken);
+        }
+        state = await database.WriteAsync(tx => ImportJobs.Complete(tx, operationId,
+            batches.Length, openingStock: false), cancellationToken);
+        return new ProductImportSummary(state.Created, state.Updated, skipped);
     }
 
-    private ProductImportPreview ReadWorkbook(string path, ImportLookups lookups)
+    private ProductImportPreview ReadWorkbook(string path, ImportLookups lookups, CancellationToken cancellationToken)
     {
         using var workbook = new XLWorkbook(path);
         IXLWorksheet sheet = workbook.Worksheets.First();
@@ -220,11 +233,14 @@ public sealed class ProductExcelImporter(DbExecutor database, IAuditLog audit, I
                 throw new InvalidDataException($"Column {column + 1} must be '{Headers[column]}'.");
 
         int lastRow = sheet.LastRowUsed()?.RowNumber() ?? 1;
+        if (lastRow - 1 > MaxImportRows)
+            throw new InvalidDataException($"Product workbook exceeds {MaxImportRows:N0} rows. Split it into smaller files.");
         var rows = new List<ProductImportRow>(Math.Max(0, lastRow - 1));
         var fileSkus = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var fileBarcodes = new HashSet<string>(StringComparer.Ordinal);
         for (int rowNumber = 2; rowNumber <= lastRow; rowNumber++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             string[] cells = Enumerable.Range(1, Headers.Length)
                 .Select(column => InputNormalizer.Normalize(sheet.Cell(rowNumber, column).GetFormattedString()).Trim()).ToArray();
             if (cells.All(string.IsNullOrWhiteSpace)) continue;

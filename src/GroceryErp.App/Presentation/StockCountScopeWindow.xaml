@@ -10,9 +10,9 @@
       <TextBlock Margin="0,4,0,0" Text="{l:Tr Stock_ScopeHint}" TextWrapping="Wrap"
                  Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
     </StackPanel>
-    <CheckBox x:Name="AllCategoriesBox" Grid.Row="1" IsChecked="True" Checked="AllCategoriesBox_OnChanged"
+    <CheckBox x:Name="AllCategoriesBox" Grid.Row="1" IsChecked="False" Checked="AllCategoriesBox_OnChanged"
               Unchecked="AllCategoriesBox_OnChanged" Content="{l:Tr Stock_AllCategories}" Margin="0,0,0,12"/>
-    <ListBox x:Name="CategoriesBox" Grid.Row="2" DisplayMemberPath="Name" SelectionMode="Multiple" IsEnabled="False"/>
+    <ListBox x:Name="CategoriesBox" Grid.Row="2" DisplayMemberPath="Name" SelectionMode="Multiple" IsEnabled="True"/>
     <StackPanel Grid.Row="3" Margin="0,12,0,0">
       <TextBlock Text="{l:Tr Purchasing_Notes}"/>
       <TextBox x:Name="NotesBox" Margin="0,4,0,0"/>

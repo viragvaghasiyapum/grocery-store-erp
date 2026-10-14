@@ -28,7 +28,7 @@ public partial class LotPriceWindow : Window
                 NumberStyles.Number, TranslationSource.FormatCulture));
             Money? mrp = string.IsNullOrWhiteSpace(MrpBox.Text) ? null : new(decimal.Parse(
                 InputNormalizer.Normalize(MrpBox.Text), NumberStyles.Number, TranslationSource.FormatCulture));
-            await _inventory.ChangeLotPriceAsync(_lot.Id, price, mrp);
+            await _inventory.ChangeLotPriceAsync(_lot.Id, price, mrp, _lot.SellingPrice, _lot.Mrp);
             DialogResult = true;
         }
         catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }

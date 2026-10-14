@@ -21,7 +21,7 @@ using GroceryErp.Reports;
 using GroceryErp.Sales;
 
 if (args.Length < 1)
-    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
+    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
 
 string root = Path.GetFullPath(args[0]);
 string mode = args.Length > 1 ? args[1] : "read";
@@ -175,7 +175,9 @@ var results = new List<Measurement>();
 var queryPlans = new List<QueryPlan>();
 var profileSamples = new System.Collections.Concurrent.ConcurrentBag<ProfileSample>();
 var resourceSamples = new System.Collections.Concurrent.ConcurrentQueue<ResourceSample>();
+var phase3ResourceSamples = new System.Collections.Concurrent.ConcurrentQueue<Phase3ResourceSample>();
 SustainedSalesCheck? sustainedSalesCheck = null;
+Phase3ResourceCheck? phase3ResourceCheck = null;
 using var process = Process.GetCurrentProcess();
 var auditElapsed = Stopwatch.StartNew();
 long databaseBytes = new FileInfo(paths.DatabaseFile).Length;
@@ -660,12 +662,75 @@ switch (mode)
     }
     case "profile":
     case "sustained-profile":
+    case "phase4-combined":
     {
-        bool sustained = mode == "sustained-profile";
+        bool sustained = mode is "sustained-profile" or "phase4-combined";
+        bool combined = mode == "phase4-combined";
         int durationSeconds = sustained && args.Length > 3
             ? int.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture) : 600;
         if (sustained && durationSeconds is < 120 or > 3600)
             throw new ArgumentException("Use 120 to 3600 duration seconds.", nameof(args));
+        ProductImportPreview? combinedProductPreview = null;
+        OpeningStockImportPreview? combinedOpeningPreview = null;
+        string? combinedLotCode = null;
+        var combinedProductImporter = new ProductExcelImporter(database, audit, settings);
+        var combinedOpeningImporter = new OpeningStockExcelImporter(database, inventory, clock);
+        if (combined)
+        {
+            string productPath = Path.Combine(paths.TempDir, "phase4-combined-products.xlsx");
+            string openingPath = Path.Combine(paths.TempDir, "phase4-combined-opening.xlsx");
+            using (var connection = factory.Open())
+            {
+                string unit = connection.ExecuteScalar<string>("SELECT code FROM uom ORDER BY id LIMIT 1")!;
+                decimal gst = connection.ExecuteScalar<long>("SELECT rate_pct FROM tax_rate WHERE is_active=1 ORDER BY rate_pct LIMIT 1") / 1000m;
+                string[] skus = connection.Query<string>("SELECT sku FROM product ORDER BY id LIMIT 2000").ToArray();
+                combinedLotCode = connection.ExecuteScalar<string>("SELECT lot_code FROM product_lot ORDER BY id DESC LIMIT 1");
+                await Measure("combined-build-workbooks", () => Task.Run(() =>
+                {
+                    using (var workbook = new XLWorkbook())
+                    {
+                        IXLWorksheet sheet = workbook.AddWorksheet("Products");
+                        for (int column = 0; column < ProductExcelImporter.Headers.Length; column++)
+                            sheet.Cell(1, column + 1).Value = ProductExcelImporter.Headers[column];
+                        for (int index = 1; index <= 20000; index++)
+                        {
+                            int row = index + 1;
+                            sheet.Cell(row, 1).Value = $"COMB{index:000000}";
+                            sheet.Cell(row, 2).Value = $"Combined Product {index}";
+                            sheet.Cell(row, 5).Value = "Scale Category";
+                            sheet.Cell(row, 8).Value = unit;
+                            sheet.Cell(row, 9).Value = "1000";
+                            sheet.Cell(row, 10).Value = gst;
+                            sheet.Cell(row, 12).Value = 10;
+                            sheet.Cell(row, 13).Value = 20;
+                            sheet.Cell(row, 16).Value = "N";
+                            sheet.Cell(row, 18).Value = "Y";
+                        }
+                        workbook.SaveAs(productPath);
+                    }
+                    using (var workbook = new XLWorkbook())
+                    {
+                        IXLWorksheet sheet = workbook.AddWorksheet("Opening Stock");
+                        for (int index = 0; index < 20000; index++)
+                        {
+                            int row = index + 2;
+                            sheet.Cell(row, 1).Value = skus[index % skus.Length];
+                            sheet.Cell(row, 2).Value = 1;
+                            sheet.Cell(row, 3).Value = 10;
+                            sheet.Cell(row, 4).Value = 15;
+                            sheet.Cell(row, 6).Value = new DateTime(2027, 9, 26);
+                            sheet.Cell(row, 8).Value = new DateTime(2026, 9, 26);
+                        }
+                        workbook.SaveAs(openingPath);
+                    }
+                    return 40000;
+                }), static x => x);
+            }
+            combinedProductPreview = await combinedProductImporter.DryRunAsync(productPath);
+            combinedOpeningPreview = await combinedOpeningImporter.DryRunAsync(openingPath);
+            if (combinedProductPreview.ValidCount != 20000 || combinedOpeningPreview.ValidCount != 20000)
+                throw new InvalidDataException("The combined-run import previews did not validate 20,000 rows each.");
+        }
         long startedAt = Stopwatch.GetTimestamp();
         using var sampleStop = new CancellationTokenSource();
         Task sampler = sustained ? Task.Run(async () =>
@@ -695,6 +760,29 @@ switch (mode)
             await Task.Delay(TimeSpan.FromSeconds(30));
             await Measure("sustained-backup", () => Task.Run(() => backups.Create("sustained-profile")), static _ => 1);
         }) : Task.CompletedTask;
+        Task importAndCount = combined ? Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30));
+            Task productImport = Measure("combined-product-import-20000", () =>
+                combinedProductImporter.ImportAsync(combinedProductPreview!, OperationGuard.NewId()),
+                static result => result.Created + result.Updated);
+            Task openingImport = Measure("combined-opening-import-20000", () =>
+                combinedOpeningImporter.ImportAsync(combinedOpeningPreview!, OperationGuard.NewId()),
+                static _ => 20000);
+            long countId = 0;
+            await Measure("combined-whole-count-create", async () =>
+                countId = await inventory.CreateStockCountAsync(end, null, "Combined load count"), static _ => 1);
+            if (countId == 0) throw new InvalidDataException("Whole-store count creation failed.");
+            await Measure("combined-whole-count-first-page", () => inventory.GetStockCountPageAsync(countId),
+                static page => page.Lines.Count);
+            await Measure("combined-whole-count-review", () => inventory.GetStockCountReviewAsync(countId),
+                static _ => 1);
+            await Measure("combined-whole-count-find-last-lot", async () =>
+                await inventory.FindStockCountLineAsync(countId, combinedLotCode!)
+                ?? throw new InvalidDataException("The preexisting last lot was not on the whole-store count."),
+                static _ => 1);
+            await Task.WhenAll(productImport, openingImport);
+        }) : Task.CompletedTask;
         using var secondDatabase = new DbExecutor(new SqliteConnectionFactory(paths), readConcurrency);
         var secondSales = new SalesService(secondDatabase, ledger, numbers, periods, settings, audit, clock);
         long productId;
@@ -714,6 +802,12 @@ switch (mode)
             ("pnl-month", async () => (await reports.GetPnlAsync(monthStart, end)).Income.Count),
             ("dashboard", async () => { await reports.GetDashboardAsync(); return 1; }),
         };
+        if (combined)
+            operations = [.. operations,
+                ("report-stock-value", async () => (await reports.GetReportAsync(ReportKind.StockValue,
+                    new ReportFilter(Limit: 100))).Rows.Count),
+                ("report-sales", async () => (await reports.GetReportAsync(ReportKind.SalesRegister,
+                    new ReportFilter(From: monthStart, To: end, Limit: 100))).Rows.Count)];
         async Task Reader(int reader)
         {
             for (int iteration = 0; !sustained ? iteration < 80 :
@@ -774,6 +868,7 @@ switch (mode)
         await Task.WhenAll(Enumerable.Range(0, 4).Select(Reader)
             .Append(Writer(sales)).Append(Writer(secondSales)));
         await backup;
+        await importAndCount;
         sampleStop.Cancel();
         await sampler;
         if (sustained)
@@ -1207,6 +1302,105 @@ switch (mode)
             }), static x => x);
         using (var connection = factory.Open()) connection.Execute("PRAGMA optimize");
         break;
+    case "phase4-movement-date-index":
+    {
+        async Task<TabularReport> LedgerReport() => await reports.GetReportAsync(
+            ReportKind.StockLedger, new ReportFilter(From: monthStart, To: end, Limit: 100));
+        for (int run = 0; run < 5; run++)
+            await Measure("movement-report-before", LedgerReport, static result => result.Rows.Count);
+        CapturePlan("movement-report-before", """
+            SELECT m.id FROM stock_movement m WHERE m.move_date BETWEEN '2026-09-01' AND '2026-09-26'
+            ORDER BY m.move_date,m.id LIMIT 101
+            """);
+        long beforeBytes = new FileInfo(paths.DatabaseFile).Length;
+        await Measure("create-movement-date-index", () => Task.Run(() =>
+        {
+            using var connection = factory.Open();
+            connection.Execute("CREATE INDEX IF NOT EXISTS ix_move_date_id ON stock_movement(move_date,id)");
+            connection.Execute("PRAGMA optimize");
+            return 1;
+        }), static x => x);
+        long afterBytes = new FileInfo(paths.DatabaseFile).Length;
+        Console.WriteLine($"INDEX_GROWTH_BYTES {afterBytes - beforeBytes}");
+        for (int run = 0; run < 5; run++)
+            await Measure("movement-report-after", LedgerReport, static result => result.Rows.Count);
+        CapturePlan("movement-report-after", """
+            SELECT m.id FROM stock_movement m WHERE m.move_date BETWEEN '2026-09-01' AND '2026-09-26'
+            ORDER BY m.move_date,m.id LIMIT 101
+            """);
+        break;
+    }
+    case "phase4-valuation":
+    {
+        for (int run = 0; run < 5; run++)
+            await Measure("category-valuation-projected", () => inventory.GetValuationAsync(),
+                static rows => rows.Count);
+        for (int run = 0; run < 5; run++)
+            await Measure("stock-value-report-projected", () => reports.GetReportAsync(
+                ReportKind.StockValue, new ReportFilter(Limit: 100)), static report => report.Rows.Count);
+        using var connection = factory.Open();
+        long drift = connection.ExecuteScalar<long>("""
+            SELECT COUNT(*) FROM product_stock_total t
+            WHERE t.quantity<>COALESCE((SELECT SUM(l.qty_on_hand) FROM product_lot l
+                                        WHERE l.product_id=t.product_id),0)
+               OR t.cost_value<>COALESCE((SELECT SUM(CAST(ROUND(l.qty_on_hand*l.unit_cost/1000.0) AS INTEGER))
+                                          FROM product_lot l WHERE l.product_id=t.product_id),0)
+               OR t.selling_value<>COALESCE((SELECT SUM(CAST(ROUND(l.qty_on_hand*l.selling_price/1000.0) AS INTEGER))
+                                             FROM product_lot l WHERE l.product_id=t.product_id),0)
+               OR t.mrp_value<>COALESCE((SELECT SUM(CAST(ROUND(l.qty_on_hand*COALESCE(l.mrp,l.selling_price)/1000.0) AS INTEGER))
+                                         FROM product_lot l WHERE l.product_id=t.product_id),0)
+            """);
+        Console.WriteLine($"VALUATION_DRIFT {drift}");
+        if (drift != 0) throw new InvalidDataException($"{drift} product valuations differ from their lots.");
+        break;
+    }
+    case "phase4-count-search":
+    {
+        long countId;
+        long lotId;
+        string lotCode;
+        string productName;
+        using (var connection = factory.Open())
+        {
+            countId = connection.ExecuteScalar<long>("""
+                SELECT stock_count_id FROM stock_count_line GROUP BY stock_count_id
+                ORDER BY COUNT(*) DESC LIMIT 1
+                """);
+            (lotId, lotCode, productName) = connection.QuerySingle<(long, string, string)>("""
+                SELECT l.id,l.lot_code,p.name FROM stock_count_line scl
+                JOIN product_lot l ON l.id=scl.lot_id JOIN product p ON p.id=l.product_id
+                WHERE scl.stock_count_id=@countId ORDER BY scl.id DESC LIMIT 1
+                """, new { countId });
+        }
+        for (int run = 0; run < 5; run++)
+        {
+            await Measure("count-search-name-legacy-sql", () => database.ReadAsync(connection =>
+                connection.ExecuteScalar<long?>("""
+                    SELECT scl.id FROM product p JOIN stock_count_line scl ON scl.product_id=p.id
+                    WHERE scl.stock_count_id=@countId AND p.name LIKE @pattern ESCAPE '\'
+                    ORDER BY scl.id LIMIT 1
+                    """, new { countId, pattern = "%" + productName + "%" })),
+                static id => id is null ? 0 : 1);
+            await Measure("count-search-lot-code", () => inventory.FindStockCountLineAsync(
+                countId, lotCode.ToLowerInvariant()), static id => id is null ? 0 : 1);
+            await Measure("count-search-lot-id", () => inventory.FindStockCountLineAsync(
+                countId, "", lotId: lotId), static id => id is null ? 0 : 1);
+            await Measure("count-search-name", () => inventory.FindStockCountLineAsync(
+                countId, productName), static id => id is null ? 0 : 1);
+        }
+        CapturePlan("count-search-lot-code", """
+            SELECT scl.id FROM stock_count_line scl WHERE scl.stock_count_id=1
+            AND scl.lot_id=(SELECT id FROM product_lot WHERE lot_code=upper('l000001'))
+            """);
+        CapturePlan("count-search-name-fts", """
+            SELECT scl.id FROM product_fts f JOIN product p ON p.id=f.rowid
+            JOIN stock_count_line scl ON scl.product_id=p.id
+            WHERE product_fts MATCH @match AND p.name LIKE @pattern ESCAPE '\'
+              AND scl.stock_count_id=@countId ORDER BY scl.id LIMIT 1
+            """, new { match = "\"" + productName.Replace("\"", "\"\"") + "\"",
+                pattern = "%" + productName + "%", countId });
+        break;
+    }
     case "phase1-low-seed":
     {
         await Measure("seed-low-stock", () => database.WriteAsync(transaction =>
@@ -1451,6 +1645,85 @@ switch (mode)
         }
         break;
     }
+    case "phase3-read":
+    {
+        using (var connection = factory.Open())
+            connection.Execute("""
+                INSERT INTO setting(key,value) VALUES ('maintenance.clean_shutdown','1')
+                ON CONFLICT(key) DO UPDATE SET value='1'
+                """);
+        await Measure("startup-clean", () => maintenance.CheckBeforeShellAsync(), static _ => 1);
+        using (var connection = factory.Open())
+            connection.Execute("UPDATE setting SET value='0' WHERE key='maintenance.clean_shutdown'");
+        await Measure("startup-interrupted", () => maintenance.CheckBeforeShellAsync(), static _ => 1);
+        using (var connection = factory.Open())
+        {
+            long vendorDrift = connection.ExecuteScalar<long>("""
+                SELECT COUNT(*) FROM vendor v JOIN vendor_balance_total t ON t.vendor_id=v.id
+                WHERE t.purchases<>COALESCE((SELECT SUM(grand_total) FROM purchase p
+                    WHERE p.vendor_id=v.id AND p.status='POSTED'),0)
+                   OR t.payments<>COALESCE((SELECT SUM(amount) FROM vendor_payment vp
+                    WHERE vp.vendor_id=v.id),0)
+                   OR t.returns<>COALESCE((SELECT SUM(credit_total) FROM vendor_return vr
+                    WHERE vr.vendor_id=v.id),0)
+                """);
+            if (vendorDrift != 0) throw new InvalidDataException($"{vendorDrift} vendor balances differ from source documents.");
+            Console.WriteLine("VENDOR_BALANCE_DRIFT 0");
+        }
+        for (int iteration = 0; iteration < 5; iteration++)
+        {
+            await Measure("expiry-badge-source", () => Task.Run(() =>
+            {
+                using var connection = factory.Open();
+                return connection.ExecuteScalar<int>("SELECT COUNT(*) FROM v_expiry_alert WHERE bucket IN ('EXPIRED','CRITICAL')");
+            }), static x => x);
+            await Measure("expiry-badge-indexed", () => moneyOut.GetActionableExpiryCountAsync(), static x => x);
+            await Measure("vendors-projected", () => purchasing.GetVendorsAsync(includeInactive: true), static x => x.Count);
+            await Measure("dashboard-snapshot", () => reports.GetDashboardAsync(), static _ => 1);
+        }
+        using (var connection = factory.Open())
+        {
+            int sourceExpiry = connection.ExecuteScalar<int>(
+                "SELECT COUNT(*) FROM v_expiry_alert WHERE bucket IN ('EXPIRED','CRITICAL')");
+            int indexedExpiry = await moneyOut.GetActionableExpiryCountAsync();
+            if (sourceExpiry != indexedExpiry)
+                throw new InvalidDataException($"Expiry badge differs: source {sourceExpiry}, indexed {indexedExpiry}.");
+            Console.WriteLine("EXPIRY_BADGE_DRIFT 0");
+        }
+        foreach (ReportKind kind in new[] { ReportKind.ItemSales, ReportKind.CategorySales,
+                     ReportKind.GstSummary, ReportKind.VendorPayables, ReportKind.SalaryRegister,
+                     ReportKind.AssetSchedule })
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await Measure("phase3-report-" + kind, () => reports.GetReportAsync(kind,
+                new ReportFilter(From: monthStart, To: end, AssetId: 1, Limit: 100), timeout.Token),
+                static x => x.Rows.Count);
+        }
+        DateOnly priorTo = monthStart.AddDays(-1);
+        DateOnly priorFrom = priorTo.AddDays(monthStart.DayNumber - end.DayNumber);
+        foreach (ReportKind kind in new[] { ReportKind.ItemSales, ReportKind.CategorySales })
+        {
+            async Task<int> SourceRows() => await Task.Run(() =>
+            {
+                using var connection = factory.Open();
+                return connection.Query(ReportDefinitions.All[kind].Sql, new
+                {
+                    from = monthStart.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                    to = end.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                    previousFrom = priorFrom.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                    previousTo = priorTo.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                    ProductId = (long?)null, Limit = 101,
+                }).Count();
+            });
+            for (int repeat = 0; repeat < 3; repeat++)
+            {
+                await Measure("phase3-source-" + kind, SourceRows, static x => x);
+                await Measure("phase3-window-" + kind, () => reports.GetReportAsync(kind,
+                    new ReportFilter(From: monthStart, To: end, Limit: 100)), static x => x.Rows.Count);
+            }
+        }
+        break;
+    }
     case "optimized-read":
         await Measure("startup-health", () => maintenance.CheckBeforeShellAsync(), static _ => 1);
         await Measure("catalog-first-page", () => catalog.SearchPageAsync(new ProductSearchFilter(Limit: 100)), static x => x.Items.Count);
@@ -1616,6 +1889,7 @@ switch (mode)
         break;
     }
     case "opening-preview":
+    case "phase4-opening-import":
     {
         string previewPath = Path.Combine(paths.TempDir, "audit-opening-preview-20000.xlsx");
         using (var connection = factory.Open())
@@ -1639,8 +1913,34 @@ switch (mode)
                 return 20000;
             }), static x => x);
         }
-        await Measure("opening-preview-valid-20000", () =>
-            new OpeningStockExcelImporter(database, inventory, clock).DryRunAsync(previewPath), static x => x.ValidCount);
+        var openingImporter = new OpeningStockExcelImporter(database, inventory, clock);
+        OpeningStockImportPreview? openingPreview = null;
+        await Measure("opening-preview-valid-20000", async () =>
+            openingPreview = await openingImporter.DryRunAsync(previewPath), static x => x!.ValidCount);
+        if (mode == "phase4-opening-import")
+        {
+            if (openingPreview?.ValidCount != 20000)
+                throw new InvalidDataException("The 20,000 opening-stock rows did not validate.");
+            string importId = OperationGuard.NewId();
+            Task importTask = Measure("opening-import-commit-20000", () =>
+                openingImporter.ImportAsync(openingPreview, importId), static x => (int)x);
+            await Task.Delay(100);
+            long productId;
+            using (var connection = factory.Open())
+                productId = connection.ExecuteScalar<long>("""
+                    SELECT product_id FROM product_lot WHERE qty_on_hand>1000 AND is_active=1
+                    AND expiry_date>='2026-09-26' ORDER BY qty_on_hand DESC LIMIT 1
+                    """);
+            await Measure("sale-add-during-opening-import", () =>
+                sales.AddProductAsync(null, productId, Quantity.One), static _ => 1);
+            await importTask;
+            long replay = await openingImporter.ImportAsync(openingPreview, importId);
+            using var verify = factory.Open();
+            long firstLot = verify.ExecuteScalar<long>("SELECT result_id FROM import_job WHERE op_id=@importId", new { importId });
+            long batches = verify.ExecuteScalar<long>("SELECT COUNT(*) FROM import_batch WHERE op_id=@importId", new { importId });
+            if (replay != firstLot || batches != 200)
+                throw new InvalidDataException($"Opening import replay or batch count failed: {replay}, {firstLot}, {batches}.");
+        }
         break;
     }
     case "weekly-maintenance":
@@ -2132,9 +2432,126 @@ switch (mode)
             }, static x => x);
         }
         break;
+    case "backup-cancel":
+    {
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        long started = Stopwatch.GetTimestamp();
+        try
+        {
+            await Task.Run(() => backups.Create("cancel-trial", cancellation.Token));
+            throw new InvalidDataException("The full-size backup finished before the cancellation trial.");
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            Console.WriteLine($"BACKUP_CANCELLED_MS {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0}");
+        }
+        if (Directory.Exists(backups.BackupDirectory) && Directory.EnumerateFiles(
+                backups.BackupDirectory, "*cancel-trial*.zip*").Any())
+            throw new InvalidDataException("Canceled backup left an archive or partial archive.");
+        using var connection = factory.Open();
+        if (connection.ExecuteScalar<string>("PRAGMA quick_check") != "ok")
+            throw new InvalidDataException("Database quick check failed after canceled backup.");
+        break;
+    }
     case "backup":
         await Measure("backup-create", () => Task.Run(() => backups.Create("scale-audit")), static _ => 1);
         break;
+    case "phase3-resource":
+    {
+        long productId;
+        using (var connection = factory.Open())
+            productId = connection.ExecuteScalar<long>("""
+                SELECT product_id FROM product_lot WHERE qty_on_hand>1000 AND is_active=1
+                AND expiry_date>='2026-09-26' ORDER BY qty_on_hand DESC LIMIT 1
+                """);
+        if (productId == 0) throw new InvalidDataException("No saleable high-stock lot is available.");
+        long freeBefore = new DriveInfo(Path.GetPathRoot(paths.Root)!).AvailableFreeSpace;
+        using var heldConnection = factory.Open();
+        using var heldReader = heldConnection.BeginTransaction(deferred: true);
+        heldConnection.ExecuteScalar<long>("SELECT COUNT(*) FROM sale", transaction: heldReader);
+        using var sampleStop = new CancellationTokenSource();
+        long startedAt = Stopwatch.GetTimestamp();
+        Task sampler = Task.Run(async () =>
+        {
+            while (!sampleStop.IsCancellationRequested)
+            {
+                long temporaryBytes = Directory.Exists(paths.TempDir)
+                    ? Directory.EnumerateFiles(paths.TempDir, "grocery.db", SearchOption.AllDirectories)
+                        .Where(static path => Path.GetFileName(Path.GetDirectoryName(path)!).StartsWith("backup-", StringComparison.Ordinal))
+                        .Sum(static path => new FileInfo(path).Length) : 0;
+                long partialBytes = Directory.Exists(backups.BackupDirectory)
+                    ? Directory.EnumerateFiles(backups.BackupDirectory, "*.partial")
+                        .Sum(static path => new FileInfo(path).Length) : 0;
+                string walPath = paths.DatabaseFile + "-wal";
+                process.Refresh();
+                phase3ResourceSamples.Enqueue(new(Stopwatch.GetElapsedTime(startedAt).TotalSeconds,
+                    File.Exists(walPath) ? new FileInfo(walPath).Length : 0,
+                    process.WorkingSet64, factory.ActiveConnections, temporaryBytes, partialBytes,
+                    new DriveInfo(Path.GetPathRoot(paths.Root)!).AvailableFreeSpace));
+                try { await Task.Delay(1000, sampleStop.Token); }
+                catch (OperationCanceledException) { break; }
+            }
+        });
+        using var backupCancel = new CancellationTokenSource(TimeSpan.FromMinutes(6));
+        Task<BackupInfo> backupTask = Task.Run(() => backups.Create("daily", backupCancel.Token));
+        try
+        {
+            await Measure("active-reader-backup-and-20-sales", async () =>
+            {
+                for (int index = 0; index < 20; index++)
+                {
+                    long saleStarted = Stopwatch.GetTimestamp();
+                    long saleId = await sales.AddProductAsync(null, productId, Quantity.One);
+                    SaleDetails details = await sales.GetAsync(saleId);
+                    await sales.CompleteAsync(new CompleteSaleCommand(saleId,
+                        [new PaymentInput(PaymentMode.Cash, details.Totals.GrandTotal)], OperationGuard.NewId()));
+                    profileSamples.Add(new("reader-overlap-sale", Stopwatch.GetElapsedTime(saleStarted).TotalMilliseconds, 1, null));
+                }
+                BackupInfo completed = await backupTask;
+                BackupService.Verify(completed.Path);
+                return 20;
+            }, static count => count);
+        }
+        finally
+        {
+            backupCancel.Cancel();
+            try { await backupTask; } catch (OperationCanceledException) { }
+            sampleStop.Cancel();
+            await sampler;
+            heldReader.Rollback();
+        }
+        using (var check = factory.Open())
+        {
+            long actual = check.ExecuteScalar<long>("SELECT COUNT(*) FROM sale");
+            if (actual != rowCounts["sale"] + 20)
+                throw new InvalidDataException($"Sale count changed from {rowCounts["sale"]} to {actual}, expected +20.");
+        }
+        string wal = paths.DatabaseFile + "-wal";
+        long walBeforeShutdown = File.Exists(wal) ? new FileInfo(wal).Length : 0;
+        int archivesBefore = Directory.EnumerateFiles(backups.BackupDirectory, "*.zip").Count();
+        var wallClock = new GroceryErp.Core.Time.SystemClock(settings);
+        var restartedBackups = new BackupService(paths, factory, wallClock, settings);
+        var shutdownMaintenance = new MaintenanceService(paths, factory, database, restartedBackups, wallClock, audit);
+        await Measure("shutdown-after-recent-daily", () => Task.Run(() =>
+        {
+            shutdownMaintenance.Shutdown();
+            return 1;
+        }), static count => count);
+        long walAfterShutdown = File.Exists(wal) ? new FileInfo(wal).Length : 0;
+        int archivesAfter = Directory.EnumerateFiles(backups.BackupDirectory, "*.zip").Count();
+        using (var check = factory.Open())
+            if (check.ExecuteScalar<string?>("SELECT value FROM setting WHERE key='maintenance.clean_shutdown'") != "1")
+                throw new InvalidDataException("Clean shutdown marker was not durable.");
+        if (archivesAfter != archivesBefore)
+            throw new InvalidDataException("Shutdown repeated a recent verified daily backup.");
+        phase3ResourceCheck = new(freeBefore,
+            phase3ResourceSamples.Min(static sample => sample.AvailableFreeBytes),
+            new DriveInfo(Path.GetPathRoot(paths.Root)!).AvailableFreeSpace,
+            walBeforeShutdown, walAfterShutdown, archivesBefore, archivesAfter);
+        Console.WriteLine($"PHASE3_RESOURCES free-min={phase3ResourceCheck.MinimumFreeBytes}, " +
+            $"WAL before/after shutdown={walBeforeShutdown}/{walAfterShutdown}, archives={archivesAfter}");
+        break;
+    }
     case "restore-race":
     {
         BackupInfo backup = backups.Create("restore-race");
@@ -2480,6 +2897,8 @@ File.WriteAllText(output, JsonSerializer.Serialize(new
                 group.Max(static sample => sample.Rows));
         }),
     resourceSamples,
+    phase3ResourceSamples,
+    phase3ResourceCheck,
     sustainedSalesCheck,
     metrics = metricSamples.GroupBy(static sample => sample.Name).OrderBy(static group => group.Key)
         .Select(group =>
@@ -2490,9 +2909,9 @@ File.WriteAllText(output, JsonSerializer.Serialize(new
         }),
 }, new JsonSerializerOptions { WriteIndented = true }));
 Console.WriteLine($"RESULTS {output}");
-if ((mode is "verify" or "restore-race" or "sustained-profile" or "refresh-storm") &&
+if ((mode is "verify" or "restore-race" or "sustained-profile" or "phase4-combined" or "refresh-storm" or "phase3-resource") &&
     (results.Any(static result => result.Error is not null) ||
-     (mode == "sustained-profile" && (profileSamples.Any(static sample => sample.Error is not null) ||
+     (mode is "sustained-profile" or "phase4-combined" && (profileSamples.Any(static sample => sample.Error is not null) ||
         sustainedSalesCheck is null || sustainedSalesCheck.Failed != 0 ||
         sustainedSalesCheck.After != sustainedSalesCheck.Before + sustainedSalesCheck.Successful))))
     throw new InvalidDataException($"{mode} recorded a failed verification step; see {output}.");
@@ -2555,6 +2974,10 @@ internal sealed record QueryPlan(string Name, IReadOnlyList<string> Details, str
 internal sealed record ProfileSample(string Name, double Milliseconds, int Rows, string? Error);
 internal sealed record ResourceSample(double ElapsedSeconds, long WalBytes, long WorkingSetBytes,
     double CpuPercent, int ActiveConnections);
+internal sealed record Phase3ResourceSample(double ElapsedSeconds, long WalBytes, long WorkingSetBytes,
+    int ActiveConnections, long TemporarySnapshotBytes, long PartialArchiveBytes, long AvailableFreeBytes);
+internal sealed record Phase3ResourceCheck(long InitialFreeBytes, long MinimumFreeBytes, long FinalFreeBytes,
+    long WalBeforeShutdownBytes, long WalAfterShutdownBytes, int ArchivesBeforeShutdown, int ArchivesAfterShutdown);
 internal sealed record SustainedSalesCheck(long Before, long Successful, long Failed, long After);
 internal sealed record ProfileSummary(string Name, int Samples, double P50Milliseconds, double P95Milliseconds,
     double P99Milliseconds, int Errors, int MaximumRows);

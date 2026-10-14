@@ -172,7 +172,11 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         DateOnly previousStart = monthStart.AddMonths(-1);
         DateOnly previousThrough = previousStart.AddDays(Math.Min(today.Day, DateTime.DaysInMonth(previousStart.Year, previousStart.Month)) - 1);
         DateOnly trendFrom = today.AddDays(-29);
-        Task<DashboardCore> core = database.ReadAsync(connection => connection.QuerySingle<DashboardCore>("""
+        var snapshot = await database.ReadAsync(connection =>
+        {
+            using var transaction = connection.BeginTransaction(deferred: true);
+            long stageStarted = Stopwatch.GetTimestamp();
+            DashboardCore core = connection.QuerySingle<DashboardCore>("""
             WITH today_sales AS MATERIALIZED (
               SELECT sales,bills,taxable,taxable-cost AS gross_profit
               FROM pnl_day WHERE day=@today
@@ -188,7 +192,7 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
               SELECT COUNT(*) FILTER (WHERE l.expiry_date<=date(b.day,'+7 days')) AS critical,
                      COUNT(*) FILTER (WHERE l.expiry_date>date(b.day,'+7 days')) AS soon
               FROM expiry_bounds b JOIN product_lot l
-                ON l.qty_on_hand>0 AND l.expiry_date IS NOT NULL
+                ON l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date IS NOT NULL
                AND l.expiry_date BETWEEN b.day
                    AND COALESCE(date(b.day,'+'||b.max_days||' days'),'9999-12-31')
               JOIN product p ON p.id=l.product_id
@@ -200,7 +204,7 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                 )||' days'),'9999-12-31')
             ), expiry AS MATERIALIZED (
               SELECT (SELECT COUNT(*) FROM product_lot l
-                      WHERE l.qty_on_hand>0 AND l.expiry_date IS NOT NULL
+                      WHERE l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date IS NOT NULL
                         AND l.expiry_date<b.day) AS expired,
                      n.critical,n.soon
               FROM expiry_bounds b CROSS JOIN expiry_near n
@@ -227,19 +231,29 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
             LEFT JOIN today_sales ON 1=1
             CROSS JOIN expiry
             CROSS JOIN stock
-            """, new { today = Iso(today), monthStart = Iso(monthStart), previousStart = Iso(previousStart), previousThrough = Iso(previousThrough) }), cancellationToken, "dashboard.core");
-        Task<List<PaymentRaw>> payments = database.ReadAsync(connection => connection.Query<PaymentRaw>("""
+            """, new { today = Iso(today), monthStart = Iso(monthStart), previousStart = Iso(previousStart), previousThrough = Iso(previousThrough) }, transaction);
+            PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(stageStarted).TotalMilliseconds,
+                new KeyValuePair<string, object?>("operation", "dashboard.core"));
+            cancellationToken.ThrowIfCancellationRequested();
+            stageStarted = Stopwatch.GetTimestamp();
+            List<PaymentRaw> payments = connection.Query<PaymentRaw>("""
             SELECT sp.mode AS Mode,SUM(sp.amount) AS Amount FROM sale_payment sp
             JOIN sale s ON s.id=sp.sale_id WHERE s.status='COMPLETED' AND s.sale_date=@today GROUP BY sp.mode ORDER BY sp.mode
-            """, new { today = Iso(today) }).ToList(), cancellationToken, "dashboard.payments");
-        Task<List<TrendRaw>> trend = database.ReadAsync(connection => connection.Query<TrendRaw>("""
+            """, new { today = Iso(today) }, transaction).ToList();
+            PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(stageStarted).TotalMilliseconds,
+                new KeyValuePair<string, object?>("operation", "dashboard.payments"));
+            cancellationToken.ThrowIfCancellationRequested();
+            stageStarted = Stopwatch.GetTimestamp();
+            List<TrendRaw> trend = connection.Query<TrendRaw>("""
             SELECT day AS Date,sales AS Sales,bills AS Bills,taxable-cost AS GrossProfit
             FROM pnl_day WHERE day BETWEEN @from AND @today AND bills>0 ORDER BY day
-            """, new { from = Iso(trendFrom), today = Iso(today) }).ToList(), cancellationToken, "dashboard.trend");
-        Task<(List<TopRaw> Revenue, List<TopRaw> Margin)> top = database.ReadAsync(connection =>
-        {
+            """, new { from = Iso(trendFrom), today = Iso(today) }, transaction).ToList();
+            PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(stageStarted).TotalMilliseconds,
+                new KeyValuePair<string, object?>("operation", "dashboard.trend"));
+            cancellationToken.ThrowIfCancellationRequested();
+            stageStarted = Stopwatch.GetTimestamp();
             string? cachedThrough = connection.ExecuteScalar<string>(
-                "SELECT to_day FROM dashboard_top_window WHERE id=1");
+                "SELECT to_day FROM dashboard_top_window WHERE id=1", transaction: transaction);
             const string sourceSql = """
                 WITH movements AS (
                   SELECT sl.product_id,sl.product_name,sl.product_name_local,sl.qty,
@@ -280,26 +294,29 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                 """;
             List<TopRaw> all = connection.Query<TopRaw>(
                 cachedThrough == Iso(today) ? summarySql : sourceSql,
-                new { from = Iso(trendFrom), today = Iso(today) }).ToList();
-            return (all.Where(static x => x.RevenueRank <= 10).OrderBy(static x => x.RevenueRank).ToList(),
-                all.Where(static x => x.MarginRank <= 10).OrderBy(static x => x.MarginRank).ToList());
-        }, cancellationToken, "dashboard.top-products");
-        await Task.WhenAll(core, payments, trend, top).ConfigureAwait(false);
+                new { from = Iso(trendFrom), today = Iso(today) }, transaction).ToList();
+            var top = (Revenue: all.Where(static x => x.RevenueRank <= 10).OrderBy(static x => x.RevenueRank).ToList(),
+                Margin: all.Where(static x => x.MarginRank <= 10).OrderBy(static x => x.MarginRank).ToList());
+            PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(stageStarted).TotalMilliseconds,
+                new KeyValuePair<string, object?>("operation", "dashboard.top-products"));
+            transaction.Commit();
+            return (Core: core, Payments: payments, Trend: trend, Top: top);
+        }, cancellationToken, "dashboard.snapshot").ConfigureAwait(false);
         PerformanceMetrics.ReportStageRows.Record(1, new KeyValuePair<string, object?>("operation", "dashboard.core"));
-        PerformanceMetrics.ReportStageRows.Record((await payments).Count,
+        PerformanceMetrics.ReportStageRows.Record(snapshot.Payments.Count,
             new KeyValuePair<string, object?>("operation", "dashboard.payments"));
-        PerformanceMetrics.ReportStageRows.Record((await trend).Count,
+        PerformanceMetrics.ReportStageRows.Record(snapshot.Trend.Count,
             new KeyValuePair<string, object?>("operation", "dashboard.trend"));
-        PerformanceMetrics.ReportStageRows.Record((await top).Revenue.Count + (await top).Margin.Count,
+        PerformanceMetrics.ReportStageRows.Record(snapshot.Top.Revenue.Count + snapshot.Top.Margin.Count,
             new KeyValuePair<string, object?>("operation", "dashboard.top-products"));
         long composing = Stopwatch.GetTimestamp();
-        DashboardCore c = await core;
+        DashboardCore c = snapshot.Core;
         DashboardSummary summary = new(today, Money.FromScaled(c.TodaySales), Money.FromScaled(c.TodayTaxableSales), c.TodayBills,
             c.TodayBills == 0 ? Money.Zero : new Money(Fx3.FromScaled(c.TodaySales) / c.TodayBills), Money.FromScaled(c.TodayGrossProfit),
             Money.FromScaled(c.MonthSales), Money.FromScaled(c.PreviousMonthSales),
-            (await payments).Select(static x => new PaymentSplit(x.Mode, Money.FromScaled(x.Amount))).ToList(),
-            (await trend).Select(static x => new TrendPoint(x.Date, Money.FromScaled(x.Sales), x.Bills, Money.FromScaled(x.GrossProfit))).ToList(),
-            (await top).Revenue.Select(ToTop).ToList(), (await top).Margin.Select(ToTop).ToList(),
+            snapshot.Payments.Select(static x => new PaymentSplit(x.Mode, Money.FromScaled(x.Amount))).ToList(),
+            snapshot.Trend.Select(static x => new TrendPoint(x.Date, Money.FromScaled(x.Sales), x.Bills, Money.FromScaled(x.GrossProfit))).ToList(),
+            snapshot.Top.Revenue.Select(ToTop).ToList(), snapshot.Top.Margin.Select(ToTop).ToList(),
             c.ExpiredLots, c.CriticalLots, c.SoonLots, c.LowStockProducts, Money.FromScaled(c.StockValue),
             Money.FromScaled(c.Payables), LatestBackup(), settings.Current.LastUsbExport);
         PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(composing).TotalMilliseconds,
@@ -338,10 +355,35 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         ReportDefinition definition = Definition(kind);
         return database.ReadAsync(connection =>
         {
-            IEnumerable<dynamic> queried = connection.Query(definition.Sql, new
+            string sql = definition.Sql;
+            string deltaFrom = Iso(from);
+            string deltaTo = Iso(from);
+            int deltaSign = 1;
+            if (kind is ReportKind.ItemSales or ReportKind.CategorySales)
+            {
+                DashboardWindowRaw? window = connection.QuerySingleOrDefault<DashboardWindowRaw>("""
+                    SELECT from_day AS FromDay,to_day AS ToDay FROM dashboard_top_window WHERE id=1
+                    """);
+                if (window?.ToDay == Iso(to) &&
+                    DateOnly.TryParseExact(window.FromDay, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                        DateTimeStyles.None, out DateOnly windowFrom) &&
+                    Math.Abs(windowFrom.DayNumber - from.DayNumber) <= 7)
+                {
+                    sql = kind == ReportKind.ItemSales
+                        ? ReportDefinitions.ItemSalesFromTopWindow
+                        : ReportDefinitions.CategorySalesFromTopWindow;
+                    deltaFrom = Iso(windowFrom < from ? windowFrom : from);
+                    deltaTo = Iso((windowFrom > from ? windowFrom : from).AddDays(-1));
+                    deltaSign = windowFrom < from ? -1 : 1;
+                }
+            }
+            IEnumerable<dynamic> queried = connection.Query(sql, new
             {
                 from = Iso(from),
                 to = Iso(to),
+                deltaFrom,
+                deltaTo,
+                deltaSign,
                 filter.ProductId,
                 filter.LotId,
                 filter.VendorId,
@@ -850,6 +892,7 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
     private class PnlRaw { public string Section { get; init; } = ""; public string HeadCode { get; init; } = ""; public long? ReferenceId { get; init; } public long Amount { get; init; } }
     private sealed class PnlMonthRaw : PnlRaw { public string Month { get; init; } = ""; }
     private sealed class DashboardCore { public long TodaySales { get; init; } public long TodayTaxableSales { get; init; } public int TodayBills { get; init; } public long TodayGrossProfit { get; init; } public long MonthSales { get; init; } public long PreviousMonthSales { get; init; } public int ExpiredLots { get; init; } public int CriticalLots { get; init; } public int SoonLots { get; init; } public int LowStockProducts { get; init; } public long StockValue { get; init; } public long Payables { get; init; } }
+    private sealed class DashboardWindowRaw { public string FromDay { get; init; } = ""; public string ToDay { get; init; } = ""; }
     private sealed class PaymentRaw { public string Mode { get; init; } = ""; public long Amount { get; init; } }
     private sealed class TrendRaw { public DateOnly Date { get; init; } public long Sales { get; init; } public int Bills { get; init; } public long GrossProfit { get; init; } }
     private sealed class TopRaw { public long ProductId { get; init; } public string Name { get; init; } = ""; public string? LocalName { get; init; } public long Quantity { get; init; } public long Revenue { get; init; } public long Cost { get; init; } public long Margin { get; init; } public int RevenueRank { get; init; } public int MarginRank { get; init; } }

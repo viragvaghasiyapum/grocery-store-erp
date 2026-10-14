@@ -146,8 +146,8 @@ public sealed class FoundationsTests
         var clock = new GroceryErp.Core.Time.SystemClock(settings);
         var backup = new BackupService(fixture.Paths, fixture.Factory, clock, settings);
 
-        BackupInfo created = backup.Create("manual");
-        BackupManifest verified = BackupService.Verify(created.Path);
+        BackupInfo created = backup.Create("manual", TestContext.Current.CancellationToken);
+        BackupManifest verified = BackupService.Verify(created.Path, TestContext.Current.CancellationToken);
         RestoreCandidate candidate = backup.InspectRestore(created.Path);
         backup.ApplyRestore(candidate);
         backup.FinishPendingRestore();
@@ -167,7 +167,7 @@ public sealed class FoundationsTests
         await settings.LoadAsync(TestContext.Current.CancellationToken);
         var backup = new BackupService(fixture.Paths, fixture.Factory,
             new GroceryErp.Core.Time.SystemClock(settings), settings);
-        RestoreCandidate candidate = backup.InspectRestore(backup.Create("manual").Path);
+        RestoreCandidate candidate = backup.InspectRestore(backup.Create("manual", TestContext.Current.CancellationToken).Path);
         using var held = fixture.Factory.Open();
         Task apply = Task.Run(() => backup.ApplyRestore(candidate), TestContext.Current.CancellationToken);
         try
@@ -192,7 +192,7 @@ public sealed class FoundationsTests
         var backup = new BackupService(fixture.Paths, fixture.Factory,
             new GroceryErp.Core.Time.SystemClock(settings), settings);
         var secondFactory = new SqliteConnectionFactory(fixture.Paths);
-        RestoreCandidate candidate = backup.InspectRestore(backup.Create("manual").Path);
+        RestoreCandidate candidate = backup.InspectRestore(backup.Create("manual", TestContext.Current.CancellationToken).Path);
         using var held = secondFactory.Open();
         Task apply = Task.Run(() => backup.ApplyRestore(candidate), TestContext.Current.CancellationToken);
         try
@@ -312,7 +312,7 @@ public sealed class FoundationsTests
         await settings.LoadAsync(TestContext.Current.CancellationToken);
         var backup = new BackupService(fixture.Paths, fixture.Factory,
             new GroceryErp.Core.Time.SystemClock(settings), settings);
-        RestoreCandidate candidate = backup.InspectRestore(backup.Create("manual").Path);
+        RestoreCandidate candidate = backup.InspectRestore(backup.Create("manual", TestContext.Current.CancellationToken).Path);
         await fixture.Database.WriteAsync(tx => tx.Connection.Execute(
             "UPDATE setting SET value = 'original-after-backup' WHERE key = 'store.name'",
             transaction: tx.Transaction), TestContext.Current.CancellationToken);
@@ -406,7 +406,7 @@ public sealed class FoundationsTests
             fixture.Factory,
             new GroceryErp.Core.Time.SystemClock(settings),
             settings);
-        BackupInfo created = backup.Create("manual");
+        BackupInfo created = backup.Create("manual", TestContext.Current.CancellationToken);
 
         await fixture.Database.WriteAsync(transaction => transaction.Connection.Execute(
             "UPDATE setting SET value = 'current-data' WHERE key = 'store.name'",
@@ -428,7 +428,7 @@ public sealed class FoundationsTests
         await settings.LoadAsync(TestContext.Current.CancellationToken);
         var backup = new BackupService(fixture.Paths, fixture.Factory,
             new GroceryErp.Core.Time.SystemClock(settings), settings);
-        RestoreCandidate candidate = backup.InspectRestore(backup.Create("manual").Path);
+        RestoreCandidate candidate = backup.InspectRestore(backup.Create("manual", TestContext.Current.CancellationToken).Path);
         try
         {
             using (var file = File.Open(candidate.StagedDatabase, FileMode.Append)) file.WriteByte(1);
@@ -448,7 +448,7 @@ public sealed class FoundationsTests
         await settings.LoadAsync(TestContext.Current.CancellationToken);
         var clock = new GroceryErp.Core.Time.SystemClock(settings);
         var backup = new BackupService(fixture.Paths, fixture.Factory, clock, settings);
-        backup.ApplyRestore(backup.InspectRestore(backup.Create("manual").Path));
+        backup.ApplyRestore(backup.InspectRestore(backup.Create("manual", TestContext.Current.CancellationToken).Path));
         fixture.Factory.EndExclusive(); // Simulate process exit after the swap.
         var freshFactory = new SqliteConnectionFactory(fixture.Paths);
         var resumed = new BackupService(fixture.Paths, freshFactory, clock, settings);
@@ -466,7 +466,7 @@ public sealed class FoundationsTests
         await settings.LoadAsync(TestContext.Current.CancellationToken);
         var clock = new GroceryErp.Core.Time.SystemClock(settings);
         var backup = new BackupService(fixture.Paths, fixture.Factory, clock, settings);
-        RestoreCandidate candidate = backup.InspectRestore(backup.Create("manual").Path);
+        RestoreCandidate candidate = backup.InspectRestore(backup.Create("manual", TestContext.Current.CancellationToken).Path);
         await fixture.Database.WriteAsync(transaction => transaction.Connection.Execute(
             "UPDATE setting SET value = 'original-latest' WHERE key = 'store.name'",
             transaction: transaction.Transaction), TestContext.Current.CancellationToken);
@@ -495,7 +495,7 @@ public sealed class FoundationsTests
         await fixture.Database.WriteAsync(transaction => transaction.Connection.Execute(
             "UPDATE setting SET value = 'backup-state' WHERE key = 'store.name'",
             transaction: transaction.Transaction), TestContext.Current.CancellationToken);
-        BackupInfo saved = backup.Create("manual");
+        BackupInfo saved = backup.Create("manual", TestContext.Current.CancellationToken);
         await fixture.Database.WriteAsync(transaction => transaction.Connection.Execute(
             "UPDATE setting SET value = 'latest-state' WHERE key = 'store.name'",
             transaction: transaction.Transaction), TestContext.Current.CancellationToken);
@@ -525,7 +525,7 @@ public sealed class FoundationsTests
         await settings.LoadAsync(TestContext.Current.CancellationToken);
         var backup = new BackupService(fixture.Paths, fixture.Factory,
             new GroceryErp.Core.Time.SystemClock(settings), settings);
-        BackupInfo saved = backup.Create("manual");
+        BackupInfo saved = backup.Create("manual", TestContext.Current.CancellationToken);
         string replaced = Path.Combine(fixture.Paths.DbDir, "replaced-before-first-move");
         Directory.CreateDirectory(replaced);
         string marker = Path.Combine(fixture.Paths.DbDir, "restore.pending.json");
@@ -550,7 +550,7 @@ public sealed class FoundationsTests
         await settings.LoadAsync(TestContext.Current.CancellationToken);
         var backup = new BackupService(fixture.Paths, fixture.Factory,
             new GroceryErp.Core.Time.SystemClock(settings), settings);
-        BackupInfo saved = backup.Create("manual");
+        BackupInfo saved = backup.Create("manual", TestContext.Current.CancellationToken);
         string tampered = Path.Combine(fixture.Paths.TempDir, "tampered.zip");
         File.Copy(saved.Path, tampered);
         using (ZipArchive archive = ZipFile.Open(tampered, ZipArchiveMode.Update))
@@ -567,7 +567,7 @@ public sealed class FoundationsTests
 
         using (ZipArchive archive = ZipFile.Open(tampered, ZipArchiveMode.Update))
             archive.GetEntry("manifest.json")!.Delete();
-        Should.Throw<GroceryErp.Core.Errors.DomainException>(() => BackupService.Verify(tampered));
+        Should.Throw<GroceryErp.Core.Errors.DomainException>(() => BackupService.Verify(tampered, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -578,7 +578,7 @@ public sealed class FoundationsTests
         await settings.LoadAsync(TestContext.Current.CancellationToken);
         var backup = new BackupService(fixture.Paths, fixture.Factory,
             new GroceryErp.Core.Time.SystemClock(settings), settings);
-        BackupInfo saved = backup.Create("manual");
+        BackupInfo saved = backup.Create("manual", TestContext.Current.CancellationToken);
         fixture.Factory.ClearPool();
         string replaced = Path.Combine(fixture.Paths.DbDir, "replaced-interrupted");
         Directory.CreateDirectory(replaced);
@@ -634,6 +634,13 @@ public sealed class FoundationsTests
         var maintenance = new MaintenanceService(
             fixture.Paths, fixture.Factory, fixture.Database, backups, clock, new AuditLog());
 
+        await maintenance.BeginSessionAsync(TestContext.Current.CancellationToken);
+        using (var session = fixture.Factory.Open())
+        {
+            session.ExecuteScalar<string>("SELECT value FROM setting WHERE key='maintenance.clean_shutdown'").ShouldBe("0");
+            session.ExecuteScalar<string>("SELECT value FROM setting WHERE key='maintenance.recovery_pending'").ShouldBe("1");
+        }
+
         await maintenance.RunAfterShellAsync(TestContext.Current.CancellationToken);
 
         Directory.Exists(expired).ShouldBeFalse();
@@ -643,10 +650,121 @@ public sealed class FoundationsTests
             .ShouldNotBeNullOrWhiteSpace();
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity = 'maintenance' AND action = 'INTEGRITY_CHECK'")
             .ShouldBe(1L);
+        connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key='maintenance.recovery_pending'").ShouldBe("0");
 
         await maintenance.RunAfterShellAsync(TestContext.Current.CancellationToken);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity = 'maintenance' AND action = 'INTEGRITY_CHECK'")
             .ShouldBe(1L);
+
+        var restartedBackups = new BackupService(fixture.Paths, fixture.Factory, clock, settings);
+        restartedBackups.HasRecentVerifiedScheduledBackup(TimeSpan.FromHours(12)).ShouldBeTrue();
+        maintenance.Shutdown();
+        connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key='maintenance.clean_shutdown'").ShouldBe("1");
+        await maintenance.BeginSessionAsync(TestContext.Current.CancellationToken);
+        connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key='maintenance.recovery_pending'").ShouldBe("0");
+        // A second begin without a clean shutdown models the next process after a crash.
+        await maintenance.BeginSessionAsync(TestContext.Current.CancellationToken);
+        connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key='maintenance.recovery_pending'").ShouldBe("1");
+        connection.Execute("""
+            UPDATE setting SET value='1' WHERE key='maintenance.clean_shutdown';
+            INSERT INTO setting(key,value) VALUES ('maintenance.stock_rebuild_pending','1')
+            ON CONFLICT(key) DO UPDATE SET value='1'
+            """);
+        (await maintenance.CheckBeforeShellAsync(TestContext.Current.CancellationToken)).LotCacheHealthy.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task CloseBackup_IsNotRepeatedAfterRestartWhenRecentArchiveWasVerified()
+    {
+        using var fixture = new FoundationFixture();
+        using var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
+        await settings.LoadAsync(TestContext.Current.CancellationToken);
+        var clock = new GroceryErp.Core.Time.SystemClock(settings);
+        var backups = new BackupService(fixture.Paths, fixture.Factory, clock, settings);
+        var maintenance = new MaintenanceService(
+            fixture.Paths, fixture.Factory, fixture.Database, backups, clock, new AuditLog());
+
+        maintenance.Shutdown();
+        Directory.EnumerateFiles(backups.BackupDirectory, "*_close.zip").Count().ShouldBe(1);
+
+        var restartedBackups = new BackupService(fixture.Paths, fixture.Factory, clock, settings);
+        restartedBackups.HasRecentVerifiedScheduledBackup(TimeSpan.FromHours(12)).ShouldBeTrue();
+        var restartedMaintenance = new MaintenanceService(
+            fixture.Paths, fixture.Factory, fixture.Database, restartedBackups, clock, new AuditLog());
+        restartedMaintenance.Shutdown();
+        Directory.EnumerateFiles(backups.BackupDirectory, "*_close.zip").Count().ShouldBe(1);
+    }
+
+    [Fact]
+    public void VendorBalanceProjection_TracksPostedPurchasesPaymentsAndReturns()
+    {
+        using var fixture = new FoundationFixture();
+        using var connection = fixture.Factory.Open();
+        connection.Execute("""
+            INSERT INTO vendor(id,name,opening_balance) VALUES (1,'Alpha',1000),(2,'Beta',2000);
+            INSERT INTO purchase(id,doc_no,vendor_id,received_date,status,grand_total)
+            VALUES (1,'P-1',1,'2026-09-01','POSTED',10000);
+            INSERT INTO vendor_payment(id,vendor_id,pay_date,amount,mode)
+            VALUES (1,1,'2026-09-02',3000,'CASH');
+            INSERT INTO vendor_return(id,doc_no,vendor_id,purchase_id,return_date,vendor_credit_no,
+                reason,tax_mode,credit_before_tax,tax_credit,credit_total,cost_total)
+            VALUES (1,'R-1',1,1,'2026-09-03','C-1','OTHER','REGULAR',1000,0,1000,1000);
+            """);
+        connection.ExecuteScalar<long>("SELECT balance_due FROM v_vendor_balance WHERE vendor_id=1").ShouldBe(7000);
+        connection.Execute("UPDATE purchase SET grand_total=12000 WHERE id=1");
+        connection.Execute("UPDATE vendor_payment SET amount=4000 WHERE id=1");
+        connection.ExecuteScalar<long>("SELECT balance_due FROM v_vendor_balance WHERE vendor_id=1").ShouldBe(8000);
+        connection.Execute("UPDATE purchase SET status='CANCELLED' WHERE id=1");
+        connection.ExecuteScalar<long>("SELECT balance_due FROM v_vendor_balance WHERE vendor_id=1").ShouldBe(-4000);
+        connection.Execute("UPDATE vendor SET opening_balance=5000 WHERE id=1");
+        connection.ExecuteScalar<long>("SELECT balance_due FROM v_vendor_balance WHERE vendor_id=1").ShouldBe(0);
+        connection.ExecuteScalar<long>("SELECT balance_due FROM v_vendor_balance WHERE vendor_id=2").ShouldBe(2000);
+    }
+
+    [Fact]
+    public void BackupCapacity_ReservesSpaceForSnapshotAndVerifiedArchive()
+    {
+        const long gib = 1024L * 1024 * 1024;
+        BackupService.HasBackupCapacity(2 * gib, 2 * gib, gib, sharedVolume: true).ShouldBeFalse();
+        BackupService.HasBackupCapacity(3 * gib, 3 * gib, gib, sharedVolume: true).ShouldBeTrue();
+        BackupService.HasBackupCapacity(2 * gib, gib, gib, sharedVolume: false).ShouldBeFalse();
+        BackupService.HasBackupCapacity(2 * gib, 2 * gib, gib, sharedVolume: false).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Backup_LowSpacePreflightLeavesDatabaseAndBackupDirectoryIntact()
+    {
+        using var fixture = new FoundationFixture();
+        using var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
+        await settings.LoadAsync(TestContext.Current.CancellationToken);
+        var backups = new BackupService(fixture.Paths, fixture.Factory,
+            new GroceryErp.Core.Time.SystemClock(settings), settings)
+        {
+            AvailableFreeSpace = static _ => 0,
+        };
+        long databaseBytes = new FileInfo(fixture.Paths.DatabaseFile).Length;
+
+        var failure = Should.Throw<GroceryErp.Core.Errors.DomainException>(() =>
+            backups.Create("daily", TestContext.Current.CancellationToken));
+        failure.Code.ShouldBe(GroceryErp.Core.Errors.ErrorCode.DiskFull);
+        new FileInfo(fixture.Paths.DatabaseFile).Length.ShouldBe(databaseBytes);
+        Directory.EnumerateFiles(backups.BackupDirectory).ShouldBeEmpty();
+        Directory.EnumerateDirectories(fixture.Paths.TempDir, "backup-*").ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task CanceledDailyBackup_LeavesNoFinalOrPartialArchive()
+    {
+        using var fixture = new FoundationFixture();
+        using var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
+        await settings.LoadAsync(TestContext.Current.CancellationToken);
+        var backups = new BackupService(fixture.Paths, fixture.Factory,
+            new GroceryErp.Core.Time.SystemClock(settings), settings);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        Should.Throw<OperationCanceledException>(() => backups.Create("daily", cancellation.Token));
+        Directory.EnumerateFiles(backups.BackupDirectory).ShouldBeEmpty();
+        Directory.EnumerateDirectories(fixture.Paths.TempDir, "backup-*").ShouldBeEmpty();
     }
 
     [Fact]

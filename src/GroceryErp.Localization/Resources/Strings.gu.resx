@@ -337,7 +337,7 @@
   <data name="Stock_FindLot" xml:space="preserve"><value>લોટ શોધો</value><comment>MT - needs review</comment></data>
   <data name="Stock_CountLotNotFound" xml:space="preserve"><value>આ ગણતરી પત્રકમાં મેળ ખાતો લોટ નથી.</value><comment>MT - needs review</comment></data>
   <data name="Stock_NewCount" xml:space="preserve"><value>નવી ગણતરી</value><comment>MT - needs review</comment></data>
-  <data name="Stock_ScopeHint" xml:space="preserve"><value>ગણવા માટે શ્રેણીઓ પસંદ કરો. પત્રક તે શ્રેણીના દરેક લોટનો જથ્થો નોંધે છે.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_ScopeHint" xml:space="preserve"><value>ગણવા માટે શ્રેણીઓ પસંદ કરો. બધી શ્રેણીઓની ગણતરી જાળવણીનું કામ છે; વેચાણના સમયની બહાર શરૂ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Stock_AllCategories" xml:space="preserve"><value>બધી શ્રેણીઓ</value><comment>MT - needs review</comment></data>
   <data name="Stock_SelectCategory" xml:space="preserve"><value>ઓછામાં ઓછી એક શ્રેણી પસંદ કરો અથવા બધી શ્રેણીઓ પસંદ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Stock_CreateSheet" xml:space="preserve"><value>પત્રક બનાવો</value><comment>MT - needs review</comment></data>

@@ -3,6 +3,7 @@ using System.Text.Json;
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Input;
 using FlaUI.UIA3;
+using Microsoft.Data.Sqlite;
 using Xunit;
 using UiApplication = FlaUI.Core.Application;
 
@@ -63,6 +64,14 @@ public sealed class ScaleUiTests
             foreach (Window other in app.GetAllTopLevelWindows(automation).Where(window =>
                          window.FindFirstDescendant(cf => cf.ByAutomationId("BackupStatusButton")) is null))
                 other.FindFirstDescendant(cf => cf.ByName("Later"))?.Click();
+
+            if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_PHASE4") == "1")
+            {
+                await AuditPhase4UiAsync(app, automation, shell, root);
+                shell.Close();
+                await WaitUntilAsync(() => app.HasExited, TimeSpan.FromMinutes(3));
+                return;
+            }
 
             if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_ACCEPTANCE") == "1")
             {
@@ -268,6 +277,170 @@ public sealed class ScaleUiTests
             element.ControlType == FlaUI.Core.Definitions.ControlType.DataItem) ?? 0;
 
     private static bool GridHasRows(Window shell, string id) => GridRows(shell, id) > 0;
+
+    private static async Task AuditPhase4UiAsync(UiApplication app, UIA3Automation automation,
+        Window shell, string root)
+    {
+        var records = new List<object>();
+        static string Scalar(string root, string sql)
+        {
+            using var connection = new SqliteConnection($"Data Source={Path.Combine(root, "db", "grocery.db")};Mode=ReadOnly");
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            return command.ExecuteScalar()?.ToString() ?? throw new InvalidDataException("The UI fixture has no matching row.");
+        }
+        string barcode = Scalar(root, """
+            SELECT b.barcode FROM product_barcode b JOIN product_lot l ON l.product_id=b.product_id
+            WHERE l.qty_on_hand>1000 AND l.is_active=1 AND l.expiry_date>=date('now')
+              AND b.pack_qty=1000
+            ORDER BY l.qty_on_hand DESC LIMIT 1
+            """);
+        string lotCode = Scalar(root, "SELECT lot_code FROM product_lot WHERE id=202500");
+
+        shell.SetForeground();
+        shell.FindFirstDescendant(cf => cf.ByName("Sales history"))!.Click();
+        await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("HistoryGrid")) is not null,
+            TimeSpan.FromSeconds(20));
+        SetDate(shell, "FromPicker", "2026-01-01");
+        ClickRefresh(shell);
+        try { await WaitUntilAsync(() => GridHasRows(shell, "HistoryGrid"), TimeSpan.FromSeconds(30), 100); }
+        catch (TimeoutException)
+        {
+            File.WriteAllText(Path.Combine(root, "phase4-ui-history-diagnostics.txt"),
+                $"from={DateText(shell, "FromPicker")}; to={DateText(shell, "ToPicker")}; " +
+                $"status={shell.FindFirstDescendant(cf => cf.ByAutomationId("StatusText"))?.Name}; " +
+                $"dbRows={Scalar(root, "SELECT COUNT(*) FROM sale WHERE sale_date BETWEEN '2026-01-01' AND date('now')")}");
+            shell.CaptureToFile(Path.Combine(root, "phase4-ui-history-timeout.png"));
+            throw;
+        }
+        var historyTimer = Stopwatch.StartNew();
+        for (int iteration = 0; iteration < 8; iteration++)
+        {
+            shell.SetForeground();
+            await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("NextButton"))?.IsEnabled == true,
+                TimeSpan.FromSeconds(20), 100);
+            shell.FindFirstDescendant(cf => cf.ByAutomationId("NextButton"))!.AsButton().Invoke();
+            await WaitUntilAsync(() => GridHasRows(shell, "HistoryGrid") &&
+                shell.FindFirstDescendant(cf => cf.ByAutomationId("PreviousButton"))?.IsEnabled == true,
+                TimeSpan.FromSeconds(20), 100);
+            await Task.Delay(100, TestContext.Current.CancellationToken);
+            shell.SetForeground();
+            shell.FindFirstDescendant(cf => cf.ByAutomationId("PreviousButton"))!.AsButton().Invoke();
+            await WaitUntilAsync(() => GridHasRows(shell, "HistoryGrid") &&
+                shell.FindFirstDescendant(cf => cf.ByAutomationId("PreviousButton"))?.IsEnabled == false,
+                TimeSpan.FromSeconds(20), 100);
+            await Task.Delay(100, TestContext.Current.CancellationToken);
+            shell.SetForeground();
+            ClickRefresh(shell);
+        }
+        records.Add(new { journey = "history-next-previous-refresh", iterations = 8,
+            milliseconds = historyTimer.Elapsed.TotalMilliseconds,
+            firstPageRestored = shell.FindFirstDescendant(cf => cf.ByAutomationId("PreviousButton"))?.IsEnabled == false });
+        File.WriteAllText(Path.Combine(root, "phase4-ui-local.json"), JsonSerializer.Serialize(records, JsonOptions));
+
+        await Task.Delay(500, TestContext.Current.CancellationToken);
+        shell.SetForeground();
+        shell.FindFirstDescendant(cf => cf.ByName("Billing (POS)"))!.Click();
+        try { await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("ScanBox")) is not null,
+            TimeSpan.FromSeconds(20)); }
+        catch (TimeoutException)
+        {
+            File.WriteAllText(Path.Combine(root, "phase4-ui-billing-diagnostics.txt"),
+                string.Join(" | ", app.GetAllTopLevelWindows(automation).Select(window => window.Name + ": " +
+                    string.Join(",", window.FindAllDescendants().Take(40).Select(SafeName)))));
+            shell.CaptureToFile(Path.Combine(root, "phase4-ui-billing-timeout.png"));
+            throw;
+        }
+        await Task.Delay(1000, TestContext.Current.CancellationToken);
+        foreach (Window saved in app.GetAllTopLevelWindows(automation).Where(window =>
+                     window.FindFirstDescendant(cf => cf.ByAutomationId("BillsGrid")) is not null))
+            saved.FindFirstDescendant(cf => cf.ByName("Cancel"))?.Click();
+        AutomationElement scan = shell.FindFirstDescendant(cf => cf.ByAutomationId("ScanBox"))!;
+        var scanTimer = Stopwatch.StartNew();
+        for (int iteration = 0; iteration < 3; iteration++)
+        {
+            scan.AsTextBox().Text = barcode;
+            scan.Focus();
+            Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
+            if (iteration == 0) Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
+        }
+        long DraftQuantity() => long.Parse(Scalar(root, """
+            SELECT COALESCE(SUM(sl.qty),0) FROM sale_line sl
+            WHERE sl.sale_id=(SELECT MAX(id) FROM sale WHERE status='DRAFT')
+            """), System.Globalization.CultureInfo.InvariantCulture);
+        await WaitUntilAsync(() => GridHasRows(shell, "BillGrid") && DraftQuantity() == 3000,
+            TimeSpan.FromSeconds(30), 100);
+        records.Add(new { journey = "keyboard-scan-burst-double-enter", milliseconds = scanTimer.Elapsed.TotalMilliseconds,
+            visibleRows = GridRows(shell, "BillGrid"), quantityScaled = DraftQuantity() });
+        scan.AsTextBox().Text = "9999999999999";
+        scan.Focus();
+        Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
+        Window unknown = await WaitWindowAsync(app, automation, "OptionsTabs", TimeSpan.FromSeconds(20));
+        unknown.FindFirstDescendant(cf => cf.ByName("Cancel"))!.Click();
+        await WaitUntilAsync(() => app.GetAllTopLevelWindows(automation).All(window =>
+            window.FindFirstDescendant(cf => cf.ByAutomationId("OptionsTabs")) is null), TimeSpan.FromSeconds(20));
+        records.Add(new { journey = "unknown-barcode-interruption", billRowsPreserved = GridHasRows(shell, "BillGrid") });
+        shell.FindFirstDescendant(cf => cf.ByName("F7 Hold"))!.Click();
+        Window hold = await WaitWindowAsync(app, automation, "LabelBox", TimeSpan.FromSeconds(20));
+        hold.FindFirstDescendant(cf => cf.ByAutomationId("LabelBox"))!.AsTextBox().Text = "Phase 4 keyboard audit";
+        hold.FindFirstDescendant(cf => cf.ByName("F7 Hold"))!.Click();
+        await WaitUntilAsync(() => !GridHasRows(shell, "BillGrid"), TimeSpan.FromSeconds(20));
+        records.Add(new { journey = "hold-after-scan", billCleared = !GridHasRows(shell, "BillGrid") });
+        shell.FindFirstDescendant(cf => cf.ByName("F2 New bill"))!.Click();
+        scan.AsTextBox().Text = barcode;
+        scan.Focus();
+        Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
+        await WaitUntilAsync(() => GridHasRows(shell, "BillGrid"), TimeSpan.FromSeconds(20));
+        long beforePayment = long.Parse(Scalar(root, "SELECT COUNT(*) FROM sale WHERE status='COMPLETED'"),
+            System.Globalization.CultureInfo.InvariantCulture);
+        shell.FindFirstDescendant(cf => cf.ByName("F9 Cash"))!.Click();
+        Window payment = await WaitWindowAsync(app, automation, "CashBox", TimeSpan.FromSeconds(20));
+        payment.FindFirstDescendant(cf => cf.ByName("Complete bill"))!.Click();
+        await WaitUntilAsync(() => long.Parse(Scalar(root,
+            "SELECT COUNT(*) FROM sale WHERE status='COMPLETED'"),
+            System.Globalization.CultureInfo.InvariantCulture) == beforePayment + 1,
+            TimeSpan.FromSeconds(30), 100);
+        records.Add(new { journey = "new-scan-pay", completedSaleDelta = 1 });
+        File.WriteAllText(Path.Combine(root, "phase4-ui-local.json"), JsonSerializer.Serialize(records, JsonOptions));
+
+        shell.SetForeground();
+        shell.FindFirstDescendant(cf => cf.ByName("Stock"))!.Click();
+        await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("StockTabs")) is not null,
+            TimeSpan.FromSeconds(20));
+        shell.FindFirstDescendant(cf => cf.ByName("New count"))!.Click();
+        Window scope = await WaitWindowAsync(app, automation, "AllCategoriesBox", TimeSpan.FromSeconds(20));
+        scope.SetForeground();
+        scope.FindFirstDescendant(cf => cf.ByAutomationId("AllCategoriesBox"))!.AsCheckBox().IsChecked = true;
+        await WaitUntilAsync(() => scope.FindFirstDescendant(cf => cf.ByAutomationId("AllCategoriesBox"))!
+            .AsCheckBox().IsChecked == true, TimeSpan.FromSeconds(10), 100);
+        scope.FindFirstDescendant(cf => cf.ByName("Create sheet"))!.AsButton().Invoke();
+        Window count;
+        try { count = await WaitWindowAsync(app, automation, "CountSearchBox", TimeSpan.FromSeconds(30)); }
+        catch (TimeoutException)
+        {
+            File.WriteAllText(Path.Combine(root, "phase4-ui-count-diagnostics.txt"),
+                $"scopeError={scope.FindFirstDescendant(cf => cf.ByAutomationId("ErrorText"))?.Name}; " +
+                $"allCategories={scope.FindFirstDescendant(cf => cf.ByAutomationId("AllCategoriesBox"))?.AsCheckBox().IsChecked}; " +
+                $"windows={string.Join(" | ", app.GetAllTopLevelWindows(automation).Select(window => window.Name))}");
+            scope.CaptureToFile(Path.Combine(root, "phase4-ui-count-timeout.png"));
+            throw;
+        }
+        await WaitUntilAsync(() => GridHasRows(count, "CountGrid"), TimeSpan.FromSeconds(30), 100);
+        var countTimer = Stopwatch.StartNew();
+        count.FindFirstDescendant(cf => cf.ByAutomationId("CountSearchBox"))!.AsTextBox().Text = lotCode;
+        count.FindFirstDescendant(cf => cf.ByAutomationId("CountSearchBox"))!.Focus();
+        Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
+        await WaitUntilAsync(() => count.FindFirstDescendant(cf => cf.ByAutomationId("CountSearchBox"))!
+            .AsTextBox().Text.Length == 0, TimeSpan.FromSeconds(30), 100);
+        records.Add(new { journey = "whole-count-search-to-edit", milliseconds = countTimer.Elapsed.TotalMilliseconds,
+            total = count.FindFirstDescendant(cf => cf.ByAutomationId("ProgressText"))?.Name,
+            visibleRows = GridRows(count, "CountGrid") });
+        count.FindFirstDescendant(cf => cf.ByAutomationId("SaveButton"))!.Click();
+        await WaitUntilAsync(() => app.GetAllTopLevelWindows(automation).All(window =>
+            window.FindFirstDescendant(cf => cf.ByAutomationId("CountSearchBox")) is null), TimeSpan.FromSeconds(20));
+        File.WriteAllText(Path.Combine(root, "phase4-ui-local.json"), JsonSerializer.Serialize(records, JsonOptions));
+    }
 
     private static bool ControlNameContains(Window shell, string id, string value) =>
         shell.FindFirstDescendant(cf => cf.ByAutomationId(id))?.Name.Contains(value,

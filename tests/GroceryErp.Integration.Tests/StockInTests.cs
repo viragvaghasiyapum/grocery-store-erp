@@ -338,6 +338,12 @@ public sealed class StockInTests
         nextPage.HasMore.ShouldBeFalse();
         (await fixture.Inventory.FindStockCountLineAsync(countId, nextPage.Lines[0].LotCode,
             cancellationToken: ct)).ShouldBe(nextPage.Lines[0].Id);
+        string productName = firstPage.Lines[0].ProductName;
+        (await fixture.Inventory.FindStockCountLineAsync(countId,
+            productName.Substring(1, Math.Min(4, productName.Length - 1)), cancellationToken: ct))
+            .ShouldBe(firstPage.Lines[0].Id);
+        (await fixture.Inventory.FindStockCountLineAsync(countId,
+            productName[..2], cancellationToken: ct)).ShouldBe(firstPage.Lines[0].Id);
 
         await fixture.Inventory.SetCountedQuantityAsync(countId, first.LotIds[0], new Quantity(11), ct);
         StockCountPage progress = await fixture.Inventory.GetStockCountPageAsync(countId, pageSize: 1, cancellationToken: ct);
@@ -472,6 +478,59 @@ public sealed class StockInTests
     }
 
     [Fact]
+    public async Task OpeningStockImport_BatchesAndReplayPreserveExactlyOneLotPerRow()
+    {
+        using var fixture = new StockInFixture();
+        OpeningStockLine[] lines = Enumerable.Range(0, 205).Select(index => new OpeningStockLine(
+            fixture.ProductId, Quantity.One, new Money(20), new Money(30), new Money(35),
+            fixture.Date.AddMonths(2), $"IMPORT-{index}", fixture.Date)).ToArray();
+        string operationId = OperationGuard.NewId();
+        long first = await fixture.Inventory.ImportOpeningStockAsync(lines, operationId, TestContext.Current.CancellationToken);
+        (await fixture.Inventory.ImportOpeningStockAsync(lines, operationId, TestContext.Current.CancellationToken))
+            .ShouldBe(first);
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM import_batch WHERE op_id=@operationId",
+            new { operationId }).ShouldBe(3);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot WHERE batch_no LIKE 'IMPORT-%'")
+            .ShouldBe(205);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement WHERE type_code='OPENING'")
+            .ShouldBe(205);
+        OpeningStockLine[] changed = lines.ToArray();
+        changed[0] = changed[0] with { Quantity = new Quantity(2) };
+        DomainException conflict = await Should.ThrowAsync<DomainException>(() =>
+            fixture.Inventory.ImportOpeningStockAsync(changed, operationId, TestContext.Current.CancellationToken));
+        conflict.Code.ShouldBe(ErrorCode.Validation);
+    }
+
+    [Fact]
+    public async Task LotEdits_RejectStaleValuesWithoutOverwritingNewerEdits()
+    {
+        using var fixture = new StockInFixture();
+        long lotId = await fixture.Inventory.ImportOpeningStockAsync(
+            [new(fixture.ProductId, Quantity.One, new Money(20), new Money(30), new Money(35),
+                fixture.Date.AddMonths(2), "CAS", fixture.Date)],
+            OperationGuard.NewId(), TestContext.Current.CancellationToken);
+        await fixture.Inventory.ChangeLotPriceAsync(lotId, new Money(31), new Money(35),
+            new Money(30), new Money(35), TestContext.Current.CancellationToken);
+        DomainException stalePrice = await Should.ThrowAsync<DomainException>(() =>
+            fixture.Inventory.ChangeLotPriceAsync(lotId, new Money(32), new Money(35),
+                new Money(30), new Money(35), TestContext.Current.CancellationToken));
+        stalePrice.Code.ShouldBe(ErrorCode.Validation);
+        await fixture.Inventory.SetLotActiveAsync(lotId, false, true, TestContext.Current.CancellationToken);
+        DomainException staleActive = await Should.ThrowAsync<DomainException>(() =>
+            fixture.Inventory.SetLotActiveAsync(lotId, true, true, TestContext.Current.CancellationToken));
+        staleActive.Code.ShouldBe(ErrorCode.Validation);
+        using var connection = fixture.Factory.Open();
+        connection.QuerySingle<(long Price, long Active)>("""
+            SELECT selling_price AS Price,is_active AS Active FROM product_lot WHERE id=@lotId
+            """, new { lotId }).ShouldBe((31_000L, 0L));
+        connection.QuerySingle<(long Quantity, long Cost, long Selling, long Mrp)>("""
+            SELECT quantity,cost_value,selling_value,mrp_value
+            FROM product_stock_total WHERE product_id=@productId
+            """, new { productId = fixture.ProductId }).ShouldBe((1_000L, 20_000L, 31_000L, 35_000L));
+    }
+
+    [Fact]
     public async Task NegativeStockFefo_DoesNotFallBackToExpiredLot()
     {
         using var fixture = new StockInFixture();
@@ -506,10 +565,14 @@ public sealed class StockInTests
             connection.Execute("UPDATE product_lot SET qty_on_hand=123000 WHERE id=@id", new { id = posted.LotIds[0] });
 
         (await fixture.Inventory.RebuildStockCacheAsync(TestContext.Current.CancellationToken)).ShouldBe(1);
+        (await fixture.Inventory.IsStockCacheRebuildPendingAsync(TestContext.Current.CancellationToken)).ShouldBeFalse();
 
         using var verify = fixture.Factory.Open();
         verify.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = posted.LotIds[0] }).ShouldBe(11000L);
         verify.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity='stock_cache' AND action='REBUILD'").ShouldBe(1L);
+        verify.Execute("UPDATE setting SET value='1' WHERE key='maintenance.stock_rebuild_pending'");
+        (await fixture.Inventory.RebuildStockCacheAsync(TestContext.Current.CancellationToken)).ShouldBe(0);
+        (await fixture.Inventory.IsStockCacheRebuildPendingAsync(TestContext.Current.CancellationToken)).ShouldBeFalse();
     }
 
     private sealed class StockInFixture : IDisposable

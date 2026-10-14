@@ -15,6 +15,7 @@ public static class PerformanceMetrics
     public static readonly Histogram<double> TransactionMilliseconds = Meter.CreateHistogram<double>("db.write.transaction", "ms");
     public static readonly Histogram<long> WalBytes = Meter.CreateHistogram<long>("db.wal.bytes", "By");
     public static readonly Histogram<double> BackupMilliseconds = Meter.CreateHistogram<double>("backup.duration", "ms");
+    public static readonly Histogram<double> BackupStageMilliseconds = Meter.CreateHistogram<double>("backup.stage.duration", "ms");
     public static readonly Histogram<double> MaintenanceMilliseconds = Meter.CreateHistogram<double>("maintenance.duration", "ms");
     public static readonly Histogram<double> CheckpointMilliseconds = Meter.CreateHistogram<double>("db.checkpoint.duration", "ms");
     public static readonly Counter<long> BusyRetries = Meter.CreateCounter<long>("db.busy.retries");

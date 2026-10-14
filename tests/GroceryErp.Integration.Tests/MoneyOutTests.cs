@@ -63,6 +63,26 @@ public sealed class MoneyOutTests
     }
 
     [Fact]
+    public async Task ActionableExpiryCount_MatchesAlertViewAcrossThresholdChanges()
+    {
+        using var fixture = new Fixture();
+        string soon = DateOnly.FromDateTime(DateTime.Now).AddDays(3)
+            .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        using var connection = fixture.Factory.Open();
+        connection.Execute("UPDATE product_lot SET expiry_date=@soon WHERE id=@id", new { soon, id = fixture.LotId });
+        long productId = connection.ExecuteScalar<long>("SELECT product_id FROM product_lot WHERE id=@id", new { id = fixture.LotId });
+        async Task CheckAsync() => (await fixture.MoneyOut.GetActionableExpiryCountAsync(TestContext.Current.CancellationToken))
+            .ShouldBe(connection.ExecuteScalar<int>("SELECT COUNT(*) FROM v_expiry_alert WHERE bucket IN ('EXPIRED','CRITICAL')"));
+        await CheckAsync();
+        connection.Execute("UPDATE product SET expiry_alert_days=2 WHERE id=@productId", new { productId });
+        await CheckAsync();
+        connection.Execute("UPDATE product SET expiry_alert_days=7 WHERE id=@productId", new { productId });
+        await CheckAsync();
+        connection.Execute("UPDATE product_lot SET is_active=0 WHERE id=@id", new { id = fixture.LotId });
+        await CheckAsync();
+    }
+
+    [Fact]
     public async Task ExpenseAndSalary_AreChargedToCorrectPnlDates()
     {
         using var fixture = new Fixture();

@@ -21,7 +21,7 @@ public sealed class NullMigrationBackup : IMigrationBackup
 
 public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMigrationBackup backup)
 {
-    public const int LatestVersion = 19;
+    public const int LatestVersion = 24;
 
     public void Run()
     {
@@ -44,6 +44,13 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
                     transaction: transaction) != 0)
                 sql = sql.Replace("ALTER TABLE pnl_day ADD COLUMN sales INTEGER NOT NULL DEFAULT 0;",
                     string.Empty, StringComparison.Ordinal);
+            if (script.Version == 24)
+                foreach (string column in new[] { "selling_value", "mrp_value" })
+                    if (connection.ExecuteScalar<long>(
+                            "SELECT COUNT(*) FROM pragma_table_info('product_stock_total') WHERE name=@column",
+                            new { column }, transaction) != 0)
+                        sql = sql.Replace($"ALTER TABLE product_stock_total ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0;",
+                            string.Empty, StringComparison.Ordinal);
             connection.Execute(sql, transaction: transaction);
             if (script.Version == 19)
                 DashboardTopProjection.Rebuild(connection, transaction, DateOnly.FromDateTime(DateTime.Now));

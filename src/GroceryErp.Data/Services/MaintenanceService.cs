@@ -26,8 +26,14 @@ public sealed class MaintenanceService(
         (string? lastSaleDate, bool lotCacheHealthy) = await database.ReadAsync(connection =>
         {
             string? lastDate = connection.ExecuteScalar<string?>("SELECT MAX(sale_date) FROM sale WHERE status = 'COMPLETED'");
-            // The full mismatch view groups the entire movement history. Check only recently
-            // touched lots before login; the complete reconciliation runs in maintenance.
+            string? clean = connection.ExecuteScalar<string?>(
+                "SELECT value FROM setting WHERE key='maintenance.clean_shutdown'");
+            if (connection.ExecuteScalar<string?>(
+                    "SELECT value FROM setting WHERE key='maintenance.stock_rebuild_pending'") == "1")
+                return (lastDate, false);
+            if (clean == "1") return (lastDate, true);
+            // An interrupted session needs a bounded pre-login check. The full
+            // reconciliation runs after the shell has been idle.
             bool healthy = connection.ExecuteScalar<long>("""
                 WITH recent_lots AS MATERIALIZED (
                     SELECT DISTINCT lot_id FROM (
@@ -46,6 +52,22 @@ public sealed class MaintenanceService(
         return new(HasLowDiskSpace(paths.Root), lastSaleDate, lotCacheHealthy);
     }
 
+    public Task BeginSessionAsync(CancellationToken cancellationToken = default) =>
+        database.WriteAsync(transaction =>
+        {
+            // This commit is durable before the shell can accept a sale. A crash leaves
+            // the marker dirty, while a previous dirty session also queues full repair.
+            transaction.Connection.Execute("""
+                INSERT INTO setting(key,value) VALUES ('maintenance.recovery_pending',
+                    CASE WHEN (SELECT value FROM setting WHERE key='maintenance.clean_shutdown')='1'
+                         THEN COALESCE((SELECT value FROM setting WHERE key='maintenance.recovery_pending'),'0')
+                         ELSE '1' END)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+                INSERT INTO setting(key,value) VALUES ('maintenance.clean_shutdown','0')
+                ON CONFLICT(key) DO UPDATE SET value='0';
+                """, transaction: transaction.Transaction);
+        }, cancellationToken);
+
     public Task OverrideClockWarningAsync(string lastSaleDate, CancellationToken cancellationToken = default) =>
         database.WriteAsync(transaction =>
         {
@@ -63,8 +85,9 @@ public sealed class MaintenanceService(
 
         CleanupTemporaryFiles();
         backups.PurgeExpiredRestoreData();
+        cancellationToken.ThrowIfCancellationRequested();
         if (!HasBackupToday())
-            backups.Create("daily");
+            backups.Create("daily", cancellationToken);
 
         if (await IsWeeklyIntegrityCheckDueAsync(cancellationToken).ConfigureAwait(false))
             await RunWeeklyIntegrityChecksAsync(cancellationToken).ConfigureAwait(false);
@@ -75,7 +98,9 @@ public sealed class MaintenanceService(
         {
             string? raw = connection.ExecuteScalar<string?>(
                 "SELECT value FROM setting WHERE key = 'maintenance.integrity_last_run'");
-            return !DateOnly.TryParseExact(raw, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+            string? recovery = connection.ExecuteScalar<string?>(
+                "SELECT value FROM setting WHERE key='maintenance.recovery_pending'");
+            return recovery == "1" || !DateOnly.TryParseExact(raw, "yyyy-MM-dd", CultureInfo.InvariantCulture,
                        DateTimeStyles.None, out DateOnly previous) || previous > clock.BusinessDate ||
                    previous.AddDays(7) <= clock.BusinessDate;
         }, cancellationToken);
@@ -92,18 +117,31 @@ public sealed class MaintenanceService(
                 throw new DomainException(ErrorCode.BackupInvalid, "foreign key check failed");
             if (connection.Query("SELECT lot_id FROM v_lot_cache_mismatch LIMIT 1").Any())
                 throw new DomainException(ErrorCode.BackupInvalid, "stock cache mismatch");
-            // FTS5 keeps a separate index; checking it with SQLite's supported command catches
-            // stale or corrupt product search data before a user relies on search results.
-            connection.Execute("INSERT INTO product_fts(product_fts) VALUES ('integrity-check');");
             return true;
         }, cancellationToken).ConfigureAwait(false);
 
         await database.WriteAsync(transaction =>
         {
+            using CancellationTokenRegistration interrupt = cancellationToken.Register(
+                () => SQLitePCL.raw.sqlite3_interrupt(transaction.Connection.Handle));
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                // FTS integrity-check is a write; serialize it with POS writes.
+                transaction.Connection.Execute("INSERT INTO product_fts(product_fts) VALUES ('integrity-check');",
+                    transaction: transaction.Transaction);
+            }
+            catch (SqliteException exception) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException("FTS integrity check was canceled.", exception, cancellationToken);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
             string date = clock.BusinessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             transaction.Connection.Execute("""
                 INSERT INTO setting(key, value) VALUES ('maintenance.integrity_last_run', @date)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                ; INSERT INTO setting(key,value) VALUES ('maintenance.recovery_pending','0')
+                ON CONFLICT(key) DO UPDATE SET value='0'
                 """, new { date }, transaction.Transaction);
             auditLog.Write(transaction, "maintenance", 0, "INTEGRITY_CHECK", new { date, result = "ok" });
         }, cancellationToken).ConfigureAwait(false);
@@ -112,13 +150,17 @@ public sealed class MaintenanceService(
     public void Shutdown()
     {
         using var timing = PerformanceMetrics.TrackMaintenance("shutdown");
-        if (!backups.HasRecentVerifiedDailyBackup(TimeSpan.FromHours(12))) backups.Create("close");
+        if (!backups.HasRecentVerifiedScheduledBackup(TimeSpan.FromHours(12))) backups.Create("close");
         factory.SampleWalBytes();
         using SqliteConnection connection = factory.Open();
         connection.Execute("PRAGMA optimize;");
         long started = Stopwatch.GetTimestamp();
         try { connection.Execute("PRAGMA wal_checkpoint(TRUNCATE);"); }
         finally { PerformanceMetrics.CheckpointMilliseconds.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds); }
+        connection.Execute("""
+            INSERT INTO setting(key,value) VALUES ('maintenance.clean_shutdown','1')
+            ON CONFLICT(key) DO UPDATE SET value='1'
+            """);
         factory.SampleWalBytes();
     }
 
@@ -176,6 +218,7 @@ public sealed class StartupPipeline(
         migrations.Run();
         await settings.LoadAsync(cancellationToken).ConfigureAwait(false);
         StartupHealth health = await maintenance.CheckBeforeShellAsync(cancellationToken).ConfigureAwait(false);
+        await maintenance.BeginSessionAsync(cancellationToken).ConfigureAwait(false);
         return new(health, settings.Current);
     }
 }

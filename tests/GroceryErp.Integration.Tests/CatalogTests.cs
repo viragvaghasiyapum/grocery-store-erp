@@ -393,6 +393,35 @@ public sealed class CatalogTests
     }
 
     [Fact]
+    public async Task ProductImport_BatchesReplayAndRejectChangedPayload()
+    {
+        using var fixture = new CatalogFixture();
+        var importer = new ProductExcelImporter(fixture.Database, new AuditLog(), fixture.Settings);
+        ProductImportRow[] rows = Enumerable.Range(1, 1001).Select(index => new ProductImportRow(
+            index + 1, $"BATCH{index:0000}", $"Batch product {index}", null, null,
+            "Groceries", null, null, "PCS", null, null, null, 10m, 20m, 0m, null,
+            false, null, false, [])).ToArray();
+        var preview = new ProductImportPreview(rows);
+        ImportJobs.OperationIdFor("PRODUCT", rows).ShouldBe(ImportJobs.OperationIdFor("PRODUCT", rows.ToList()));
+        string operationId = OperationGuard.NewId();
+        ProductImportSummary result = await importer.ImportAsync(preview, operationId,
+            cancellationToken: TestContext.Current.CancellationToken);
+        result.ShouldBe(new ProductImportSummary(1001, 0, 0));
+        (await importer.ImportAsync(preview, operationId,
+            cancellationToken: TestContext.Current.CancellationToken)).WasReplay.ShouldBeTrue();
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM import_batch WHERE op_id=@operationId",
+            new { operationId }).ShouldBe(11);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE sku LIKE 'BATCH%'").ShouldBe(1001);
+        ProductImportRow[] changed = rows.ToArray();
+        changed[0] = changed[0] with { Name = "Different product" };
+        DomainException conflict = await Should.ThrowAsync<DomainException>(() => importer.ImportAsync(
+            new ProductImportPreview(changed), operationId,
+            cancellationToken: TestContext.Current.CancellationToken));
+        conflict.Code.ShouldBe(ErrorCode.Validation);
+    }
+
+    [Fact]
     public async Task UnitAndTaxMasters_AreAuditedAndUsedUnitCannotChangeFractionRule()
     {
         using var fixture = new CatalogFixture();

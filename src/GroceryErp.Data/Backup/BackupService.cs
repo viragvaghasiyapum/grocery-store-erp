@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Globalization;
 using System.Diagnostics;
 using System.IO.Compression;
@@ -29,16 +30,46 @@ public sealed class BackupService(
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     private readonly object _backupGate = new();
-    private DateTime? _lastVerifiedDailyBackup;
+    private DateTime? _lastVerifiedScheduledBackup;
+    internal Func<string, long> AvailableFreeSpace { get; set; } =
+        static volume => new DriveInfo(volume).AvailableFreeSpace;
     // Used by the scale-audit process to stop at a completed filesystem step.
     internal Action<string>? RestoreBoundary { get; set; }
 
     public string BackupDirectory => settings.Current.BackupDirectory;
     public bool HasPendingRestore => File.Exists(Path.Combine(paths.DbDir, "restore.pending.json"));
-    public bool HasRecentVerifiedDailyBackup(TimeSpan maximumAge)
+    public bool HasRecentVerifiedScheduledBackup(TimeSpan maximumAge)
     {
         lock (_backupGate)
-            return _lastVerifiedDailyBackup is { } at && clock.Now >= at && clock.Now - at <= maximumAge;
+        {
+            if (_lastVerifiedScheduledBackup is { } at && clock.Now >= at && clock.Now - at <= maximumAge)
+                return true;
+            // Final .zip files are only renamed into place after checksum
+            // verification. Read the small manifest after a restart so short
+            // subsequent sessions do not repeat a daily or close backup.
+            if (!Directory.Exists(BackupDirectory)) return false;
+            foreach (FileInfo file in new DirectoryInfo(BackupDirectory)
+                         .EnumerateFiles("GroceryErp_*.zip")
+                         .OrderByDescending(static item => item.LastWriteTime))
+            {
+                if (clock.Now - file.LastWriteTime > maximumAge) break;
+                if (clock.Now < file.LastWriteTime) continue;
+                try
+                {
+                    using ZipArchive archive = ZipFile.OpenRead(file.FullName);
+                    BackupManifest manifest = ReadManifest(archive);
+                    if (manifest.Reason is not ("daily" or "close") ||
+                        archive.GetEntry("grocery.db") is null) continue;
+                    _lastVerifiedScheduledBackup = file.LastWriteTime;
+                    return true;
+                }
+                catch (Exception exception) when (exception is IOException or InvalidDataException or JsonException or DomainException)
+                {
+                    // An unreadable archive never suppresses the close backup.
+                }
+            }
+            return false;
+        }
     }
 
     public BackupHealth GetHealth()
@@ -114,14 +145,20 @@ public sealed class BackupService(
 
     public void CreateBeforeMigration(string reason) => Create(reason);
 
-    public BackupInfo Create(string reason)
+    public BackupInfo Create(string reason) => Create(reason, CancellationToken.None);
+
+    public BackupInfo Create(string reason, CancellationToken cancellationToken)
     {
         long started = Stopwatch.GetTimestamp();
-        try { lock (_backupGate) return CreateCore(reason); }
+        try { lock (_backupGate) return CreateCore(reason, cancellationToken); }
+        catch (SqliteException exception) when (cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException("Backup was canceled.", exception, cancellationToken);
+        }
         finally { PerformanceMetrics.BackupMilliseconds.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds); }
     }
 
-    private BackupInfo CreateCore(string reason)
+    private BackupInfo CreateCore(string reason, CancellationToken cancellationToken)
     {
         string safeReason = SanitizeReason(reason);
         string stamp = clock.Now.ToString("yyyy-MM-dd_HHmmss", CultureInfo.InvariantCulture);
@@ -129,48 +166,77 @@ public sealed class BackupService(
         string backupDirectory = settings.Current.BackupDirectory;
         Directory.CreateDirectory(workingDirectory);
         Directory.CreateDirectory(backupDirectory);
+        string? partial = null;
         try
         {
+            long stageStarted = Stopwatch.GetTimestamp();
+            void RecordStage(string stage)
+            {
+                PerformanceMetrics.BackupStageMilliseconds.Record(
+                    Stopwatch.GetElapsedTime(stageStarted).TotalMilliseconds,
+                    new KeyValuePair<string, object?>("operation", stage));
+                stageStarted = Stopwatch.GetTimestamp();
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            EnsureBackupCapacity(workingDirectory, backupDirectory);
             string snapshot = Path.Combine(workingDirectory, "grocery.db");
             using (SqliteConnection connection = factory.Open())
             using (SqliteCommand command = connection.CreateCommand())
+            using (CancellationTokenRegistration interrupt = cancellationToken.Register(
+                       () => SQLitePCL.raw.sqlite3_interrupt(connection.Handle)))
             {
                 command.CommandText = "VACUUM INTO $path";
                 command.Parameters.AddWithValue("$path", snapshot);
                 command.ExecuteNonQuery();
             }
+            cancellationToken.ThrowIfCancellationRequested();
+            RecordStage("snapshot");
 
-            (string quickCheck, long schemaVersion, BackupSummary summary) = InspectDatabase(snapshot);
+            (string quickCheck, long schemaVersion, BackupSummary summary) = InspectDatabase(snapshot, cancellationToken);
             if (!string.Equals(quickCheck, "ok", StringComparison.Ordinal))
                 throw new DomainException(ErrorCode.BackupInvalid, quickCheck);
+            RecordStage("inspect");
 
             var manifest = new BackupManifest(
                 1, "GroceryErp", typeof(BackupService).Assembly.GetName().Version?.ToString(3) ?? "1.0.0",
                 schemaVersion, clock.Now.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture), safeReason,
                 Environment.MachineName,
-                new("grocery.db", new FileInfo(snapshot).Length, Sha256Hex(snapshot), quickCheck), summary);
+                new("grocery.db", new FileInfo(snapshot).Length, Sha256Hex(snapshot, cancellationToken), quickCheck), summary);
+            RecordStage("hash-snapshot");
             string final = UniqueBackupPath(backupDirectory, stamp, safeReason);
-            string partial = final + ".partial";
+            partial = final + ".partial";
             using (ZipArchive archive = ZipFile.Open(partial, ZipArchiveMode.Create))
             {
-                archive.CreateEntryFromFile(snapshot, "grocery.db", CompressionLevel.Fastest);
+                using (FileStream source = File.OpenRead(snapshot))
+                using (Stream destination = archive.CreateEntry("grocery.db", CompressionLevel.Fastest).Open())
+                    CopyWithCancellation(source, destination, cancellationToken);
                 using Stream json = archive.CreateEntry("manifest.json", CompressionLevel.Fastest).Open();
                 JsonSerializer.Serialize(json, manifest, JsonOptions);
             }
+            RecordStage("zip");
             // A failed verification must never leave a final-looking backup behind.
-            Verify(partial);
+            Verify(partial, cancellationToken);
+            RecordStage("verify-zip");
+            cancellationToken.ThrowIfCancellationRequested();
             File.Move(partial, final);
-            if (safeReason == "daily") _lastVerifiedDailyBackup = clock.Now;
+            if (safeReason is "daily" or "close") _lastVerifiedScheduledBackup = clock.Now;
             Rotate(backupDirectory, settings.Current.BackupKeep, clock.Now.ToUniversalTime());
+            RecordStage("finalize");
             return new(final, new FileInfo(final).Length, manifest);
         }
         finally
         {
+            if (partial is not null)
+                try { if (File.Exists(partial)) File.Delete(partial); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
             TryDeleteDirectory(workingDirectory);
         }
     }
 
-    public static BackupManifest Verify(string zipPath)
+    public static BackupManifest Verify(string zipPath) => Verify(zipPath, CancellationToken.None);
+
+    public static BackupManifest Verify(string zipPath, CancellationToken cancellationToken)
     {
         try
         {
@@ -179,7 +245,7 @@ public sealed class BackupService(
             ZipArchiveEntry database = archive.GetEntry("grocery.db")
                 ?? throw new DomainException(ErrorCode.BackupInvalid, "database missing");
             using Stream stream = database.Open();
-            string hash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+            string hash = Sha256Hex(stream, cancellationToken);
             if (!hash.Equals(manifest.Database.Sha256, StringComparison.Ordinal) || database.Length != manifest.Database.Bytes)
                 throw new DomainException(ErrorCode.BackupInvalid, "checksum or length mismatch");
             return manifest;
@@ -495,11 +561,15 @@ public sealed class BackupService(
         return manifest;
     }
 
-    private static (string QuickCheck, long Version, BackupSummary Summary) InspectDatabase(string databaseFile)
+    private static (string QuickCheck, long Version, BackupSummary Summary) InspectDatabase(
+        string databaseFile, CancellationToken cancellationToken = default)
     {
         var builder = new SqliteConnectionStringBuilder { DataSource = databaseFile, Mode = SqliteOpenMode.ReadOnly, Pooling = false };
         using var connection = new SqliteConnection(builder.ToString());
         connection.Open();
+        using CancellationTokenRegistration interrupt = cancellationToken.Register(
+            () => SQLitePCL.raw.sqlite3_interrupt(connection.Handle));
+        cancellationToken.ThrowIfCancellationRequested();
         return InspectDatabase(connection);
     }
 
@@ -518,10 +588,44 @@ public sealed class BackupService(
         return (quickCheck, version, summary);
     }
 
-    private static string Sha256Hex(string file)
+    private static string Sha256Hex(string file, CancellationToken cancellationToken = default)
     {
         using FileStream stream = File.OpenRead(file);
-        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+        return Sha256Hex(stream, cancellationToken);
+    }
+
+    private static string Sha256Hex(Stream stream, CancellationToken cancellationToken)
+    {
+        using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(128 * 1024);
+        try
+        {
+            int count;
+            while ((count = stream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                hash.AppendData(buffer, 0, count);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        }
+        finally { ArrayPool<byte>.Shared.Return(buffer); }
+    }
+
+    private static void CopyWithCancellation(Stream source, Stream destination, CancellationToken cancellationToken)
+    {
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(128 * 1024);
+        try
+        {
+            int count;
+            while ((count = source.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                destination.Write(buffer, 0, count);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        finally { ArrayPool<byte>.Shared.Return(buffer); }
     }
 
     private static string SanitizeReason(string reason)
@@ -529,6 +633,35 @@ public sealed class BackupService(
         string safe = new(reason.Where(static character => char.IsAsciiLetterOrDigit(character) || character == '-').ToArray());
         if (string.IsNullOrWhiteSpace(safe)) throw new ArgumentException("A backup reason is required.", nameof(reason));
         return safe;
+    }
+
+    private void EnsureBackupCapacity(string workingDirectory, string backupDirectory)
+    {
+        string temporaryVolume = Path.GetPathRoot(Path.GetFullPath(workingDirectory))!;
+        string backupVolume = Path.GetPathRoot(Path.GetFullPath(backupDirectory))!;
+        try
+        {
+            long databaseBytes = new FileInfo(paths.DatabaseFile).Length;
+            long temporaryFree = AvailableFreeSpace(temporaryVolume);
+            bool sharedVolume = string.Equals(temporaryVolume, backupVolume, StringComparison.OrdinalIgnoreCase);
+            long backupFree = sharedVolume ? temporaryFree : AvailableFreeSpace(backupVolume);
+            if (!HasBackupCapacity(temporaryFree, backupFree, databaseBytes, sharedVolume))
+                throw new DomainException(ErrorCode.DiskFull);
+        }
+        catch (Exception exception) when (exception is ArgumentException or DriveNotFoundException or NotSupportedException)
+        {
+            // DriveInfo cannot measure every network mount; the filesystem will
+            // still report a failed write and the partial backup is discarded.
+        }
+    }
+
+    internal static bool HasBackupCapacity(long temporaryFree, long backupFree,
+        long databaseBytes, bool sharedVolume)
+    {
+        long reserve = Math.Max(256L * 1024 * 1024, databaseBytes / 10);
+        return sharedVolume
+            ? temporaryFree >= 2 * databaseBytes + reserve
+            : temporaryFree >= databaseBytes + reserve && backupFree >= databaseBytes + reserve;
     }
 
     private static string UniqueBackupPath(string directory, string stamp, string reason)
