@@ -1,5 +1,8 @@
 using System.Diagnostics;
+using System.IO.Compression;
+using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Xml.Linq;
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Input;
 using FlaUI.UIA3;
@@ -35,14 +38,17 @@ public sealed class ScaleUiTests
         UiApplication? app = null;
         try
         {
+            var launchTimer = Stopwatch.StartNew();
             app = UiApplication.Launch(start);
             using var automation = new UIA3Automation();
             Window login = await WaitWindowAsync(app, automation, "PasswordBox", TimeSpan.FromMinutes(3));
+            double loginReadyMilliseconds = launchTimer.Elapsed.TotalMilliseconds;
             login.FindFirstDescendant(cf => cf.ByAutomationId("UsernameBox"))!.AsTextBox().Text = "owner";
             login.FindFirstDescendant(cf => cf.ByAutomationId("PasswordBox"))!.AsTextBox().Text = "scale-audit-2026";
             login.FindAllDescendants().First(element =>
                 element.ControlType == FlaUI.Core.Definitions.ControlType.Button && element.Name == "Sign in").Click();
             Window shell;
+            var signInTimer = Stopwatch.StartNew();
             try
             {
                 shell = await WaitWindowAsync(app, automation, "BackupStatusButton",
@@ -57,6 +63,11 @@ public sealed class ScaleUiTests
                 login.CaptureToFile(Path.Combine(root, "scale-audit-login-diagnostics.png"));
                 throw;
             }
+            File.WriteAllText(Path.Combine(root, "phase6-ui-startup.json"), JsonSerializer.Serialize(new
+            {
+                loginReadyMilliseconds,
+                shellReadyAfterSignInMilliseconds = signInTimer.Elapsed.TotalMilliseconds,
+            }, JsonOptions));
             foreach (Window other in app.GetAllTopLevelWindows(automation).Where(window =>
                          window.FindFirstDescendant(cf => cf.ByAutomationId("BackupStatusButton")) is null))
                 other.FindFirstDescendant(cf => cf.ByName("OK"))?.Click();
@@ -64,6 +75,79 @@ public sealed class ScaleUiTests
             foreach (Window other in app.GetAllTopLevelWindows(automation).Where(window =>
                          window.FindFirstDescendant(cf => cf.ByAutomationId("BackupStatusButton")) is null))
                 other.FindFirstDescendant(cf => cf.ByName("Later"))?.Click();
+
+            if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_PHASE5_UPDATE") == "1" ||
+                Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_PHASE5_OUTPUT") == "1")
+            {
+                for (int attempt = 0; attempt < 20; attempt++)
+                {
+                    Window? review = app.GetAllTopLevelWindows(automation).FirstOrDefault(window =>
+                        window.FindAllDescendants().Any(element =>
+                            DescribeElement(element).Contains("Saved print jobs", StringComparison.Ordinal)));
+                    if (review is null) break;
+                    review.FindFirstDescendant(cf => cf.ByName("OK"))?.Click();
+                    await Task.Delay(250, TestContext.Current.CancellationToken);
+                }
+            }
+
+            if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_PHASE5_UPDATE") == "1")
+            {
+                shell.FindFirstDescendant(cf => cf.ByAutomationId("UpdateButton"))!.Click();
+                Window picker = await WaitWindowAsync(app, automation, "1152", TimeSpan.FromSeconds(20));
+                picker.FindFirstDescendant(cf => cf.ByAutomationId("1152"))!.AsTextBox().Text =
+                    Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_UPDATE_FEED")
+                    ?? throw new InvalidOperationException("The Phase 5 update feed is missing.");
+                picker.FindFirstDescendant(cf => cf.ByName("Select Folder"))!.Click();
+                await Task.Delay(2000, TestContext.Current.CancellationToken);
+                string installDirectory = Path.GetDirectoryName(Path.GetDirectoryName(executable)!)!;
+                string versionFile = Path.Combine(installDirectory, "current", "sq.version");
+                string previousVersion = XDocument.Load(versionFile).Descendants()
+                    .First(element => element.Name.LocalName == "version").Value;
+                string nextVersion = Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_UPDATE_VERSION")
+                    ?? throw new InvalidOperationException("The target update version is missing.");
+                int backupsBefore = Directory.EnumerateFiles(Path.Combine(root, "backups"), "*pre-update.zip").Count();
+                var updateTimer = Stopwatch.StartNew();
+                (shell.FindFirstDescendant(cf => cf.ByName("Yes"))
+                    ?? throw new InvalidOperationException("The update confirmation is missing.")).Click();
+                await WaitUntilAsync(() =>
+                {
+                    try
+                    {
+                        return File.ReadAllText(versionFile).Contains($"<version>{nextVersion}</version>",
+                        StringComparison.Ordinal);
+                    }
+                    catch (IOException) { return false; }
+                }, TimeSpan.FromMinutes(7), 500);
+                await WaitUntilAsync(() => Directory.EnumerateFiles(Path.Combine(root, "backups"),
+                    "*pre-update.zip").Count() > backupsBefore, TimeSpan.FromMinutes(2));
+                string backup = Directory.EnumerateFiles(Path.Combine(root, "backups"), "*pre-update.zip")
+                    .OrderByDescending(File.GetLastWriteTimeUtc).First();
+                Assert.True(new FileInfo(backup).Length > 100_000_000L);
+                using (var connection = new SqliteConnection($"Data Source={Path.Combine(root, "db", "grocery.db")};Mode=ReadOnly"))
+                {
+                    connection.Open();
+                    using var command = connection.CreateCommand();
+                    command.CommandText = "SELECT COUNT(*) FROM sale_line";
+                    Assert.True((long)command.ExecuteScalar()! > 5_000_000L);
+                }
+                File.WriteAllText(Path.Combine(root, "phase5-update-result.json"), JsonSerializer.Serialize(new
+                {
+                    from = previousVersion,
+                    to = nextVersion,
+                    updateMilliseconds = updateTimer.Elapsed.TotalMilliseconds,
+                    backupBytes = new FileInfo(backup).Length,
+                    backup = Path.GetFileName(backup),
+                }, JsonOptions));
+                return;
+            }
+
+            if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_PHASE5_OUTPUT") == "1")
+            {
+                await AuditPhase5OutputAsync(app, automation, shell, root);
+                shell.Close();
+                await WaitUntilAsync(() => app.HasExited, TimeSpan.FromMinutes(3));
+                return;
+            }
 
             if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_PHASE4") == "1")
             {
@@ -140,10 +224,16 @@ public sealed class ScaleUiTests
                 int gridRowItems = shell.FindFirstDescendant(cf => cf.ByAutomationId(gridId))?
                     .FindAllDescendants().Count(element =>
                         element.ControlType == FlaUI.Core.Definitions.ControlType.DataItem) ?? 0;
-                var record = new { page = label, controlFoundMilliseconds,
+                var record = new
+                {
+                    page = label,
+                    controlFoundMilliseconds,
                     settledMilliseconds = timer.Elapsed.TotalMilliseconds,
-                    workingSet = process?.WorkingSet64, peakWorkingSet = process?.PeakWorkingSet64,
-                    gridRowItems, alive = !app.HasExited };
+                    workingSet = process?.WorkingSet64,
+                    peakWorkingSet = process?.PeakWorkingSet64,
+                    gridRowItems,
+                    alive = !app.HasExited
+                };
                 records.Add(record);
                 Console.WriteLine(JsonSerializer.Serialize(record));
                 if (label is "Products" or "Reports" or "Dashboard")
@@ -176,7 +266,159 @@ public sealed class ScaleUiTests
                 JsonSerializer.Serialize(records, JsonOptions));
             if (app is { HasExited: false }) app.Kill();
             app?.Dispose();
+            if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_PHASE5_UPDATE") == "1" &&
+                !string.IsNullOrWhiteSpace(executable))
+            {
+                string installedPath = Path.GetDirectoryName(executable)!;
+                foreach (Process process in Process.GetProcessesByName("GroceryErp.App"))
+                {
+                    try
+                    {
+                        if (process.MainModule?.FileName.StartsWith(installedPath,
+                            StringComparison.OrdinalIgnoreCase) == true) process.Kill();
+                    }
+                    catch (System.ComponentModel.Win32Exception) { }
+                    finally { process.Dispose(); }
+                }
+            }
         }
+    }
+
+    private static string DescribeElement(AutomationElement element)
+    {
+        try { return $"{element.ControlType}:{element.AutomationId}:{element.Name}"; }
+        catch { return element.ControlType.ToString(); }
+    }
+
+    private static async Task AuditPhase5OutputAsync(UiApplication app, UIA3Automation automation,
+        Window shell, string root)
+    {
+        shell.FindFirstDescendant(cf => cf.ByName("Reports"))!.Click();
+        await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("ReportPicker")) is not null,
+            TimeSpan.FromSeconds(20), 100);
+        shell.FindFirstDescendant(cf => cf.ByAutomationId("ReportPicker"))!.AsComboBox().Select("Sales register");
+        SetDate(shell, "FromPicker", "2024-01-01");
+        SetDate(shell, "ToPicker", "2026-09-26");
+        ClickRefresh(shell);
+        await WaitUntilAsync(() => GridHasRows(shell, "ReportGrid") &&
+            ControlNameContains(shell, "StatusText", "500"), TimeSpan.FromSeconds(30), 100);
+
+        string workbook = Path.Combine(root, $"phase5-ui-sales-{Guid.NewGuid():N}.xlsx");
+        var excelTimer = Stopwatch.StartNew();
+        shell.FindFirstDescendant(cf => cf.ByAutomationId("ExportExcelButton"))!.Click();
+        await SaveAsAsync(automation, workbook);
+        await WaitUntilAsync(() => File.Exists(workbook) &&
+            shell.FindFirstDescendant(cf => cf.ByAutomationId("CancelExportButton"))?.IsEnabled == false,
+            TimeSpan.FromMinutes(2), 100);
+        double excelMilliseconds = excelTimer.Elapsed.TotalMilliseconds;
+        using (ZipArchive archive = ZipFile.OpenRead(workbook))
+            Assert.NotNull(archive.GetEntry("xl/worksheets/sheet1.xml"));
+
+        AutomationElement cancelExport = shell.FindFirstDescendant(cf => cf.ByAutomationId("CancelExportButton"))!;
+        AutomationElement moreFilters = shell.FindFirstDescendant(cf => cf.ByAutomationId("MoreFiltersExpander"))!;
+        AutomationElement statusText = shell.FindFirstDescendant(cf => cf.ByAutomationId("StatusText"))!;
+        string csv = Path.Combine(root, $"phase5-ui-sales-full-{Guid.NewGuid():N}.csv");
+        shell.FindFirstDescendant(cf => cf.ByAutomationId("FullCsvButton"))!.Click();
+        await SaveAsAsync(automation, csv);
+        await WaitUntilAsync(() => cancelExport.IsEnabled, TimeSpan.FromSeconds(20), 50);
+        await WaitUntilAsync(() => cancelExport.IsEnabled && statusText.Name.Contains("Exported",
+            StringComparison.OrdinalIgnoreCase), TimeSpan.FromSeconds(10), 50);
+        string progressBeforeCancel = statusText.Name;
+        var responseTimes = new List<double>();
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            if (!cancelExport.IsEnabled) break;
+            var responseTimer = Stopwatch.StartNew();
+            moreFilters.Click();
+            Assert.NotNull(statusText.Name);
+            responseTimes.Add(responseTimer.Elapsed.TotalMilliseconds);
+        }
+        Assert.NotEmpty(responseTimes);
+        cancelExport.Click();
+        await WaitUntilAsync(() => !cancelExport.IsEnabled, TimeSpan.FromSeconds(30), 100);
+        File.WriteAllText(Path.Combine(root, "phase5-ui-csv-diagnostics.json"), JsonSerializer.Serialize(new
+        {
+            responseTimes,
+            progressBeforeCancel,
+            completedFile = File.Exists(csv),
+            bytes = File.Exists(csv) ? new FileInfo(csv).Length : 0,
+            status = statusText.Name,
+        }, JsonOptions));
+        Assert.False(File.Exists(csv));
+        Assert.Empty(Directory.EnumerateFiles(root, Path.GetFileName(csv) + ".*.partial"));
+
+        var previewTimer = Stopwatch.StartNew();
+        shell.FindFirstDescendant(cf => cf.ByAutomationId("PreviewA4Button"))!.Click();
+        var previewResponses = new List<double>();
+        Window? preview = null;
+        try
+        {
+            await WaitUntilAsync(() =>
+        {
+            var responseTimer = Stopwatch.StartNew();
+            Assert.NotNull(statusText.Name);
+            previewResponses.Add(responseTimer.Elapsed.TotalMilliseconds);
+            preview = app.GetAllTopLevelWindows(automation).FirstOrDefault(window =>
+                !window.Equals(shell) && window.Name.Contains("Sales register", StringComparison.OrdinalIgnoreCase));
+            return preview is not null;
+        }, TimeSpan.FromSeconds(30), 50);
+        }
+        catch (TimeoutException)
+        {
+            File.WriteAllText(Path.Combine(root, "phase5-ui-preview-diagnostics.json"), JsonSerializer.Serialize(new
+            {
+                status = statusText.Name,
+                appWindows = app.GetAllTopLevelWindows(automation).Select(window => window.Name).ToArray(),
+                desktopWindows = automation.GetDesktop().FindAllChildren()
+                    .Where(element => element.ControlType == FlaUI.Core.Definitions.ControlType.Window)
+                    .Select(SafeName).ToArray(),
+            }, JsonOptions));
+            throw;
+        }
+        double previewOpenMilliseconds = previewTimer.Elapsed.TotalMilliseconds;
+        var navigationTimer = Stopwatch.StartNew();
+        shell.Focus();
+        shell.FindFirstDescendant(cf => cf.ByName("Dashboard"))!.Click();
+        try
+        {
+            await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("TodaySales")) is not null,
+            TimeSpan.FromSeconds(20), 100);
+        }
+        catch (TimeoutException)
+        {
+            File.WriteAllText(Path.Combine(root, "phase5-ui-navigation-diagnostics.json"), JsonSerializer.Serialize(new
+            {
+                preview = preview!.Name,
+                shell = shell.Name,
+                windows = app.GetAllTopLevelWindows(automation).Select(window => window.Name).ToArray(),
+                status = statusText.Name,
+            }, JsonOptions));
+            preview!.Close();
+            throw;
+        }
+        double navigationMilliseconds = navigationTimer.Elapsed.TotalMilliseconds;
+        preview!.Close();
+        Assert.True(responseTimes.Max() < 1000, "Report export blocked WPF input for at least one second.");
+        Assert.True(previewResponses.Max() < 1000, "A4 preview blocked WPF input for at least one second.");
+        File.WriteAllText(Path.Combine(root, "phase5-ui-output-result.json"), JsonSerializer.Serialize(new
+        {
+            excelMilliseconds,
+            excelBytes = new FileInfo(workbook).Length,
+            csvBusyInteractions = responseTimes.Count,
+            csvMaxInputMilliseconds = responseTimes.Max(),
+            csvProgress = progressBeforeCancel,
+            previewOpenMilliseconds,
+            previewMaxInputMilliseconds = previewResponses.Max(),
+            navigationWithPreviewMilliseconds = navigationMilliseconds,
+        }, JsonOptions));
+    }
+
+    private static async Task SaveAsAsync(UIA3Automation automation, string path)
+    {
+        await WaitUntilAsync(() => automation.GetDesktop().FindFirstDescendant(cf => cf.ByName("Save As")) is not null,
+            TimeSpan.FromSeconds(20), 100);
+        Keyboard.Type(path);
+        Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
     }
 
     private static async Task AuditPopulatedAcceptanceAsync(Window shell, string root)
@@ -203,9 +445,13 @@ public sealed class ScaleUiTests
                     "phase2-acceptance-" + page.ToLowerInvariant().Replace(' ', '-') + "-timeout.png"));
                 throw;
             }
-            records.Add(new { page, readyMilliseconds = timer.Elapsed.TotalMilliseconds,
+            records.Add(new
+            {
+                page,
+                readyMilliseconds = timer.Elapsed.TotalMilliseconds,
                 visibleDataItems = control!.FindAllDescendants().Count(element =>
-                    element.ControlType == FlaUI.Core.Definitions.ControlType.DataItem) });
+                    element.ControlType == FlaUI.Core.Definitions.ControlType.DataItem)
+            });
             shell.CaptureToFile(Path.Combine(root, "phase2-acceptance-" + page.ToLowerInvariant().Replace(' ', '-') + ".png"));
         }
 
@@ -233,16 +479,24 @@ public sealed class ScaleUiTests
             shell.CaptureToFile(Path.Combine(root, "phase2-report-month-timeout.png"));
             throw;
         }
-        records.Add(new { page = "P&L month", readyMilliseconds = monthTimer.Elapsed.TotalMilliseconds,
-            visibleDataItems = GridRows(shell, "PnlGrid") });
+        records.Add(new
+        {
+            page = "P&L month",
+            readyMilliseconds = monthTimer.Elapsed.TotalMilliseconds,
+            visibleDataItems = GridRows(shell, "PnlGrid")
+        });
         await RepeatRefreshAsync(shell, 8, 500);
         SetDate(shell, "FromPicker", "2026-04-01");
         var fiscalTimer = Stopwatch.StartNew();
         ClickRefresh(shell);
         await WaitUntilAsync(() => GridHasRows(shell, "PnlGrid") &&
             ControlNameContains(shell, "StatusText", "01-04-2026"), TimeSpan.FromSeconds(30), 100);
-        records.Add(new { page = "P&L fiscal", readyMilliseconds = fiscalTimer.Elapsed.TotalMilliseconds,
-            visibleDataItems = GridRows(shell, "PnlGrid") });
+        records.Add(new
+        {
+            page = "P&L fiscal",
+            readyMilliseconds = fiscalTimer.Elapsed.TotalMilliseconds,
+            visibleDataItems = GridRows(shell, "PnlGrid")
+        });
         await RepeatRefreshAsync(shell, 8, 500);
         await CaptureAsync("Sales history", "HistoryGrid", _ => true);
         SetDate(shell, "FromPicker", "2026-09-01");
@@ -250,8 +504,12 @@ public sealed class ScaleUiTests
         var historyTimer = Stopwatch.StartNew();
         ClickRefresh(shell);
         await WaitUntilAsync(() => GridHasRows(shell, "HistoryGrid"), TimeSpan.FromSeconds(30), 100);
-        records.Add(new { page = "Sales history first page", readyMilliseconds = historyTimer.Elapsed.TotalMilliseconds,
-            visibleDataItems = GridRows(shell, "HistoryGrid") });
+        records.Add(new
+        {
+            page = "Sales history first page",
+            readyMilliseconds = historyTimer.Elapsed.TotalMilliseconds,
+            visibleDataItems = GridRows(shell, "HistoryGrid")
+        });
         await RepeatRefreshAsync(shell, 8, 500);
         await CaptureAsync("Products", "ProductsGrid", _ => true);
         AutomationElement search = shell.FindFirstDescendant(cf => cf.ByAutomationId("SearchBox"))!;
@@ -263,10 +521,14 @@ public sealed class ScaleUiTests
             var searchTimer = Stopwatch.StartNew();
             search.AsTextBox().Text = "grocery item";
             await WaitUntilAsync(() => GridHasRows(shell, "ProductsGrid"),
-                TimeSpan.FromSeconds(30), 100);
-            records.Add(new { page = "Product search", sample,
+                TimeSpan.FromSeconds(30), 20);
+            records.Add(new
+            {
+                page = "Product search",
+                sample,
                 readyMilliseconds = searchTimer.Elapsed.TotalMilliseconds,
-                visibleDataItems = GridRows(shell, "ProductsGrid") });
+                visibleDataItems = GridRows(shell, "ProductsGrid")
+            });
         }
         File.WriteAllText(Path.Combine(root, "phase2-acceptance-ui.json"),
             JsonSerializer.Serialize(records, JsonOptions));
@@ -334,16 +596,23 @@ public sealed class ScaleUiTests
             shell.SetForeground();
             ClickRefresh(shell);
         }
-        records.Add(new { journey = "history-next-previous-refresh", iterations = 8,
+        records.Add(new
+        {
+            journey = "history-next-previous-refresh",
+            iterations = 8,
             milliseconds = historyTimer.Elapsed.TotalMilliseconds,
-            firstPageRestored = shell.FindFirstDescendant(cf => cf.ByAutomationId("PreviousButton"))?.IsEnabled == false });
+            firstPageRestored = shell.FindFirstDescendant(cf => cf.ByAutomationId("PreviousButton"))?.IsEnabled == false
+        });
         File.WriteAllText(Path.Combine(root, "phase4-ui-local.json"), JsonSerializer.Serialize(records, JsonOptions));
 
         await Task.Delay(500, TestContext.Current.CancellationToken);
         shell.SetForeground();
         shell.FindFirstDescendant(cf => cf.ByName("Billing (POS)"))!.Click();
-        try { await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("ScanBox")) is not null,
-            TimeSpan.FromSeconds(20)); }
+        try
+        {
+            await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("ScanBox")) is not null,
+            TimeSpan.FromSeconds(20));
+        }
         catch (TimeoutException)
         {
             File.WriteAllText(Path.Combine(root, "phase4-ui-billing-diagnostics.txt"),
@@ -371,8 +640,13 @@ public sealed class ScaleUiTests
             """), System.Globalization.CultureInfo.InvariantCulture);
         await WaitUntilAsync(() => GridHasRows(shell, "BillGrid") && DraftQuantity() == 3000,
             TimeSpan.FromSeconds(30), 100);
-        records.Add(new { journey = "keyboard-scan-burst-double-enter", milliseconds = scanTimer.Elapsed.TotalMilliseconds,
-            visibleRows = GridRows(shell, "BillGrid"), quantityScaled = DraftQuantity() });
+        records.Add(new
+        {
+            journey = "keyboard-scan-burst-double-enter",
+            milliseconds = scanTimer.Elapsed.TotalMilliseconds,
+            visibleRows = GridRows(shell, "BillGrid"),
+            quantityScaled = DraftQuantity()
+        });
         scan.AsTextBox().Text = "9999999999999";
         scan.Focus();
         Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
@@ -433,9 +707,13 @@ public sealed class ScaleUiTests
         Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
         await WaitUntilAsync(() => count.FindFirstDescendant(cf => cf.ByAutomationId("CountSearchBox"))!
             .AsTextBox().Text.Length == 0, TimeSpan.FromSeconds(30), 100);
-        records.Add(new { journey = "whole-count-search-to-edit", milliseconds = countTimer.Elapsed.TotalMilliseconds,
+        records.Add(new
+        {
+            journey = "whole-count-search-to-edit",
+            milliseconds = countTimer.Elapsed.TotalMilliseconds,
             total = count.FindFirstDescendant(cf => cf.ByAutomationId("ProgressText"))?.Name,
-            visibleRows = GridRows(count, "CountGrid") });
+            visibleRows = GridRows(count, "CountGrid")
+        });
         count.FindFirstDescendant(cf => cf.ByAutomationId("SaveButton"))!.Click();
         await WaitUntilAsync(() => app.GetAllTopLevelWindows(automation).All(window =>
             window.FindFirstDescendant(cf => cf.ByAutomationId("CountSearchBox")) is null), TimeSpan.FromSeconds(20));
@@ -494,8 +772,13 @@ public sealed class ScaleUiTests
                 cf.ByAutomationId(control == "DraftGrid" ? "DraftGrid" : "PurchaseBox"))!;
             int visibleDataItems = list.FindAllDescendants().Count(element =>
                 element.ControlType == FlaUI.Core.Definitions.ControlType.DataItem);
-            records.Add(new { page, control, readyMilliseconds = timer.Elapsed.TotalMilliseconds,
-                visibleDataItems });
+            records.Add(new
+            {
+                page,
+                control,
+                readyMilliseconds = timer.Elapsed.TotalMilliseconds,
+                visibleDataItems
+            });
             File.WriteAllText(Path.Combine(root, "scale-audit-dialogs.json"),
                 JsonSerializer.Serialize(records, JsonOptions));
             AutomationElement cancel = dialog.FindFirstDescendant(cf => cf.ByName("Cancel"))
@@ -570,9 +853,14 @@ public sealed class ScaleUiTests
             .OrderByDescending(static item => item.StartTime).FirstOrDefault();
         process?.Refresh();
         File.WriteAllText(Path.Combine(root, "scale-audit-history-export.json"),
-            JsonSerializer.Serialize(new { rows = count, elapsedMilliseconds = timer.Elapsed.TotalMilliseconds,
-                bytes = new FileInfo(path).Length, peakWorkingSet = process?.PeakWorkingSet64,
-                alive = !app.HasExited }, JsonOptions));
+            JsonSerializer.Serialize(new
+            {
+                rows = count,
+                elapsedMilliseconds = timer.Elapsed.TotalMilliseconds,
+                bytes = new FileInfo(path).Length,
+                peakWorkingSet = process?.PeakWorkingSet64,
+                alive = !app.HasExited
+            }, JsonOptions));
     }
 
     private static string SafeName(AutomationElement element)
@@ -587,10 +875,17 @@ public sealed class ScaleUiTests
         Window? found = null;
         await WaitUntilAsync(() =>
         {
-            found = app.GetAllTopLevelWindows(automation).FirstOrDefault(window =>
-                window.FindFirstDescendant(cf => cf.ByAutomationId(automationId)) is not null);
-            return found is not null;
-        }, timeout);
+            try
+            {
+                found = app.GetAllTopLevelWindows(automation).FirstOrDefault(window =>
+                    window.FindFirstDescendant(cf => cf.ByAutomationId(automationId)) is not null);
+                return found is not null;
+            }
+            catch (COMException exception) when (exception.HResult == unchecked((int)0x80131505))
+            {
+                return false;
+            }
+        }, timeout, 25);
         return found!;
     }
 

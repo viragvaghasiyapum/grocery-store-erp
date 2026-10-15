@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Windows;
@@ -43,6 +44,9 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        void RecordStartup(string phase) => PerformanceMetrics.UiStartupStageMilliseconds.Record(
+            Stopwatch.GetElapsedTime(Program.LaunchTimestamp).TotalMilliseconds,
+            new KeyValuePair<string, object?>("phase", phase));
 
         try
         {
@@ -118,6 +122,7 @@ public partial class App : Application
 
             _host = builder.Build();
             await _host.StartAsync();
+            RecordStartup("host-started");
 
             AppDomain.CurrentDomain.UnhandledException += (_, args) =>
                 Log.Fatal(args.ExceptionObject as Exception, "Unhandled application-domain exception");
@@ -141,6 +146,7 @@ public partial class App : Application
             BackupService backups = _host.Services.GetRequiredService<BackupService>();
             backups.RecoverInterruptedRestoreBeforeStartup();
             StartupState startup = await _host.Services.GetRequiredService<StartupPipeline>().RunAsync();
+            RecordStartup("database-ready");
             TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo(startup.Settings.UiLanguage);
             _databaseReady = true;
 
@@ -163,7 +169,9 @@ public partial class App : Application
             }
 
             var login = new LoginWindow(authentication);
+            login.Loaded += (_, _) => RecordStartup("login-loaded");
             if (login.ShowDialog() != true) { await RequestShutdownAsync(); return; }
+            long signInAccepted = Stopwatch.GetTimestamp();
 
             if (backups.HasPendingRestore)
             {
@@ -265,6 +273,13 @@ public partial class App : Application
 
             bool pendingPrintReview = _host.Services.GetRequiredService<ReceiptPrinter>().HasFailedJobs;
             ShellWindow shell = _host.Services.GetRequiredService<ShellWindow>();
+            shell.Loaded += (_, _) =>
+            {
+                RecordStartup("shell-loaded");
+                PerformanceMetrics.UiStartupStageMilliseconds.Record(
+                    Stopwatch.GetElapsedTime(signInAccepted).TotalMilliseconds,
+                    new KeyValuePair<string, object?>("phase", "sign-in-to-shell"));
+            };
             MainWindow = shell;
             shell.Closed += async (_, _) => await RequestShutdownAsync();
             shell.Show();

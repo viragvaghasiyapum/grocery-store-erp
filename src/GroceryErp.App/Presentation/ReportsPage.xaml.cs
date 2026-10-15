@@ -1,11 +1,13 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Xps.Packaging;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Localization;
@@ -32,6 +34,7 @@ public partial class ReportsPage : Page
     private CancellationTokenSource? _refreshCancellation;
     private bool _expiryStatusChoices;
     private CancellationTokenSource? _exportCancellation;
+    private bool _previewOpen;
 
     public ReportsPage() : this(
         ((App)Application.Current).Services.GetRequiredService<ReportService>(),
@@ -419,18 +422,34 @@ public partial class ReportsPage : Page
         if (_loadOnShow && ReportPicker.SelectedIndex == 0 && MatrixCheck.IsChecked != true) await RefreshAsync();
     }
 
-    private void Export_OnClick(object sender, RoutedEventArgs e)
+    private async void Export_OnClick(object sender, RoutedEventArgs e)
     {
-        if (_currentPnl is null && _currentReport is null) return;
+        if (_exportCancellation is not null || (_currentPnl is null && _currentReport is null)) return;
         var dialog = new SaveFileDialog { Filter = "Excel workbook (*.xlsx)|*.xlsx", FileName = "report.xlsx" };
         if (dialog.ShowDialog() != true) return;
+        using var cancellation = new CancellationTokenSource();
+        _exportCancellation = cancellation;
+        CancelExportButton.IsEnabled = true;
+        PnlStatement? pnl = _currentPnl;
+        TabularReport? report = _currentReport;
         try
         {
-            if (_currentPnl is not null) _output.ExportPnlExcel(_currentPnl, dialog.FileName);
-            else if (_currentReport is not null) _output.ExportExcel(_currentReport, dialog.FileName);
+            var progress = new Progress<int>(count =>
+                StatusText.Text = TranslationSource.Instance.Format("Reports_ExportedRows", count));
+            await Task.Run(() =>
+            {
+                if (pnl is not null) _output.ExportPnlExcel(pnl, dialog.FileName, progress, cancellation.Token);
+                else if (report is not null) _output.ExportExcel(report, dialog.FileName, progress, cancellation.Token);
+            }, cancellation.Token);
             StatusText.Text = dialog.FileName;
         }
+        catch (OperationCanceledException) { StatusText.Text = TranslationSource.Instance["Reports_CancelExport"]; }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        finally
+        {
+            _exportCancellation = null;
+            CancelExportButton.IsEnabled = false;
+        }
     }
 
     private async void ExportFullCsv_OnClick(object sender, RoutedEventArgs e)
@@ -479,18 +498,71 @@ public partial class ReportsPage : Page
 
     private void CancelExport_OnClick(object sender, RoutedEventArgs e) => _exportCancellation?.Cancel();
 
-    private void Preview_OnClick(object sender, RoutedEventArgs e)
+    private async void Preview_OnClick(object sender, RoutedEventArgs e)
     {
+        if (_previewOpen) return;
         TabularReport? report = _currentReport ?? (_currentPnl is null ? null : _output.BuildPnlReport(_currentPnl));
         if (report is null) return;
+        _previewOpen = true;
+        DateTime printedAt = _clock.Now;
+        if (report.Rows.Count > ReportOutputService.MaxPrintableRows)
+            StatusText.Text = TranslationSource.Instance.Format("Reports_PrintPreviewCapped",
+                ReportOutputService.MaxPrintableRows);
+        string temporary = Path.Combine(Path.GetTempPath(), $"grocery-erp-preview-{Guid.NewGuid():N}.xps");
+        XpsDocument? package = null;
+        bool shown = false;
         try
         {
-            FixedDocument document = _output.CreateA4(report, _clock.Now);
-            var viewer = new DocumentViewer { Document = document };
-            var window = new Window { Title = report.Title, Width = 900, Height = 700, Owner = Window.GetWindow(this), Content = viewer };
-            window.ShowDialog();
+            var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    FixedDocument document = _output.CreateA4(report, printedAt);
+                    using (var output = new XpsDocument(temporary, FileAccess.ReadWrite))
+                        XpsDocument.CreateXpsDocumentWriter(output).Write(document.DocumentPaginator);
+                    ready.SetResult();
+                }
+                catch (Exception exception) { ready.SetException(exception); }
+            })
+            { IsBackground = true, Name = "Report preview renderer" };
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            await ready.Task;
+            package = new XpsDocument(temporary, FileAccess.Read);
+            var viewer = new DocumentViewer { Document = package.GetFixedDocumentSequence() };
+            var window = new Window { Title = report.Title, Width = 900, Height = 700, Content = viewer };
+            window.Closed += (_, _) =>
+            {
+                try
+                {
+                    viewer.Document = null;
+                    package.Close();
+                }
+                finally
+                {
+                    try { File.Delete(temporary); }
+                    catch (IOException) { }
+                    _previewOpen = false;
+                }
+            };
+            window.Show();
+            shown = true;
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        finally
+        {
+            if (!shown)
+            {
+                package?.Close();
+                if (File.Exists(temporary))
+                {
+                    try { File.Delete(temporary); }
+                    catch (IOException) { }
+                }
+                _previewOpen = false;
+            }
+        }
     }
 
     private static List<PnlDisplayRow> PnlRows(PnlStatement statement)

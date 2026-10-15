@@ -36,6 +36,26 @@ public sealed class PrintJobJournal(SqliteConnectionFactory factory)
         { Id = row.Id };
     }
 
+    public SavedPrintJob Get(long id)
+    {
+        using var connection = factory.Open();
+        PrintJobRow row = connection.QuerySingle<PrintJobRow>(
+            "SELECT id, payload FROM print_job WHERE id = @id", new { id });
+        return (JsonSerializer.Deserialize<SavedPrintJob>(row.Payload, Json)
+            ?? throw new InvalidOperationException("Saved print job is empty.")) with
+        { Id = row.Id };
+    }
+
+    public void MarkPendingForReview(IReadOnlyList<long> ids)
+    {
+        using var connection = factory.Open();
+        using var transaction = connection.BeginTransaction(deferred: false);
+        foreach (long[] batch in ids.Chunk(500))
+            connection.Execute("UPDATE print_job SET state = 'REVIEW' WHERE state = 'PENDING' AND id IN @batch",
+                new { batch }, transaction);
+        transaction.Commit();
+    }
+
     public Task<long> AddAsync(SavedPrintJob job) => Task.Run(() =>
     {
         using var connection = factory.Open();

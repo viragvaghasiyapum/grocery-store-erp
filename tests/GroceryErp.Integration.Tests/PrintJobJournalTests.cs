@@ -1,10 +1,12 @@
 using System.Collections.Immutable;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Dapper;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
 using GroceryErp.Sales;
+using GroceryErp.Printing;
 using Shouldly;
 using Xunit;
 
@@ -139,6 +141,75 @@ public sealed class PrintJobJournalTests
             SqliteConnectionFactory.ClearPoolForDataRoot(root);
             if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task LargeLabelBatch_SavesEveryBoundedChunkBeforeFailedPrinter()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"grocery-erp-label-{Guid.NewGuid():N}");
+        try
+        {
+            var factory = new SqliteConnectionFactory(new AppPaths(new SettingsBootstrap(root)));
+            new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
+            var journal = new PrintJobJournal(factory);
+            var printer = new ReceiptPrinter(new TestSettings(new AppSettings("Store", 4, 0,
+                null, 15, 30, root)), journal);
+            string missingPrinter = $"missing-printer-{Guid.NewGuid():N}";
+            var label = new TsplLabel("Rice", null, "8901234567890", 42m, null, Copies: 250);
+
+            await Should.ThrowAsync<Exception>(() =>
+                printer.PrintLabelsAsync(missingPrinter, [label], useDriver: false));
+
+            journal.ReviewCount().ShouldBe(3);
+            SavedPrintJob saved = journal.OldestReview()!;
+            saved.Document.ShouldBe("Product labels, chunk 1");
+            TsplLabel[] chunk = JsonSerializer.Deserialize<TsplLabel[]>(saved.Payload, Json)!;
+            chunk.Sum(static item => item.Copies).ShouldBe(100);
+            TsplLabelBuilder.BuildBatch(chunk).Length.ShouldBeLessThan(256 * 1024);
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearPoolForDataRoot(root);
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ReceiptAndDrawer_StartBeforeNextLabelChunk()
+    {
+        using var firstChunkEntered = new ManualResetEventSlim();
+        using var releaseFirstChunk = new ManualResetEventSlim();
+        var order = new ConcurrentQueue<string>();
+        var appSettings = new AppSettings("Store", 4, 0, null, 15, 30, Path.GetTempPath())
+        {
+            Values = ImmutableDictionary<string, string>.Empty.Add("printer.receipt.name", "test-printer"),
+        };
+        var printer = new ReceiptPrinter(new TestSettings(appSettings), null,
+            (job, _) =>
+            {
+                order.Enqueue(job.Kind);
+                if (job.Kind == "TSPL_LABELS" && !firstChunkEntered.IsSet)
+                {
+                    firstChunkEntered.Set();
+                    if (!releaseFirstChunk.Wait(TimeSpan.FromSeconds(10)))
+                        throw new TimeoutException("The first label chunk was never released.");
+                }
+            }, () => order.Enqueue("DRAWER"));
+        var labels = Enumerable.Range(0, 50)
+            .Select(index => new TsplLabel($"Item {index}", null, $"89012345{index:D5}", 42m, null))
+            .ToArray();
+        Task labelTask = printer.PrintLabelsAsync("test-printer", labels, useDriver: false);
+        Assert.True(await Task.Run(() => firstChunkEntered.Wait(TimeSpan.FromSeconds(5))));
+        Task receiptTask = printer.PrintAsync(SampleReceipt());
+        Task drawerTask = printer.OpenDrawerAsync();
+        releaseFirstChunk.Set();
+        await Task.WhenAll(labelTask, receiptTask, drawerTask);
+        string[] sent = order.ToArray();
+        sent.Length.ShouldBe(4);
+        sent[0].ShouldBe("TSPL_LABELS");
+        sent[1].ShouldBe("RECEIPT");
+        sent[2].ShouldBe("DRAWER");
+        sent[3].ShouldBe("TSPL_LABELS");
     }
 
     private sealed record TestSettings(AppSettings Current) : ISettings;

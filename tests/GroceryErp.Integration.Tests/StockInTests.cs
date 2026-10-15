@@ -15,6 +15,34 @@ namespace GroceryErp.Integration.Tests;
 public sealed class StockInTests
 {
     [Fact]
+    public async Task LedgerPages_MatchMovementPrefixBalancesAcrossCursorsAndTypeFilters()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long draft = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("LEDGER-BALANCE"), ct);
+        PostedPurchase posted = await fixture.Purchasing.PostAsync(draft, OperationGuard.NewId(), ct);
+        await fixture.Inventory.AdjustAsync(posted.LotIds[0], fixture.Date,
+            new Quantity(-1), "First", OperationGuard.NewId(), ct);
+        await fixture.Inventory.AdjustAsync(posted.LotIds[0], fixture.Date,
+            new Quantity(-2), "Second", OperationGuard.NewId(), ct);
+        LedgerPage page = await fixture.Inventory.GetLedgerPageAsync(fixture.ProductId,
+            DateOnly.MinValue, DateOnly.MaxValue, limit: 2, cancellationToken: ct);
+        page.HasMore.ShouldBeTrue();
+        var movements = page.Items.ToList();
+        movements.AddRange((await fixture.Inventory.GetLedgerPageAsync(fixture.ProductId,
+            DateOnly.MinValue, DateOnly.MaxValue, beforeId: page.NextId, limit: 2,
+            cancellationToken: ct)).Items);
+        movements.AddRange((await fixture.Inventory.GetLedgerPageAsync(fixture.ProductId,
+            DateOnly.MinValue, DateOnly.MaxValue, type: "ADJUSTMENT", limit: 2,
+            cancellationToken: ct)).Items);
+        using var connection = fixture.Factory.Open();
+        foreach (LedgerItem movement in movements)
+            movement.LotBalance.Scaled.ShouldBe(connection.ExecuteScalar<long>("""
+                SELECT COALESCE(SUM(qty),0) FROM stock_movement WHERE lot_id=@lotId AND id<=@id
+                """, new { lotId = posted.LotIds[0], id = movement.Id }));
+    }
+
+    [Fact]
     public async Task LowStockProjection_TracksReorderAndLotMovements()
     {
         using var fixture = new StockInFixture();

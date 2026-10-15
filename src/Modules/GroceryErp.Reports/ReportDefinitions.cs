@@ -2,6 +2,93 @@ namespace GroceryErp.Reports;
 
 internal static class ReportDefinitions
 {
+    public const string CategorySalesFromDay = """
+        WITH totals AS (
+          SELECT category_id,
+                 SUM(CASE WHEN day BETWEEN @from AND @to THEN quantity ELSE 0 END) AS quantity,
+                 SUM(CASE WHEN day BETWEEN @from AND @to THEN revenue ELSE 0 END) AS revenue,
+                 SUM(CASE WHEN day BETWEEN @from AND @to THEN cost ELSE 0 END) AS cost,
+                 SUM(CASE WHEN day BETWEEN @from AND @to THEN revenue-cost ELSE 0 END) AS margin,
+                 SUM(CASE WHEN day BETWEEN @previousFrom AND @previousTo THEN revenue ELSE 0 END) AS previous_revenue,
+                 SUM(CASE WHEN day BETWEEN @previousFrom AND @previousTo THEN revenue-cost ELSE 0 END) AS previous_margin
+          FROM sale_report_day WHERE day BETWEEN @previousFrom AND @to
+          GROUP BY category_id
+        )
+        SELECT c.name AS Category,c.name_local AS LocalName,
+               t.quantity AS Quantity,t.revenue AS Revenue,t.cost AS Cost,t.margin AS Margin,
+               CASE WHEN t.revenue=0 THEN 0 ELSE CAST(ROUND(t.margin*100000.0/t.revenue) AS INTEGER) END AS MarginPercent,
+               t.previous_revenue AS PreviousRevenue,t.previous_margin AS PreviousMargin
+        FROM totals t JOIN category c ON c.id=t.category_id
+        ORDER BY Revenue DESC LIMIT @Limit
+        """;
+
+    public const string GstSummaryFromDay = """
+        SELECT 'OUTWARD' AS Direction,hsn AS Hsn,rate AS Rate,
+               SUM(revenue) AS Taxable,SUM(tax) AS Tax
+        FROM sale_report_day WHERE day BETWEEN @from AND @to GROUP BY hsn,rate
+        UNION ALL
+        SELECT 'INWARD',Hsn,Rate,SUM(Taxable),SUM(Tax)
+        FROM (
+          SELECT COALESCE(v.gstin,'') AS Hsn,pl.tax_rate_pct AS Rate,
+                 CAST(ROUND(pl.qty*pl.unit_cost/1000.0) AS INTEGER)-pl.discount AS Taxable,
+                 pl.tax_amount AS Tax
+          FROM purchase_line pl JOIN purchase p ON p.id=pl.purchase_id JOIN vendor v ON v.id=p.vendor_id
+          WHERE p.status='POSTED' AND p.received_date BETWEEN @from AND @to
+          UNION ALL
+          SELECT COALESCE(v.gstin,''),pl.tax_rate_pct,-vrl.credit_before_tax,-vrl.tax_credit
+          FROM vendor_return_line vrl JOIN vendor_return vr ON vr.id=vrl.vendor_return_id
+          JOIN vendor v ON v.id=vr.vendor_id JOIN product_lot l ON l.id=vrl.lot_id
+          JOIN purchase_line pl ON pl.id=l.purchase_line_id
+          WHERE vr.return_date BETWEEN @from AND @to
+        ) inward_lines GROUP BY Hsn,Rate
+        ORDER BY Direction,Hsn,Rate LIMIT @Limit
+        """;
+
+    public const string HourlySalesFromDay = """
+        SELECT CASE CAST(weekday AS INTEGER) WHEN 0 THEN 'Sun' WHEN 1 THEN 'Mon'
+                    WHEN 2 THEN 'Tue' WHEN 3 THEN 'Wed' WHEN 4 THEN 'Thu'
+                    WHEN 5 THEN 'Fri' ELSE 'Sat' END AS Weekday,
+               hour AS Hour,SUM(bills) AS Bills,SUM(revenue) AS Revenue
+        FROM sale_hour_day WHERE day BETWEEN @from AND @to
+        GROUP BY weekday,hour ORDER BY weekday,hour LIMIT @Limit
+        """;
+
+    public const string ItemSalesForProduct = """
+        WITH movements AS (
+          SELECT sl.product_id,sl.product_name,sl.product_name_local,sl.qty,sl.taxable_amount,sl.cost_amount
+          FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
+          WHERE sl.product_id=@ProductId AND s.status='COMPLETED' AND s.sale_date BETWEEN @from AND @to
+          UNION ALL
+          SELECT sl.product_id,sl.product_name,sl.product_name_local,-rl.qty,-rl.taxable_amount,-rl.cost_amount
+          FROM sale_line sl JOIN sale_return_line rl ON rl.sale_line_id=sl.id
+          JOIN sale_return r ON r.id=rl.sale_return_id
+          WHERE sl.product_id=@ProductId AND r.return_date BETWEEN @from AND @to
+        )
+        SELECT c.name AS Category,p.sku AS Sku,MAX(m.product_name) AS Product,
+               MAX(m.product_name_local) AS LocalName,SUM(m.qty) AS Quantity,
+               SUM(m.taxable_amount) AS Revenue,SUM(m.cost_amount) AS Cost,
+               SUM(m.taxable_amount-m.cost_amount) AS Margin
+        FROM movements m JOIN product p ON p.id=m.product_id JOIN category c ON c.id=p.category_id
+        GROUP BY c.id,m.product_id ORDER BY c.name,Revenue DESC LIMIT @Limit
+        """;
+
+    public const string StockLedgerForLot = """
+        SELECT m.move_date AS Date,p.sku AS Sku,p.name AS Product,l.lot_code AS Lot,m.type_code AS Type,
+               m.qty AS Quantity,m.unit_cost AS UnitCost,m.ref_type AS ReferenceType,m.ref_id AS ReferenceId,m.note AS Note
+        FROM stock_movement m JOIN product p ON p.id=m.product_id JOIN product_lot l ON l.id=m.lot_id
+        WHERE m.lot_id=@LotId AND m.move_date BETWEEN @from AND @to
+          AND (@ProductId IS NULL OR m.product_id=@ProductId)
+        ORDER BY m.move_date,m.id LIMIT @Limit
+        """;
+
+    public const string StockLedgerForProduct = """
+        SELECT m.move_date AS Date,p.sku AS Sku,p.name AS Product,l.lot_code AS Lot,m.type_code AS Type,
+               m.qty AS Quantity,m.unit_cost AS UnitCost,m.ref_type AS ReferenceType,m.ref_id AS ReferenceId,m.note AS Note
+        FROM stock_movement m JOIN product p ON p.id=m.product_id JOIN product_lot l ON l.id=m.lot_id
+        WHERE m.product_id=@ProductId AND m.move_date BETWEEN @from AND @to
+        ORDER BY m.move_date,m.id LIMIT @Limit
+        """;
+
     // The dashboard's exact rolling window can answer an overlapping item report.
     // Only the at-most-seven-day edge is read from sale/return lines.
     public const string ItemSalesFromTopWindow = """
@@ -137,15 +224,22 @@ internal static class ReportDefinitions
                   SELECT sl.product_id,r.return_date,-rl.qty,-rl.taxable_amount,-rl.cost_amount
                   FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
                   JOIN sale_line sl ON sl.id=rl.sale_line_id WHERE r.return_date BETWEEN @previousFrom AND @to
-                ), totals AS (
-                  SELECT c.id,c.name,c.name_local,
+                ), product_totals AS (
+                  SELECT m.product_id,
                          SUM(CASE WHEN m.entry_date BETWEEN @from AND @to THEN m.qty ELSE 0 END) AS quantity,
                          SUM(CASE WHEN m.entry_date BETWEEN @from AND @to THEN m.taxable_amount ELSE 0 END) AS revenue,
                          SUM(CASE WHEN m.entry_date BETWEEN @from AND @to THEN m.cost_amount ELSE 0 END) AS cost,
                          SUM(CASE WHEN m.entry_date BETWEEN @from AND @to THEN m.taxable_amount-m.cost_amount ELSE 0 END) AS margin,
                          SUM(CASE WHEN m.entry_date BETWEEN @previousFrom AND @previousTo THEN m.taxable_amount ELSE 0 END) AS previous_revenue,
                          SUM(CASE WHEN m.entry_date BETWEEN @previousFrom AND @previousTo THEN m.taxable_amount-m.cost_amount ELSE 0 END) AS previous_margin
-                  FROM movements m JOIN product p ON p.id=m.product_id JOIN category c ON c.id=p.category_id
+                  FROM movements m GROUP BY m.product_id
+                ), totals AS (
+                  SELECT c.id,c.name,c.name_local,
+                         SUM(m.quantity) AS quantity,SUM(m.revenue) AS revenue,
+                         SUM(m.cost) AS cost,SUM(m.margin) AS margin,
+                         SUM(m.previous_revenue) AS previous_revenue,
+                         SUM(m.previous_margin) AS previous_margin
+                  FROM product_totals m JOIN product p ON p.id=m.product_id JOIN category c ON c.id=p.category_id
                   GROUP BY c.id
                 )
                 SELECT name AS Category,name_local AS LocalName,
@@ -181,19 +275,28 @@ internal static class ReportDefinitions
                 """, [D("Date", "Date"), T("Sku", "SKU"), T("Product", "Product"), T("Lot", "Lot"), T("Type", "Type"), Q("Quantity", "Quantity"), M("UnitCost", "Unit cost"), T("ReferenceType", "Reference type"), I("ReferenceId", "Reference"), T("Note", "Note")]),
 
             [ReportKind.LowStock] = new("Low stock and reorder", false, """
-                SELECT ps.sku AS Sku,ps.name AS Product,p.name_local AS LocalName,ps.stock_qty AS Quantity,ps.reorder_level AS ReorderLevel,
-                       COALESCE((SELECT SUM(sl.qty)/30 FROM sale_line sl JOIN sale s ON s.id=sl.sale_id WHERE sl.product_id=ps.product_id AND s.status='COMPLETED' AND s.sale_date BETWEEN date(@to,'-29 day') AND @to),0) AS AverageDailySales,
-                       CASE WHEN ps.reorder_level>ps.stock_qty THEN ps.reorder_level-ps.stock_qty ELSE 0 END AS SuggestedOrder
-                FROM v_product_stock ps JOIN product p ON p.id=ps.product_id WHERE ps.is_low=1 ORDER BY ps.name LIMIT @Limit
+                WITH page AS MATERIALIZED (
+                    SELECT p.id,p.sku,p.name,p.name_local,p.reorder_level,t.quantity
+                    FROM product_stock_total t JOIN product p ON p.id=t.product_id
+                    WHERE p.is_active=1 AND t.is_low=1 ORDER BY p.name LIMIT @Limit
+                )
+                SELECT page.sku AS Sku,page.name AS Product,page.name_local AS LocalName,
+                       page.quantity AS Quantity,page.reorder_level AS ReorderLevel,
+                       COALESCE((SELECT SUM(d.qty)/30 FROM sale_product_day d
+                                 WHERE d.product_id=page.id
+                                   AND d.day BETWEEN date(@to,'-29 day') AND @to),0) AS AverageDailySales,
+                       CASE WHEN page.reorder_level>page.quantity THEN page.reorder_level-page.quantity ELSE 0 END AS SuggestedOrder
+                FROM page ORDER BY page.name
                 """, [T("Sku", "SKU"), T("Product", "Product"), T("LocalName", "Local name"), Q("Quantity", "Quantity"), Q("ReorderLevel", "Reorder level"), Q("AverageDailySales", "30-day avg/day"), Q("SuggestedOrder", "Suggested order")]),
 
             [ReportKind.SlowMovers] = new("Slow movers", false, """
-                SELECT p.sku AS Sku,p.name AS Product,p.name_local AS LocalName,ps.stock_qty AS Quantity,ps.stock_value AS Value,
-                       MAX(s.sale_date) AS LastSold
-                FROM v_product_stock ps JOIN product p ON p.id=ps.product_id
-                LEFT JOIN sale_line sl ON sl.product_id=p.id LEFT JOIN sale s ON s.id=sl.sale_id AND s.status='COMPLETED'
-                WHERE ps.stock_qty>0 GROUP BY p.id HAVING MAX(s.sale_date) IS NULL OR MAX(s.sale_date)<@slowFrom
-                ORDER BY Value DESC LIMIT @Limit
+                SELECT p.sku AS Sku,p.name AS Product,p.name_local AS LocalName,
+                       t.quantity AS Quantity,t.cost_value AS Value,l.last_day AS LastSold
+                FROM product_stock_total t JOIN product p ON p.id=t.product_id
+                LEFT JOIN sale_product_last l ON l.product_id=p.id
+                WHERE p.is_active=1 AND t.quantity>0
+                  AND (l.last_day IS NULL OR l.last_day<@slowFrom)
+                ORDER BY t.cost_value DESC LIMIT @Limit
                 """, [T("Sku", "SKU"), T("Product", "Product"), T("LocalName", "Local name"), Q("Quantity", "Quantity"), M("Value", "Value tied up"), D("LastSold", "Last sold")]),
 
             [ReportKind.Expiry] = new("Expiry", false, """

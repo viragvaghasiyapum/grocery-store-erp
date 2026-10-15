@@ -9,6 +9,11 @@ namespace GroceryErp.Catalog;
 
 public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettings settings)
 {
+    // Only the choice of query plan is cached. Row IDs and product fields are
+    // always read afresh, so edits in another process cannot return stale rows.
+    private readonly object _searchPlanGate = new();
+    private readonly Dictionary<string, (DateTime ExpiresUtc, bool Common)> _searchPlans = new(StringComparer.Ordinal);
+
     public Task<string> SuggestSkuAsync(CancellationToken cancellationToken = default) =>
         database.ReadAsync(connection =>
         {
@@ -433,11 +438,71 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             parameters.Add("limit", limit + 1);
             if (query.Length >= 3 && query.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(static term => term.Length >= 3))
             {
-                join = "JOIN product_fts f ON f.rowid=p.id";
-                search = "AND product_fts MATCH @match";
                 string match = string.Join(' ', query.Split(' ', StringSplitOptions.RemoveEmptyEntries)
                     .Select(static term => $"\"{term.Replace("\"", "\"\"")}\""));
                 parameters.Add("match", match);
+                bool broadFts = filter.CategoryId is null && filter.BrandId is null &&
+                    !filter.LowStockOnly && !filter.NoBarcodeOnly &&
+                    !filter.MissingLocalNameOnly && !filter.LooseOnly;
+                long[]? pageIds = null;
+                if (broadFts)
+                {
+                    bool? common = null;
+                    lock (_searchPlanGate)
+                        if (_searchPlans.TryGetValue(match, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
+                            common = cached.Common;
+                    if (common is null)
+                    {
+                        long products = connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product");
+                        long threshold = Math.Max(32, (products + 1) / 2);
+                        long hits = connection.ExecuteScalar<long>("""
+                            SELECT COUNT(*) FROM (SELECT rowid FROM product_fts
+                            WHERE product_fts MATCH @match LIMIT @threshold)
+                            """, new { match, threshold });
+                        common = hits == threshold;
+                        lock (_searchPlanGate)
+                        {
+                            if (_searchPlans.Count >= 32) _searchPlans.Clear();
+                            _searchPlans[match] = (DateTime.UtcNow.AddMinutes(5), common.Value);
+                        }
+                    }
+                    if (common.Value)
+                    {
+                        // Limit the name scan to a small index window, then let the
+                        // virtual table test rows in name order. A short page falls
+                        // back to the complete FTS plan.
+                        SearchBoundary? boundary = connection.QuerySingleOrDefault<SearchBoundary>("""
+                            SELECT p.name AS Name,p.id AS Id FROM product p INDEXED BY ix_product_name
+                            WHERE (@IncludeArchived=1 OR p.is_active=1)
+                              AND (@afterName IS NULL OR p.name COLLATE NOCASE > @afterName COLLATE NOCASE
+                                   OR (p.name COLLATE NOCASE = @afterName COLLATE NOCASE AND p.id>@afterId))
+                            ORDER BY p.name COLLATE NOCASE,p.id LIMIT 1 OFFSET @offset
+                            """, new { filter.IncludeArchived, afterName, afterId,
+                                offset = (limit + 1) * 4 - 1 });
+                        pageIds = connection.Query<long>("""
+                            SELECT p.id FROM product p INDEXED BY ix_product_name
+                            CROSS JOIN product_fts f ON f.rowid=p.id
+                            WHERE (@IncludeArchived=1 OR p.is_active=1)
+                              AND (@afterName IS NULL OR p.name COLLATE NOCASE > @afterName COLLATE NOCASE
+                                   OR (p.name COLLATE NOCASE = @afterName COLLATE NOCASE AND p.id>@afterId))
+                              AND (@boundaryName IS NULL OR p.name COLLATE NOCASE < @boundaryName COLLATE NOCASE
+                                   OR (p.name COLLATE NOCASE = @boundaryName COLLATE NOCASE AND p.id<=@boundaryId))
+                              AND product_fts MATCH @match
+                            ORDER BY p.name COLLATE NOCASE,p.id LIMIT @take
+                            """, new { match, filter.IncludeArchived, afterName, afterId,
+                                boundaryName = boundary?.Name, boundaryId = boundary?.Id, take = limit + 1 }).ToArray();
+                    }
+                }
+                if (pageIds is { Length: > 0 } && pageIds.Length == limit + 1)
+                {
+                    search = "AND p.id IN @pageIds";
+                    parameters.Add("pageIds", pageIds);
+                }
+                else
+                {
+                    join = "JOIN product_fts f ON f.rowid=p.id";
+                    search = "AND product_fts MATCH @match";
+                }
             }
             else
             {
@@ -617,6 +682,11 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
     }
 
     private sealed record ValidatedBarcode(string Barcode, long PackQuantity, string Symbology, bool IsPrimary, string Source);
+    private sealed class SearchBoundary
+    {
+        public string Name { get; init; } = string.Empty;
+        public long Id { get; init; }
+    }
     private sealed record ValidatedProduct(
         string Sku, string Name, string? NameLocal, string? SearchTerms, long CategoryId, long? BrandId,
         long UomId, string? HsnCode, long? TaxRateId, int PriceIncludesTax, int IsLoose, string? PluCode,

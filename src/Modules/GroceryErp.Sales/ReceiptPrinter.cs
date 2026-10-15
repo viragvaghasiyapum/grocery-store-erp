@@ -19,20 +19,36 @@ public sealed class ReceiptPrinter
 {
     private static readonly CultureInfo Digits = CultureInfo.GetCultureInfo("en-IN");
     private static readonly JsonSerializerOptions JobJson = PrintJobJson.Options;
-    private readonly Channel<PrintJob> jobs = Channel.CreateBounded<PrintJob>(new BoundedChannelOptions(128)
+    private readonly Channel<PrintJob> urgentJobs = Channel.CreateBounded<PrintJob>(new BoundedChannelOptions(128)
     {
         SingleReader = true,
         SingleWriter = false,
         FullMode = BoundedChannelFullMode.Wait,
     });
+    private readonly Channel<PrintJob> backgroundJobs = Channel.CreateBounded<PrintJob>(new BoundedChannelOptions(8)
+    {
+        SingleReader = true,
+        SingleWriter = false,
+        FullMode = BoundedChannelFullMode.Wait,
+    });
+    private readonly Channel<bool> availableJobs = Channel.CreateUnbounded<bool>();
     private readonly ConcurrentQueue<PrintJob> failed = new();
     private readonly ISettings settings;
     private readonly PrintJobJournal? journal;
+    private readonly Action<SavedPrintJob, bool> sendSaved;
+    private readonly Action openDrawer;
 
-    public ReceiptPrinter(ISettings settings, PrintJobJournal? journal = null)
+    public ReceiptPrinter(ISettings settings, PrintJobJournal? journal = null) :
+        this(settings, journal, SendSaved, null)
+    { }
+
+    internal ReceiptPrinter(ISettings settings, PrintJobJournal? journal,
+        Action<SavedPrintJob, bool> sendSaved, Action? openDrawer)
     {
         this.settings = settings;
         this.journal = journal;
+        this.sendSaved = sendSaved;
+        this.openDrawer = openDrawer ?? OpenDrawer;
         journal?.RecoverInterrupted();
         var worker = new Thread(ProcessJobs) { IsBackground = true, Name = "Printer job queue" };
         worker.SetApartmentState(ApartmentState.STA);
@@ -46,12 +62,38 @@ public sealed class ReceiptPrinter
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(printerName);
         ArgumentNullException.ThrowIfNull(labels);
-        TsplLabel[] snapshot = labels.ToArray();
-        if (snapshot.Length == 0) throw new ArgumentException("Select at least one label.", nameof(labels));
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var saved = new SavedPrintJob(useDriver ? "DRIVER_LABELS" : "TSPL_LABELS",
-            printerName, "Product labels", JsonSerializer.Serialize(snapshot, JobJson));
-        await EnqueueSavedAsync(saved, completion);
+        if (labels.Count == 0) throw new ArgumentException("Select at least one label.", nameof(labels));
+        var savedIds = new List<long>();
+        int chunkNumber = 0;
+        try
+        {
+            foreach (TsplLabel[] chunk in LabelChunks(labels))
+            {
+                if (TsplLabelBuilder.BuildBatch(chunk).Length > 256 * 1024)
+                    throw new InvalidOperationException("A label chunk exceeds the 256 KiB print limit.");
+                string payload = JsonSerializer.Serialize(chunk, JobJson);
+                if (System.Text.Encoding.UTF8.GetByteCount(payload) > 256 * 1024)
+                    throw new InvalidOperationException("A label chunk exceeds the 256 KiB journal limit.");
+                var saved = new SavedPrintJob(useDriver ? "DRIVER_LABELS" : "TSPL_LABELS",
+                    printerName, $"Product labels, chunk {++chunkNumber}", payload);
+                if (journal is null)
+                    await EnqueueSavedAsync(saved, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+                else
+                    savedIds.Add(await journal.AddAsync(saved));
+            }
+            foreach (long id in savedIds)
+            {
+                SavedPrintJob saved = journal!.Get(id);
+                var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                await QueueAsync(new PrintJob(() => sendSaved(saved, false), completion, id), urgent: false);
+                await completion.Task;
+            }
+        }
+        catch
+        {
+            if (savedIds.Count > 0) journal!.MarkPendingForReview(savedIds);
+            throw;
+        }
     }
 
     public Task QueueReceiptAsync(ReceiptData receipt)
@@ -64,7 +106,7 @@ public sealed class ReceiptPrinter
     public Task QueueDrawerAsync()
     {
         EnsureConfigured();
-        return jobs.Writer.WriteAsync(new PrintJob(OpenDrawer, null, Retryable: false)).AsTask();
+        return QueueAsync(new PrintJob(openDrawer, null, Retryable: false), urgent: true);
     }
 
     public async Task PrintAsync(ReceiptData receipt)
@@ -79,7 +121,7 @@ public sealed class ReceiptPrinter
     {
         EnsureConfigured();
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        await jobs.Writer.WriteAsync(new PrintJob(OpenDrawer, completion, Retryable: false));
+        await QueueAsync(new PrintJob(openDrawer, completion, Retryable: false), urgent: true);
         await completion.Task;
     }
 
@@ -87,10 +129,11 @@ public sealed class ReceiptPrinter
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         if (journal?.ClaimOldestReview(reviewJobId) is { } saved)
-            await jobs.Writer.WriteAsync(new PrintJob(() => SendSaved(saved, retry: true), completion, saved.Id));
+            await QueueAsync(new PrintJob(() => sendSaved(saved, true), completion, saved.Id),
+                IsUrgent(saved.Kind));
         else if (reviewJobId is not null) return false;
         else if (failed.TryDequeue(out PrintJob? previous))
-            await jobs.Writer.WriteAsync(new PrintJob(previous.Action, completion));
+            await QueueAsync(new PrintJob(previous.Action, completion), urgent: true);
         else return false;
         await completion.Task;
         return true;
@@ -99,40 +142,75 @@ public sealed class ReceiptPrinter
     private async Task EnqueueSavedAsync(SavedPrintJob saved, TaskCompletionSource? completion)
     {
         long id = journal is null ? 0 : await journal.AddAsync(saved);
-        await jobs.Writer.WriteAsync(new PrintJob(() => SendSaved(saved), completion, id));
+        await QueueAsync(new PrintJob(() => sendSaved(saved, false), completion, id), IsUrgent(saved.Kind));
         if (completion is not null) await completion.Task;
+    }
+
+    private static bool IsUrgent(string kind) => kind == "RECEIPT";
+
+    private async Task QueueAsync(PrintJob job, bool urgent)
+    {
+        await (urgent ? urgentJobs : backgroundJobs).Writer.WriteAsync(job);
+        availableJobs.Writer.TryWrite(true);
+    }
+
+    private static IEnumerable<TsplLabel[]> LabelChunks(IReadOnlyList<TsplLabel> labels)
+    {
+        var chunk = new List<TsplLabel>(25);
+        int copiesInChunk = 0;
+        foreach (TsplLabel label in labels)
+        {
+            if (label.Copies <= 0) throw new ArgumentOutOfRangeException(nameof(labels), "Copies must be positive.");
+            int remaining = label.Copies;
+            while (remaining > 0)
+            {
+                int copies = Math.Min(remaining, 100 - copiesInChunk);
+                chunk.Add(label with { Copies = copies });
+                copiesInChunk += copies;
+                remaining -= copies;
+                if (chunk.Count == 25 || copiesInChunk == 100)
+                {
+                    yield return chunk.ToArray();
+                    chunk.Clear();
+                    copiesInChunk = 0;
+                }
+            }
+        }
+        if (chunk.Count > 0) yield return chunk.ToArray();
     }
 
     private void ProcessJobs()
     {
-        while (jobs.Reader.WaitToReadAsync().AsTask().GetAwaiter().GetResult())
-            while (jobs.Reader.TryRead(out PrintJob? job))
+        while (true)
+        {
+            availableJobs.Reader.ReadAsync().AsTask().GetAwaiter().GetResult();
+            if (!urgentJobs.Reader.TryRead(out PrintJob? job) &&
+                !backgroundJobs.Reader.TryRead(out job)) continue;
+            PerformanceMetrics.PrintQueueMilliseconds.Record(
+                Stopwatch.GetElapsedTime(job.EnqueuedAt).TotalMilliseconds);
+            try
             {
-                PerformanceMetrics.PrintQueueMilliseconds.Record(
-                    Stopwatch.GetElapsedTime(job.EnqueuedAt).TotalMilliseconds);
-                try
-                {
-                    using IDisposable? printWork = journal?.EnterPrintWork();
-                    if (job.JournalId != 0) journal!.MarkSending(job.JournalId);
-                    job.Action();
-                    if (job.JournalId != 0) journal!.Remove(job.JournalId);
-                    job.Completion?.TrySetResult();
-                }
-                catch (Exception exception)
-                {
-                    if (job.Retryable)
-                    {
-                        if (job.JournalId != 0)
-                        {
-                            try { journal!.MarkFailed(job.JournalId); }
-                            catch (Exception journalError) { System.Diagnostics.Trace.TraceError("Could not mark print job failed: {0}", journalError); }
-                        }
-                        else failed.Enqueue(job);
-                    }
-                    job.Completion?.TrySetException(exception);
-                    System.Diagnostics.Trace.TraceError("Print job failed: {0}", exception);
-                }
+                using IDisposable? printWork = journal?.EnterPrintWork();
+                if (job.JournalId != 0) journal!.MarkSending(job.JournalId);
+                job.Action();
+                if (job.JournalId != 0) journal!.Remove(job.JournalId);
+                job.Completion?.TrySetResult();
             }
+            catch (Exception exception)
+            {
+                if (job.Retryable)
+                {
+                    if (job.JournalId != 0)
+                    {
+                        try { journal!.MarkFailed(job.JournalId); }
+                        catch (Exception journalError) { System.Diagnostics.Trace.TraceError("Could not mark print job failed: {0}", journalError); }
+                    }
+                    else failed.Enqueue(job);
+                }
+                job.Completion?.TrySetException(exception);
+                System.Diagnostics.Trace.TraceError("Print job failed: {0}", exception);
+            }
+        }
     }
 
     private void EnsureConfigured()

@@ -26,6 +26,8 @@ public static class PerformanceMetrics
     public static readonly Histogram<double> UiLayoutMilliseconds = Meter.CreateHistogram<double>("ui.layout.ready", "ms");
     public static readonly Histogram<double> UiFrameMilliseconds = Meter.CreateHistogram<double>("ui.frame.callback", "ms");
     public static readonly Histogram<double> UiFirstFrameTotalMilliseconds = Meter.CreateHistogram<double>("ui.first-frame.callback.total", "ms");
+    public static readonly Histogram<double> UiStartupStageMilliseconds = Meter.CreateHistogram<double>("ui.startup.stage", "ms");
+    public static readonly Histogram<double> UiSearchVisibleMilliseconds = Meter.CreateHistogram<double>("ui.search.first-frame", "ms");
 
     public static IDisposable TrackMaintenance(string phase) => new MaintenanceScope(phase);
 

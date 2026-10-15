@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using GroceryErp.Catalog;
@@ -12,7 +13,7 @@ namespace GroceryErp.App.Presentation;
 public partial class ProductsPage : Page
 {
     private const int PageSize = 50;
-    private const int SearchPageSize = 20;
+    private const int SearchPageSize = 8;
     private readonly CatalogService _catalog;
     private readonly ISettings _settings;
     private readonly ProductExcelImporter _importer;
@@ -70,6 +71,7 @@ public partial class ProductsPage : Page
     {
         if (!IsLoaded) return;
         int version = ++_searchVersion;
+        long searchStarted = Stopwatch.GetTimestamp();
         // Invalidate the current result as soon as the text changes. Waiting for
         // the debounce would let an older query replace rows for the new search.
         ++_refreshVersion;
@@ -77,8 +79,8 @@ public partial class ProductsPage : Page
         _pageLoading = true;
         PreviousPageButton.IsEnabled = false;
         NextPageButton.IsEnabled = false;
-        await Task.Delay(40);
-        if (version == _searchVersion && IsLoaded) await RefreshAsync();
+        await Task.Delay(20);
+        if (version == _searchVersion && IsLoaded) await RefreshAsync(searchStarted: searchStarted);
     }
 
     private async void Filter_OnChanged(object sender, RoutedEventArgs e)
@@ -106,13 +108,13 @@ public partial class ProductsPage : Page
         finally { _loadingMasters = false; }
     }
 
-    private Task RefreshAsync(CancellationToken cancellationToken = default) =>
-        LoadPageAsync(null, null, reset: true, cancellationToken);
+    private Task RefreshAsync(long? searchStarted = null, CancellationToken cancellationToken = default) =>
+        LoadPageAsync(null, null, reset: true, searchStarted, cancellationToken);
 
     private async Task LoadPageAsync(string? afterName, long? afterId, bool reset,
-        CancellationToken cancellationToken = default)
+        long? searchStarted = null, CancellationToken cancellationToken = default)
     {
-        using var timing = UiRefreshProbe.Track("products", this);
+        using var timing = UiRefreshProbe.Track("products", this, searchStarted);
         _pageLoadCancellation?.Cancel();
         var request = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _pageLoadCancellation = request;
@@ -138,6 +140,8 @@ public partial class ProductsPage : Page
             _afterName = afterName;
             _afterId = afterId;
             _currentPage = page;
+            if (searchStarted is not null)
+                timing.SearchShape = page.Items.Count == 0 ? "empty" : "populated";
             timing.Bind(() => ProductsGrid.ItemsSource = page.Items);
             EmptyText.Visibility = page.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             StatusText.Text = TranslationSource.Instance.Format("Catalog_Count", ProductsGrid.Items.Count);

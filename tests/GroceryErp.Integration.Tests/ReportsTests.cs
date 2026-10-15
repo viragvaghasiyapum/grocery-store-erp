@@ -15,6 +15,118 @@ namespace GroceryErp.Integration.Tests;
 public sealed class ReportsTests
 {
     [Fact]
+    public async Task LowStockDailyQuantity_TracksCompletedSalesAndVoids()
+    {
+        using var fixture = new ReportFixture();
+        fixture.SeedGoldenScenario();
+        using var connection = fixture.Factory.Open();
+        connection.Execute("UPDATE product SET reorder_level=2000 WHERE id=1");
+        void AssertSourceParity() => connection.ExecuteScalar<long>("""
+            WITH expected AS (
+                SELECT sl.product_id,s.sale_date AS day,COUNT(*) AS entries,SUM(sl.qty) AS qty
+                FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
+                WHERE s.status='COMPLETED' GROUP BY sl.product_id,s.sale_date
+            )
+            SELECT COUNT(*) FROM (
+                SELECT * FROM (SELECT * FROM expected EXCEPT SELECT * FROM sale_product_day)
+                UNION ALL
+                SELECT * FROM (SELECT * FROM sale_product_day EXCEPT SELECT * FROM expected)
+            )
+            """).ShouldBe(0L);
+
+        connection.Execute("""
+            INSERT INTO sale(invoice_no,sale_date,status) VALUES ('LOW-1','2026-09-10','DRAFT');
+            INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,
+                taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+            VALUES (2,1,1,1,'Rice',3000,100000,300000,0,300000,100000,300000);
+            """);
+        AssertSourceParity();
+        connection.Execute("UPDATE sale SET status='COMPLETED' WHERE id=2");
+        AssertSourceParity();
+        connection.QuerySingle<long>("SELECT qty FROM sale_product_day WHERE product_id=1 AND day='2026-09-10'")
+            .ShouldBe(3000L);
+        TabularReport report = await fixture.Reports.GetReportAsync(ReportKind.LowStock,
+            new(To: new(2026, 9, 27), Limit: 10), TestContext.Current.CancellationToken);
+        report.Rows.Single(row => (string)row.Values["Sku"]! == "RICE")
+            .Values["AverageDailySales"].ShouldBe(100L);
+
+        connection.Execute("""
+            INSERT INTO sale_return(return_no,sale_id,return_date,refund_mode,taxable_total,
+                tax_total,refund_total,cost_total)
+            VALUES ('LOW-R',2,'2026-09-11','CASH',100000,0,100000,100000);
+            INSERT INTO sale_return_line(sale_return_id,sale_line_id,qty,taxable_amount,
+                tax_amount,refund_amount,cost_amount)
+            VALUES (2,1,1000,100000,0,100000,100000);
+            """);
+        AssertSourceParity();
+        connection.QuerySingle<long>("SELECT qty FROM sale_product_day WHERE product_id=1 AND day='2026-09-10'")
+            .ShouldBe(3000L);
+
+        connection.Execute("UPDATE sale SET status='VOID',void_reason='Correction' WHERE id=2");
+        AssertSourceParity();
+    }
+
+    [Fact]
+    public void SaleReportDay_TracksReturnsBackdatingVoidsAndCategoryChanges()
+    {
+        using var fixture = new ReportFixture();
+        fixture.SeedGoldenScenario();
+        using var connection = fixture.Factory.Open();
+        void AssertSourceParity() => connection.ExecuteScalar<long>("""
+            WITH movements AS (
+              SELECT s.sale_date AS day,p.category_id,COALESCE(sl.hsn_code,'') AS hsn,
+                     sl.tax_rate_pct AS rate,sl.qty AS quantity,sl.taxable_amount AS revenue,
+                     sl.tax_amount AS tax,sl.cost_amount AS cost
+              FROM sale_line sl JOIN sale s ON s.id=sl.sale_id JOIN product p ON p.id=sl.product_id
+              WHERE s.status='COMPLETED'
+              UNION ALL
+              SELECT r.return_date,p.category_id,COALESCE(sl.hsn_code,''),sl.tax_rate_pct,
+                     -rl.qty,-rl.taxable_amount,-rl.tax_amount,-rl.cost_amount
+              FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
+              JOIN sale_line sl ON sl.id=rl.sale_line_id JOIN product p ON p.id=sl.product_id
+            ), expected AS (
+              SELECT day,category_id,hsn,rate,COUNT(*) AS entries,
+                     SUM(quantity) AS quantity,SUM(revenue) AS revenue,SUM(tax) AS tax,SUM(cost) AS cost
+              FROM movements GROUP BY day,category_id,hsn,rate
+            )
+            SELECT COUNT(*) FROM (
+              SELECT * FROM (SELECT * FROM expected EXCEPT SELECT * FROM sale_report_day)
+              UNION ALL
+              SELECT * FROM (SELECT * FROM sale_report_day EXCEPT SELECT * FROM expected)
+            )
+            """).ShouldBe(0L);
+
+        long category = connection.ExecuteScalar<long>("INSERT INTO category(name) VALUES ('New group') RETURNING id");
+        connection.Execute("INSERT INTO sale(invoice_no,sale_date,status) VALUES ('S2','2026-08-31','DRAFT')");
+        connection.Execute("""
+            INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,
+                tax_rate_pct,hsn_code,taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+            VALUES (2,1,1,1,'Rice',1000,105000,5000,'1006',100000,5000,105000,60000,60000)
+            """);
+        AssertSourceParity();
+        connection.Execute("UPDATE sale_line SET hsn_code='1234',tax_rate_pct=12000,taxable_amount=120000,tax_amount=12000,line_total=132000 WHERE id=1");
+        connection.Execute("UPDATE sale SET status='COMPLETED' WHERE id=2");
+        AssertSourceParity();
+        connection.Execute("""
+            INSERT INTO sale_return(return_no,sale_id,return_date,refund_mode,taxable_total,tax_total,refund_total,cost_total)
+            VALUES ('R2',2,'2026-09-12','CASH',20000,1000,21000,12000)
+            """);
+        connection.Execute("""
+            INSERT INTO sale_return_line(sale_return_id,sale_line_id,qty,taxable_amount,tax_amount,refund_amount,cost_amount)
+            VALUES (2,1,200,20000,1000,21000,12000)
+            """);
+        AssertSourceParity();
+        connection.Execute("UPDATE sale_return SET return_date='2026-10-01' WHERE id=2");
+        AssertSourceParity();
+        connection.Execute("UPDATE product SET category_id=@category WHERE id=1", new { category });
+        AssertSourceParity();
+        connection.Execute("UPDATE sale SET status='VOID',void_reason='Correction' WHERE id=2");
+        AssertSourceParity();
+        connection.Execute("DELETE FROM sale_return_line WHERE id=1");
+        AssertSourceParity();
+    }
+
+    [Fact]
     public async Task FullCsvExport_StreamsBeyondInteractiveRowLimitAndKeepsNumericValues()
     {
         using var fixture = new ReportFixture();
@@ -114,8 +226,11 @@ public sealed class ReportsTests
                 SELECT section AS Section,head_code AS HeadCode,ref_id AS ReferenceId,SUM(amount) AS Amount
                 FROM v_pnl_entry WHERE entry_date BETWEEN @from AND @to
                 GROUP BY section,head_code,ref_id
-                """, new { from = from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                    to = to.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) })
+                """, new
+            {
+                from = from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                to = to.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+            })
                 .ToDictionary(row => $"{row.Section}:{row.HeadCode}:{row.ReferenceId}", row => row.Amount);
             lines.ShouldBe(expected, ignoreOrder: true);
         }
@@ -126,6 +241,133 @@ public sealed class ReportsTests
         public string Section { get; init; } = "";
         public string HeadCode { get; init; } = "";
         public long? ReferenceId { get; init; }
+        public long Amount { get; init; }
+    }
+
+    [Fact]
+    public async Task PnlMonthlyMatrix_MatchesEntryViewAcrossPartialAndFullMonths()
+    {
+        using var fixture = new ReportFixture();
+        fixture.SeedGoldenScenario();
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("""
+                INSERT INTO sale(invoice_no,sale_date,status,taxable_total,grand_total,cost_total)
+                VALUES('MATRIX-OLD','2025-12-31','COMPLETED',100000,100000,60000);
+                INSERT INTO sale_return(return_no,sale_id,return_date,refund_mode,taxable_total,refund_total,cost_total)
+                VALUES('MATRIX-RETURN',(SELECT id FROM sale WHERE invoice_no='MATRIX-OLD'),
+                       '2026-01-02','CASH',25000,25000,15000);
+                """);
+        foreach ((DateOnly from, DateOnly to) in new[]
+                 { (new DateOnly(2025, 12, 15), new DateOnly(2026, 9, 30)),
+                   (new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 15)),
+                   (new DateOnly(2026, 9, 15), new DateOnly(2026, 9, 30)),
+                   (new DateOnly(2030, 1, 1), new DateOnly(2030, 1, 31)) })
+        {
+            PnlMatrix actual = await fixture.Reports.GetPnlMatrixAsync(from, to, TestContext.Current.CancellationToken);
+            using var connection = fixture.Factory.Open();
+            var expected = connection.Query<PnlMatrixReferenceRow>("""
+                SELECT section AS Section,head_code AS HeadCode,ref_id AS ReferenceId,
+                       substr(entry_date,1,7) AS Month,SUM(amount) AS Amount
+                FROM v_pnl_entry WHERE entry_date BETWEEN @from AND @to
+                GROUP BY section,head_code,ref_id,substr(entry_date,1,7)
+                """, new { from = from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                    to = to.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) })
+                .ToDictionary(row => (row.Section, row.HeadCode, row.ReferenceId, row.Month), row => row.Amount);
+            var allCells = actual.Rows
+                .Where(row => row.HeadCode is not ("NET_SALES" or "GROSS_PROFIT" or "TOTAL_EXPENSES" or "NET_PROFIT"))
+                .SelectMany(row => actual.MonthKeys.Select((month, index) => new
+                    { Key = (row.Section, row.HeadCode, row.ReferenceId, month), Amount = row.Months[index].Scaled }))
+                .ToList();
+            allCells.Where(cell => !expected.ContainsKey(cell.Key))
+                .ShouldAllBe(cell => cell.Amount == 0);
+            var observed = allCells
+                .Where(cell => expected.ContainsKey(cell.Key))
+                .ToDictionary(cell => cell.Key, cell => cell.Amount);
+            observed.ShouldBe(expected, ignoreOrder: true);
+        }
+    }
+
+    [Fact]
+    public async Task StockReports_PageBeforeHistoryLookupAndKeepLastSoldCorrect()
+    {
+        using var fixture = new ReportFixture();
+        fixture.SeedGoldenScenario();
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("""
+                UPDATE product SET reorder_level=2000 WHERE sku='RICE';
+                INSERT INTO sale(sale_date,status) VALUES ('2026-09-10','DRAFT');
+                INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,
+                    taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+                VALUES (2,1,1,1,'Rice',1000,100000,100000,0,100000,100000,100000);
+                UPDATE sale SET invoice_no='S-RECENT',status='COMPLETED',line_count=1,
+                    taxable_total=100000,grand_total=100000,cost_total=100000 WHERE id=2;
+                INSERT INTO product(sku,name,category_id,uom_id,reorder_level)
+                VALUES ('MILK','Milk',1,(SELECT id FROM uom LIMIT 1),2000),
+                       ('NEVER','Never sold',1,(SELECT id FROM uom LIMIT 1),2000);
+                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,selling_price,qty_received,qty_on_hand)
+                VALUES (2,'L2','2026-01-01',100000,120000,1000,1000),
+                       (3,'L3','2026-01-01',100000,120000,1000,1000);
+                INSERT INTO sale(sale_date,status) VALUES ('2026-01-01','DRAFT');
+                INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,
+                    taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+                VALUES (3,1,2,2,'Milk',1000,100000,100000,0,100000,100000,100000);
+                UPDATE sale SET invoice_no='S-OLD',status='COMPLETED',line_count=1,
+                    taxable_total=100000,grand_total=100000,cost_total=100000 WHERE id=3;
+                """);
+        TabularReport low = await fixture.Reports.GetReportAsync(ReportKind.LowStock,
+            new(To: new(2026, 9, 27), Limit: 2), TestContext.Current.CancellationToken);
+        low.Rows.Select(row => row.Values["Sku"]).ShouldBe(["MILK", "NEVER"], ignoreOrder: false);
+        low.IsTruncated.ShouldBeTrue();
+        TabularReport slow = await fixture.Reports.GetReportAsync(ReportKind.SlowMovers,
+            new(To: new(2026, 9, 27), SlowMoverDays: 90, Limit: 10), TestContext.Current.CancellationToken);
+        slow.Rows.Select(row => row.Values["Sku"]).ShouldBe(["MILK", "NEVER"], ignoreOrder: true);
+        slow.Rows.Single(row => (string)row.Values["Sku"]! == "MILK").Values["LastSold"].ShouldBe("2026-01-01");
+        slow.Rows.Single(row => (string)row.Values["Sku"]! == "NEVER").Values["LastSold"].ShouldBeNull();
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("UPDATE sale SET status='VOID',void_reason='Correction' WHERE id=2");
+        TabularReport afterVoid = await fixture.Reports.GetReportAsync(ReportKind.SlowMovers,
+            new(To: new(2026, 9, 27), SlowMoverDays: 90, Limit: 10), TestContext.Current.CancellationToken);
+        afterVoid.Rows.Single(row => (string)row.Values["Sku"]! == "RICE").Values["LastSold"].ShouldBeNull();
+        afterVoid.Rows.Single(row => (string)row.Values["Sku"]! == "MILK").Values["LastSold"].ShouldBe("2026-01-01");
+    }
+
+    [Fact]
+    public async Task StockLedger_SelectiveQueriesKeepProductLotAndCsvResults()
+    {
+        using var fixture = new ReportFixture();
+        fixture.SeedGoldenScenario();
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("""
+                INSERT INTO stock_movement(lot_id,product_id,move_date,type_code,qty,unit_cost,ref_type)
+                VALUES (1,1,'2026-09-20','ADJUSTMENT',1000,100000,'test');
+                """);
+        var filter = new ReportFilter(From: new(2026, 9, 1), To: new(2026, 9, 30), Limit: 10);
+        TabularReport broad = await fixture.Reports.GetReportAsync(ReportKind.StockLedger,
+            filter, TestContext.Current.CancellationToken);
+        TabularReport product = await fixture.Reports.GetReportAsync(ReportKind.StockLedger,
+            filter with { ProductId = 1 }, TestContext.Current.CancellationToken);
+        TabularReport lot = await fixture.Reports.GetReportAsync(ReportKind.StockLedger,
+            filter with { ProductId = 1, LotId = 1 }, TestContext.Current.CancellationToken);
+        broad.Rows.Count.ShouldBe(1);
+        System.Text.Json.JsonSerializer.Serialize(product.Rows).ShouldBe(
+            System.Text.Json.JsonSerializer.Serialize(broad.Rows));
+        System.Text.Json.JsonSerializer.Serialize(lot.Rows).ShouldBe(
+            System.Text.Json.JsonSerializer.Serialize(broad.Rows));
+        (await fixture.Reports.GetReportAsync(ReportKind.StockLedger,
+            filter with { ProductId = 999, LotId = 1 }, TestContext.Current.CancellationToken)).Rows.ShouldBeEmpty();
+        string csv = Path.Combine(fixture.Root, "selected-stock-ledger.csv");
+        (await fixture.Reports.ExportCsvAsync(ReportKind.StockLedger,
+            filter with { ProductId = 1, LotId = 1 }, csv,
+            cancellationToken: TestContext.Current.CancellationToken)).ShouldBe(1);
+        File.ReadLines(csv).Count().ShouldBe(2);
+    }
+
+    private sealed class PnlMatrixReferenceRow
+    {
+        public string Section { get; init; } = "";
+        public string HeadCode { get; init; } = "";
+        public long? ReferenceId { get; init; }
+        public string Month { get; init; } = "";
         public long Amount { get; init; }
     }
 
@@ -317,6 +559,18 @@ public sealed class ReportsTests
         System.Text.Json.JsonSerializer.Serialize(projected.Rows).ShouldBe(
             System.Text.Json.JsonSerializer.Serialize(source.Rows));
         projected.Totals.ShouldBe(source.Totals);
+        long selectedProduct;
+        using (var connection = fixture.Factory.Open())
+            selectedProduct = connection.ExecuteScalar<long>("SELECT id FROM product WHERE sku='RICE'");
+        TabularReport selected = await fixture.Reports.GetReportAsync(ReportKind.ItemSales,
+            filter with { ProductId = selectedProduct }, TestContext.Current.CancellationToken);
+        System.Text.Json.JsonSerializer.Serialize(selected.Rows).ShouldBe(
+            System.Text.Json.JsonSerializer.Serialize(source.Rows));
+        string selectedCsv = Path.Combine(fixture.Root, "selected-item-sales.csv");
+        (await fixture.Reports.ExportCsvAsync(ReportKind.ItemSales,
+            filter with { ProductId = selectedProduct }, selectedCsv,
+            cancellationToken: TestContext.Current.CancellationToken)).ShouldBe(1);
+        File.ReadLines(selectedCsv).Count().ShouldBe(2);
         System.Text.Json.JsonSerializer.Serialize(projectedCategories.Rows).ShouldBe(
             System.Text.Json.JsonSerializer.Serialize(sourceCategories.Rows));
         projectedCategories.Totals.ShouldBe(sourceCategories.Totals);
@@ -489,6 +743,12 @@ public sealed class ReportsTests
             row.Values["Hour"].ShouldBe(9L);
             row.Values["Bills"].ShouldBe(2L);
             row.Values["Revenue"].ShouldBe(90000L);
+            using (var connection = fixture.Factory.Open())
+                connection.Execute("UPDATE sale SET status='VOID',void_reason='Correction' WHERE id=1");
+            TabularReport afterVoid = await service.GetReportAsync(ReportKind.HourlySales,
+                new(From: new(2026, 9, 14), To: new(2026, 9, 14)), TestContext.Current.CancellationToken);
+            afterVoid.Rows.Single().Values["Bills"].ShouldBe(1L);
+            afterVoid.Rows.Single().Values["Revenue"].ShouldBe(45000L);
         }
         finally { translations.UiCulture = original; }
     }
@@ -717,6 +977,26 @@ public sealed class ReportsTests
         sheet.Cell(4, 2).DataType.ShouldBe(XLDataType.Number);
         sheet.Cell(4, 2).GetDouble().ShouldBe(123.456);
         sheet.Cell(4, 2).Style.NumberFormat.Format.ShouldBe("#,##0.000");
+    }
+
+    [Fact]
+    public void CancelledExcelExport_PreservesExistingOutputAndLeavesNoPartialFile()
+    {
+        using var fixture = new ReportFixture();
+        string path = Path.Combine(fixture.Root, "existing.xlsx");
+        File.WriteAllText(path, "existing output");
+        var report = new TabularReport("Stock value", null,
+            [new("Name", "Name", ReportValueKind.Text)],
+            [new(new Dictionary<string, object?> { ["Name"] = "Rice" })],
+            new Dictionary<string, decimal>());
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        Should.Throw<OperationCanceledException>(() =>
+            fixture.Output.ExportExcel(report, path, null, cancellation.Token));
+
+        File.ReadAllText(path).ShouldBe("existing output");
+        Directory.EnumerateFiles(fixture.Root, "*.partial*").ShouldBeEmpty();
     }
 
     private sealed class ReportFixture : IDisposable

@@ -1021,6 +1021,8 @@
   <data name="Reports_Print_Band" xml:space="preserve"><value>કૉલમ</value></data>
   <data name="Reports_Print_Page" xml:space="preserve"><value>પાનું</value></data>
   <data name="Reports_Print_Printed" xml:space="preserve"><value>છાપ્યું</value></data>
+  <data name="Reports_Print_FirstRows" xml:space="preserve"><value>પ્રથમ {0} પંક્તિઓ</value></data>
+  <data name="Reports_PrintPreviewCapped" xml:space="preserve"><value>છાપવાના પૂર્વાવલોકનમાં પ્રથમ {0} પંક્તિઓ બતાવવામાં આવે છે. સંપૂર્ણ પરિણામ માટે CSV નિકાસ કરો.</value></data>
   <data name="Reports_Column_OriginalTotal" xml:space="preserve"><value>મૂળ બિલ</value></data>
   <data name="Reports_TruncatedRows" xml:space="preserve"><value>પહેલી {0} પંક્તિઓ બતાવે છે · કુલ અને નિકાસ આંશિક છે</value></data>
   <data name="Reports_PartialExport" xml:space="preserve"><value>આંશિક અહેવાલ: કુલમાં માત્ર બતાવેલી પંક્તિઓ સામેલ છે.</value></data>

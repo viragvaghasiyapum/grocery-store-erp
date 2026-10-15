@@ -33,5 +33,7 @@
     <EmbeddedResource Include="../../022_resumable_imports.sql" Link="db/022_resumable_imports.sql" />
     <EmbeddedResource Include="../../023_movement_date_access.sql" Link="db/023_movement_date_access.sql" />
     <EmbeddedResource Include="../../024_stock_value_projection.sql" Link="db/024_stock_value_projection.sql" />
+    <EmbeddedResource Include="../../025_sale_report_day.sql" Link="db/025_sale_report_day.sql" />
+    <EmbeddedResource Include="../../026_sale_product_day.sql" Link="db/026_sale_product_day.sql" />
   </ItemGroup>
 </Project>

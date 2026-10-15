@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -13,63 +14,91 @@ namespace GroceryErp.Reports;
 
 public sealed class ReportOutputService(ISettings settings, TranslationSource? translations = null)
 {
+    public const int MaxPrintableRows = 100;
     private const string NumberFormat = "#,##0.000";
     private const double PageWidth = 793.7;
     private const double PageHeight = 1122.5;
     private const double Margin = 45.35;
     private static readonly int[] FirstColumn = [0];
 
-    public void ExportExcel(TabularReport report, string path)
+    public void ExportExcel(TabularReport report, string path) =>
+        ExportExcel(report, path, null, CancellationToken.None);
+
+    public void ExportExcel(TabularReport report, string path,
+        IProgress<int>? progress, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(report);
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        using var workbook = new XLWorkbook();
-        workbook.Properties.Author = settings.Current.StoreName;
-        IXLWorksheet sheet = workbook.Worksheets.Add(SafeSheetName(report.Title));
-        sheet.Cell(1, 1).Value = report.Title;
-        sheet.Range(1, 1, 1, Math.Max(1, report.Columns.Count)).Merge().Style.Font.SetBold().Font.SetFontSize(16);
-        int headerRow = (report.Period is null ? 3 : 4) + (report.IsTruncated ? 1 : 0);
-        if (report.Period is { } period)
-            sheet.Cell(2, 1).Value = $"{period.From:dd-MM-yyyy} to {period.To:dd-MM-yyyy}";
-        if (report.IsTruncated)
+        cancellationToken.ThrowIfCancellationRequested();
+        string fullPath = Path.GetFullPath(path);
+        string temporaryPath = fullPath + "." + Guid.NewGuid().ToString("N") +
+            ".partial" + Path.GetExtension(fullPath);
+        try
         {
-            sheet.Cell(headerRow - 1, 1).Value = Text("Reports_PartialExport", "Partial report: totals include displayed rows only.");
-            sheet.Cell(headerRow - 1, 1).Style.Font.SetBold();
-        }
-        for (int column = 0; column < report.Columns.Count; column++)
-        {
-            ReportColumn definition = report.Columns[column];
-            IXLCell cell = sheet.Cell(headerRow, column + 1);
-            cell.Value = definition.Heading;
-            cell.Style.Font.SetBold();
-            cell.Style.Fill.SetBackgroundColor(XLColor.LightGray);
-        }
-        for (int row = 0; row < report.Rows.Count; row++)
+            using var workbook = new XLWorkbook();
+            workbook.Properties.Author = settings.Current.StoreName;
+            IXLWorksheet sheet = workbook.Worksheets.Add(SafeSheetName(report.Title));
+            sheet.Cell(1, 1).Value = report.Title;
+            sheet.Range(1, 1, 1, Math.Max(1, report.Columns.Count)).Merge().Style.Font.SetBold().Font.SetFontSize(16);
+            int headerRow = (report.Period is null ? 3 : 4) + (report.IsTruncated ? 1 : 0);
+            if (report.Period is { } period)
+                sheet.Cell(2, 1).Value = $"{period.From:dd-MM-yyyy} to {period.To:dd-MM-yyyy}";
+            if (report.IsTruncated)
+            {
+                sheet.Cell(headerRow - 1, 1).Value = Text("Reports_PartialExport", "Partial report: totals include displayed rows only.");
+                sheet.Cell(headerRow - 1, 1).Style.Font.SetBold();
+            }
             for (int column = 0; column < report.Columns.Count; column++)
-                WriteCell(sheet.Cell(headerRow + row + 1, column + 1), report.Columns[column],
-                    report.Rows[row].Values.GetValueOrDefault(report.Columns[column].Key));
-        int totalsRow = headerRow + report.Rows.Count + 1;
-        if (report.Totals.Count > 0)
-        {
-            sheet.Cell(totalsRow, 1).Value = Text("Reports_Column_Total", "Total");
-            sheet.Cell(totalsRow, 1).Style.Font.SetBold();
-            for (int column = 0; column < report.Columns.Count; column++)
-                if (report.Totals.TryGetValue(report.Columns[column].Key, out decimal total))
+            {
+                ReportColumn definition = report.Columns[column];
+                IXLCell cell = sheet.Cell(headerRow, column + 1);
+                cell.Value = definition.Heading;
+                cell.Style.Font.SetBold();
+                cell.Style.Fill.SetBackgroundColor(XLColor.LightGray);
+            }
+            for (int row = 0; row < report.Rows.Count; row++)
+            {
+                if (row % 100 == 0)
                 {
-                    sheet.Cell(totalsRow, column + 1).Value = total;
-                    sheet.Cell(totalsRow, column + 1).Style.NumberFormat.Format = NumberFormat;
-                    sheet.Cell(totalsRow, column + 1).Style.Font.SetBold();
+                    cancellationToken.ThrowIfCancellationRequested();
+                    progress?.Report(row);
                 }
+                for (int column = 0; column < report.Columns.Count; column++)
+                    WriteCell(sheet.Cell(headerRow + row + 1, column + 1), report.Columns[column],
+                        report.Rows[row].Values.GetValueOrDefault(report.Columns[column].Key));
+            }
+            int totalsRow = headerRow + report.Rows.Count + 1;
+            if (report.Totals.Count > 0)
+            {
+                sheet.Cell(totalsRow, 1).Value = Text("Reports_Column_Total", "Total");
+                sheet.Cell(totalsRow, 1).Style.Font.SetBold();
+                for (int column = 0; column < report.Columns.Count; column++)
+                    if (report.Totals.TryGetValue(report.Columns[column].Key, out decimal total))
+                    {
+                        sheet.Cell(totalsRow, column + 1).Value = total;
+                        sheet.Cell(totalsRow, column + 1).Style.NumberFormat.Format = NumberFormat;
+                        sheet.Cell(totalsRow, column + 1).Style.Font.SetBold();
+                    }
+            }
+            sheet.SheetView.FreezeRows(headerRow);
+            sheet.Columns().AdjustToContents(1, Math.Min(headerRow + report.Rows.Count, 500));
+            foreach (IXLColumn column in sheet.ColumnsUsed()) if (column.Width > 45) column.Width = 45;
+            sheet.Range(headerRow, 1, headerRow + report.Rows.Count, report.Columns.Count).SetAutoFilter();
+            cancellationToken.ThrowIfCancellationRequested();
+            workbook.SaveAs(temporaryPath);
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(temporaryPath, fullPath, overwrite: true);
+            progress?.Report(report.Rows.Count);
         }
-        sheet.SheetView.FreezeRows(headerRow);
-        sheet.Columns().AdjustToContents(1, Math.Min(headerRow + report.Rows.Count, 500));
-        foreach (IXLColumn column in sheet.ColumnsUsed()) if (column.Width > 45) column.Width = 45;
-        sheet.Range(headerRow, 1, headerRow + report.Rows.Count, report.Columns.Count).SetAutoFilter();
-        workbook.SaveAs(path);
+        finally { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); }
     }
 
-    public void ExportPnlExcel(PnlStatement statement, string path)
-        => ExportExcel(BuildPnlReport(statement), path);
+    public void ExportPnlExcel(PnlStatement statement, string path) =>
+        ExportPnlExcel(statement, path, null, CancellationToken.None);
+
+    public void ExportPnlExcel(PnlStatement statement, string path,
+        IProgress<int>? progress, CancellationToken cancellationToken)
+        => ExportExcel(BuildPnlReport(statement), path, progress, cancellationToken);
 
     public TabularReport BuildPnlReport(PnlStatement statement)
     {
@@ -93,6 +122,15 @@ public sealed class ReportOutputService(ISettings settings, TranslationSource? t
     public FixedDocument CreateA4(TabularReport report, DateTime printedAt)
     {
         ArgumentNullException.ThrowIfNull(report);
+        if (report.Rows.Count > MaxPrintableRows)
+            report = report with
+            {
+                Title = $"{report.Title} ({string.Format(CultureInfo.InvariantCulture,
+                    Text("Reports_Print_FirstRows", "first {0} rows"), MaxPrintableRows)})",
+                Rows = report.Rows.Take(MaxPrintableRows).ToArray(),
+                Totals = new Dictionary<string, decimal>(),
+                IsTruncated = true,
+            };
         bool landscape = report.Columns.Count > 7;
         double pageWidth = landscape ? PageHeight : PageWidth;
         double pageHeight = landscape ? PageWidth : PageHeight;

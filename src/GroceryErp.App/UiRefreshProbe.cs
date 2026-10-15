@@ -6,11 +6,13 @@ using GroceryErp.Data.Infrastructure;
 
 namespace GroceryErp.App;
 
-internal sealed class UiRefreshProbe(string page, FrameworkElement? visual = null) : IDisposable
+internal sealed class UiRefreshProbe(string page, FrameworkElement? visual = null, long? searchStarted = null) : IDisposable
 {
     private readonly long _started = Stopwatch.GetTimestamp();
+    public string? SearchShape { get; set; }
 
-    public static UiRefreshProbe Track(string page, FrameworkElement? visual = null) => new(page, visual);
+    public static UiRefreshProbe Track(string page, FrameworkElement? visual = null, long? searchStarted = null) =>
+        new(page, visual, searchStarted);
 
     // Measures the synchronous ItemsSource/control update separately from the DB await.
     public void Bind(Action assign) => RecordBinding(page, assign);
@@ -68,6 +70,10 @@ internal sealed class UiRefreshProbe(string page, FrameworkElement? visual = nul
                 Stopwatch.GetElapsedTime(assigned).TotalMilliseconds, tag);
             PerformanceMetrics.UiFirstFrameTotalMilliseconds.Record(
                 Stopwatch.GetElapsedTime(_started).TotalMilliseconds, tag);
+            if (searchStarted is long started && SearchShape is string shape)
+                PerformanceMetrics.UiSearchVisibleMilliseconds.Record(
+                    Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                    tag, new KeyValuePair<string, object?>("phase", shape));
             CompositionTarget.Rendering -= frame;
             if (layoutSeen) Stop();
         };

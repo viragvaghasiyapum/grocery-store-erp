@@ -118,13 +118,47 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         DateRange period = new(from, to);
         return database.ReadAsync(connection =>
         {
+            DateOnly lastCompleteMonth = to.Day == DateTime.DaysInMonth(to.Year, to.Month)
+                ? to : to.AddMonths(-1);
             List<PnlMonthRaw> raw = connection.Query<PnlMonthRaw>("""
+                WITH entries AS (
+                    SELECT 'INCOME' AS section,'SALES' AS head_code,NULL AS ref_id,
+                           substr(day,1,7) AS month,taxable AS amount
+                    FROM pnl_day WHERE day BETWEEN @from AND @to AND bills>0
+                    UNION ALL SELECT 'INCOME','ROUND_OFF',NULL,substr(day,1,7),rounding
+                    FROM pnl_day WHERE day BETWEEN @from AND @to AND rounding<>0
+                    UNION ALL SELECT 'COGS','COGS',NULL,substr(day,1,7),cost
+                    FROM pnl_day WHERE day BETWEEN @from AND @to AND bills>0
+                    UNION ALL SELECT 'INCOME','SALES_RETURNS',NULL,substr(day,1,7),-return_taxable
+                    FROM pnl_day WHERE day BETWEEN @from AND @to AND returns>0
+                    UNION ALL SELECT 'COGS','COGS',NULL,substr(day,1,7),-return_cost
+                    FROM pnl_day WHERE day BETWEEN @from AND @to AND returns>0
+                    UNION ALL SELECT 'EXPENSE','DAMAGES',NULL,substr(damage_date,1,7),cost_value-recovered_amount
+                    FROM damage WHERE damage_date BETWEEN @from AND @to
+                    UNION ALL SELECT 'EXPENSE','STOCK_ADJUSTMENT',NULL,substr(move_date,1,7),
+                        -CAST(ROUND(qty*unit_cost/1000.0) AS INTEGER)
+                    FROM stock_movement WHERE type_code='ADJUSTMENT' AND move_date BETWEEN @from AND @to
+                    UNION ALL SELECT 'EXPENSE','EXPENSE_CATEGORY',category_id,substr(expense_date,1,7),amount
+                    FROM expense WHERE expense_date BETWEEN @from AND @to
+                    UNION ALL SELECT 'EXPENSE','SALARIES',NULL,period_month,amount
+                    FROM salary_payment WHERE period_month BETWEEN @firstMonth AND @lastCompleteMonth
+                    UNION ALL SELECT 'EXPENSE','DEPRECIATION',NULL,period_month,amount
+                    FROM asset_depreciation WHERE period_month BETWEEN @firstMonth AND @lastCompleteMonth
+                    UNION ALL SELECT 'OTHER','ASSET_DISPOSAL',a.id,substr(a.disposed_date,1,7),
+                        a.disposal_value-COALESCE((SELECT ad.closing_value FROM asset_depreciation ad
+                            WHERE ad.asset_id=a.id ORDER BY ad.period_month DESC LIMIT 1),a.cost)
+                    FROM asset a WHERE a.disposed_date BETWEEN @from AND @to
+                    UNION ALL SELECT 'OTHER','VENDOR_RETURN_VARIANCE',NULL,substr(return_date,1,7),
+                        credit_before_tax+CASE WHEN tax_mode='REGULAR' THEN 0 ELSE tax_credit END-cost_total
+                    FROM vendor_return WHERE return_date BETWEEN @from AND @to
+                )
                 SELECT section AS Section,head_code AS HeadCode,ref_id AS ReferenceId,
-                       strftime('%Y-%m',entry_date) AS Month,SUM(amount) AS Amount
-                FROM v_pnl_entry WHERE entry_date BETWEEN @from AND @to
-                GROUP BY section,head_code,ref_id,strftime('%Y-%m',entry_date)
-                ORDER BY section,head_code,ref_id,Month
-                """, new { from = Iso(from), to = Iso(to) }).ToList();
+                       month AS Month,SUM(amount) AS Amount
+                FROM entries GROUP BY section,head_code,ref_id,month
+                ORDER BY section,head_code,ref_id,month
+                """, new { from = Iso(from), to = Iso(to),
+                    firstMonth = from.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                    lastCompleteMonth = lastCompleteMonth.ToString("yyyy-MM", CultureInfo.InvariantCulture) }).ToList();
             Dictionary<long, string> categories = connection.Query<NamedRow>(
                 "SELECT id AS Id,name AS Name,name_local AS LocalName FROM expense_category")
                 .ToDictionary(static x => x.Id, x => Pick(x.Name, x.LocalName));
@@ -355,11 +389,11 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         ReportDefinition definition = Definition(kind);
         return database.ReadAsync(connection =>
         {
-            string sql = definition.Sql;
+            string sql = SelectReportSql(kind, filter, definition.Sql);
             string deltaFrom = Iso(from);
             string deltaTo = Iso(from);
             int deltaSign = 1;
-            if (kind is ReportKind.ItemSales or ReportKind.CategorySales)
+            if (kind == ReportKind.ItemSales && filter.ProductId is null)
             {
                 DashboardWindowRaw? window = connection.QuerySingleOrDefault<DashboardWindowRaw>("""
                     SELECT from_day AS FromDay,to_day AS ToDay FROM dashboard_top_window WHERE id=1
@@ -369,9 +403,7 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                         DateTimeStyles.None, out DateOnly windowFrom) &&
                     Math.Abs(windowFrom.DayNumber - from.DayNumber) <= 7)
                 {
-                    sql = kind == ReportKind.ItemSales
-                        ? ReportDefinitions.ItemSalesFromTopWindow
-                        : ReportDefinitions.CategorySalesFromTopWindow;
+                    sql = ReportDefinitions.ItemSalesFromTopWindow;
                     deltaFrom = Iso(windowFrom < from ? windowFrom : from);
                     deltaTo = Iso((windowFrom > from ? windowFrom : from).AddDays(-1));
                     deltaSign = windowFrom < from ? -1 : 1;
@@ -457,7 +489,8 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                         Limit = int.MaxValue,
                     };
                     long count = 0;
-                    var command = new CommandDefinition(definition.Sql, parameters, commandTimeout: 300,
+                    string sql = SelectReportSql(kind, filter, definition.Sql);
+                    var command = new CommandDefinition(sql, parameters, commandTimeout: 300,
                         flags: CommandFlags.None, cancellationToken: cancellationToken);
                     foreach (dynamic row in connection.Query<dynamic>(command))
                     {
@@ -886,6 +919,18 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
             .OrderByDescending(static file => file.LastWriteTimeUtc).FirstOrDefault();
         return latest?.LastWriteTime.ToString("dd-MM-yyyy HH:mm", CultureInfo.InvariantCulture);
     }
+
+    private static string SelectReportSql(ReportKind kind, ReportFilter filter, string defaultSql) =>
+        (kind, filter.ProductId, filter.LotId) switch
+        {
+            (ReportKind.ItemSales, not null, _) => ReportDefinitions.ItemSalesForProduct,
+            (ReportKind.CategorySales, _, _) => ReportDefinitions.CategorySalesFromDay,
+            (ReportKind.GstSummary, _, _) => ReportDefinitions.GstSummaryFromDay,
+            (ReportKind.HourlySales, _, _) => ReportDefinitions.HourlySalesFromDay,
+            (ReportKind.StockLedger, _, not null) => ReportDefinitions.StockLedgerForLot,
+            (ReportKind.StockLedger, not null, _) => ReportDefinitions.StockLedgerForProduct,
+            _ => defaultSql,
+        };
 
     private static ReportDefinition Definition(ReportKind kind) => ReportDefinitions.All[kind];
 

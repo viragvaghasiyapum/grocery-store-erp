@@ -21,7 +21,7 @@ using GroceryErp.Reports;
 using GroceryErp.Sales;
 
 if (args.Length < 1)
-    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
+    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|phase6-reports|phase6-matrix|phase6-category-index|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|phase5-label-failure|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
 
 string root = Path.GetFullPath(args[0]);
 string mode = args.Length > 1 ? args[1] : "read";
@@ -75,7 +75,7 @@ static string MetricName(string name, ReadOnlySpan<KeyValuePair<string, object?>
 }
 var factory = new SqliteConnectionFactory(paths);
 var tracedQueries = new System.Collections.Concurrent.ConcurrentDictionary<(string Operation, string Shape), string>();
-if (mode is "attribution-profile" or "history-profile" or "shape-profile" or "report-profile" or "gap-read" or "feature-write" or "weekly-maintenance-overlap" or "print-journal-profile")
+if (mode is "attribution-profile" or "history-profile" or "shape-profile" or "report-profile" or "phase6-reports" or "gap-read" or "feature-write" or "weekly-maintenance-overlap" or "print-journal-profile")
     factory.SqlTrace = (operation, sql) =>
     {
         string statement = sql.Trim();
@@ -238,6 +238,333 @@ DateOnly monthStart = new(2026, 9, 1);
 DateOnly fiscalStart = new(2026, 4, 1);
 switch (mode)
 {
+    case "phase6-ledger-trial":
+    {
+        const string page = """
+            WITH page AS MATERIALIZED (
+                SELECT m.id,m.lot_id FROM stock_movement m
+                WHERE m.product_id=@productId AND m.move_date BETWEEN @from AND @to
+                  AND (@beforeId IS NULL OR m.id<@beforeId)
+                  AND (@type IS NULL OR m.type_code=@type)
+                ORDER BY m.id DESC LIMIT 101
+            )
+            """;
+        var variants = new (string Name, string Sql)[]
+        {
+            ("correlated", page + """
+                SELECT m.id,l.qty_on_hand-COALESCE((SELECT SUM(b.qty) FROM stock_movement b
+                    WHERE b.lot_id=m.lot_id AND b.id>m.id),0) AS balance
+                FROM page m JOIN product_lot l ON l.id=m.lot_id ORDER BY m.id DESC
+                """),
+            ("lot-boundary", page + """
+                , bounds AS MATERIALIZED (SELECT lot_id,MAX(id) AS max_id FROM page GROUP BY lot_id),
+                  after_page AS MATERIALIZED (
+                    SELECT x.lot_id,COALESCE((SELECT SUM(b.qty) FROM stock_movement b
+                        WHERE b.lot_id=x.lot_id AND b.id>x.max_id),0) AS later_qty FROM bounds x
+                  )
+                SELECT m.id,l.qty_on_hand-a.later_qty-COALESCE((SELECT SUM(b.qty)
+                    FROM stock_movement b WHERE b.lot_id=m.lot_id AND b.id>m.id AND b.id<=x.max_id),0) AS balance
+                FROM page m JOIN product_lot l ON l.id=m.lot_id
+                JOIN bounds x ON x.lot_id=m.lot_id JOIN after_page a ON a.lot_id=m.lot_id
+                ORDER BY m.id DESC
+                """),
+        };
+        variants = [..variants, ("correlated-id-index",
+            variants[0].Sql.Replace("FROM stock_movement m",
+                "FROM stock_movement m INDEXED BY ix_move_product_id", StringComparison.Ordinal)),
+            ("lot-boundary-id-index",
+            variants[1].Sql.Replace("FROM stock_movement m",
+                "FROM stock_movement m INDEXED BY ix_move_product_id", StringComparison.Ordinal))];
+        using var connection = factory.Open();
+        foreach (var period in new[]
+                 {
+                     ("all", "0001-01-01", "9999-12-31", (long?)null, (string?)null),
+                     ("old", "2023-01-01", "2023-12-31", (long?)null, (string?)null),
+                     ("type", "0001-01-01", "9999-12-31", (long?)null, (string?)"SALE"),
+                 })
+        {
+            List<(long id,long balance)>? expected = null;
+            foreach (var variant in variants)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    long started = Stopwatch.GetTimestamp();
+                    var rows = connection.Query<(long id,long balance)>(variant.Sql,
+                        new { productId = 1, from = period.Item2, to = period.Item3,
+                            beforeId = period.Item4, type = period.Item5 }).ToList();
+                    if (expected is null) expected = rows;
+                    else if (!expected.SequenceEqual(rows))
+                        throw new InvalidDataException($"{variant.Name} changed {period.Item1} ledger balances.");
+                    Console.WriteLine($"LEDGER {period.Item1} {variant.Name} {i}: {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0} ms, rows={rows.Count}");
+                }
+                CapturePlan("ledger-" + period.Item1 + "-" + variant.Name, variant.Sql,
+                    new { productId = 1, from = period.Item2, to = period.Item3,
+                        beforeId = period.Item4, type = period.Item5 });
+            }
+        }
+        break;
+    }
+    case "phase6-low-stock-day-verify":
+    {
+        using var connection = factory.Open();
+        long started = Stopwatch.GetTimestamp();
+        long mismatches = connection.ExecuteScalar<long>("""
+            WITH expected AS (
+                SELECT sl.product_id,s.sale_date AS day,COUNT(*) AS entries,SUM(sl.qty) AS qty
+                FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
+                WHERE s.status='COMPLETED' GROUP BY sl.product_id,s.sale_date
+            )
+            SELECT COUNT(*) FROM (
+                SELECT * FROM (SELECT * FROM expected EXCEPT SELECT * FROM sale_product_day)
+                UNION ALL
+                SELECT * FROM (SELECT * FROM sale_product_day EXCEPT SELECT * FROM expected)
+            )
+            """, commandTimeout: 300);
+        Console.WriteLine($"LOW-STOCK daily-parity: mismatches={mismatches}, rows={connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sale_product_day")}, milliseconds={Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0}");
+        if (mismatches != 0) throw new InvalidDataException("The Low Stock daily projection differs from completed sale lines.");
+        break;
+    }
+    case "phase6-low-stock-cold":
+    {
+        await Measure("report-LowStock-broad", () => reports.GetReportAsync(ReportKind.LowStock,
+            new ReportFilter(To: end, Limit: 100)), static report => report.Rows.Count);
+        CapturePlan("low-stock-report", ReportDefinitions.All[ReportKind.LowStock].Sql,
+            new { to = "2026-09-26", Limit = 101 });
+        break;
+    }
+    case "phase6-low-stock-trial":
+    case "phase6-low-stock-cover-trial":
+    case "phase6-low-stock-day-trial":
+    {
+        if (mode == "phase6-low-stock-cover-trial")
+        {
+            using var setup = factory.Open();
+            long started = Stopwatch.GetTimestamp();
+            setup.Execute("CREATE INDEX IF NOT EXISTS ix_sale_line_product_cover ON sale_line(product_id,sale_id,qty)", commandTimeout: 300);
+            Console.WriteLine($"LOW-STOCK covering-index-build: {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0} ms");
+        }
+        if (mode == "phase6-low-stock-day-trial")
+        {
+            using var setup = factory.Open();
+            long started = Stopwatch.GetTimestamp();
+            setup.Execute("""
+                CREATE TABLE IF NOT EXISTS sale_product_day (
+                    product_id INTEGER NOT NULL, day TEXT NOT NULL,
+                    entries INTEGER NOT NULL, qty INTEGER NOT NULL,
+                    PRIMARY KEY(product_id,day)
+                ) WITHOUT ROWID, STRICT;
+                INSERT INTO sale_product_day(product_id,day,entries,qty)
+                SELECT sl.product_id,s.sale_date,COUNT(*),SUM(sl.qty)
+                FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
+                WHERE s.status='COMPLETED'
+                GROUP BY sl.product_id,s.sale_date;
+                """, commandTimeout: 300);
+            Console.WriteLine($"LOW-STOCK daily-build: {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0} ms, rows={setup.ExecuteScalar<long>("SELECT COUNT(*) FROM sale_product_day")}");
+        }
+        const string page = """
+            WITH page AS MATERIALIZED (
+                SELECT p.id,p.name FROM product_stock_total t JOIN product p ON p.id=t.product_id
+                WHERE p.is_active=1 AND t.is_low=1 ORDER BY p.name LIMIT 101
+            )
+            """;
+        var variants = new List<(string Name, string Sql)>
+        {
+            ("current", page + """
+                SELECT page.id,COALESCE((SELECT SUM(sl.qty)/30 FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
+                    WHERE sl.product_id=page.id AND s.status='COMPLETED'
+                    AND s.sale_date BETWEEN date(@to,'-29 day') AND @to),0) AS average
+                FROM page ORDER BY page.name
+                """),
+            ("date-first", page + """
+                , recent AS MATERIALIZED (
+                    SELECT sl.product_id,SUM(sl.qty)/30 AS average
+                    FROM sale s INDEXED BY ix_sale_date_id
+                    CROSS JOIN sale_line sl ON sl.sale_id=s.id
+                    JOIN page ON page.id=sl.product_id
+                    WHERE s.status='COMPLETED' AND s.sale_date BETWEEN date(@to,'-29 day') AND @to
+                    GROUP BY sl.product_id
+                )
+                SELECT page.id,COALESCE(recent.average,0) AS average FROM page
+                LEFT JOIN recent ON recent.product_id=page.id ORDER BY page.name
+                """),
+            ("date-all", page + """
+                , recent AS MATERIALIZED (
+                    SELECT sl.product_id,SUM(sl.qty)/30 AS average
+                    FROM sale s INDEXED BY ix_sale_date_id
+                    CROSS JOIN sale_line sl ON sl.sale_id=s.id
+                    WHERE s.status='COMPLETED' AND s.sale_date BETWEEN date(@to,'-29 day') AND @to
+                    GROUP BY sl.product_id
+                )
+                SELECT page.id,COALESCE(recent.average,0) AS average FROM page
+                LEFT JOIN recent ON recent.product_id=page.id ORDER BY page.name
+                """),
+        };
+        using var connection = factory.Open();
+        if (connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='ix_sale_line_product_cover'") != 0)
+            variants.Insert(1, ("cover", page + """
+                SELECT page.id,COALESCE((SELECT SUM(sl.qty)/30 FROM sale_line sl INDEXED BY ix_sale_line_product_cover JOIN sale s ON s.id=sl.sale_id
+                    WHERE sl.product_id=page.id AND s.status='COMPLETED'
+                    AND s.sale_date BETWEEN date(@to,'-29 day') AND @to),0) AS average
+                FROM page ORDER BY page.name
+                """));
+        if (connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sale_product_day'") != 0)
+            variants.Insert(1, ("day", page + """
+                SELECT page.id,COALESCE((SELECT SUM(d.qty)/30 FROM sale_product_day d
+                    WHERE d.product_id=page.id AND d.day BETWEEN date(@to,'-29 day') AND @to),0) AS average
+                FROM page ORDER BY page.name
+                """));
+        List<(long id,long average)>? expected = null;
+        foreach (var variant in variants)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                long started = Stopwatch.GetTimestamp();
+                var rows = connection.Query<(long id,long average)>(variant.Sql,new { to = "2026-09-26" }).ToList();
+                if (expected is null) expected = rows;
+                else if (!expected.SequenceEqual(rows)) throw new InvalidDataException(variant.Name + " changed the Low Stock rows.");
+                Console.WriteLine($"LOW-STOCK {variant.Name} {i}: {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0} ms, rows={rows.Count}");
+            }
+            CapturePlan("low-stock-" + variant.Name, variant.Sql,new { to = "2026-09-26" });
+        }
+        for (int i = 0; i < 3; i++)
+        {
+            long started = Stopwatch.GetTimestamp();
+            var rows = connection.Query(ReportDefinitions.All[ReportKind.LowStock].Sql,
+                new { to = "2026-09-26", Limit = 101 }).ToList();
+            Console.WriteLine($"LOW-STOCK exact-sql {i}: {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0} ms, rows={rows.Count}");
+        }
+        for (int i = 0; i < 3; i++)
+        {
+            long started = Stopwatch.GetTimestamp();
+            var stockReport = await reports.GetReportAsync(ReportKind.LowStock,
+                new ReportFilter(To: end, Limit: 100));
+            Console.WriteLine($"LOW-STOCK service {i}: {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0} ms, rows={stockReport.Rows.Count}");
+        }
+        break;
+    }
+    case "phase6-last-parity":
+    {
+        await Measure("last-sale-source-parity", () => Task.Run(() =>
+        {
+            using var connection = factory.Open();
+            long mismatches = connection.ExecuteScalar<long>("""
+                WITH expected AS (
+                  SELECT sl.product_id,MAX(s.sale_date) AS last_day
+                  FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
+                  WHERE s.status='COMPLETED' GROUP BY sl.product_id
+                )
+                SELECT COUNT(*) FROM (
+                  SELECT * FROM (SELECT * FROM expected EXCEPT SELECT * FROM sale_product_last)
+                  UNION ALL
+                  SELECT * FROM (SELECT * FROM sale_product_last EXCEPT SELECT * FROM expected)
+                )
+                """);
+            if (mismatches != 0) throw new InvalidDataException($"{mismatches} last-sale products differ from source.");
+            return 0;
+        }), static value => value);
+        for (int i = 0; i < 8; i++)
+            await Measure("slow-movers", () => reports.GetReportAsync(ReportKind.SlowMovers,
+                new ReportFilter(To: end, SlowMoverDays: 90, Limit: 100)), static report => report.Rows.Count);
+        break;
+    }
+    case "phase6-summary-parity":
+    {
+        foreach ((string label, DateOnly from, DateOnly to) in new[]
+                 { ("month", monthStart, end), ("fiscal", fiscalStart, end),
+                   ("partial", new DateOnly(2026, 9, 3), new DateOnly(2026, 9, 17)) })
+        {
+            int days = to.DayNumber - from.DayNumber + 1;
+            DateOnly priorTo = from.AddDays(-1);
+            var parameters = new {
+                from = from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                to = to.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                previousFrom = priorTo.AddDays(1 - days).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                previousTo = priorTo.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), Limit = 1001
+            };
+            foreach (ReportKind kind in new[] { ReportKind.CategorySales, ReportKind.GstSummary, ReportKind.HourlySales })
+            {
+                List<Dictionary<string, string>> source = [];
+                await Measure($"source-{kind}-{label}", () => Task.Run(() =>
+                {
+                    using var connection = factory.Open();
+                    source = connection.Query(ReportDefinitions.All[kind].Sql, parameters)
+                        .Select(static row => ((IDictionary<string, object?>)row).ToDictionary(
+                            static pair => pair.Key,
+                            static pair => Convert.ToString(pair.Value, System.Globalization.CultureInfo.InvariantCulture) ?? ""))
+                        .ToList();
+                    return source.Count;
+                }), static count => count);
+                async Task<TabularReport> Projected() => await reports.GetReportAsync(kind,
+                    new ReportFilter(From: from, To: to, Limit: 1000));
+                TabularReport projected = await Projected();
+                var actual = projected.Rows.Select(static row => row.Values.ToDictionary(
+                    static pair => pair.Key,
+                    static pair => Convert.ToString(pair.Value, System.Globalization.CultureInfo.InvariantCulture) ?? ""))
+                    .ToList();
+                static string Key(Dictionary<string, string> row, ReportKind kind) => kind switch
+                {
+                    ReportKind.CategorySales => row["Category"],
+                    ReportKind.HourlySales => row["Weekday"] + "|" + row["Hour"],
+                    _ => row["Direction"] + "|" + row["Hsn"] + "|" + row["Rate"]
+                };
+                var expectedByKey = source.ToDictionary(row => Key(row, kind));
+                var actualByKey = actual.ToDictionary(row => Key(row, kind));
+                if (expectedByKey.Count != actualByKey.Count || expectedByKey.Any(pair =>
+                    !actualByKey.TryGetValue(pair.Key, out Dictionary<string, string>? found) ||
+                    pair.Value.Any(cell => !found.TryGetValue(cell.Key, out string? value) || value != cell.Value)))
+                    throw new InvalidDataException($"{kind} {label} projected rows differ from source.");
+                Console.WriteLine($"OK parity-{kind}-{label}: {source.Count} rows");
+                for (int i = 0; i < 5; i++)
+                    await Measure($"projected-{kind}-{label}", Projected, static report => report.Rows.Count);
+            }
+        }
+        break;
+    }
+    case "phase6-search-trial":
+    {
+        const string match = "\"grocery\" \"item\"";
+        const string ftsFirst = """
+            SELECT p.id FROM product_fts f JOIN product p ON p.id=f.rowid
+            WHERE product_fts MATCH @match AND p.is_active=1
+            ORDER BY p.name COLLATE NOCASE,p.id LIMIT 31
+            """;
+        const string nameFirst = """
+            SELECT p.id FROM product p INDEXED BY ix_product_name
+            WHERE p.is_active=1 AND p.id IN
+                (SELECT rowid FROM product_fts WHERE product_fts MATCH @match)
+            ORDER BY p.name COLLATE NOCASE,p.id LIMIT 31
+            """;
+        const string nameProbe = """
+            SELECT p.id FROM product p INDEXED BY ix_product_name
+            CROSS JOIN product_fts f ON f.rowid=p.id
+            WHERE p.is_active=1 AND product_fts MATCH @match
+            ORDER BY p.name COLLATE NOCASE,p.id LIMIT 31
+            """;
+        for (int i = 0; i < 5; i++)
+            await Measure("fts-hit-threshold", () => Task.Run(() =>
+            {
+                using var connection = factory.Open();
+                return connection.ExecuteScalar<long>("""
+                    SELECT COUNT(*) FROM (SELECT rowid FROM product_fts
+                    WHERE product_fts MATCH @match LIMIT 23500)
+                    """, new { match });
+            }), static count => (int)count);
+        foreach ((string name, string sql) in new[] { ("fts-first", ftsFirst), ("name-first", nameFirst),
+                 ("name-probe", nameProbe) })
+        {
+            CapturePlan(name, sql, new { match });
+            for (int i = 0; i < 5; i++)
+                await Measure(name, () => Task.Run(() =>
+                {
+                    using var connection = factory.Open();
+                    return connection.Query<long>(sql, new { match }).ToArray();
+                }), static rows => rows.Length);
+        }
+        for (int i = 0; i < 10; i++)
+            await Measure("catalog-page", () => catalog.SearchPageAsync(
+                new ProductSearchFilter("grocery item", Limit: 30)), static page => page.Items.Count);
+        break;
+    }
     case "refresh-storm":
     {
         bool cancelObsolete = args.Length > 3 && bool.Parse(args[3]);
@@ -525,6 +852,7 @@ switch (mode)
             ("startup-health", async () => { await maintenance.CheckBeforeShellAsync(); return 1; }),
             ("catalog-first-page", async () => (await catalog.SearchPageAsync(new ProductSearchFilter(Limit: 100))).Items.Count),
             ("catalog-fts", async () => (await catalog.SearchPageAsync(new ProductSearchFilter("grocery item", Limit: 100))).Items.Count),
+            ("catalog-fts-ui8", async () => (await catalog.SearchPageAsync(new ProductSearchFilter("grocery item", Limit: 8))).Items.Count),
             ("ledger-first-page", async () => (await inventory.GetLedgerPageAsync(1, DateOnly.MinValue, DateOnly.MaxValue)).Items.Count),
             ("history-recent", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(From: monthStart, To: end))).Count),
             ("expiry-badge", () => moneyOut.GetActionableExpiryCountAsync()),
@@ -795,6 +1123,7 @@ switch (mode)
         {
             ("catalog-broad", async () => (await catalog.SearchPageAsync(new ProductSearchFilter(Limit: 100))).Items.Count),
             ("catalog-fts", async () => (await catalog.SearchPageAsync(new ProductSearchFilter("grocery item", Limit: 100))).Items.Count),
+            ("catalog-fts-ui8", async () => (await catalog.SearchPageAsync(new ProductSearchFilter("grocery item", Limit: 8))).Items.Count),
             ("catalog-low-stock", async () => (await catalog.SearchPageAsync(new ProductSearchFilter(LowStockOnly: true, Limit: 100))).Items.Count),
             ("ledger-hot", async () => (await inventory.GetLedgerPageAsync(productId, DateOnly.MinValue, DateOnly.MaxValue)).Items.Count),
             ("history-recent", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(From: monthStart, To: end))).Count),
@@ -1212,6 +1541,73 @@ switch (mode)
         }
         break;
     }
+    case "phase6-category-index":
+    {
+        async Task<TabularReport> FiscalCategory() => await reports.GetReportAsync(
+            ReportKind.CategorySales, new ReportFilter(From: fiscalStart, To: end, Limit: 100));
+        for (int repeat = 0; repeat < 3; repeat++)
+            await Measure("category-before", FiscalCategory, static report => report.Rows.Count);
+        long bytesBefore = new FileInfo(paths.DatabaseFile).Length;
+        await Measure("create-category-covering-index", () => Task.Run(() =>
+        {
+            using var connection = factory.Open();
+            connection.Execute("""
+                CREATE INDEX ix_sale_line_report_cover
+                ON sale_line(sale_id,product_id,qty,taxable_amount,cost_amount)
+                """);
+            connection.Execute("PRAGMA optimize");
+            connection.Execute("PRAGMA wal_checkpoint(TRUNCATE)");
+            return 1;
+        }), static value => value);
+        Console.WriteLine($"CATEGORY_INDEX_MAIN_GROWTH_BYTES {new FileInfo(paths.DatabaseFile).Length - bytesBefore}");
+        for (int repeat = 0; repeat < 3; repeat++)
+            await Measure("category-after", FiscalCategory, static report => report.Rows.Count);
+        break;
+    }
+    case "phase6-matrix":
+    {
+        const string sourceSql = """
+            SELECT section AS Section,head_code AS HeadCode,ref_id AS ReferenceId,
+                   substr(entry_date,1,7) AS Month,SUM(amount) AS Amount
+            FROM v_pnl_entry WHERE entry_date BETWEEN @from AND @to
+            GROUP BY section,head_code,ref_id,substr(entry_date,1,7)
+            """;
+        foreach ((string name, DateOnly from, DateOnly to) in new[]
+                 { ("five-year", new DateOnly(2022, 1, 1), end),
+                   ("partial-month", new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 15)) })
+        {
+            string fromIso = from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            string toIso = to.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            List<MatrixAuditRow> source = [];
+            PnlMatrix? matrix = null;
+            await Measure("matrix-source-" + name, () => Task.Run(() =>
+            {
+                using var connection = factory.Open();
+                return source = connection.Query<MatrixAuditRow>(sourceSql,
+                    new { from = fromIso, to = toIso }).ToList();
+            }), static rows => rows.Count);
+            CapturePlan("matrix-source-" + name, sourceSql, new { from = fromIso, to = toIso });
+            await Measure("matrix-projected-" + name, async () =>
+                matrix = await reports.GetPnlMatrixAsync(from, to), static value => value.Rows.Count);
+            var expected = source.ToDictionary(row => (row.Section, row.HeadCode, row.ReferenceId, row.Month),
+                row => row.Amount);
+            var allCells = matrix!.Rows
+                .Where(row => row.HeadCode is not ("NET_SALES" or "GROSS_PROFIT" or "TOTAL_EXPENSES" or "NET_PROFIT"))
+                .SelectMany(row => matrix.MonthKeys.Select((month, index) => new
+                    { Key = (row.Section, row.HeadCode, row.ReferenceId, month), Amount = row.Months[index].Scaled }))
+                .ToList();
+            if (allCells.Any(cell => !expected.ContainsKey(cell.Key) && cell.Amount != 0))
+                throw new InvalidDataException("The projected monthly P&L matrix contains an unexpected nonzero cell.");
+            var observed = allCells
+                .Where(cell => expected.ContainsKey(cell.Key))
+                .ToDictionary(cell => cell.Key, cell => cell.Amount);
+            if (observed.Count != expected.Count || expected.Any(pair => !observed.TryGetValue(pair.Key, out long amount) || amount != pair.Value))
+                throw new InvalidDataException("The projected monthly P&L matrix differs from the source view.");
+            Console.WriteLine($"OK matrix-parity-{name}: {expected.Count} populated cells");
+        }
+        break;
+    }
+    case "phase6-reports":
     case "report-profile":
     {
         long productId;
@@ -1274,7 +1670,16 @@ switch (mode)
                 }
             }
         }
-        await Task.WhenAll(Enumerable.Range(0, 4).Select(Reader).Append(Writer()));
+        if (mode == "phase6-reports")
+        {
+            foreach (var operation in operations)
+            {
+                await Measure(operation.Name, operation.Run, static rows => rows);
+                Console.Out.Flush();
+            }
+        }
+        else
+            await Task.WhenAll(Enumerable.Range(0, 4).Select(Reader).Append(Writer()));
         foreach (var group in profileSamples.GroupBy(static sample => sample.Name).OrderBy(static group => group.Key))
         {
             double[] times = group.Select(static sample => sample.Milliseconds).Order().ToArray();
@@ -2043,6 +2448,34 @@ switch (mode)
         await Measure("label-batch-bytes-50000", () => Task.Run(() => TsplLabelBuilder.BuildBatch(labels).Length), static x => x);
         break;
     }
+    case "phase5-label-failure":
+    {
+        var journal = new PrintJobJournal(factory);
+        var printer = new ReceiptPrinter(settings, journal);
+        TsplLabel[] labels = Enumerable.Range(1, 50_000)
+            .Select(static number => new TsplLabel("Scale Item", null, $"SCALE{number:00000}", 99m, null))
+            .ToArray();
+        int before = journal.ReviewCount();
+        await Measure("label-50000-offline-journal", async () =>
+        {
+            try
+            {
+                await printer.PrintLabelsAsync("missing-phase5-printer", labels, useDriver: false);
+                throw new InvalidDataException("The missing label printer unexpectedly accepted the job.");
+            }
+            catch (System.ComponentModel.Win32Exception) { }
+            int review = journal.ReviewCount() - before;
+            if (review != 2_000)
+                throw new InvalidDataException($"Expected 2,000 reviewable chunks, found {review}.");
+            using var connection = factory.Open();
+            long largestPayload = connection.ExecuteScalar<long>(
+                "SELECT MAX(length(payload)) FROM print_job WHERE state = 'REVIEW'");
+            if (largestPayload > 256 * 1024)
+                throw new InvalidDataException("A saved label chunk exceeded the journal limit.");
+            return review;
+        }, static x => x);
+        break;
+    }
     case "gap-payroll-seed":
     {
         await Measure("seed-employees-and-salaries", () => Task.Run(() =>
@@ -2772,6 +3205,74 @@ switch (mode)
     case "verify":
         using (var connection = factory.Open())
         {
+            if (connection.ExecuteScalar<int>("PRAGMA user_version") >= 25)
+            {
+                await Measure("sale-report-day-reconciliation", () => Task.Run(() =>
+                {
+                    long drift = connection.ExecuteScalar<long>("""
+                        WITH movements AS (
+                          SELECT s.sale_date AS day,p.category_id,COALESCE(sl.hsn_code,'') AS hsn,
+                                 sl.tax_rate_pct AS rate,sl.qty AS quantity,sl.taxable_amount AS revenue,
+                                 sl.tax_amount AS tax,sl.cost_amount AS cost
+                          FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
+                          JOIN product p ON p.id=sl.product_id WHERE s.status='COMPLETED'
+                          UNION ALL
+                          SELECT r.return_date,p.category_id,COALESCE(sl.hsn_code,''),sl.tax_rate_pct,
+                                 -rl.qty,-rl.taxable_amount,-rl.tax_amount,-rl.cost_amount
+                          FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
+                          JOIN sale_line sl ON sl.id=rl.sale_line_id JOIN product p ON p.id=sl.product_id
+                        ), expected AS MATERIALIZED (
+                          SELECT day,category_id,hsn,rate,COUNT(*) AS entries,
+                                 SUM(quantity) AS quantity,SUM(revenue) AS revenue,
+                                 SUM(tax) AS tax,SUM(cost) AS cost
+                          FROM movements GROUP BY day,category_id,hsn,rate
+                        )
+                        SELECT COUNT(*) FROM (
+                          SELECT * FROM (SELECT * FROM expected EXCEPT SELECT * FROM sale_report_day)
+                          UNION ALL
+                          SELECT * FROM (SELECT * FROM sale_report_day EXCEPT SELECT * FROM expected)
+                        )
+                        """);
+                    if (drift != 0) throw new InvalidDataException($"{drift} sales report day rows differ from source.");
+                    return drift;
+                }), static value => (int)value);
+                await Measure("sale-product-last-reconciliation", () => Task.Run(() =>
+                {
+                    long drift = connection.ExecuteScalar<long>("""
+                        WITH expected AS MATERIALIZED (
+                          SELECT sl.product_id,MAX(s.sale_date) AS last_day
+                          FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
+                          WHERE s.status='COMPLETED' GROUP BY sl.product_id
+                        )
+                        SELECT COUNT(*) FROM (
+                          SELECT * FROM (SELECT * FROM expected EXCEPT SELECT * FROM sale_product_last)
+                          UNION ALL
+                          SELECT * FROM (SELECT * FROM sale_product_last EXCEPT SELECT * FROM expected)
+                        )
+                        """);
+                    if (drift != 0) throw new InvalidDataException($"{drift} last-sale rows differ from source.");
+                    return drift;
+                }), static value => (int)value);
+                await Measure("sale-hour-day-reconciliation", () => Task.Run(() =>
+                {
+                    long drift = connection.ExecuteScalar<long>("""
+                        WITH expected AS MATERIALIZED (
+                          SELECT sale_date AS day,strftime('%w',completed_at) AS weekday,
+                                 CAST(strftime('%H',completed_at) AS INTEGER) AS hour,
+                                 COUNT(*) AS bills,SUM(grand_total) AS revenue
+                          FROM sale WHERE status='COMPLETED' AND completed_at IS NOT NULL
+                          GROUP BY sale_date,strftime('%w',completed_at),strftime('%H',completed_at)
+                        )
+                        SELECT COUNT(*) FROM (
+                          SELECT * FROM (SELECT * FROM expected EXCEPT SELECT * FROM sale_hour_day)
+                          UNION ALL
+                          SELECT * FROM (SELECT * FROM sale_hour_day EXCEPT SELECT * FROM expected)
+                        )
+                        """);
+                    if (drift != 0) throw new InvalidDataException($"{drift} sale hour rows differ from source.");
+                    return drift;
+                }), static value => (int)value);
+            }
             if (connection.ExecuteScalar<int>("PRAGMA user_version") >= 18)
                 await Measure("dashboard-day-reconciliation", () => Task.Run(() =>
                 {
@@ -2829,7 +3330,7 @@ switch (mode)
         throw new ArgumentException($"Unknown mode '{mode}'.");
 }
 
-if (mode is "attribution-profile" or "history-profile" or "shape-profile" or "report-profile" or "gap-read" or "feature-write" or "weekly-maintenance-overlap" or "print-journal-profile")
+if (mode is "attribution-profile" or "history-profile" or "shape-profile" or "report-profile" or "phase6-reports" or "gap-read" or "feature-write" or "weekly-maintenance-overlap" or "print-journal-profile")
 {
     // Freeze the service trace before audit metadata queries and plan collection.
     factory.SqlTrace = null;
@@ -2840,11 +3341,16 @@ if (mode is "attribution-profile" or "history-profile" or "shape-profile" or "re
     {
         string operation = entry.Key.Operation;
         string sql = entry.Value;
+        // SQLite's expanded SQL can print unary minus followed by a negative
+        // parameter as "--1", which EXPLAIN parses as a comment. Keep the
+        // executable arithmetic while preserving the traced value.
+        string planSql = System.Text.RegularExpressions.Regex.Replace(sql,
+            @"--([0-9]+)\b", "-(-$1)");
         string name = $"executed-{operation}-{++index}";
-        try { CapturePlan(name, sql); }
+        try { CapturePlan(name, planSql); }
         catch (Exception exception)
         {
-            queryPlans.Add(new QueryPlan(name, [], sql,
+            queryPlans.Add(new QueryPlan(name, [], planSql,
                 exception.GetType().Name + ": " + exception.Message));
             Console.WriteLine($"PLAN-FAIL {name}: {exception.GetType().Name}");
         }
@@ -2909,7 +3415,7 @@ File.WriteAllText(output, JsonSerializer.Serialize(new
         }),
 }, new JsonSerializerOptions { WriteIndented = true }));
 Console.WriteLine($"RESULTS {output}");
-if ((mode is "verify" or "restore-race" or "sustained-profile" or "phase4-combined" or "refresh-storm" or "phase3-resource") &&
+if ((mode is "verify" or "restore-race" or "sustained-profile" or "phase4-combined" or "refresh-storm" or "phase3-resource" or "phase6-reports") &&
     (results.Any(static result => result.Error is not null) ||
      (mode is "sustained-profile" or "phase4-combined" && (profileSamples.Any(static sample => sample.Error is not null) ||
         sustainedSalesCheck is null || sustainedSalesCheck.Failed != 0 ||
@@ -2988,6 +3494,15 @@ internal sealed class RealismSale
     public long SaleId { get; init; }
     public long LineId { get; init; }
     public long Quantity { get; init; }
+}
+
+internal sealed class MatrixAuditRow
+{
+    public string Section { get; init; } = "";
+    public string HeadCode { get; init; } = "";
+    public long? ReferenceId { get; init; }
+    public string Month { get; init; } = "";
+    public long Amount { get; init; }
 }
 
 internal sealed class AuditClock(DateTime now) : IClock

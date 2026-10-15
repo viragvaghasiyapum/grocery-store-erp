@@ -9,6 +9,7 @@ namespace GroceryErp.Data.Infrastructure;
 /// <summary>Moves a closed database on the next startup and changes the bootstrap only after validation.</summary>
 public static class DataRootRelocator
 {
+    private const long CopyReserveBytes = 64L * 1024 * 1024;
     private const string MarkerName = "data-move.pending.json";
     private const string ReadyMarkerName = "data-move.ready.json";
     private const string StageMarkerName = "data-move.stage.json";
@@ -38,7 +39,10 @@ public static class DataRootRelocator
             throw new DomainException(ErrorCode.Validation, "The new data folder must be empty.");
     }
 
-    public static bool ApplyPending(string? bootstrapFile = null)
+    public static bool ApplyPending(string? bootstrapFile = null) =>
+        ApplyPending(bootstrapFile, static volume => new DriveInfo(volume).AvailableFreeSpace);
+
+    internal static bool ApplyPending(string? bootstrapFile, Func<string, long> availableFreeSpace)
     {
         string source = Path.TrimEndingDirectorySeparator(Path.GetFullPath(SettingsBootstrap.Load(bootstrapFile).DataRoot ??
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GroceryErpData")));
@@ -65,13 +69,12 @@ public static class DataRootRelocator
             if (staged is null || !staged.Source.Equals(source, StringComparison.OrdinalIgnoreCase) ||
                 !staged.Target.Equals(target, StringComparison.OrdinalIgnoreCase))
                 throw new DomainException(ErrorCode.Validation, "The move staging folder is already in use.");
-            Directory.Delete(staging, recursive: true);
         }
         Directory.CreateDirectory(staging);
         File.WriteAllText(Path.Combine(staging, StageMarkerName), JsonSerializer.Serialize(pending));
         try
         {
-            CopyDirectory(source, staging);
+            CopyDirectory(source, staging, availableFreeSpace);
             VerifyCopy(source, staging);
             RewriteDefaultBackupPath(staging, source, target);
             string database = Path.Combine(staging, "db", "grocery.db");
@@ -91,9 +94,9 @@ public static class DataRootRelocator
             File.Delete(Path.Combine(target, StageMarkerName));
             return true;
         }
-        catch
+        catch (Exception exception)
         {
-            if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+            System.Diagnostics.Trace.TraceError("Data move staging retained for a verified retry: {0}", exception);
             throw;
         }
     }
@@ -128,8 +131,9 @@ public static class DataRootRelocator
             throw new DomainException(ErrorCode.Validation, "The current database is missing.");
     }
 
-    private static void CopyDirectory(string source, string destination)
+    private static void CopyDirectory(string source, string destination, Func<string, long> availableFreeSpace)
     {
+        string volume = Path.GetPathRoot(Path.GetFullPath(destination))!;
         foreach (string directory in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
             Directory.CreateDirectory(Path.Combine(destination, Path.GetRelativePath(source, directory)));
         foreach (string file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
@@ -137,22 +141,37 @@ public static class DataRootRelocator
             if (Path.GetFileName(file).Equals(MarkerName, StringComparison.Ordinal)) continue;
             string copy = Path.Combine(destination, Path.GetRelativePath(source, file));
             Directory.CreateDirectory(Path.GetDirectoryName(copy) ?? destination);
-            File.Copy(file, copy);
+            string partial = copy + ".partial";
+            if (!File.Exists(copy) || new FileInfo(file).Length != new FileInfo(copy).Length ||
+                !HashFile(file).Equals(HashFile(copy), StringComparison.Ordinal))
+            {
+                try
+                {
+                    long free = availableFreeSpace(volume);
+                    long needed = new FileInfo(file).Length;
+                    if (free < needed || free - needed < CopyReserveBytes)
+                        throw new DomainException(ErrorCode.DiskFull);
+                }
+                catch (Exception exception) when (exception is ArgumentException or DriveNotFoundException or NotSupportedException)
+                {
+                    // DriveInfo cannot measure some mounts. File.Copy still reports an actual write failure.
+                }
+                File.Copy(file, partial, overwrite: true);
+                File.Move(partial, copy, overwrite: true);
+            }
+            if (File.Exists(partial)) File.Delete(partial);
         }
     }
 
     private static void VerifyCopy(string source, string destination)
     {
-        foreach (string suffix in new[] { "", "-wal" })
+        foreach (string original in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
-            string original = Path.Combine(source, "db", "grocery.db" + suffix);
-            if (!File.Exists(original)) continue;
-            string copy = Path.Combine(destination, "db", "grocery.db" + suffix);
+            if (Path.GetFileName(original).Equals(MarkerName, StringComparison.Ordinal)) continue;
+            string copy = Path.Combine(destination, Path.GetRelativePath(source, original));
             if (!File.Exists(copy))
                 throw new DomainException(ErrorCode.BackupInvalid, "Data copy is incomplete.");
-            using FileStream originalStream = File.OpenRead(original);
-            using FileStream copyStream = File.OpenRead(copy);
-            if (!SHA256.HashData(originalStream).SequenceEqual(SHA256.HashData(copyStream)))
+            if (!HashFile(original).Equals(HashFile(copy), StringComparison.Ordinal))
                 throw new DomainException(ErrorCode.BackupInvalid, "Data copy checksum mismatch.");
         }
         CheckDatabase(Path.Combine(destination, "db", "grocery.db"));

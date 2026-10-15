@@ -238,7 +238,7 @@ public sealed class InventoryService(
                 WITH page AS MATERIALIZED (
                     SELECT m.id,m.moved_at,m.move_date,m.type_code,m.qty,m.unit_cost,
                            m.ref_type,m.ref_id,m.note,m.lot_id
-                    FROM stock_movement m
+                    FROM stock_movement m INDEXED BY ix_move_product_id
                     WHERE m.product_id=@productId AND m.move_date BETWEEN @from AND @to
                       AND (@beforeId IS NULL OR m.id<@beforeId)
                       AND (@type IS NULL OR m.type_code=@type)
@@ -248,8 +248,8 @@ public sealed class InventoryService(
                        m.type_code AS TypeCode,m.qty AS Qty,m.unit_cost AS UnitCost,
                        m.ref_type AS RefType,m.ref_id AS RefId,m.note AS Note,
                        l.lot_code AS LotCode,
-                       COALESCE((SELECT SUM(b.qty) FROM stock_movement b
-                                 WHERE b.lot_id=m.lot_id AND b.id<=m.id),0) AS LotBalance
+                       l.qty_on_hand-COALESCE((SELECT SUM(b.qty) FROM stock_movement b
+                                 WHERE b.lot_id=m.lot_id AND b.id>m.id),0) AS LotBalance
                 FROM page m JOIN product_lot l ON l.id=m.lot_id ORDER BY m.id DESC
                 """, new { productId, from, to, beforeId, type, take = limit + 1 })
                 .Select(static row => row.ToModel()).ToList();

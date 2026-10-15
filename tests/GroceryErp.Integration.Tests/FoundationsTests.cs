@@ -882,6 +882,94 @@ public sealed class FoundationsTests
         }
     }
 
+    [Fact]
+    public void DataRootMove_ResumesVerifiedStagingCopy()
+    {
+        string sandbox = Path.Combine(Path.GetTempPath(), $"grocery-erp-move-resume-{Guid.NewGuid():N}");
+        string source = Path.Combine(sandbox, "source");
+        string target = Path.Combine(sandbox, "target");
+        string staging = target + ".moving";
+        string bootstrap = Path.Combine(sandbox, "bootstrap.json");
+        try
+        {
+            var paths = new AppPaths(new SettingsBootstrap(source));
+            var factory = new SqliteConnectionFactory(paths);
+            new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
+            using (var connection = factory.Open()) connection.Execute("PRAGMA wal_checkpoint(TRUNCATE)");
+            SqliteConnectionFactory.ClearPoolForDataRoot(source);
+            Directory.CreateDirectory(Path.Combine(source, "backups"));
+            File.WriteAllText(Path.Combine(source, "backups", "old.zip"), "verified backup");
+            SettingsBootstrap.Save(source, bootstrap);
+            DataRootRelocator.Schedule(source, target);
+            Directory.CreateDirectory(Path.Combine(staging, "backups"));
+            File.WriteAllText(Path.Combine(staging, "data-move.stage.json"),
+                JsonSerializer.Serialize(new { Source = source, Target = target }));
+            string copiedBackup = Path.Combine(staging, "backups", "old.zip");
+            File.Copy(Path.Combine(source, "backups", "old.zip"), copiedBackup);
+            DateTime retainedTime = new(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            File.SetLastWriteTimeUtc(copiedBackup, retainedTime);
+            File.WriteAllText(Path.Combine(staging, "backups", "old.zip.partial"), "interrupted");
+
+            DataRootRelocator.ApplyPending(bootstrap).ShouldBeTrue();
+
+            SettingsBootstrap.Load(bootstrap).DataRoot.ShouldBe(target);
+            File.ReadAllText(Path.Combine(target, "backups", "old.zip")).ShouldBe("verified backup");
+            File.GetLastWriteTimeUtc(Path.Combine(target, "backups", "old.zip")).ShouldBe(retainedTime);
+            File.Exists(Path.Combine(target, "backups", "old.zip.partial")).ShouldBeFalse();
+            File.Exists(Path.Combine(source, "db", "grocery.db")).ShouldBeTrue();
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearPoolForDataRoot(source);
+            SqliteConnectionFactory.ClearPoolForDataRoot(target);
+            if (Directory.Exists(sandbox)) Directory.Delete(sandbox, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void DataRootMove_LowSpaceRetainsSourceAndResumesAfterSpaceReturns()
+    {
+        string sandbox = Path.Combine(Path.GetTempPath(), $"grocery-erp-move-space-{Guid.NewGuid():N}");
+        string source = Path.Combine(sandbox, "source");
+        string target = Path.Combine(sandbox, "target");
+        string bootstrap = Path.Combine(sandbox, "bootstrap.json");
+        try
+        {
+            var paths = new AppPaths(new SettingsBootstrap(source));
+            var factory = new SqliteConnectionFactory(paths);
+            new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
+            using (var connection = factory.Open()) connection.Execute("PRAGMA wal_checkpoint(TRUNCATE)");
+            SqliteConnectionFactory.ClearPoolForDataRoot(source);
+            Directory.CreateDirectory(Path.Combine(source, "backups"));
+            File.WriteAllText(Path.Combine(source, "backups", "retained.zip"), "saved backup");
+            SettingsBootstrap.Save(source, bootstrap);
+            DataRootRelocator.Schedule(source, target);
+
+            int checks = 0;
+            var failure = Should.Throw<GroceryErp.Core.Errors.DomainException>(() =>
+                DataRootRelocator.ApplyPending(bootstrap, _ => ++checks == 1 ? long.MaxValue : 0));
+            failure.Code.ShouldBe(GroceryErp.Core.Errors.ErrorCode.DiskFull);
+            SettingsBootstrap.Load(bootstrap).DataRoot.ShouldBe(source);
+            File.Exists(Path.Combine(source, "db", "grocery.db")).ShouldBeTrue();
+            File.Exists(Path.Combine(source, "data-move.pending.json")).ShouldBeTrue();
+            Directory.Exists(target + ".moving").ShouldBeTrue();
+            Directory.Exists(target).ShouldBeFalse();
+
+            DataRootRelocator.ApplyPending(bootstrap, static _ => long.MaxValue).ShouldBeTrue();
+            SettingsBootstrap.Load(bootstrap).DataRoot.ShouldBe(target);
+            File.ReadAllText(Path.Combine(target, "backups", "retained.zip")).ShouldBe("saved backup");
+            File.Exists(Path.Combine(source, "db", "grocery.db")).ShouldBeTrue();
+            using var moved = new SqliteConnectionFactory(new AppPaths(SettingsBootstrap.Load(bootstrap))).Open();
+            moved.ExecuteScalar<string>("PRAGMA quick_check").ShouldBe("ok");
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearPoolForDataRoot(source);
+            SqliteConnectionFactory.ClearPoolForDataRoot(target);
+            if (Directory.Exists(sandbox)) Directory.Delete(sandbox, recursive: true);
+        }
+    }
+
     private sealed class FoundationFixture : IDisposable
     {
         public FoundationFixture()

@@ -14,6 +14,44 @@ namespace GroceryErp.Integration.Tests;
 
 public sealed class CatalogTests
 {
+    [Fact]
+    public async Task BroadFtsSearch_KeepsNameOrderAndStableCursor()
+    {
+        using var fixture = new CatalogFixture();
+        foreach (string name in new[] { "Zulu", "Alpha", "Mike" })
+            await fixture.Service.CreateAsync(fixture.Product(name, "grocery item"),
+                TestContext.Current.CancellationToken);
+        var filter = new ProductSearchFilter("grocery item", Limit: 1);
+        var first = await fixture.Service.SearchPageAsync(filter, cancellationToken: TestContext.Current.CancellationToken);
+        var second = await fixture.Service.SearchPageAsync(filter, first.NextName, first.NextId,
+            TestContext.Current.CancellationToken);
+        var third = await fixture.Service.SearchPageAsync(filter, second.NextName, second.NextId,
+            TestContext.Current.CancellationToken);
+        new[] { first.Items.Single().Name, second.Items.Single().Name, third.Items.Single().Name }
+            .ShouldBe(["Alpha", "Mike", "Zulu"]);
+        third.HasMore.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task BroadFtsSearch_FallsBackWhenEarlyNameWindowHasNoMatches()
+    {
+        using var fixture = new CatalogFixture();
+        for (int index = 0; index < 40; index++)
+            await fixture.Service.CreateAsync(fixture.Product($"A{index:000}", "other term"),
+                TestContext.Current.CancellationToken);
+        for (int index = 0; index < 40; index++)
+            await fixture.Service.CreateAsync(fixture.Product($"Z{index:000}", "grocery item"),
+                TestContext.Current.CancellationToken);
+        var filter = new ProductSearchFilter("grocery item", Limit: 1);
+        var first = await fixture.Service.SearchPageAsync(filter, cancellationToken: TestContext.Current.CancellationToken);
+        first.Items.Single().Name.ShouldBe("Z000");
+        first.HasMore.ShouldBeTrue();
+        var second = await fixture.Service.SearchPageAsync(filter, first.NextName, first.NextId,
+            TestContext.Current.CancellationToken);
+        second.Items.Single().Name.ShouldBe("Z001");
+        second.HasMore.ShouldBeTrue();
+    }
+
     [Theory]
     [InlineData("4006381333931")]
     [InlineData("2700123012505")]

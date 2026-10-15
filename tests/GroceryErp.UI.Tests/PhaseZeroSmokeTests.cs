@@ -76,6 +76,20 @@ public sealed class PhaseZeroSmokeTests
 
                 output.CreateA4(report, new DateTime(2026, 9, 27, 12, 0, 0)).Pages.Count.ShouldBe(2);
                 Stage("basic-pages");
+                var oversized = report with
+                {
+                    Rows = Enumerable.Range(1, 5_000)
+                        .Select(index => new ReportRow(new Dictionary<string, object?>
+                        {
+                            ["Name"] = $"Item {index}",
+                            ["Amount"] = index * 1000L,
+                        })).ToArray(),
+                };
+                FixedDocument capped = output.CreateA4(oversized, new DateTime(2026, 9, 27, 12, 0, 0));
+                capped.Pages.Count.ShouldBeLessThan(10);
+                capped.Pages[0].Child.Children.OfType<TextBlock>()
+                    .ShouldContain(block => block.Text.Contains("first 100 rows", StringComparison.Ordinal));
+                Stage("capped-pages");
                 var wrappedRows = Enumerable.Range(1, 60)
                     .Select(index => new ReportRow(new Dictionary<string, object?>
                     {

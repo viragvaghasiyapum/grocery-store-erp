@@ -1021,6 +1021,8 @@
   <data name="Reports_Print_Band" xml:space="preserve"><value>Columns</value></data>
   <data name="Reports_Print_Page" xml:space="preserve"><value>Page</value></data>
   <data name="Reports_Print_Printed" xml:space="preserve"><value>Printed</value></data>
+  <data name="Reports_Print_FirstRows" xml:space="preserve"><value>first {0} rows</value></data>
+  <data name="Reports_PrintPreviewCapped" xml:space="preserve"><value>Print preview shows the first {0} rows. Export CSV for the full result.</value></data>
   <data name="Reports_Column_OriginalTotal" xml:space="preserve"><value>Original bill</value></data>
   <data name="Reports_TruncatedRows" xml:space="preserve"><value>Showing first {0} rows · totals and exports are partial</value></data>
   <data name="Reports_PartialExport" xml:space="preserve"><value>Partial report: totals include displayed rows only.</value></data>
