@@ -23,6 +23,7 @@ public partial class AssetsPage : Page
     private (bool? Disposed, string? Name, long? Id) _cursor;
     private AssetPage? _page;
     private bool _loadingPage;
+    private bool _changingAssetSection;
     private IReadOnlyList<DepreciationEntry> _timeline = [];
     private int _timelinePage;
     private const int TimelinePageSize = 50;
@@ -77,7 +78,7 @@ public partial class AssetsPage : Page
 
     private void AssetCategory_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!IsInitialized || AssetCategory.SelectedItem is not ComboBoxItem item) return;
+        if (!IsInitialized || !AssetRate.IsEnabled || AssetCategory.SelectedItem is not ComboBoxItem item) return;
         AssetRate.Text = item.Tag?.ToString() switch
         {
             "Furniture" => "10",
@@ -143,9 +144,9 @@ public partial class AssetsPage : Page
             AssetNotes.Text = asset.Notes ?? "";
             IReadOnlyList<DepreciationEntry> schedule = await _assets.GetScheduleAsync(asset.Id);
             if (AssetGrid.SelectedItem is not AssetItem selected || selected.Id != asset.Id) return;
-            bool editable = asset.DisposedDate is null && schedule.Count == 0;
-            SaveAssetButton.IsEnabled = editable;
-            EditAssetButton.IsEnabled = editable;
+            SetFinancialFieldsEnabled(asset.DisposedDate is null && schedule.Count == 0);
+            SaveAssetButton.IsEnabled = true;
+            EditAssetButton.IsEnabled = true;
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
@@ -172,6 +173,7 @@ public partial class AssetsPage : Page
         InUseDate.SelectedDate = PurchaseDate.SelectedDate;
         SaveAssetButton.IsEnabled = true;
         EditAssetButton.IsEnabled = false;
+        SetFinancialFieldsEnabled(true);
         UpdateDisposalTarget(null);
         CloseTimeline();
         AssetDetailsTab.IsChecked = true;
@@ -187,12 +189,31 @@ public partial class AssetsPage : Page
         AssetName.Focus();
     }
 
-    private void AssetSection_OnClick(object sender, RoutedEventArgs e)
+    private void AssetSection_OnChanged(object sender, RoutedEventArgs e)
     {
-        if (ReferenceEquals(sender, AssetDetailsTab) && AssetDetailsTab.IsChecked == true)
-            AssetDisposalTab.IsChecked = false;
-        else if (ReferenceEquals(sender, AssetDisposalTab) && AssetDisposalTab.IsChecked == true)
-            AssetDetailsTab.IsChecked = false;
+        if (_changingAssetSection || AssetDetailsPanel is null || AssetDisposalPanel is null) return;
+        _changingAssetSection = true;
+        try
+        {
+            if (ReferenceEquals(sender, AssetDetailsTab) && AssetDetailsTab.IsChecked == true)
+                AssetDisposalTab.IsChecked = false;
+            else if (ReferenceEquals(sender, AssetDisposalTab) && AssetDisposalTab.IsChecked == true)
+                AssetDetailsTab.IsChecked = false;
+            SectionMotion.SetOpen(AssetDetailsPanel, AssetDetailsTab.IsChecked == true);
+            SectionMotion.SetOpen(AssetDisposalPanel, AssetDisposalTab.IsChecked == true);
+        }
+        finally { _changingAssetSection = false; }
+    }
+
+    private void SetFinancialFieldsEnabled(bool enabled)
+    {
+        PurchaseDate.IsEnabled = enabled;
+        InUseDate.IsEnabled = enabled;
+        AssetCost.IsEnabled = enabled;
+        AssetMethod.IsEnabled = enabled;
+        AssetRate.IsEnabled = enabled;
+        AssetSalvage.IsEnabled = enabled;
+        AssetFinancialLockText.Visibility = enabled ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private Task RefreshAsync()

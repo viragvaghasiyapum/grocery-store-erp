@@ -1142,6 +1142,7 @@
   <data name="Stock_OverviewSearch" xml:space="preserve"><value>Product or SKU</value></data>
   <data name="Stock_LotSearch" xml:space="preserve"><value>Product, lot or batch</value></data>
   <data name="Assets_DisposalDetails" xml:space="preserve"><value>Dispose selected asset</value></data>
+  <data name="Assets_FinancialLocked" xml:space="preserve"><value>Depreciation is posted for this asset. You can edit its name, category, vendor and notes; financial details are locked.</value></data>
   <data name="MoneyOut_ExpenseEntry" xml:space="preserve"><value>Expense entry</value></data>
   <data name="MoneyOut_DamageEntry" xml:space="preserve"><value>Record damage</value></data>
   <data name="MoneyOut_CategoryDetails" xml:space="preserve"><value>Expense categories</value></data>

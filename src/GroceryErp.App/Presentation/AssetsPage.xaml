@@ -4,7 +4,6 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     Title="{l:Tr Assets_Title}" ScrollViewer.CanContentScroll="False">
-  <Page.Resources><BooleanToVisibilityConverter x:Key="SectionVisibility"/></Page.Resources>
   <Grid Margin="{StaticResource PagePadding}">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <DockPanel>
@@ -17,10 +16,10 @@
     <Grid Grid.Row="1" Margin="0,12,0,10">
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
       <StackPanel Orientation="Horizontal">
-        <ToggleButton x:Name="AssetDetailsTab" Margin="0,0,8,0" Click="AssetSection_OnClick" Content="{l:Tr Assets_Details}"/>
-        <ToggleButton x:Name="AssetDisposalTab" Click="AssetSection_OnClick" Content="{l:Tr Assets_DisposalDetails}"/>
+        <ToggleButton x:Name="AssetDetailsTab" Margin="0,0,8,0" Checked="AssetSection_OnChanged" Unchecked="AssetSection_OnChanged" Content="{l:Tr Assets_Details}"/>
+        <ToggleButton x:Name="AssetDisposalTab" Checked="AssetSection_OnChanged" Unchecked="AssetSection_OnChanged" Content="{l:Tr Assets_DisposalDetails}"/>
       </StackPanel>
-      <StackPanel x:Name="AssetDetailsPanel" Grid.Row="1" Margin="0,8,0,0" Visibility="{Binding IsChecked, ElementName=AssetDetailsTab, Converter={StaticResource SectionVisibility}}">
+      <StackPanel x:Name="AssetDetailsPanel" Grid.Row="1" Margin="0,8,0,0" Visibility="Collapsed" ClipToBounds="True">
       <WrapPanel ItemHeight="68">
       <StackPanel Width="174" Margin="0,0,8,4"><TextBlock Text="{l:Tr Catalog_Name}"/><TextBox x:Name="AssetName"/></StackPanel>
       <StackPanel Width="132" Margin="0,0,8,4"><TextBlock Text="{l:Tr Catalog_Category}"/><ComboBox x:Name="AssetCategory" SelectedIndex="0" SelectionChanged="AssetCategory_OnSelectionChanged"><ComboBoxItem Tag="Furniture" Content="{l:Tr Assets_Furniture}"/><ComboBoxItem Tag="Equipment" Content="{l:Tr Assets_Equipment}"/><ComboBoxItem Tag="Electronics" Content="{l:Tr Assets_Electronics}"/><ComboBoxItem Tag="Vehicle" Content="{l:Tr Assets_Vehicle}"/><ComboBoxItem Tag="Other" Content="{l:Tr Assets_Other}"/></ComboBox></StackPanel>
@@ -33,11 +32,12 @@
       <StackPanel Width="150" Margin="0,0,8,4"><TextBlock Text="{l:Tr Purchasing_Vendor}"/><ComboBox x:Name="AssetVendor" DisplayMemberPath="Name" SelectedValuePath="Id"/></StackPanel>
       <StackPanel Width="168" Margin="0,0,8,4"><TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="AssetNotes"/></StackPanel>
       </WrapPanel>
+      <TextBlock x:Name="AssetFinancialLockText" Margin="0,0,0,8" Visibility="Collapsed" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="{l:Tr Assets_FinancialLocked}"/>
       <WrapPanel>
         <Button x:Name="SaveAssetButton" Click="AddAsset_OnClick" Content="{l:Tr Common_Save}"/>
       </WrapPanel>
       </StackPanel>
-      <WrapPanel x:Name="AssetDisposalPanel" Grid.Row="1" Margin="0,8,0,0" Visibility="{Binding IsChecked, ElementName=AssetDisposalTab, Converter={StaticResource SectionVisibility}}">
+      <WrapPanel x:Name="AssetDisposalPanel" Grid.Row="1" Margin="0,8,0,0" Visibility="Collapsed" ClipToBounds="True">
         <TextBlock x:Name="SelectedAssetText" Width="220" VerticalAlignment="Center" Margin="0,0,12,0" Text="{l:Tr Assets_SelectToDispose}" TextTrimming="CharacterEllipsis"/>
         <StackPanel Width="140" Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Assets_DisposalDate}"/><DatePicker x:Name="DisposalDate" IsEnabled="False" SelectedDateFormat="Short"/></StackPanel>
         <StackPanel Width="130" Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Assets_Proceeds}"/><TextBox x:Name="DisposalValue" IsEnabled="False" Text="0"/></StackPanel>

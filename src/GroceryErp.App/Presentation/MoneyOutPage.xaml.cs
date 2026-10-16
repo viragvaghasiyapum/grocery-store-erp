@@ -33,6 +33,7 @@ public partial class MoneyOutPage : Page
     private ExpenseItem? _editingExpense;
     private readonly Dictionary<long, ExpiryLot> _selectedExpiryLots = new();
     private int _expirySelectionVersion;
+    private bool _changingExpenseSection;
     private CheckBox? _salaryPageCheck;
 
     public MoneyOutPage() : this(null, null, null) { }
@@ -290,12 +291,20 @@ public partial class MoneyOutPage : Page
 
     private void RepeatCategories_OnSelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateRepeatCategoryCount();
 
-    private void ExpenseSection_OnClick(object sender, RoutedEventArgs e)
+    private void ExpenseSection_OnChanged(object sender, RoutedEventArgs e)
     {
-        if (ReferenceEquals(sender, ExpenseEntryTab) && ExpenseEntryTab.IsChecked == true)
-            ExpenseCategoryTab.IsChecked = false;
-        else if (ReferenceEquals(sender, ExpenseCategoryTab) && ExpenseCategoryTab.IsChecked == true)
-            ExpenseEntryTab.IsChecked = false;
+        if (_changingExpenseSection || ExpenseEntryPanel is null || ExpenseCategoryPanel is null) return;
+        _changingExpenseSection = true;
+        try
+        {
+            if (ReferenceEquals(sender, ExpenseEntryTab) && ExpenseEntryTab.IsChecked == true)
+                ExpenseCategoryTab.IsChecked = false;
+            else if (ReferenceEquals(sender, ExpenseCategoryTab) && ExpenseCategoryTab.IsChecked == true)
+                ExpenseEntryTab.IsChecked = false;
+            SectionMotion.SetOpen(ExpenseEntryPanel, ExpenseEntryTab.IsChecked == true);
+            SectionMotion.SetOpen(ExpenseCategoryPanel, ExpenseCategoryTab.IsChecked == true);
+        }
+        finally { _changingExpenseSection = false; }
     }
 
     private void ShowExpenseEntry()

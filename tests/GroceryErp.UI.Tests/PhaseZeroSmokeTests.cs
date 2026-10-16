@@ -353,15 +353,16 @@ public sealed class PhaseZeroSmokeTests
                 VerifyStickyProductTable(productsWindow, products);
                 ((DataGrid)products.FindName("ProductsGrid")).Columns[1].Width =
                     new DataGridLength(176, DataGridLengthUnitType.Pixel);
+                ((DataGrid)products.FindName("ProductsGrid")).Columns[2].DisplayIndex = 1;
                 productsWindow.UpdateLayout();
                 ((DataGrid)products.FindName("ProductsGrid")).RaiseEvent(
                     new DragCompletedEventArgs(0, 0, false) { RoutedEvent = Thumb.DragCompletedEvent });
                 File.Exists(Path.Combine(root, "table-columns.json")).ShouldBeTrue();
-                // A later layout pass must not replace the width chosen by the user.
-                ((DataGrid)products.FindName("ProductsGrid")).Columns[1].Width =
-                    new DataGridLength(110, DataGridLengthUnitType.Pixel);
+                // A later layout pass must keep the width and order chosen by the user.
                 productsWindow.UpdateLayout();
                 var productGrid = (DataGrid)products.FindName("ProductsGrid");
+                Math.Abs(productGrid.Columns[1].ActualWidth - 176).ShouldBeLessThan(1);
+                productGrid.Columns[2].DisplayIndex.ShouldBe(1);
                 var firstProduct = (ProductListItem)productGrid.Items[0];
                 var secondProduct = new ProductListItem { Id = 2, Sku = "SALT002", Name = "Other salt", IsActive = true };
                 productGrid.ItemsSource = new[] { firstProduct, secondProduct };
@@ -401,10 +402,10 @@ public sealed class PhaseZeroSmokeTests
                 ((MenuItem)products.FindName("RestoreButton")).IsEnabled.ShouldBeTrue();
                 ((MenuItem)products.FindName("BarcodeButton")).IsEnabled.ShouldBeFalse();
                 productsWindow.Close();
-                var savedLayouts = (Dictionary<string, double[]>)layouts.GetField("Saved",
+                var savedLayouts = (System.Collections.IDictionary)layouts.GetField("Saved",
                     BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
                 savedLayouts.Clear();
-                foreach (var entry in (Dictionary<string, double[]>)layouts.GetMethod("Load",
+                foreach (System.Collections.DictionaryEntry entry in (System.Collections.IDictionary)layouts.GetMethod("Load",
                     BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, null)!)
                     savedLayouts.Add(entry.Key, entry.Value);
                 var restoredProducts = new ProductsPage(catalog, settings,
@@ -417,6 +418,7 @@ public sealed class PhaseZeroSmokeTests
                 restoredGrid.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent, restoredGrid));
                 double restoredWidth = restoredGrid.Columns[1].ActualWidth;
                 Math.Abs(restoredWidth - 176).ShouldBeLessThan(1);
+                restoredGrid.Columns[2].DisplayIndex.ShouldBe(1);
                 restoredHost.Close();
 
                 var inventory = new InventoryService(database, new StockLedger(settings),
@@ -744,10 +746,24 @@ public sealed class PhaseZeroSmokeTests
                 var purchasesHost = new Window { Content = purchasesPage, Width = 1080, Height = 700 };
                 purchasesHost.Show();
                 Capture(purchasesHost, "purchases-page.en.png");
+                var purchaseFilters = (AnimatedSection)purchasesPage.FindName("PurchaseFiltersSection");
+                purchaseFilters.IsExpanded = true;
+                ((DatePicker)purchasesPage.FindName("PurchaseFromBox")).IsVisible.ShouldBeTrue();
+                purchaseFilters.IsExpanded = false;
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 Capture(purchasesHost, "purchases-page.gu.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                var purchaseGrid = (DataGrid)purchasesPage.FindName("PurchasesGrid");
+                purchaseGrid.Columns[2].Width = new DataGridLength(300, DataGridLengthUnitType.Pixel);
+                purchaseGrid.Columns[2].DisplayIndex = 1;
                 purchasesHost.Close();
+                var reopenedPurchases = new PurchasesPage(purchasing, loadOnShow: false);
+                var reopenedPurchasesHost = new Window { Content = reopenedPurchases, Width = 1080, Height = 700 };
+                reopenedPurchasesHost.Show();
+                var reopenedPurchaseGrid = (DataGrid)reopenedPurchases.FindName("PurchasesGrid");
+                Math.Abs(reopenedPurchaseGrid.Columns[2].ActualWidth - 300).ShouldBeLessThan(1);
+                reopenedPurchaseGrid.Columns[2].DisplayIndex.ShouldBe(1);
+                reopenedPurchasesHost.Close();
 
                 var vendorHistory = new VendorLedgerWindow(purchasing, 1, "Shree Wholesale Traders", loadOnShow: false);
                 ((DataGrid)vendorHistory.FindName("PurchasesGrid")).ItemsSource = new[]

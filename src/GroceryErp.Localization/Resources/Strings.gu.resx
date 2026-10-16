@@ -1142,6 +1142,7 @@
   <data name="Stock_OverviewSearch" xml:space="preserve"><value>ઉત્પાદન અથવા SKU</value></data>
   <data name="Stock_LotSearch" xml:space="preserve"><value>ઉત્પાદન, લોટ અથવા બેચ</value></data>
   <data name="Assets_DisposalDetails" xml:space="preserve"><value>પસંદ કરેલી મિલકતનો નિકાલ</value></data>
+  <data name="Assets_FinancialLocked" xml:space="preserve"><value>આ મિલકત માટે ઘસારો નોંધાયેલો છે. તમે નામ, વર્ગ, વેચનાર અને નોંધ બદલી શકો છો; નાણાકીય વિગતો બંધ છે.</value></data>
   <data name="MoneyOut_ExpenseEntry" xml:space="preserve"><value>ખર્ચની નોંધ</value></data>
   <data name="MoneyOut_DamageEntry" xml:space="preserve"><value>નુકસાન નોંધો</value></data>
   <data name="MoneyOut_CategoryDetails" xml:space="preserve"><value>ખર્ચના વર્ગો</value></data>

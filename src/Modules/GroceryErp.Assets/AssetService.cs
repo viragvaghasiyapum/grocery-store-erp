@@ -85,13 +85,29 @@ public sealed class AssetService(
             else
             {
                 result = id.Value;
-                int changed = transaction.Connection.Execute("""
-                    UPDATE asset SET name=@name,category=@category,purchase_date=@purchaseDate,in_use_from=@inUseFrom,
-                        cost=@cost,vendor_id=@vendorId,method=@method,rate_pct=@rate,salvage_value=@salvage,notes=@notes
-                    WHERE id=@id AND disposed_date IS NULL
-                      AND NOT EXISTS (SELECT 1 FROM asset_depreciation WHERE asset_id=asset.id)
-                    """, parameters, transaction.Transaction);
-                if (changed == 0) throw new DomainException(ErrorCode.Validation, "Posted or disposed assets cannot be edited.");
+                AssetEditState? existing = transaction.Connection.QuerySingleOrDefault<AssetEditState>("""
+                    SELECT purchase_date AS PurchaseDate,in_use_from AS InUseFrom,cost AS Cost,
+                           method AS Method,rate_pct AS Rate,salvage_value AS SalvageValue,
+                           (disposed_date IS NOT NULL) AS IsDisposed,
+                           EXISTS(SELECT 1 FROM asset_depreciation WHERE asset_id=asset.id) AS HasDepreciation
+                    FROM asset WHERE id=@id
+                    """, new { id }, transaction.Transaction);
+                if (existing is null) throw new DomainException(ErrorCode.NotFound, "asset", id.Value);
+                bool financialLocked = existing.IsDisposed || existing.HasDepreciation;
+                if (financialLocked && (input.PurchaseDate != existing.PurchaseDate ||
+                    input.InUseFrom != existing.InUseFrom || input.Cost.Scaled != existing.Cost ||
+                    !string.Equals(input.Method == DepreciationMethod.Wdv ? "WDV" : "SLM",
+                        existing.Method, StringComparison.Ordinal) ||
+                    input.Rate.Scaled != existing.Rate || input.SalvageValue.Scaled != existing.SalvageValue))
+                    throw new DomainException(ErrorCode.Validation, "Posted financial details cannot be edited.");
+                string sql = financialLocked
+                    ? "UPDATE asset SET name=@name,category=@category,vendor_id=@vendorId,notes=@notes WHERE id=@id"
+                    : """
+                      UPDATE asset SET name=@name,category=@category,purchase_date=@purchaseDate,in_use_from=@inUseFrom,
+                          cost=@cost,vendor_id=@vendorId,method=@method,rate_pct=@rate,salvage_value=@salvage,notes=@notes
+                      WHERE id=@id
+                      """;
+                transaction.Connection.Execute(sql, parameters, transaction.Transaction);
             }
             audit.Write(transaction, "asset", result, id is null ? "CREATE" : "UPDATE", new { input.Name, cost = input.Cost.Scaled, method = input.Method.ToString() });
             return result;
@@ -244,6 +260,7 @@ public sealed class AssetService(
     private static string Format(DateOnly date) => date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
     private sealed class AssetRow { public long Id { get; init; } public string Name { get; init; } = ""; public string? Category { get; init; } public DateOnly PurchaseDate { get; init; } public DateOnly InUseFrom { get; init; } public long Cost { get; init; } public long? VendorId { get; init; } public string? VendorName { get; init; } public string Method { get; init; } = ""; public long Rate { get; init; } public long SalvageValue { get; init; } public DateOnly? DisposedDate { get; init; } public long? DisposalValue { get; init; } public long Accumulated { get; init; } public long BookValue { get; init; } public string? Notes { get; init; } public AssetItem ToModel() => new(Id, Name, Category, PurchaseDate, InUseFrom, Money.FromScaled(Cost), VendorId, VendorName, ParseMethod(Method), Percent.FromScaled(Rate), Money.FromScaled(SalvageValue), DisposedDate, DisposalValue is null ? null : Money.FromScaled(DisposalValue.Value), Money.FromScaled(Accumulated), Money.FromScaled(BookValue), Notes); }
+    private sealed class AssetEditState { public DateOnly PurchaseDate { get; init; } public DateOnly InUseFrom { get; init; } public long Cost { get; init; } public string Method { get; init; } = ""; public long Rate { get; init; } public long SalvageValue { get; init; } public bool IsDisposed { get; init; } public bool HasDepreciation { get; init; } }
     private sealed class AssetCalcRow { public long Id { get; init; } public long Cost { get; init; } public long Salvage { get; init; } public long Rate { get; init; } public string Method { get; init; } = ""; public DateOnly InUseFrom { get; init; } public DateOnly? DisposedDate { get; set; } }
     private sealed class DepreciationState { public string Period { get; init; } = ""; public long Closing { get; init; } }
     private sealed class DepreciationRow { public long Id { get; init; } public long AssetId { get; init; } public string Period { get; init; } = ""; public long OpeningValue { get; init; } public long Amount { get; init; } public long ClosingValue { get; init; } public DateTime PostedAt { get; init; } public DepreciationEntry ToModel() => new(Id, AssetId, YearMonth.Parse(Period), Money.FromScaled(OpeningValue), Money.FromScaled(Amount), Money.FromScaled(ClosingValue), PostedAt); }

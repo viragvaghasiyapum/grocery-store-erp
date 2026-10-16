@@ -224,6 +224,31 @@ public sealed class MoneyOutTests
     }
 
     [Fact]
+    public async Task PostedAsset_AllowsDescriptionEditsButKeepsFinancialHistoryLocked()
+    {
+        using var fixture = new Fixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        var original = new AssetInput("Freezer", "Equipment", new DateOnly(2026, 4, 1),
+            new DateOnly(2026, 4, 1), new Money(45000), null,
+            DepreciationMethod.Wdv, new Percent(15), Money.Zero, null);
+        long id = await fixture.Assets.SaveAssetAsync(null, original, ct);
+        await fixture.Assets.PostThroughAsync(new YearMonth(2026, 4), ct);
+        var revised = original with { Name = "Main freezer", Category = "Electronics", Notes = "Back room" };
+
+        await fixture.Assets.SaveAssetAsync(id, revised, ct);
+        AssetItem asset = (await fixture.Assets.GetAssetsAsync(cancellationToken: ct)).Single(item => item.Id == id);
+        asset.Name.ShouldBe("Main freezer");
+        asset.Category.ShouldBe("Electronics");
+        asset.Notes.ShouldBe("Back room");
+        (await fixture.Assets.GetScheduleAsync(id, ct)).Count.ShouldBe(1);
+
+        await Should.ThrowAsync<DomainException>(() => fixture.Assets.SaveAssetAsync(id,
+            revised with { Cost = new Money(46000) }, ct));
+        (await fixture.Assets.GetAssetsAsync(cancellationToken: ct)).Single(item => item.Id == id)
+            .Cost.ShouldBe(new Money(45000));
+    }
+
+    [Fact]
     public async Task Disposal_RejectsMonthWithAlreadyPostedDepreciation()
     {
         using var fixture = new Fixture();

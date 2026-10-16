@@ -36,6 +36,8 @@
     <Setter Property="IsReadOnly" Value="True"/>
     <Setter Property="CanUserAddRows" Value="False"/>
     <Setter Property="CanUserResizeRows" Value="False"/>
+    <Setter Property="CanUserResizeColumns" Value="True"/>
+    <Setter Property="CanUserReorderColumns" Value="True"/>
     <Setter Property="HeadersVisibility" Value="Column"/>
     <Setter Property="GridLinesVisibility" Value="All"/>
     <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource TableRuleBrush}"/>
