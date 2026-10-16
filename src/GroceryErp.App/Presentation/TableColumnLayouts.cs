@@ -80,7 +80,9 @@ internal static class TableColumnLayouts
             ? VisualTreeHelper.GetParent(element) ?? LogicalTreeHelper.GetParent(element)
             : LogicalTreeHelper.GetParent(element);
 
-    private static string Key(DataGrid grid, string owner)
+    private static string Key(DataGrid grid, string owner) => $"{owner}/{grid.Name}";
+
+    private static string LegacyKey(DataGrid grid, string owner)
     {
         // The collection order remains stable when the user changes DisplayIndex.
         string columns = string.Join("|", grid.Columns.Select((column, index) =>
@@ -89,7 +91,38 @@ internal static class TableColumnLayouts
                 ? field.Path?.Path ?? string.Empty : string.Empty;
             return $"{index}:{column.GetType().Name}:{binding}";
         }));
-        return $"{owner}/{grid.Name}/{columns}";
+        return $"{Key(grid, owner)}/{columns}";
+    }
+
+    private static ColumnLayout? FindLayout(DataGrid grid, string owner)
+    {
+        string key = Key(grid, owner);
+        if (Saved.TryGetValue(key, out ColumnLayout? layout)) return layout;
+        if (Saved.TryGetValue(LegacyKey(grid, owner), out layout)) return layout;
+
+        // Older releases included column implementation types in the key. A template
+        // changing to a bound column should not erase the user's saved layout.
+        string prefix = key + "/";
+        return Saved.Where(entry => entry.Key.StartsWith(prefix, StringComparison.Ordinal) &&
+                                    entry.Value.Widths?.Length == grid.Columns.Count)
+            .OrderByDescending(entry => LegacyMatchScore(entry.Key, grid))
+            .Select(entry => entry.Value)
+            .FirstOrDefault();
+    }
+
+    private static int LegacyMatchScore(string key, DataGrid grid)
+    {
+        int score = 0;
+        foreach (var (column, index) in grid.Columns.Select((column, index) => (column, index)))
+        {
+            string binding = column is DataGridBoundColumn { Binding: Binding field }
+                ? field.Path?.Path ?? string.Empty : string.Empty;
+            if (binding.Length > 0 && key.Contains($"{index}:{column.GetType().Name}:{binding}", StringComparison.Ordinal))
+                score += 2;
+            else if (binding.Length > 0 && key.Contains($":{binding}|", StringComparison.Ordinal))
+                score++;
+        }
+        return score;
     }
 
     private static Dictionary<string, ColumnLayout> Load()
@@ -163,7 +196,7 @@ internal static class TableColumnLayouts
 
         public void OnDisplayIndexChanged(object? sender, DataGridColumnEventArgs e) => ScheduleSave();
 
-        public void OnColumnReordered(object? sender, DataGridColumnEventArgs e) => ScheduleSave();
+        public void OnColumnReordered(object? sender, DataGridColumnEventArgs e) => SaveNow();
 
         public void ObserveColumns()
         {
@@ -213,7 +246,7 @@ internal static class TableColumnLayouts
         public void Restore()
         {
             if (grid.Columns.Count == 0 ||
-                !Saved.TryGetValue(Key(grid, owner), out ColumnLayout? layout) ||
+                FindLayout(grid, owner) is not { } layout ||
                 layout.Widths is null || layout.Widths.Length != grid.Columns.Count) return;
             _restoring = true;
             try
@@ -248,7 +281,11 @@ internal static class TableColumnLayouts
             if (widths.All(static width => width is null)) return;
             int[] order = grid.Columns.Select(static column => column.DisplayIndex).ToArray();
             if (!order.Order().SequenceEqual(Enumerable.Range(0, order.Length))) return;
-            Saved[Key(grid, owner)] = new ColumnLayout { Widths = widths, DisplayIndexes = order };
+            string key = Key(grid, owner);
+            foreach (string legacyKey in Saved.Keys.Where(savedKey =>
+                         savedKey.StartsWith(key + "/", StringComparison.Ordinal)).ToArray())
+                Saved.Remove(legacyKey);
+            Saved[key] = new ColumnLayout { Widths = widths, DisplayIndexes = order };
             _dirty = false;
             Write();
         }

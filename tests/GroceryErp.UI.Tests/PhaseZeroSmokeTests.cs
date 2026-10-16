@@ -196,6 +196,9 @@ public sealed class PhaseZeroSmokeTests
             Environment.SetEnvironmentVariable("GROCERY_ERP_TEST_DATA_ROOT", root);
             try
             {
+                Directory.CreateDirectory(root);
+                File.WriteAllText(Path.Combine(root, "table-columns.json"),
+                    """{"GroceryErp.App.Presentation.ProductsPage/ProductsGrid/0:DataGridTextColumn:OldTemplate|1:DataGridTextColumn:Sku|2:DataGridTextColumn:OldName|3:DataGridTextColumn:Category|4:DataGridTextColumn:Stock|5:DataGridTextColumn:SellingPrice|6:DataGridTextColumn:Mrp|7:DataGridTextColumn:IsActive":[80,120,200,150,90,90,90,80]}""");
                 GroceryErp.App.App application = new();
                 application.InitializeComponent();
                 Type layouts = typeof(GroceryErp.App.App).Assembly.GetType(
@@ -340,6 +343,8 @@ public sealed class PhaseZeroSmokeTests
                 };
                 var productsWindow = new Window { Content = products, Width = 1080, Height = 700, WindowStartupLocation = WindowStartupLocation.CenterScreen };
                 productsWindow.Show();
+                Math.Abs(((DataGrid)products.FindName("ProductsGrid")).Columns[1].ActualWidth - 120)
+                    .ShouldBeLessThan(1);
                 ((DataGrid)products.FindName("ProductsGrid")).SelectedIndex = 0;
                 ((Button)products.FindName("EditButton")).IsEnabled.ShouldBeTrue();
                 ((MenuItem)products.FindName("LabelsButton")).IsEnabled.ShouldBeTrue();
@@ -358,6 +363,8 @@ public sealed class PhaseZeroSmokeTests
                 ((DataGrid)products.FindName("ProductsGrid")).RaiseEvent(
                     new DragCompletedEventArgs(0, 0, false) { RoutedEvent = Thumb.DragCompletedEvent });
                 File.Exists(Path.Combine(root, "table-columns.json")).ShouldBeTrue();
+                File.ReadAllText(Path.Combine(root, "table-columns.json"))
+                    .ShouldContain("\"GroceryErp.App.Presentation.ProductsPage/ProductsGrid\":{");
                 // A later layout pass must keep the width and order chosen by the user.
                 productsWindow.UpdateLayout();
                 var productGrid = (DataGrid)products.FindName("ProductsGrid");
