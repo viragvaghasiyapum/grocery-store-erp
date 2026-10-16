@@ -230,7 +230,7 @@ public partial class MoneyOutPage : Page
     private void ExpenseGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ExpenseGrid.SelectedItem is not ExpenseItem item) return;
-        ExpenseEntryExpander.IsExpanded = true;
+        ShowExpenseEntry();
         _editingExpense = item;
         ExpenseDate.SelectedDate = item.Date.ToDateTime(TimeOnly.MinValue);
         ExpenseCategory.SelectedValue = item.CategoryId;
@@ -245,7 +245,7 @@ public partial class MoneyOutPage : Page
     private void NewExpense_OnClick(object sender, RoutedEventArgs e)
     {
         ClearExpenseCorrection();
-        ExpenseEntryExpander.IsExpanded = true;
+        ShowExpenseEntry();
         ExpenseAmount.Focus();
     }
 
@@ -276,7 +276,7 @@ public partial class MoneyOutPage : Page
             if (drafts.Count == 0) return;
             RepeatDraftGrid.ItemsSource = drafts;
             RepeatDraftGrid.Visibility = Visibility.Visible;
-            ExpenseEntryExpander.IsExpanded = true;
+            ShowExpenseEntry();
             ExpenseDate.SelectedDate = drafts[0].Date.ToDateTime(TimeOnly.MinValue);
             ExpenseAmount.Text = drafts[0].Amount.Value.ToString("0.000", TranslationSource.FormatCulture);
             ExpensePaidTo.Text = drafts[0].PaidTo;
@@ -289,6 +289,20 @@ public partial class MoneyOutPage : Page
     }
 
     private void RepeatCategories_OnSelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateRepeatCategoryCount();
+
+    private void ExpenseSection_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (ReferenceEquals(sender, ExpenseEntryTab) && ExpenseEntryTab.IsChecked == true)
+            ExpenseCategoryTab.IsChecked = false;
+        else if (ReferenceEquals(sender, ExpenseCategoryTab) && ExpenseCategoryTab.IsChecked == true)
+            ExpenseEntryTab.IsChecked = false;
+    }
+
+    private void ShowExpenseEntry()
+    {
+        ExpenseCategoryTab.IsChecked = false;
+        ExpenseEntryTab.IsChecked = true;
+    }
 
     private void ClearRepeatCategories_OnClick(object sender, RoutedEventArgs e) => RepeatCategories.UnselectAll();
 

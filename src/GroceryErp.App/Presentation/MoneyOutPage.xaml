@@ -5,6 +5,7 @@
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     Title="{l:Tr MoneyOut_Title}" ScrollViewer.CanContentScroll="False">
   <Page.Resources>
+    <BooleanToVisibilityConverter x:Key="SectionVisibility"/>
     <DataTemplate x:Key="ExpiryCheckTemplate">
       <CheckBox Loaded="ExpiryCheck_OnLoaded" Click="ExpiryCheck_OnClick"
                 HorizontalAlignment="Center" AutomationProperties.Name="Select lot"/>
@@ -145,8 +146,13 @@
             <Button Margin="0,0,12,0" Click="ExpenseFilter_OnClick" Content="{l:Tr MoneyOut_SearchHistory}"/>
             <Button Click="OpenAssets_OnClick" Content="{l:Tr MoneyOut_OpenAssets}"/>
           </WrapPanel>
-          <Expander x:Name="ExpenseEntryExpander" DockPanel.Dock="Top" Header="{l:Tr MoneyOut_ExpenseEntry}" Margin="0,0,0,8" IsExpanded="False">
-          <StackPanel Margin="0,8,0,0">
+          <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <StackPanel Orientation="Horizontal">
+            <ToggleButton x:Name="ExpenseEntryTab" Margin="0,0,8,0" Click="ExpenseSection_OnClick" Content="{l:Tr MoneyOut_ExpenseEntry}"/>
+            <ToggleButton x:Name="ExpenseCategoryTab" Click="ExpenseSection_OnClick" Content="{l:Tr MoneyOut_CategoryDetails}"/>
+          </StackPanel>
+          <StackPanel x:Name="ExpenseEntryPanel" Grid.Row="1" Margin="0,8,0,0" Visibility="{Binding IsChecked, ElementName=ExpenseEntryTab, Converter={StaticResource SectionVisibility}}">
           <WrapPanel MaxWidth="950" HorizontalAlignment="Left" Margin="0,0,0,8" ItemHeight="64">
             <StackPanel Width="140" Margin="0,0,8,4"><TextBlock Text="{l:Tr Purchasing_Date}"/><DatePicker x:Name="ExpenseDate" SelectedDateFormat="Short"/></StackPanel>
             <StackPanel Width="180" Margin="0,0,8,4"><TextBlock Text="{l:Tr Catalog_Category}"/><ComboBox x:Name="ExpenseCategory" DisplayMemberPath="Name" SelectedValuePath="Id"/></StackPanel>
@@ -186,9 +192,7 @@
             </DataGrid.Columns>
           </DataGrid>
           </StackPanel>
-          </Expander>
-          <Expander DockPanel.Dock="Top" Header="{l:Tr MoneyOut_CategoryDetails}" Margin="0,0,0,8" IsExpanded="False">
-          <WrapPanel Margin="0,8,0,0" ItemHeight="62">
+          <WrapPanel x:Name="ExpenseCategoryPanel" Grid.Row="1" Margin="0,8,0,0" ItemHeight="62" Visibility="{Binding IsChecked, ElementName=ExpenseCategoryTab, Converter={StaticResource SectionVisibility}}">
             <StackPanel Width="180" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_ChooseCategory}"/><ComboBox x:Name="CategoryMaster" DisplayMemberPath="Name" SelectionChanged="ExpenseCategory_OnSelectionChanged"/></StackPanel>
             <StackPanel Width="180" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_CategoryName}"/><TextBox x:Name="NewCategoryName"/></StackPanel>
             <StackPanel Width="180" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_LocalName}"/><TextBox x:Name="NewCategoryLocal"/></StackPanel>
@@ -196,7 +200,7 @@
             <Button Margin="0,17,8,0" Click="NewCategory_OnClick" Content="{l:Tr MoneyOut_New}"/>
             <Button Margin="0,17,0,0" Click="AddCategory_OnClick" Content="{l:Tr Common_Save}"/>
           </WrapPanel>
-          </Expander>
+          </Grid>
           <DataGrid Style="{StaticResource CatalogGrid}" x:Name="ExpenseGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="ExpenseGrid_OnSelectionChanged">
             <DataGrid.Columns>
               <DataGridTextColumn Width="110" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date}"/>

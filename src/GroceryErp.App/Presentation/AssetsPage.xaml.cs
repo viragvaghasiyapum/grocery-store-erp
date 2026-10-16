@@ -69,7 +69,7 @@ public partial class AssetsPage : Page
                 method == "WDV" ? DepreciationMethod.Wdv : DepreciationMethod.Slm,
                 new Percent(Parse(AssetRate.Text)), new Money(Parse(AssetSalvage.Text)), AssetNotes.Text));
             NewAsset_OnClick(sender, e);
-            AssetDetailsExpander.IsExpanded = false;
+            AssetDetailsTab.IsChecked = false;
             await RefreshAsync();
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
@@ -96,7 +96,7 @@ public partial class AssetsPage : Page
         try
         {
             await _assets.DisposeAsync(asset.Id, DateOnly.FromDateTime(date), new Money(Parse(DisposalValue.Text)), OperationGuard.NewId());
-            AssetDetailsExpander.IsExpanded = false;
+            AssetDisposalTab.IsChecked = false;
             await RefreshAsync();
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
@@ -174,15 +174,25 @@ public partial class AssetsPage : Page
         EditAssetButton.IsEnabled = false;
         UpdateDisposalTarget(null);
         CloseTimeline();
-        AssetDetailsExpander.IsExpanded = true;
+        AssetDetailsTab.IsChecked = true;
+        AssetDisposalTab.IsChecked = false;
         AssetName.Focus();
     }
 
     private void EditAsset_OnClick(object sender, RoutedEventArgs e)
     {
         if (AssetGrid.SelectedItem is not AssetItem || !EditAssetButton.IsEnabled) return;
-        AssetDetailsExpander.IsExpanded = true;
+        AssetDetailsTab.IsChecked = true;
+        AssetDisposalTab.IsChecked = false;
         AssetName.Focus();
+    }
+
+    private void AssetSection_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (ReferenceEquals(sender, AssetDetailsTab) && AssetDetailsTab.IsChecked == true)
+            AssetDisposalTab.IsChecked = false;
+        else if (ReferenceEquals(sender, AssetDisposalTab) && AssetDisposalTab.IsChecked == true)
+            AssetDetailsTab.IsChecked = false;
     }
 
     private Task RefreshAsync()
