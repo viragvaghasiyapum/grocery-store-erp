@@ -37,6 +37,19 @@ public partial class StockPage : Page
         if (loadOnShow) Loaded += async (_, _) => await RefreshAsync();
     }
 
+    private void StockTabs_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ReferenceEquals(e.OriginalSource, StockTabs)) UpdatePagerVisibility();
+    }
+
+    private void UpdatePagerVisibility()
+    {
+        if (OverviewPager is null) return;
+        OverviewPager.Visibility = StockTabs.SelectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
+        LotsPager.Visibility = StockTabs.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
+        LedgerPager.Visibility = StockTabs.SelectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private async void Refresh_OnClick(object sender, RoutedEventArgs e) => await RefreshAsync();
 
     private async void OpeningImport_OnClick(object sender, RoutedEventArgs e)

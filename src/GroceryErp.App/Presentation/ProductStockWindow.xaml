@@ -50,7 +50,7 @@
     <DockPanel Grid.Row="3" Margin="0,12,0,0">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
         <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
-        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="88" Margin="0,0,8,0" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
+        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" Margin="0,0,8,0" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
         <Button x:Name="PreviousLotButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousLot_OnClick" Content="{l:Tr Sales_Previous}"/>
         <Button x:Name="NextLotButton" IsEnabled="False" Margin="0,0,8,0" Click="NextLot_OnClick" Content="{l:Tr Sales_Next}"/>
         <Button x:Name="PreviousLedgerButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousLedger_OnClick" Content="{l:Tr Sales_Previous}"/>

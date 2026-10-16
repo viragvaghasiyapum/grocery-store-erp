@@ -354,8 +354,16 @@ public sealed class PhaseZeroSmokeTests
                 ((DataGrid)products.FindName("ProductsGrid")).Columns[1].Width =
                     new DataGridLength(176, DataGridLengthUnitType.Pixel);
                 productsWindow.UpdateLayout();
-                productsWindow.Close();
+                ((DataGrid)products.FindName("ProductsGrid")).RaiseEvent(
+                    new DragCompletedEventArgs(0, 0, false) { RoutedEvent = Thumb.DragCompletedEvent });
                 File.Exists(Path.Combine(root, "table-columns.json")).ShouldBeTrue();
+                productsWindow.Close();
+                var savedLayouts = (Dictionary<string, double[]>)layouts.GetField("Saved",
+                    BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+                savedLayouts.Clear();
+                foreach (var entry in (Dictionary<string, double[]>)layouts.GetMethod("Load",
+                    BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, null)!)
+                    savedLayouts.Add(entry.Key, entry.Value);
                 var restoredProducts = new ProductsPage(catalog, settings,
                     new ProductExcelImporter(database, new AuditLog(), settings), loadOnShow: false);
                 var restoredHost = new Window { Content = restoredProducts, Width = 1080, Height = 700 };
@@ -680,7 +688,7 @@ public sealed class PhaseZeroSmokeTests
                     new DocNumberService(settings), new PeriodGuard(settings), new AuditLog());
                 var moneyOutPage = new MoneyOutPage(moneyOutService, inventory, phase5Clock, loadOnShow: false);
                 var moneyOutHost = new Window { Content = moneyOutPage, Width = 1120, Height = 700 };
-                ((ListBox)moneyOutPage.FindName("ExpiredList")).ItemsSource = new[]
+                ((DataGrid)moneyOutPage.FindName("ExpiredList")).ItemsSource = new[]
                 {
                     new ExpiryLot(1, 1, "SALT001", "Tata Salt 1 kg", "ટાટા મીઠું", "L2627-000014",
                         "SALT-2409", new DateOnly(2026, 9, 26), -2, new Quantity(11), new Money(220), "EXPIRED", 1, "Shree Wholesale"),
@@ -714,6 +722,7 @@ public sealed class PhaseZeroSmokeTests
                 };
                 moneyOutHost.Show();
                 Capture(moneyOutHost, "expiry.en.png");
+                VerifyStickyMoneyOutTable(moneyOutHost, moneyOutPage);
                 ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 1;
                 Capture(moneyOutHost, "damages.en.png");
                 ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 2;
@@ -1110,6 +1119,7 @@ public sealed class PhaseZeroSmokeTests
 
     private static void VerifyStickyProductTable(Window window, ProductsPage page)
     {
+        ScrollViewer.GetCanContentScroll(page).ShouldBeFalse();
         var grid = (DataGrid)page.FindName("ProductsGrid");
         var rows = Enumerable.Range(1, 120).Select(index => new ProductListItem
         {
@@ -1131,6 +1141,36 @@ public sealed class PhaseZeroSmokeTests
         Math.Abs(toolbar.TranslatePoint(new Point(), window).Y - toolbarY).ShouldBeLessThan(1);
         Math.Abs(pageSize.TranslatePoint(new Point(), window).Y - pageSizeY).ShouldBeLessThan(1);
         Math.Abs(header.TranslatePoint(new Point(), window).Y - headerY).ShouldBeLessThan(1);
+    }
+
+    private static void VerifyStickyMoneyOutTable(Window window, MoneyOutPage page)
+    {
+        ScrollViewer.GetCanContentScroll(page).ShouldBeFalse();
+        var grid = (DataGrid)page.FindName("ExpiredList");
+        var originalItems = grid.ItemsSource;
+        var lot = (ExpiryLot)grid.Items[0];
+        var rows = Enumerable.Range(1, 120).Select(index => lot with { LotId = index }).ToArray();
+        grid.ItemsSource = rows;
+        window.UpdateLayout();
+        var toolbar = (Button)page.FindName("SelectAllExpiryButton");
+        var pageSize = (ComboBox)page.FindName("PageSizeBox");
+        var nextPage = (Button)page.FindName("NextExpiryButton");
+        var header = FindVisualChild<DataGridColumnHeadersPresenter>(grid)!;
+        double toolbarY = toolbar.TranslatePoint(new Point(), window).Y;
+        double pageSizeY = pageSize.TranslatePoint(new Point(), window).Y;
+        double headerY = header.TranslatePoint(new Point(), window).Y;
+        pageSize.ActualWidth.ShouldBeGreaterThan(100);
+        ((StackPanel)page.FindName("ExpiryPager")).Visibility.ShouldBe(Visibility.Visible);
+        nextPage.TranslatePoint(new Point(nextPage.ActualWidth, 0), window).X
+            .ShouldBeLessThan(window.ActualWidth - 8);
+        grid.ScrollIntoView(rows[^1]);
+        grid.UpdateLayout();
+        FindVisualChild<ScrollViewer>(grid)!.VerticalOffset.ShouldBeGreaterThan(0);
+        Math.Abs(toolbar.TranslatePoint(new Point(), window).Y - toolbarY).ShouldBeLessThan(1);
+        Math.Abs(pageSize.TranslatePoint(new Point(), window).Y - pageSizeY).ShouldBeLessThan(1);
+        Math.Abs(header.TranslatePoint(new Point(), window).Y - headerY).ShouldBeLessThan(1);
+        grid.ItemsSource = originalItems;
+        window.UpdateLayout();
     }
 
     private static void Capture(Window window, string fileName)

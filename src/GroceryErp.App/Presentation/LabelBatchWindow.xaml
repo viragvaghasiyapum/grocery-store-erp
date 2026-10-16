@@ -59,7 +59,7 @@
     <Grid Grid.Row="3" Margin="0,14,0,0">
       <TextBlock x:Name="StatusText" Margin="0,0,340,0" VerticalAlignment="Center" TextWrapping="Wrap" Foreground="Crimson"/>
       <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
-        <ComboBox x:Name="PageSizeBox" Width="88" Margin="0,0,8,0" SelectedIndex="2" ToolTip="{l:Tr Common_RowsPerPage}"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
+        <ComboBox x:Name="PageSizeBox" Width="120" Margin="0,0,8,0" SelectedIndex="2" ToolTip="{l:Tr Common_RowsPerPage}"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
         <Button x:Name="LoadMoreLotsButton" Margin="0,0,8,0" IsEnabled="False" Click="LoadMoreLots_OnClick" Content="{l:Tr Sales_Next}"/>
         <Button Margin="0,0,8,0" IsCancel="True" Content="{l:Tr Common_Close}"/>
         <Button x:Name="SaveButton" Margin="0,0,8,0" Click="Save_OnClick" Content="{l:Tr Catalog_SavePrintFile}"/>

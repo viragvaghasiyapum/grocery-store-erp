@@ -25,7 +25,7 @@
       </StackPanel>
       <StackPanel Orientation="Horizontal">
         <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{l:Tr Common_RowsPerPage}"/>
-        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="88" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
+        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
       </StackPanel>
     </DockPanel>
     <StackPanel Grid.Row="2" HorizontalAlignment="Right" Orientation="Horizontal" Margin="0,12,0,0"><Button Margin="0,0,8,0" Click="Save_OnClick" Content="{l:Tr Common_Save}"/><Button Click="Cancel_OnClick" Content="{l:Tr Common_Cancel}"/></StackPanel>

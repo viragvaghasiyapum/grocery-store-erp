@@ -3,7 +3,8 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     Title="{l:Tr Catalog_Title}" FontFamily="{StaticResource AppFont}"
-    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European"
+    ScrollViewer.CanContentScroll="False">
   <Grid Margin="{StaticResource PagePadding}">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
@@ -80,7 +81,7 @@
     <DockPanel Grid.Row="4">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
         <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
-        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="88" SelectedIndex="2" SelectionChanged="PageSize_OnChanged">
+        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" SelectedIndex="2" SelectionChanged="PageSize_OnChanged">
           <ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/>
         </ComboBox>
         <Button x:Name="PreviousPageButton" IsEnabled="False" Margin="8,0" Click="PreviousPage_OnClick" Content="{l:Tr Sales_Previous}"/>

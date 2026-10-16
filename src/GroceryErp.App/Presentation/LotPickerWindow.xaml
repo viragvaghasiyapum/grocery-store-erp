@@ -20,7 +20,7 @@
    </DataGrid.Columns>
   </DataGrid>
   <StackPanel Grid.Row="3" HorizontalAlignment="Right" Orientation="Horizontal">
-   <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="88" Margin="0,0,8,0" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
+   <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" Margin="0,0,8,0" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
    <Button x:Name="PreviousButton" IsEnabled="False" Click="Previous_OnClick" Content="{l:Tr Sales_Previous}" Margin="0,0,8,0"/>
    <Button x:Name="NextButton" IsEnabled="False" Click="Next_OnClick" Content="{l:Tr Sales_Next}" Margin="0,0,8,0"/>
    <Button Width="100" IsCancel="True" Content="{l:Tr Common_Cancel}"/>

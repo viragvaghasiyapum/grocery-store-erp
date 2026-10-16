@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -21,8 +22,13 @@ internal static class TableColumnLayouts
     private static readonly DependencyPropertyDescriptor WidthDescriptor =
         DependencyPropertyDescriptor.FromProperty(DataGridColumn.WidthProperty, typeof(DataGridColumn))!;
 
-    internal static void Register() => EventManager.RegisterClassHandler(
-        typeof(DataGrid), FrameworkElement.LoadedEvent, new RoutedEventHandler(OnLoaded), true);
+    internal static void Register()
+    {
+        EventManager.RegisterClassHandler(typeof(DataGrid), FrameworkElement.LoadedEvent,
+            new RoutedEventHandler(OnLoaded), true);
+        EventManager.RegisterClassHandler(typeof(DataGrid), Thumb.DragCompletedEvent,
+            new DragCompletedEventHandler(OnColumnResizeCompleted), true);
+    }
 
     private static string ResolveLayoutPath()
     {
@@ -37,15 +43,26 @@ internal static class TableColumnLayouts
 
     private static void OnLoaded(object sender, RoutedEventArgs e)
     {
-        if (sender is not DataGrid grid || string.IsNullOrWhiteSpace(grid.Name) ||
-            States.TryGetValue(grid, out _)) return;
+        if (sender is DataGrid grid) Attach(grid);
+    }
+
+    private static void OnColumnResizeCompleted(object sender, DragCompletedEventArgs e)
+    {
+        if (sender is DataGrid grid) Attach(grid, restore: false)?.SaveNow();
+    }
+
+    private static GridState? Attach(DataGrid grid, bool restore = true)
+    {
+        if (string.IsNullOrWhiteSpace(grid.Name)) return null;
+        if (States.TryGetValue(grid, out GridState? existing)) return existing;
         var state = new GridState(grid, OwnerName(grid));
         States.Add(grid, state);
         grid.Columns.CollectionChanged += state.OnColumnsChanged;
         grid.Unloaded += state.OnUnloaded;
         Window.GetWindow(grid)?.Closing += state.OnWindowClosing;
         state.AttachColumns();
-        state.Restore();
+        if (restore) state.Restore();
+        return state;
     }
 
     private static string OwnerName(DependencyObject grid)
@@ -185,6 +202,12 @@ internal static class TableColumnLayouts
             Saved[Key(grid, owner)] = widths;
             Write();
             _dirty = false;
+        }
+
+        public void SaveNow()
+        {
+            _saveTimer.Stop();
+            Save();
         }
     }
 }

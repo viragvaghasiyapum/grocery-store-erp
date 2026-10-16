@@ -59,7 +59,17 @@ public partial class MoneyOutPage : Page
 
     private async void Tabs_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (ReferenceEquals(e.OriginalSource, MoneyOutTabs) && IsLoaded && _loadOnShow) await RefreshAsync();
+        if (!ReferenceEquals(e.OriginalSource, MoneyOutTabs)) return;
+        UpdatePagerVisibility();
+        if (IsLoaded && _loadOnShow) await RefreshAsync();
+    }
+
+    private void UpdatePagerVisibility()
+    {
+        if (ExpiryPager is null) return;
+        ExpiryPager.Visibility = MoneyOutTabs.SelectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
+        DamagePager.Visibility = MoneyOutTabs.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
+        ExpensePager.Visibility = MoneyOutTabs.SelectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void ExpiryTabs_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -145,7 +155,7 @@ public partial class MoneyOutPage : Page
 
     private void PrintExpiry_OnClick(object sender, RoutedEventArgs e)
     {
-        ListBox list = ActiveExpiryList();
+        DataGrid list = ActiveExpiryList();
         List<ExpiryLot> rows = _selectedExpiryLots.Count > 0
             ? _selectedExpiryLots.Values.ToList()
             : list.Items.Cast<ExpiryLot>().ToList();
@@ -653,7 +663,7 @@ public partial class MoneyOutPage : Page
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
-    private ListBox ActiveExpiryList() => ExpiryTabs.SelectedIndex switch
+    private DataGrid ActiveExpiryList() => ExpiryTabs.SelectedIndex switch
     {
         1 => CriticalList,
         2 => SoonList,

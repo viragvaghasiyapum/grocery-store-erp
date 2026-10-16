@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
-    Title="{l:Tr Stock_Title}">
+    Title="{l:Tr Stock_Title}" ScrollViewer.CanContentScroll="False">
   <Grid Margin="24">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Stock_Title}" />
@@ -22,17 +22,13 @@
         <Button x:Name="WriteOffButton" IsEnabled="False" Margin="0,0,8,8" Click="WriteOff_OnClick" Content="{l:Tr Stock_WriteOffExpired}" />
       </WrapPanel>
     </StackPanel>
-    <TabControl x:Name="StockTabs" Grid.Row="2" Margin="0,8,0,0">
+    <TabControl x:Name="StockTabs" Grid.Row="2" Margin="0,8,0,0" SelectionChanged="StockTabs_OnSelectionChanged">
       <TabItem Header="{l:Tr Stock_Overview}">
         <DockPanel Margin="0,8,0,0">
         <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
           <TextBox x:Name="OverviewSearchBox" Width="240" Margin="0,0,6,0" ToolTip="Product name or SKU"/>
           <Button Click="OverviewSearch_OnClick" Content="Search"/>
         </WrapPanel>
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
-          <Button x:Name="PreviousOverviewButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousOverview_OnClick" Content="{l:Tr Sales_Previous}"/>
-          <Button x:Name="NextOverviewButton" IsEnabled="False" Click="NextOverview_OnClick" Content="{l:Tr Sales_Next}"/>
-        </StackPanel>
         <DataGrid Style="{StaticResource CatalogGrid}" x:Name="OverviewGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="OverviewGrid_OnSelectionChanged">
           <DataGrid.Columns>
             <DataGridTextColumn Width="120" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}" />
@@ -51,10 +47,6 @@
           <TextBox x:Name="LotSearchBox" Width="240" Margin="0,0,6,0" ToolTip="Product, lot or batch"/>
           <Button Click="LotSearch_OnClick" Content="Search"/>
         </WrapPanel>
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
-          <Button x:Name="PreviousLotButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousLot_OnClick" Content="{l:Tr Sales_Previous}"/>
-          <Button x:Name="NextLotButton" IsEnabled="False" Click="NextLot_OnClick" Content="{l:Tr Sales_Next}"/>
-        </StackPanel>
         <DataGrid Style="{StaticResource CatalogGrid}" x:Name="LotsGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="LotsGrid_OnSelectionChanged">
           <DataGrid.Columns>
             <DataGridTextColumn Width="210" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}" />
@@ -83,7 +75,8 @@
             <DatePicker x:Name="LedgerToBox" Width="130" SelectedDateFormat="Short" Margin="0,0,12,0"/>
             <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Stock_MovementType}"/>
             <ComboBox x:Name="LedgerTypeBox" Width="160" Margin="0,0,8,0"/>
-            <Button Click="ApplyLedgerFilter_OnClick" Content="{l:Tr Stock_ApplyFilter}"/>
+            <Button Margin="0,0,8,0" Click="ApplyLedgerFilter_OnClick" Content="{l:Tr Stock_ApplyFilter}"/>
+            <Button x:Name="OpenSourceButton" IsEnabled="False" Click="OpenSource_OnClick" Content="{l:Tr Stock_OpenSource}"/>
           </WrapPanel>
           </StackPanel>
           <DataGrid Style="{StaticResource CatalogGrid}" x:Name="LedgerGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="LedgerGrid_OnSelectionChanged">
@@ -98,11 +91,6 @@
             <DataGridTextColumn Width="90" Header="{l:Tr Stock_SourceId}" Binding="{Binding RefId}"/>
           </DataGrid.Columns>
           </DataGrid>
-          <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
-            <Button x:Name="PreviousLedgerButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousLedger_OnClick" Content="{l:Tr Sales_Previous}"/>
-            <Button x:Name="NextLedgerButton" IsEnabled="False" Margin="0,0,6,0" Click="NextLedger_OnClick" Content="{l:Tr Sales_Next}"/>
-            <Button x:Name="OpenSourceButton" IsEnabled="False" Click="OpenSource_OnClick" Content="{l:Tr Stock_OpenSource}"/>
-          </StackPanel>
         </Grid>
       </TabItem>
       <TabItem Header="{l:Tr Stock_Valuation}">
@@ -118,11 +106,23 @@
       </TabItem>
     </TabControl>
     <DockPanel Grid.Row="3" Margin="0,10,0,0">
-      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
         <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{l:Tr Common_RowsPerPage}"/>
-        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="88" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
+        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
+        <StackPanel x:Name="OverviewPager" Orientation="Horizontal" Margin="12,0,0,0">
+          <Button x:Name="PreviousOverviewButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousOverview_OnClick" Content="{l:Tr Sales_Previous}"/>
+          <Button x:Name="NextOverviewButton" IsEnabled="False" Click="NextOverview_OnClick" Content="{l:Tr Sales_Next}"/>
+        </StackPanel>
+        <StackPanel x:Name="LotsPager" Orientation="Horizontal" Margin="12,0,0,0" Visibility="Collapsed">
+          <Button x:Name="PreviousLotButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousLot_OnClick" Content="{l:Tr Sales_Previous}"/>
+          <Button x:Name="NextLotButton" IsEnabled="False" Click="NextLot_OnClick" Content="{l:Tr Sales_Next}"/>
+        </StackPanel>
+        <StackPanel x:Name="LedgerPager" Orientation="Horizontal" Margin="12,0,0,0" Visibility="Collapsed">
+          <Button x:Name="PreviousLedgerButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousLedger_OnClick" Content="{l:Tr Sales_Previous}"/>
+          <Button x:Name="NextLedgerButton" IsEnabled="False" Click="NextLedger_OnClick" Content="{l:Tr Sales_Next}"/>
+        </StackPanel>
       </StackPanel>
-      <TextBlock x:Name="StatusText" VerticalAlignment="Center" />
+      <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
     </DockPanel>
   </Grid>
 </Page>

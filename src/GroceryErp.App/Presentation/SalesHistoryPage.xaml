@@ -3,7 +3,8 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
  xmlns:local="clr-namespace:GroceryErp.App.Presentation"
- Title="{l:Tr Sales_History_Title}" NumberSubstitution.Substitution="European">
+ Title="{l:Tr Sales_History_Title}" NumberSubstitution.Substitution="European"
+ ScrollViewer.CanContentScroll="False">
  <Page.Resources>
   <local:SaleStatusConverter x:Key="SaleStatusConverter"/>
   <local:PaymentModesConverter x:Key="PaymentModesConverter"/>
@@ -99,7 +100,7 @@
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
     <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
-    <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="88" SelectedIndex="2" SelectionChanged="PageSize_OnChanged">
+    <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" SelectedIndex="2" SelectionChanged="PageSize_OnChanged">
      <ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/>
     </ComboBox>
     <Button x:Name="PreviousButton" Margin="12,0,0,0" Click="Previous_OnClick" Content="{l:Tr Sales_Previous}"/>

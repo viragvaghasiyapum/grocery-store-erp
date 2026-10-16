@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
-    Title="{l:Tr Assets_Title}">
+    Title="{l:Tr Assets_Title}" ScrollViewer.CanContentScroll="False">
   <Grid Margin="{StaticResource PagePadding}">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Assets_Title}"/>
@@ -50,7 +50,7 @@
     <DockPanel Grid.Row="4" Margin="0,12,0,0">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
         <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
-        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="88" Margin="0,0,8,0" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
+        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" Margin="0,0,8,0" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
         <Button x:Name="PreviousAssetButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousAsset_OnClick" Content="{l:Tr Sales_Previous}"/>
         <Button x:Name="NextAssetButton" IsEnabled="False" Click="NextAsset_OnClick" Content="{l:Tr Sales_Next}"/>
       </StackPanel>
