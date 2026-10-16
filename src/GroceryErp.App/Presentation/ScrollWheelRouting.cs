@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -7,6 +8,8 @@ namespace GroceryErp.App.Presentation;
 
 internal static class ScrollWheelRouting
 {
+    private static readonly ConditionalWeakTable<ScrollViewer, WheelAccumulator> Accumulators = new();
+
     internal static void Register() => EventManager.RegisterClassHandler(
         typeof(Window), UIElement.PreviewMouseWheelEvent,
         new MouseWheelEventHandler(OnPreviewMouseWheel));
@@ -21,8 +24,33 @@ internal static class ScrollWheelRouting
             double range = horizontal ? viewer.ScrollableWidth : viewer.ScrollableHeight;
             if (range <= 0) continue;
             double offset = horizontal ? viewer.HorizontalOffset : viewer.VerticalOffset;
-            double step = viewer.CanContentScroll ? 3 : 48;
-            double target = Math.Clamp(offset - e.Delta / 120.0 * step, 0, range);
+            if ((e.Delta < 0 && offset >= range - 0.001) ||
+                (e.Delta > 0 && offset <= 0.001))
+            {
+                if (Accumulators.TryGetValue(viewer, out WheelAccumulator? atEdge))
+                {
+                    if (horizontal) atEdge.Horizontal = 0;
+                    else atEdge.Vertical = 0;
+                }
+                continue;
+            }
+            double target;
+            if (viewer.CanContentScroll)
+            {
+                WheelAccumulator accumulator = Accumulators.GetValue(viewer, static _ => new WheelAccumulator());
+                double pending = (horizontal ? accumulator.Horizontal : accumulator.Vertical)
+                    - e.Delta / 120.0 * 3;
+                double wholeRows = Math.Truncate(pending);
+                if (horizontal) accumulator.Horizontal = pending - wholeRows;
+                else accumulator.Vertical = pending - wholeRows;
+                if (wholeRows == 0)
+                {
+                    e.Handled = true;
+                    return;
+                }
+                target = Math.Clamp(offset + wholeRows, 0, range);
+            }
+            else target = Math.Clamp(offset - e.Delta / 120.0 * 48, 0, range);
             if (Math.Abs(target - offset) < 0.001) continue;
             if (horizontal) viewer.ScrollToHorizontalOffset(target);
             else viewer.ScrollToVerticalOffset(target);
@@ -35,4 +63,10 @@ internal static class ScrollWheelRouting
         element is Visual or System.Windows.Media.Media3D.Visual3D
             ? VisualTreeHelper.GetParent(element) ?? LogicalTreeHelper.GetParent(element)
             : LogicalTreeHelper.GetParent(element);
+
+    private sealed class WheelAccumulator
+    {
+        public double Vertical;
+        public double Horizontal;
+    }
 }

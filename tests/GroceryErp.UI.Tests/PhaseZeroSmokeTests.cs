@@ -1,7 +1,9 @@
 using System.Globalization;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -229,6 +231,7 @@ public sealed class PhaseZeroSmokeTests
                 login.Show();
                 Capture(login, "login.en.png");
                 login.Close();
+                VerifyWheelScrolling();
                 var setup = new SetupWindow(
                     new FirstRunService(database, new PasswordHasher()),
                     paths,
@@ -1016,6 +1019,67 @@ public sealed class PhaseZeroSmokeTests
         await completion.Task.WaitAsync(
             TimeSpan.FromSeconds(30),
             TestContext.Current.CancellationToken);
+    }
+
+    private static void VerifyWheelScrolling()
+    {
+        Type routing = typeof(GroceryErp.App.App).Assembly.GetType(
+            "GroceryErp.App.Presentation.ScrollWheelRouting")!;
+        routing.GetMethod("Register", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, null);
+        var content = new StackPanel();
+        for (int index = 0; index < 30; index++)
+            content.Children.Add(new TextBlock { Text = $"Scrollable row {index}", Height = 40 });
+        var viewer = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        var window = new Window { Content = viewer, Width = 320, Height = 220 };
+        window.Show();
+        window.UpdateLayout();
+        viewer.ScrollableHeight.ShouldBeGreaterThan(0);
+        for (int index = 0; index < 12; index++)
+        {
+            var wheel = new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, -10)
+            {
+                RoutedEvent = UIElement.PreviewMouseWheelEvent,
+            };
+            content.Children[0].RaiseEvent(wheel);
+            wheel.Handled.ShouldBeTrue();
+        }
+        viewer.UpdateLayout();
+        viewer.VerticalOffset.ShouldBeGreaterThan(0);
+        window.Close();
+
+        var grid = new DataGrid
+        {
+            ItemsSource = Enumerable.Range(0, 100).Select(index => new { Name = $"Result {index}" }),
+        };
+        var gridWindow = new Window { Content = grid, Width = 320, Height = 220 };
+        gridWindow.Show();
+        gridWindow.UpdateLayout();
+        var gridViewer = FindVisualChild<ScrollViewer>(grid)!;
+        gridViewer.ScrollableHeight.ShouldBeGreaterThan(0);
+        var firstRow = (DataGridRow)grid.ItemContainerGenerator.ContainerFromIndex(0);
+        for (int index = 0; index < 12; index++)
+        {
+            var wheel = new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, -10)
+            {
+                RoutedEvent = UIElement.PreviewMouseWheelEvent,
+            };
+            firstRow.RaiseEvent(wheel);
+            wheel.Handled.ShouldBeTrue();
+        }
+        gridViewer.UpdateLayout();
+        gridViewer.VerticalOffset.ShouldBeGreaterThan(0);
+        gridWindow.Close();
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (int index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T found) return found;
+            if (FindVisualChild<T>(child) is { } nested) return nested;
+        }
+        return null;
     }
 
     private static void Capture(Window window, string fileName)
