@@ -29,6 +29,8 @@ public sealed record LotItem(
 
 public sealed record StockOverviewPage(IReadOnlyList<StockOverviewItem> Items, bool HasMore, string? NextName, long? NextId);
 public sealed record LotPage(IReadOnlyList<LotItem> Items, bool HasMore, long? NextId);
+public sealed record LotCorrection(LotItem Original, string? BatchNumber, DateOnly? ExpiryDate,
+    Money UnitCost, Money SellingPrice, Money? Mrp, Quantity QuantityChange, DateOnly Date, string Reason);
 public sealed record LedgerPage(IReadOnlyList<LedgerItem> Items, bool HasMore, long? NextId);
 
 public sealed record LedgerItem(

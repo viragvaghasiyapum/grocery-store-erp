@@ -43,6 +43,8 @@
         <TextBox x:Name="AssetSearchBox" Width="140" Margin="0,0,6,0" ToolTip="Asset name or category"/>
         <CheckBox x:Name="IncludeDisposedBox" IsChecked="True" VerticalAlignment="Center" Margin="0,0,6,0" Content="Disposed"/>
         <Button Margin="0,0,8,0" Click="AssetSearch_OnClick" Content="Search"/>
+        <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
+        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="65" Margin="0,0,8,0" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
         <Button x:Name="PreviousAssetButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousAsset_OnClick" Content="{l:Tr Sales_Previous}"/>
         <Button x:Name="NextAssetButton" IsEnabled="False" Margin="0,0,8,0" Click="NextAsset_OnClick" Content="{l:Tr Sales_Next}"/>
         <DatePicker x:Name="DisposalDate" Width="135" SelectedDateFormat="Short"/>

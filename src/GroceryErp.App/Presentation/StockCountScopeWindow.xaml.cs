@@ -12,6 +12,7 @@ public partial class StockCountScopeWindow : Window
     {
         InitializeComponent();
         _catalog = catalog;
+        UpdateCategoryCount();
         if (loadOnShow) Loaded += LoadAsync;
     }
 
@@ -27,6 +28,16 @@ public partial class StockCountScopeWindow : Window
     private void AllCategoriesBox_OnChanged(object sender, RoutedEventArgs e)
     {
         if (CategoriesBox is not null) CategoriesBox.IsEnabled = AllCategoriesBox.IsChecked != true;
+    }
+
+    private void CategoriesBox_OnSelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) => UpdateCategoryCount();
+
+    private void ClearCategories_OnClick(object sender, RoutedEventArgs e) => CategoriesBox.UnselectAll();
+
+    private void UpdateCategoryCount()
+    {
+        if (CategorySelectedCount is not null && CategoriesBox is not null)
+            CategorySelectedCount.Text = TranslationSource.Instance.Format("Selection_Count", CategoriesBox.SelectedItems.Count);
     }
 
     private void Continue_OnClick(object sender, RoutedEventArgs e)

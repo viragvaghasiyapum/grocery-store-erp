@@ -6,6 +6,7 @@ namespace GroceryErp.App.Presentation;
 
 public partial class SavedBillsWindow : Window
 {
+    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
     private readonly SalesService? _sales;
     private readonly bool _includeDrafts;
     private readonly long? _excludeId;
@@ -17,6 +18,7 @@ public partial class SavedBillsWindow : Window
     public SavedBillsWindow(IReadOnlyList<HeldSale> bills)
     {
         InitializeComponent();
+        PageSizeBox.Visibility = Visibility.Collapsed;
         BillsGrid.ItemsSource = bills;
         BillsGrid.SelectedIndex = bills.Count > 0 ? 0 : -1;
     }
@@ -46,7 +48,7 @@ public partial class SavedBillsWindow : Window
         try
         {
             SavedBillPage page = await _sales.GetSavedBillPageAsync(_includeDrafts, SearchBox.Text,
-                createdAt, id, _excludeId);
+                createdAt, id, _excludeId, PageSize);
             _page = page;
             _cursor = (createdAt, id);
             BillsGrid.ItemsSource = page.Items;
@@ -84,5 +86,12 @@ public partial class SavedBillsWindow : Window
         await LoadPageAsync(previous.CreatedAt, previous.Id);
         if (_cursor == previous) _previous.Pop();
         PreviousButton.IsEnabled = _previous.Count > 0;
+    }
+
+    private async void PageSize_OnChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded || _sales is null) return;
+        _previous.Clear();
+        await LoadPageAsync(null, null);
     }
 }

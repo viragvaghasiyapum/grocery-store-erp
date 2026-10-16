@@ -35,5 +35,6 @@
     <EmbeddedResource Include="../../024_stock_value_projection.sql" Link="db/024_stock_value_projection.sql" />
     <EmbeddedResource Include="../../025_sale_report_day.sql" Link="db/025_sale_report_day.sql" />
     <EmbeddedResource Include="../../026_sale_product_day.sql" Link="db/026_sale_product_day.sql" />
+    <EmbeddedResource Include="../../027_money_out_corrections.sql" Link="db/027_money_out_corrections.sql" />
   </ItemGroup>
 </Project>

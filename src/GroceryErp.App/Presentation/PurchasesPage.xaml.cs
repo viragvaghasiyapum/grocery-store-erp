@@ -11,6 +11,7 @@ namespace GroceryErp.App.Presentation;
 
 public partial class PurchasesPage : Page
 {
+    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
     private readonly PurchasingService _purchasing;
     private readonly Stack<(DateOnly? Date, long? Id)> _previousPages = new();
     private DateOnly? _beforeDate;
@@ -138,7 +139,7 @@ public partial class PurchasesPage : Page
             PurchasePage page = await _purchasing.GetPurchasesPageAsync(beforeDate, beforeId,
                 PurchaseFromBox.SelectedDate is { } from ? DateOnly.FromDateTime(from) : null,
                 PurchaseToBox.SelectedDate is { } to ? DateOnly.FromDateTime(to) : null,
-                PurchaseVendorFilter.SelectedValue as long?);
+                PurchaseVendorFilter.SelectedValue as long?, PageSize);
             if (reset) _previousPages.Clear();
             _beforeDate = beforeDate;
             _beforeId = beforeId;
@@ -181,5 +182,10 @@ public partial class PurchasesPage : Page
         await LoadPageAsync(date, id, reset: false);
         if (_beforeDate == date && _beforeId == id) _previousPages.Pop();
         PreviousPurchaseButton.IsEnabled = _previousPages.Count > 0;
+    }
+
+    private async void PageSize_OnChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (IsLoaded) await RefreshAsync();
     }
 }

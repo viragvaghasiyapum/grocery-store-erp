@@ -5,6 +5,7 @@ namespace GroceryErp.App.Presentation;
 
 public partial class VendorLedgerWindow : Window
 {
+    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
     private readonly PurchasingService _purchasing;
     private readonly long _vendorId;
     private readonly LedgerTabState[] _ledgerTabs = Enumerable.Range(0, 4).Select(_ => new LedgerTabState()).ToArray();
@@ -47,7 +48,7 @@ public partial class VendorLedgerWindow : Window
         {
             LedgerTabState state = _ledgerTabs[tab];
             VendorLedgerPage page = await _purchasing.GetVendorLedgerPageAsync(_vendorId,
-                state.Cursor.Date, state.Cursor.Kind, state.Cursor.Id, filterKind: LedgerKinds[tab]);
+                state.Cursor.Date, state.Cursor.Kind, state.Cursor.Id, PageSize, filterKind: LedgerKinds[tab]);
             state.Page = page;
             switch (tab)
             {
@@ -67,7 +68,7 @@ public partial class VendorLedgerWindow : Window
         UpdateButtons();
         try
         {
-            _lotPage = await _purchasing.GetVendorLotPageAsync(_vendorId, _lotCursor.Date, _lotCursor.Id);
+            _lotPage = await _purchasing.GetVendorLotPageAsync(_vendorId, _lotCursor.Date, _lotCursor.Id, PageSize);
             LotsGrid.ItemsSource = _lotPage.Items;
             UpdateButtons();
         }
@@ -95,6 +96,19 @@ public partial class VendorLedgerWindow : Window
         LedgerTabState? state = tab is >= 0 and < 4 ? _ledgerTabs[tab] : null;
         PreviousPageButton.IsEnabled = !_loading && (lots ? _lotBack.Count > 0 : state?.Back.Count > 0);
         NextPageButton.IsEnabled = !_loading && (lots ? _lotPage?.HasMore == true : state?.Page?.HasMore == true);
+    }
+
+    private async void PageSize_OnChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded || _loading) return;
+        foreach (LedgerTabState state in _ledgerTabs) { state.Back.Clear(); state.Cursor = default; state.Page = null; }
+        _lotBack.Clear(); _lotCursor = default; _lotPage = null;
+        try
+        {
+            if (HistoryTabs.SelectedIndex == 4) await LoadLotsAsync();
+            else if (HistoryTabs.SelectedIndex is >= 0 and < 4) await LoadLedgerAsync(HistoryTabs.SelectedIndex);
+        }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
 
     private async void NextPage_OnClick(object sender, RoutedEventArgs e)

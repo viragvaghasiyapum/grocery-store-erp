@@ -14,6 +14,7 @@ namespace GroceryErp.App.Presentation;
 
 public partial class MoneyOutPage : Page
 {
+    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
     private readonly MoneyOutService _service;
     private readonly InventoryService _inventory;
     private readonly IClock _clock;
@@ -29,6 +30,9 @@ public partial class MoneyOutPage : Page
     private (DateOnly? Date, long? Id) _expenseCursor;
     private DamagePage? _damagePage;
     private ExpensePage? _expensePage;
+    private ExpenseItem? _editingExpense;
+    private readonly Dictionary<long, ExpiryLot> _selectedExpiryLots = new();
+    private int _expirySelectionVersion;
 
     public MoneyOutPage() : this(null, null, null) { }
 
@@ -41,6 +45,8 @@ public partial class MoneyOutPage : Page
         _inventory = inventory ?? services!.GetRequiredService<InventoryService>();
         _clock = clock ?? services!.GetRequiredService<IClock>();
         _loadOnShow = loadOnShow;
+        UpdateExpirySelection();
+        UpdateRepeatCategoryCount();
         ExpenseDate.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
         EmployeeJoinDate.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
         SalaryPayDate.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
@@ -72,6 +78,7 @@ public partial class MoneyOutPage : Page
             if (!ConfirmDamage(lot.LotCode, quantity)) return;
             await _service.RecordDamageAsync(new(lot.LotId, _clock.BusinessDate, quantity, reason, recovered, null), OperationGuard.NewId());
             DamageQuantity.Clear();
+            ClearExpirySelection();
             await RefreshAsync();
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
@@ -95,13 +102,25 @@ public partial class MoneyOutPage : Page
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
+    private void DamageGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e) =>
+        CorrectDamageButton.IsEnabled = DamageGrid.SelectedItem is DamageItem;
+
+    private async void CorrectDamage_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (DamageGrid.SelectedItem is not DamageItem item) return;
+        var window = new MoneyOutCorrectionWindow(_service, item, _clock.BusinessDate)
+            { Owner = Window.GetWindow(this) };
+        if (window.ShowDialog() == true) await RefreshAsync();
+    }
+
     private async void BulkWriteOff_OnClick(object sender, RoutedEventArgs e)
     {
-        long[] lots = ActiveExpiryList().SelectedItems.Cast<ExpiryLot>().Where(static item => item.Bucket == "EXPIRED").Select(static item => item.LotId).ToArray();
+        long[] lots = _selectedExpiryLots.Values.Where(static item => item.Bucket == "EXPIRED")
+            .Select(static item => item.LotId).ToArray();
         if (lots.Length == 0) return;
         if (MessageBox.Show(TranslationSource.Instance.Format("MoneyOut_BulkConfirm", lots.Length),
             TranslationSource.Instance["MoneyOut_WriteOff"], MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-        try { await _service.WriteOffExpiredAsync(lots, _clock.BusinessDate, OperationGuard.NewId()); await RefreshAsync(); }
+        try { await _service.WriteOffExpiredAsync(lots, _clock.BusinessDate, OperationGuard.NewId()); ClearExpirySelection(); await RefreshAsync(); }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
@@ -110,7 +129,7 @@ public partial class MoneyOutPage : Page
         if (ActiveExpiryList().SelectedItem is not ExpiryLot lot) return;
         if (MessageBox.Show(TranslationSource.Instance.Format("MoneyOut_BlockConfirm", lot.LotCode),
             TranslationSource.Instance["MoneyOut_BlockLot"], MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-        try { await _inventory.SetLotActiveAsync(lot.LotId, false); await RefreshAsync(); StatusText.Text = TranslationSource.Instance["MoneyOut_Saved"]; }
+        try { await _inventory.SetLotActiveAsync(lot.LotId, false); ClearExpirySelection(); await RefreshAsync(); StatusText.Text = TranslationSource.Instance["MoneyOut_Saved"]; }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
@@ -121,14 +140,14 @@ public partial class MoneyOutPage : Page
         if (lots.Count == 0) return;
         LotItem lot = lots[0];
         var window = new LotPriceWindow(_inventory, lot) { Owner = Window.GetWindow(this) };
-        window.ShowDialog();
+        if (window.ShowDialog() == true) { ClearExpirySelection(); await RefreshAsync(); }
     }
 
     private void PrintExpiry_OnClick(object sender, RoutedEventArgs e)
     {
         ListBox list = ActiveExpiryList();
-        List<ExpiryLot> rows = list.SelectedItems.Count > 0
-            ? list.SelectedItems.Cast<ExpiryLot>().ToList()
+        List<ExpiryLot> rows = _selectedExpiryLots.Count > 0
+            ? _selectedExpiryLots.Values.ToList()
             : list.Items.Cast<ExpiryLot>().ToList();
         if (rows.Count == 0) return;
         var document = new FlowDocument { PagePadding = new Thickness(40), ColumnWidth = double.PositiveInfinity };
@@ -156,8 +175,14 @@ public partial class MoneyOutPage : Page
                 return;
             }
             string mode = ((ComboBoxItem)ExpenseMode.SelectedItem).Tag?.ToString() ?? "CASH";
-            await _service.RecordExpenseAsync(new(DateOnly.FromDateTime(date), category, new Money(Parse(ExpenseAmount.Text)), mode,
-                ExpensePaidTo.Text, ExpenseReference.Text, ExpenseNotes.Text), OperationGuard.NewId());
+            var input = new ExpenseInput(DateOnly.FromDateTime(date), category, new Money(Parse(ExpenseAmount.Text)), mode,
+                ExpensePaidTo.Text, ExpenseReference.Text, ExpenseNotes.Text);
+            if (_editingExpense is { } original)
+            {
+                await _service.CorrectExpenseAsync(original, input, ExpenseCorrectionReason.Text);
+                ClearExpenseCorrection();
+            }
+            else await _service.RecordExpenseAsync(input, OperationGuard.NewId());
             if (RepeatDraftGrid.SelectedItem is ExpenseInput repeated && RepeatDraftGrid.ItemsSource is List<ExpenseInput> drafts)
             {
                 drafts.Remove(repeated);
@@ -168,6 +193,32 @@ public partial class MoneyOutPage : Page
             await RefreshAsync();
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private void ExpenseGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ExpenseGrid.SelectedItem is not ExpenseItem item) return;
+        _editingExpense = item;
+        ExpenseDate.SelectedDate = item.Date.ToDateTime(TimeOnly.MinValue);
+        ExpenseCategory.SelectedValue = item.CategoryId;
+        ExpenseAmount.Text = item.Amount.Value.ToString("0.000", TranslationSource.FormatCulture);
+        SelectMode(ExpenseMode, item.Mode);
+        ExpensePaidTo.Text = item.PaidTo ?? "";
+        ExpenseReference.Text = item.Reference ?? "";
+        ExpenseNotes.Text = item.Notes ?? "";
+        ExpenseCorrectionPanel.Visibility = Visibility.Visible;
+    }
+
+    private void NewExpense_OnClick(object sender, RoutedEventArgs e) => ClearExpenseCorrection();
+
+    private void ClearExpenseCorrection()
+    {
+        _editingExpense = null;
+        ExpenseGrid.SelectedItem = null;
+        ExpenseCorrectionReason.Clear();
+        ExpenseCorrectionPanel.Visibility = Visibility.Collapsed;
+        ExpenseDate.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
+        ExpenseAmount.Clear(); ExpensePaidTo.Clear(); ExpenseReference.Clear(); ExpenseNotes.Clear();
     }
 
     private void OpenAssets_OnClick(object sender, RoutedEventArgs e)
@@ -196,6 +247,16 @@ public partial class MoneyOutPage : Page
             StatusText.Text = TranslationSource.Instance.Format("MoneyOut_DraftsFound", drafts.Count);
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private void RepeatCategories_OnSelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateRepeatCategoryCount();
+
+    private void ClearRepeatCategories_OnClick(object sender, RoutedEventArgs e) => RepeatCategories.UnselectAll();
+
+    private void UpdateRepeatCategoryCount()
+    {
+        if (RepeatCategorySelectedCount is not null && RepeatCategories is not null)
+            RepeatCategorySelectedCount.Text = TranslationSource.Instance.Format("Selection_Count", RepeatCategories.SelectedItems.Count);
     }
 
     private void RepeatDraftGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -306,9 +367,33 @@ public partial class MoneyOutPage : Page
             await _service.RecordOtherSalaryPaymentAsync(employee.Id, DateOnly.FromDateTime(payDate),
                 new Money(Parse(AdvanceAmount.Text)), mode, AdvanceNotes.Text, OperationGuard.NewId());
             AdvanceAmount.Clear(); AdvanceNotes.Clear();
+            await RefreshSalaryRegisterAsync();
             StatusText.Text = TranslationSource.Instance["MoneyOut_Saved"];
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private void SalaryRegisterGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e) =>
+        CorrectSalaryButton.IsEnabled = SalaryRegisterGrid.SelectedItem is SalaryPaymentItem;
+
+    private async void CorrectSalary_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (SalaryRegisterGrid.SelectedItem is not SalaryPaymentItem item) return;
+        var window = new MoneyOutCorrectionWindow(_service, item, _clock.BusinessDate)
+            { Owner = Window.GetWindow(this) };
+        if (window.ShowDialog() == true) await RefreshSalaryRegisterAsync();
+    }
+
+    private async void RefreshSalaryRegister_OnClick(object sender, RoutedEventArgs e)
+    {
+        try { await RefreshSalaryRegisterAsync(); }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async Task RefreshSalaryRegisterAsync()
+    {
+        YearMonth month = YearMonth.Parse(SalaryPeriod.Text);
+        SalaryRegisterGrid.ItemsSource = await _service.GetSalaryRegisterAsync(month, month);
     }
 
     private async Task RefreshAsync()
@@ -348,6 +433,7 @@ public partial class MoneyOutPage : Page
                     IReadOnlyList<EmployeeItem> employees = await _service.GetEmployeesAsync(includeInactive: true);
                     EmployeeGrid.ItemsSource = employees;
                     EmployeeGrid.SelectedItem = employees.FirstOrDefault(item => item.Id == _editingEmployeeId);
+                    await RefreshSalaryRegisterAsync();
                     break;
             }
             StatusText.Text = TranslationSource.Instance["MoneyOut_Ready"];
@@ -357,7 +443,7 @@ public partial class MoneyOutPage : Page
 
     private async Task LoadExpiryPageAsync(string bucket, DateOnly? afterDate, long? afterId)
     {
-        ExpiryPage page = await _service.GetExpiryPageAsync(bucket, afterDate, afterId);
+        ExpiryPage page = await _service.GetExpiryPageAsync(bucket, afterDate, afterId, PageSize);
         _expiryPages[bucket] = page;
         _expiryCursors[bucket] = (afterDate, afterId);
         switch (bucket)
@@ -373,6 +459,83 @@ public partial class MoneyOutPage : Page
     {
         1 => "CRITICAL", 2 => "SOON", _ => "EXPIRED",
     };
+
+    private void ExpiryCheck_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox { DataContext: ExpiryLot lot } box)
+            box.IsChecked = _selectedExpiryLots.ContainsKey(lot.LotId);
+    }
+
+    private void ExpiryCheck_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox { DataContext: ExpiryLot lot } box) return;
+        if (box.IsChecked == true) _selectedExpiryLots[lot.LotId] = lot;
+        else _selectedExpiryLots.Remove(lot.LotId);
+        UpdateExpirySelection();
+    }
+
+    private void SelectExpiryPage_OnClick(object sender, RoutedEventArgs e)
+    {
+        foreach (ExpiryLot lot in ActiveExpiryList().Items.Cast<ExpiryLot>())
+            _selectedExpiryLots[lot.LotId] = lot;
+        RefreshExpiryChecks();
+    }
+
+    private async void SelectAllExpiry_OnClick(object sender, RoutedEventArgs e)
+    {
+        string bucket = ActiveExpiryBucket();
+        int selectionVersion = _expirySelectionVersion;
+        var selected = new Dictionary<long, ExpiryLot>();
+        DateOnly? date = null;
+        long? id = null;
+        SelectAllExpiryButton.IsEnabled = false;
+        try
+        {
+            while (true)
+            {
+                ExpiryPage page = await _service.GetExpiryPageAsync(bucket, date, id, 100);
+                if (selectionVersion != _expirySelectionVersion) return;
+                foreach (ExpiryLot lot in page.Items) selected[lot.LotId] = lot;
+                if (!page.HasMore || page.NextDate is null || page.NextId is null) break;
+                date = page.NextDate;
+                id = page.NextId;
+            }
+            foreach ((long lotId, ExpiryLot lot) in selected) _selectedExpiryLots[lotId] = lot;
+            RefreshExpiryChecks();
+        }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        finally { SelectAllExpiryButton.IsEnabled = true; }
+    }
+
+    private void ClearExpirySelection_OnClick(object sender, RoutedEventArgs e) => ClearExpirySelection();
+
+    private void ClearExpirySelection()
+    {
+        ++_expirySelectionVersion;
+        _selectedExpiryLots.Clear();
+        RefreshExpiryChecks();
+    }
+
+    private void RefreshExpiryChecks()
+    {
+        if (ExpiredList is null) return;
+        ExpiredList.Items.Refresh(); CriticalList.Items.Refresh(); SoonList.Items.Refresh();
+        UpdateExpirySelection();
+    }
+
+    private void UpdateExpirySelection()
+    {
+        if (ExpirySelectedCount is null) return;
+        ExpirySelectedCount.Text = TranslationSource.Instance.Format("Selection_Count", _selectedExpiryLots.Count);
+        ClearExpirySelectionButton.IsEnabled = _selectedExpiryLots.Count > 0;
+        BulkWriteOffButton.IsEnabled = _selectedExpiryLots.Count > 0 &&
+            _selectedExpiryLots.Values.All(static lot => lot.Bucket == "EXPIRED");
+    }
+
+    private async void PageSize_OnChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (IsLoaded) await RefreshAsync();
+    }
 
     private void UpdateExpiryButtons()
     {
@@ -426,7 +589,7 @@ public partial class MoneyOutPage : Page
     {
         DateOnly from = DateOnly.FromDateTime(DamageFromBox.SelectedDate ?? DateTime.MinValue);
         DateOnly to = DateOnly.FromDateTime(DamageToBox.SelectedDate ?? DateTime.MaxValue);
-        DamagePage page = await _service.GetDamagePageAsync(from, to, beforeDate, beforeId);
+        DamagePage page = await _service.GetDamagePageAsync(from, to, beforeDate, beforeId, PageSize);
         _damagePage = page;
         _damageCursor = (beforeDate, beforeId);
         UiRefreshProbe.RecordBinding("money-out", () => DamageGrid.ItemsSource = page.Items);
@@ -438,7 +601,7 @@ public partial class MoneyOutPage : Page
     {
         DateOnly from = DateOnly.FromDateTime(ExpenseFromBox.SelectedDate ?? DateTime.MinValue);
         DateOnly to = DateOnly.FromDateTime(ExpenseToBox.SelectedDate ?? DateTime.MaxValue);
-        ExpensePage page = await _service.GetExpensePageAsync(from, to, beforeDate, beforeId);
+        ExpensePage page = await _service.GetExpensePageAsync(from, to, beforeDate, beforeId, PageSize);
         _expensePage = page;
         _expenseCursor = (beforeDate, beforeId);
         UiRefreshProbe.RecordBinding("money-out", () => ExpenseGrid.ItemsSource = page.Items);

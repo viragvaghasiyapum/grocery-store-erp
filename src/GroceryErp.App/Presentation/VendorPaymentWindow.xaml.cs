@@ -13,6 +13,7 @@ namespace GroceryErp.App.Presentation;
 
 public partial class VendorPaymentWindow : Window
 {
+    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
     private readonly PurchasingService _purchasing;
     private readonly Stack<(DateOnly? Date, long? Id)> _purchaseBack = new();
     private DateOnly? _purchaseBeforeDate;
@@ -64,7 +65,7 @@ public partial class VendorPaymentWindow : Window
             long? vendorId = VendorBox.SelectedValue as long?;
             VendorPurchasePage? page = vendorId is long id
                 ? await _purchasing.GetVendorPurchasePageAsync(id, PurchaseSearchBox.Text,
-                    _purchaseBeforeDate, _purchaseBeforeId) : null;
+                    _purchaseBeforeDate, _purchaseBeforeId, PageSize) : null;
             if (version != _purchaseVersion) return false;
             _purchasePage = page;
             PurchaseBox.ItemsSource = page?.Items;
@@ -99,6 +100,12 @@ public partial class VendorPaymentWindow : Window
         if (await LoadPurchasesAsync()) _purchaseBack.Pop();
         else { _purchaseBeforeDate = current.Item1; _purchaseBeforeId = current.Item2; }
         PurchasePreviousButton.IsEnabled = _purchaseBack.Count > 0;
+    }
+    private async void PageSize_OnChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        _purchaseBack.Clear(); _purchaseBeforeDate = null; _purchaseBeforeId = null;
+        await LoadPurchasesAsync();
     }
     private async void Save_OnClick(object sender, RoutedEventArgs e)
     {

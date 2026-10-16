@@ -61,13 +61,18 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                     UNION ALL SELECT 'COGS','COGS',NULL,-cost FROM return_totals WHERE returns>0
                     UNION ALL SELECT 'EXPENSE','DAMAGES',NULL,d.cost_value-d.recovered_amount
                         FROM damage d WHERE d.damage_date BETWEEN @from AND @to
+                    UNION ALL SELECT 'EXPENSE','DAMAGES',NULL,dc.expense_delta
+                        FROM damage_correction dc WHERE dc.correction_date BETWEEN @from AND @to
                     UNION ALL SELECT 'EXPENSE','STOCK_ADJUSTMENT',NULL,
                         -CAST(ROUND(m.qty*m.unit_cost/1000.0) AS INTEGER)
                         FROM stock_movement m WHERE m.type_code='ADJUSTMENT' AND m.move_date BETWEEN @from AND @to
+                          AND COALESCE(m.ref_type,'')<>'damage_correction'
                     UNION ALL SELECT 'EXPENSE','EXPENSE_CATEGORY',e.category_id,e.amount
                         FROM expense e WHERE e.expense_date BETWEEN @from AND @to
                     UNION ALL SELECT 'EXPENSE','SALARIES',NULL,sp.amount
                         FROM salary_payment sp WHERE sp.period_month BETWEEN @firstMonth AND @lastCompleteMonth
+                    UNION ALL SELECT 'EXPENSE','SALARIES',NULL,sc.amount_delta
+                        FROM salary_correction sc WHERE sc.correction_date BETWEEN @from AND @to
                     UNION ALL SELECT 'EXPENSE','DEPRECIATION',NULL,ad.amount
                         FROM asset_depreciation ad WHERE ad.period_month BETWEEN @firstMonth AND @lastCompleteMonth
                     UNION ALL SELECT 'OTHER','ASSET_DISPOSAL',a.id,
@@ -135,13 +140,18 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                     FROM pnl_day WHERE day BETWEEN @from AND @to AND returns>0
                     UNION ALL SELECT 'EXPENSE','DAMAGES',NULL,substr(damage_date,1,7),cost_value-recovered_amount
                     FROM damage WHERE damage_date BETWEEN @from AND @to
+                    UNION ALL SELECT 'EXPENSE','DAMAGES',NULL,substr(correction_date,1,7),expense_delta
+                    FROM damage_correction WHERE correction_date BETWEEN @from AND @to
                     UNION ALL SELECT 'EXPENSE','STOCK_ADJUSTMENT',NULL,substr(move_date,1,7),
                         -CAST(ROUND(qty*unit_cost/1000.0) AS INTEGER)
                     FROM stock_movement WHERE type_code='ADJUSTMENT' AND move_date BETWEEN @from AND @to
+                      AND COALESCE(ref_type,'')<>'damage_correction'
                     UNION ALL SELECT 'EXPENSE','EXPENSE_CATEGORY',category_id,substr(expense_date,1,7),amount
                     FROM expense WHERE expense_date BETWEEN @from AND @to
                     UNION ALL SELECT 'EXPENSE','SALARIES',NULL,period_month,amount
                     FROM salary_payment WHERE period_month BETWEEN @firstMonth AND @lastCompleteMonth
+                    UNION ALL SELECT 'EXPENSE','SALARIES',NULL,substr(correction_date,1,7),amount_delta
+                    FROM salary_correction WHERE correction_date BETWEEN @from AND @to
                     UNION ALL SELECT 'EXPENSE','DEPRECIATION',NULL,period_month,amount
                     FROM asset_depreciation WHERE period_month BETWEEN @firstMonth AND @lastCompleteMonth
                     UNION ALL SELECT 'OTHER','ASSET_DISPOSAL',a.id,substr(a.disposed_date,1,7),
@@ -630,7 +640,9 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
             bool truncated = employeeIds.Count > limit;
             if (truncated) employeeIds.RemoveAt(limit);
             List<SalaryMatrixRaw> raw = connection.Query<SalaryMatrixRaw>("""
-                SELECT e.id AS EmployeeId,e.name AS Employee,e.role AS Role,sp.period_month AS Month,SUM(sp.amount) AS Amount
+                SELECT e.id AS EmployeeId,e.name AS Employee,e.role AS Role,sp.period_month AS Month,
+                       SUM(sp.amount+COALESCE((SELECT SUM(sc.amount_delta) FROM salary_correction sc
+                           WHERE sc.salary_payment_id=sp.id),0)) AS Amount
                 FROM salary_payment sp JOIN employee e ON e.id=sp.employee_id
                 WHERE e.id IN @employeeIds AND sp.period_month BETWEEN @firstMonth AND @lastMonth
                 GROUP BY e.id,sp.period_month ORDER BY e.name COLLATE NOCASE,e.id,sp.period_month

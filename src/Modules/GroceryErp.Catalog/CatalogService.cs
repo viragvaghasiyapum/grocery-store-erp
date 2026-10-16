@@ -371,6 +371,64 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             audit.Write(transaction, "product", id, "RESTORE", null);
         }, cancellationToken);
 
+    public Task<int> BulkRemoveAsync(IReadOnlyCollection<long> productIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(productIds);
+        long[] ids = productIds.Where(static id => id > 0).Distinct().ToArray();
+        if (ids.Length == 0) throw new DomainException(ErrorCode.Validation, "Select at least one product.");
+        return database.WriteAsync(transaction =>
+        {
+            int count = 0;
+            foreach (long id in ids)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                bool? active = transaction.Connection.QuerySingleOrDefault<bool?>(
+                    "SELECT is_active FROM product WHERE id=@id", new { id }, transaction.Transaction);
+                if (active != true) throw new DomainException(ErrorCode.Validation, "Only active products can be removed.");
+                long hasHistory = transaction.Connection.ExecuteScalar<long>("""
+                    SELECT EXISTS(SELECT 1 FROM product_lot WHERE product_id=@id)
+                        OR EXISTS(SELECT 1 FROM purchase_line WHERE product_id=@id)
+                        OR EXISTS(SELECT 1 FROM sale_line WHERE product_id=@id)
+                        OR EXISTS(SELECT 1 FROM damage WHERE product_id=@id)
+                    """, new { id }, transaction.Transaction);
+                if (hasHistory == 0)
+                {
+                    transaction.Connection.Execute("DELETE FROM product_barcode WHERE product_id=@id", new { id }, transaction.Transaction);
+                    transaction.Connection.Execute("DELETE FROM product WHERE id=@id", new { id }, transaction.Transaction);
+                    audit.Write(transaction, "product", id, "DELETE", null);
+                }
+                else
+                {
+                    transaction.Connection.Execute("UPDATE product SET is_active=0,updated_at=datetime('now','localtime') WHERE id=@id",
+                        new { id }, transaction.Transaction);
+                    audit.Write(transaction, "product", id, "ARCHIVE", null);
+                }
+                count++;
+            }
+            return count;
+        }, cancellationToken);
+    }
+
+    public Task<int> BulkRestoreAsync(IReadOnlyCollection<long> productIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(productIds);
+        long[] ids = productIds.Where(static id => id > 0).Distinct().ToArray();
+        if (ids.Length == 0) throw new DomainException(ErrorCode.Validation, "Select at least one product.");
+        return database.WriteAsync(transaction =>
+        {
+            foreach (long id in ids)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                int changed = transaction.Connection.Execute(
+                    "UPDATE product SET is_active=1,updated_at=datetime('now','localtime') WHERE id=@id AND is_active=0",
+                    new { id }, transaction.Transaction);
+                if (changed != 1) throw new DomainException(ErrorCode.Validation, "Only archived products can be restored.");
+                audit.Write(transaction, "product", id, "RESTORE", null);
+            }
+            return ids.Length;
+        }, cancellationToken);
+    }
+
     public Task<string> GenerateInternalBarcodeAsync(long productId, string prefix, CancellationToken cancellationToken = default) =>
         database.WriteAsync(transaction =>
         {
@@ -635,10 +693,16 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             long masterExists = transaction.Connection.ExecuteScalar<long>(
                 $"SELECT COUNT(*) FROM {masterTable} WHERE id=@value", new { value }, transaction.Transaction);
             if (masterExists == 0) throw new DomainException(ErrorCode.NotFound, masterTable, value);
-            int changed = transaction.Connection.Execute(
-                $"UPDATE product SET {column}=@value,updated_at=datetime('now','localtime') WHERE id IN @ids",
-                new { value, ids }, transaction.Transaction);
-            audit.Write(transaction, "product", 0, action, new { productIds = ids, value, changed });
+            int changed = 0;
+            foreach (long[] batch in ids.Chunk(500))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                int batchChanged = transaction.Connection.Execute(
+                    $"UPDATE product SET {column}=@value,updated_at=datetime('now','localtime') WHERE id IN @ids",
+                    new { value, ids = batch }, transaction.Transaction);
+                audit.Write(transaction, "product", 0, action, new { productIds = batch, value, changed = batchChanged });
+                changed += batchChanged;
+            }
             return changed;
         }, cancellationToken);
     }

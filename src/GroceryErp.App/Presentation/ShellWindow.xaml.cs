@@ -11,6 +11,7 @@ using GroceryErp.Data.Security;
 using GroceryErp.Data.Services;
 using GroceryErp.Expenses;
 using GroceryErp.Localization;
+using GroceryErp.Sales;
 using GroceryErp.UI.Common.Modularity;
 using Microsoft.Win32;
 using Serilog;
@@ -29,9 +30,16 @@ public partial class ShellWindow : FluentWindow
     private readonly DispatcherTimer? _idleTimer;
     private readonly UsbUpdateService? _updates;
     private readonly BackupService? _backups;
+    private readonly ReceiptPrinter? _printer;
+    private readonly DispatcherTimer _deviceTimer = new() { Interval = TimeSpan.FromSeconds(15) };
     private readonly Dictionary<NavigationViewItem, string> _moduleNavigation = [];
     private readonly InfoBadge _expiryInfoBadge = new() { Value = "0" };
     private DateTime _lastActivity;
+    private DateTime? _lastScan;
+    private PrinterState _printerState = PrinterState.Checking;
+    private bool _checkingPrinter;
+
+    private enum PrinterState { Checking, Ready, Unavailable, Review }
 
     public ShellWindow(
         ShellViewModel viewModel,
@@ -42,7 +50,8 @@ public partial class ShellWindow : FluentWindow
         SettingsService? settingsService = null,
         UsbUpdateService? updates = null,
         BackupService? backups = null,
-        IReadOnlyList<IModule>? modules = null)
+        IReadOnlyList<IModule>? modules = null,
+        ReceiptPrinter? printer = null)
     {
         InitializeComponent();
         foreach (NavItem item in (modules ?? App.CreateModules()).SelectMany(static module => module.Navigation)
@@ -55,7 +64,7 @@ public partial class ShellWindow : FluentWindow
                 TargetPageType = item.PageType,
             };
             if (item.BadgeProvider == "expiry") view.InfoBadge = _expiryInfoBadge;
-            RootNavigation.MenuItems.Insert(RootNavigation.MenuItems.Count - 1, view);
+            RootNavigation.MenuItems.Add(view);
             _moduleNavigation.Add(view, item.TitleKey);
         }
         DataContext = viewModel;
@@ -64,6 +73,14 @@ public partial class ShellWindow : FluentWindow
         _clock = clock;
         _updates = updates;
         _backups = backups;
+        _printer = printer;
+        _deviceTimer.Tick += async (_, _) =>
+        {
+            RenderScannerStatus();
+            await RefreshPrinterStatusAsync();
+        };
+        RenderPrinterStatus();
+        RenderScannerStatus();
         TranslationSource.Instance.PropertyChanged += TranslationChanged;
         _lastActivity = clock?.Now ?? DateTime.MinValue;
         PreviewKeyDown += OnPreviewKeyDown;
@@ -77,6 +94,8 @@ public partial class ShellWindow : FluentWindow
         {
             RefreshBackupStatus();
             RootNavigation.Navigate(typeof(DashboardPage));
+            await RefreshPrinterStatusAsync();
+            _deviceTimer.Start();
             if (moneyOut is not null)
             {
                 int count = await moneyOut.GetActionableExpiryCountAsync();
@@ -95,9 +114,15 @@ public partial class ShellWindow : FluentWindow
         Closed += (_, _) =>
         {
             _idleTimer?.Stop();
+            _deviceTimer.Stop();
             TranslationSource.Instance.PropertyChanged -= TranslationChanged;
         };
-        Activated += (_, _) => RefreshBackupStatus();
+        Activated += async (_, _) =>
+        {
+            RefreshBackupStatus();
+            RenderScannerStatus();
+            await RefreshPrinterStatusAsync();
+        };
     }
 
     private void TranslationChanged(object? sender, PropertyChangedEventArgs e)
@@ -105,6 +130,8 @@ public partial class ShellWindow : FluentWindow
         if (e.PropertyName == "Item[]")
         {
             RefreshBackupStatus();
+            RenderPrinterStatus();
+            RenderScannerStatus();
             foreach ((NavigationViewItem view, string key) in _moduleNavigation)
                 view.Content = TranslationSource.Instance[key];
         }
@@ -124,6 +151,90 @@ public partial class ShellWindow : FluentWindow
         BackupStatusButton.Foreground = current && health.UsbAgeDays < 7 ? Brushes.ForestGreen
             : health.UsbAgeDays < 14 && current ? Brushes.DarkGoldenrod : Brushes.Firebrick;
         BackupStatusButton.ToolTip = TranslationSource.Instance["Settings_BackupTitle"];
+    }
+
+    private async Task RefreshPrinterStatusAsync()
+    {
+        if (_checkingPrinter || _printer is null) return;
+        _checkingPrinter = true;
+        try
+        {
+            _printerState = _printer.HasFailedJobs ? PrinterState.Review
+                : await _printer.IsReadyAsync().WaitAsync(TimeSpan.FromSeconds(3))
+                    ? PrinterState.Ready : PrinterState.Unavailable;
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "Receipt printer status check failed");
+            _printerState = PrinterState.Unavailable;
+        }
+        finally
+        {
+            _checkingPrinter = false;
+            RenderPrinterStatus();
+        }
+    }
+
+    private void RenderPrinterStatus()
+    {
+        string key = _printerState switch
+        {
+            PrinterState.Ready => "Shell_PrinterReady",
+            PrinterState.Unavailable => "Shell_PrinterUnavailable",
+            PrinterState.Review => "Shell_PrinterReview",
+            _ => "Shell_PrinterChecking",
+        };
+        PrinterStatusText.Text = TranslationSource.Instance[key];
+        PrinterStatusText.Foreground = _printerState switch
+        {
+            PrinterState.Ready => Brushes.ForestGreen,
+            PrinterState.Review or PrinterState.Unavailable => Brushes.Firebrick,
+            _ => Brushes.DarkGoldenrod,
+        };
+        PrinterStatusBadge.ToolTip = TranslationSource.Instance[_printerState == PrinterState.Review
+            ? "Sales_PrinterJobFailed" : _printerState == PrinterState.Ready
+                ? "Sales_PrinterReady" : _printerState == PrinterState.Checking
+                    ? "Shell_PrinterChecking" : "Sales_PrinterUnavailable"];
+    }
+
+    internal void RecordScannerActivity()
+    {
+        _lastScan = _clock?.Now ?? DateTime.Now;
+        RenderScannerStatus();
+    }
+
+    internal void RefreshScannerStatus() => RenderScannerStatus();
+
+    private void RenderScannerStatus()
+    {
+        string port = _settings?.Current.ScannerComPort ?? "";
+        if (ScannerComPorts.IsComPort(port))
+        {
+            ScannerComPort? device = ScannerComPorts.GetPorts()
+                .FirstOrDefault(device => string.Equals(device.Name, port, StringComparison.OrdinalIgnoreCase));
+            string key = device is null ? "Shell_ScannerDisconnected"
+                : device.IsBluetoothVirtual ? "Shell_ScannerVirtual" : "Shell_ScannerConnected";
+            ScannerStatusText.Text = TranslationSource.Instance.Format(
+                key, port);
+            ScannerStatusText.Foreground = device is null ? Brushes.Firebrick
+                : device.IsBluetoothVirtual ? Brushes.DarkGoldenrod : Brushes.ForestGreen;
+            ScannerStatusBadge.ToolTip = TranslationSource.Instance.Format(
+                key + "Help", port);
+        }
+        else if (_lastScan is { } lastScan)
+        {
+            string time = lastScan.ToString("HH:mm", TranslationSource.FormatCulture);
+            string dateTime = lastScan.ToString("yyyy-MM-dd HH:mm", TranslationSource.FormatCulture);
+            ScannerStatusText.Text = TranslationSource.Instance.Format("Shell_ScannerLastScan", time);
+            ScannerStatusText.Foreground = Brushes.ForestGreen;
+            ScannerStatusBadge.ToolTip = TranslationSource.Instance.Format("Shell_ScannerLastScanHelp", dateTime);
+        }
+        else
+        {
+            ScannerStatusText.Text = TranslationSource.Instance["Shell_ScannerSelectPort"];
+            ScannerStatusText.Foreground = Brushes.DarkGoldenrod;
+            ScannerStatusBadge.ToolTip = TranslationSource.Instance["Shell_ScannerSelectPortHelp"];
+        }
     }
 
     private void BackupStatus_OnClick(object sender, RoutedEventArgs e) => RootNavigation.Navigate(typeof(SettingsPage));

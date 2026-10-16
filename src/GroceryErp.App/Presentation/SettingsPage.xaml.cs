@@ -46,14 +46,14 @@ public partial class SettingsPage : Page
         Loaded += (_, _) =>
         {
             TranslationSource.Instance.PropertyChanged += TranslationChanged;
-            RefreshDrives(); RefreshStatus();
+            RefreshDrives(); RefreshScannerPorts(); RefreshStatus();
         };
         Unloaded += (_, _) => TranslationSource.Instance.PropertyChanged -= TranslationChanged;
     }
 
     private void TranslationChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == "Item[]") RefreshStatus();
+        if (e.PropertyName == "Item[]") { RefreshScannerPorts(); RefreshStatus(); }
     }
 
     private void RefreshStatus()
@@ -79,6 +79,52 @@ public partial class SettingsPage : Page
     }
 
     private void RefreshDrives_OnClick(object sender, RoutedEventArgs e) => RefreshDrives();
+
+    private void RefreshScannerPorts()
+    {
+        string selected = (ScannerPort.SelectedItem as ComboBoxItem)?.Tag as string
+            ?? _settings.Current.ScannerComPort;
+        if (!ScannerComPorts.IsComPort(selected)) selected = "";
+        ScannerPort.Items.Clear();
+        ScannerPort.Items.Add(new ComboBoxItem
+        {
+            Content = TranslationSource.Instance["Settings_ScannerKeyboard"],
+            Tag = "",
+        });
+        foreach (ScannerComPort port in ScannerComPorts.GetPorts())
+            ScannerPort.Items.Add(new ComboBoxItem
+            {
+                Content = port.IsBluetoothVirtual
+                    ? TranslationSource.Instance.Format("Settings_ScannerBluetoothVirtual", port.Name)
+                    : port.Name,
+                Tag = port.Name,
+            });
+        if (ScannerComPorts.IsComPort(selected) && !ScannerPort.Items.OfType<ComboBoxItem>()
+                .Any(item => string.Equals(item.Tag as string, selected, StringComparison.OrdinalIgnoreCase)))
+            ScannerPort.Items.Add(new ComboBoxItem
+            {
+                Content = TranslationSource.Instance.Format("Settings_ScannerPortMissing", selected),
+                Tag = selected,
+            });
+        ScannerPort.SelectedItem = ScannerPort.Items.OfType<ComboBoxItem>()
+            .First(item => string.Equals(item.Tag as string, selected, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void RefreshScannerPorts_OnClick(object sender, RoutedEventArgs e) => RefreshScannerPorts();
+
+    private async void SaveScannerPort_OnClick(object sender, RoutedEventArgs e)
+    {
+        string port = (ScannerPort.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+        try
+        {
+            SaveScannerPortButton.IsEnabled = false;
+            await _settings.SaveAsync(new Dictionary<string, string> { ["scanner.com_port"] = port });
+            ShowStatus("Settings_ScannerPortSaved");
+            (Window.GetWindow(this) as ShellWindow)?.RefreshScannerStatus();
+        }
+        catch (Exception exception) { ShowError(exception); }
+        finally { SaveScannerPortButton.IsEnabled = true; }
+    }
 
     private async void MoveData_OnClick(object sender, RoutedEventArgs e)
     {

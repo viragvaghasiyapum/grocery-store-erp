@@ -13,6 +13,7 @@ namespace GroceryErp.App.Presentation;
 
 public partial class StockPage : Page
 {
+    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
     private readonly InventoryService _inventory;
     private readonly Stack<(string? Name, long? Id)> _overviewPrevious = new();
     private readonly Stack<long?> _lotPrevious = new();
@@ -166,7 +167,7 @@ public partial class StockPage : Page
                 LedgerTypeBox.SelectedItem = options.FirstOrDefault(option => option.Code == previous) ?? options[0];
             }
             LedgerPage page = await _inventory.GetLedgerPageAsync(product.ProductId, from, to, beforeId,
-                (LedgerTypeBox.SelectedItem as LedgerTypeOption)?.Code);
+                (LedgerTypeBox.SelectedItem as LedgerTypeOption)?.Code, PageSize);
             _ledgerPage = page;
             _ledgerCursor = beforeId;
             LedgerGrid.ItemsSource = page.Items;
@@ -242,7 +243,7 @@ public partial class StockPage : Page
         _overviewLoading = true;
         try
         {
-            StockOverviewPage page = await _inventory.GetOverviewPageAsync(OverviewSearchBox.Text, name, id);
+            StockOverviewPage page = await _inventory.GetOverviewPageAsync(OverviewSearchBox.Text, name, id, PageSize);
             _overviewPage = page;
             _overviewCursor = (name, id);
             UiRefreshProbe.RecordBinding("stock", () => OverviewGrid.ItemsSource = page.Items);
@@ -262,7 +263,7 @@ public partial class StockPage : Page
         _lotLoading = true;
         try
         {
-            LotPage page = await _inventory.GetLotPageAsync(query: LotSearchBox.Text, beforeId: beforeId);
+            LotPage page = await _inventory.GetLotPageAsync(query: LotSearchBox.Text, beforeId: beforeId, limit: PageSize);
             _lotPage = page;
             _lotCursor = beforeId;
             UiRefreshProbe.RecordBinding("stock", () => LotsGrid.ItemsSource = page.Items);
@@ -322,5 +323,18 @@ public partial class StockPage : Page
         await LoadLotPageAsync(previous);
         if (_lotCursor == previous) _lotPrevious.Pop();
         PreviousLotButton.IsEnabled = _lotPrevious.Count > 0;
+    }
+
+    private async void PageSize_OnChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        long? selectedProductId = (OverviewGrid.SelectedItem as StockOverviewItem)?.ProductId;
+        _ledgerPrevious.Clear();
+        _ledgerPage = null;
+        _ledgerCursor = null;
+        LedgerGrid.ItemsSource = null;
+        await RefreshAsync();
+        if (selectedProductId is long id && _overviewPage is { } page)
+            OverviewGrid.SelectedItem = page.Items.FirstOrDefault(item => item.ProductId == id);
     }
 }

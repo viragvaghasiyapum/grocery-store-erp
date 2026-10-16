@@ -90,6 +90,7 @@ public partial class BillingPage : Page, IDisposable
                 _detector = new(settings.Current.ScannerMaxGapMs, settings.Current.ScannerMinLength);
                 _detector.ScanReceived += async (_, code) =>
                 {
+                    (Window.GetWindow(this) as ShellWindow)?.RecordScannerActivity();
                     string typed = InputNormalizer.Normalize(ScanBox.Text).Trim();
                     int marker = typed.IndexOf('*', StringComparison.Ordinal);
                     string input = marker > 0 ? typed[..(marker + 1)] + code : code;

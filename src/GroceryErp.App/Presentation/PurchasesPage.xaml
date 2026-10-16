@@ -51,6 +51,8 @@
     </TabControl>
     <DockPanel Grid.Row="3" Margin="0,10,0,0">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
+        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="65" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
         <Button x:Name="PreviousPurchaseButton" IsEnabled="False" Margin="8,0" Click="PreviousPurchase_OnClick" Content="{l:Tr Sales_Previous}"/>
         <Button x:Name="NextPurchaseButton" IsEnabled="False" Click="NextPurchase_OnClick" Content="{l:Tr Sales_Next}"/>
       </StackPanel>

@@ -1,5 +1,6 @@
 using Dapper;
 using GroceryErp.Assets;
+using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
@@ -7,6 +8,7 @@ using GroceryErp.Data.Services;
 using GroceryErp.Expenses;
 using GroceryErp.Inventory;
 using GroceryErp.Inventory.Contracts;
+using GroceryErp.Reports;
 using Shouldly;
 using Xunit;
 
@@ -29,6 +31,41 @@ public sealed class MoneyOutTests
         connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = fixture.LotId }).ShouldBe(8000L);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM damage").ShouldBe(1L);
         connection.ExecuteScalar<long>("SELECT amount FROM v_pnl_entry WHERE head_code='DAMAGES'").ShouldBe(90000L);
+    }
+
+    [Fact]
+    public async Task PostedDamageCorrection_RestoresStockAndBooksOnlyDatedDifference()
+    {
+        using var fixture = new Fixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long damageId = await fixture.MoneyOut.RecordDamageAsync(
+            new(fixture.LotId, fixture.Today, new Quantity(2), "BROKEN", new Money(10), "Original"),
+            OperationGuard.NewId(), ct);
+        DamageItem original = (await fixture.MoneyOut.GetDamagesAsync(fixture.Today, fixture.Today, ct)).Single();
+        DateOnly correctionDate = fixture.Today.AddDays(1);
+        string operation = OperationGuard.NewId();
+        long correctionId = await fixture.MoneyOut.CorrectDamageAsync(original,
+            new(new Quantity(1), new Money(5), "SPOILED", null), correctionDate,
+            "Counted one twice", operation, ct);
+        (await fixture.MoneyOut.CorrectDamageAsync(original,
+            new(new Quantity(1), new Money(5), "SPOILED", null), correctionDate,
+            "Counted one twice", operation, ct)).ShouldBe(correctionId);
+
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<long>("SELECT qty FROM damage WHERE id=@damageId", new { damageId }).ShouldBe(2000L);
+        connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = fixture.LotId }).ShouldBe(9000L);
+        connection.ExecuteScalar<long>("SELECT amount FROM v_pnl_entry WHERE head_code='DAMAGES' AND entry_date=@date",
+            new { date = correctionDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) }).ShouldBe(-45000L);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM v_pnl_entry WHERE head_code='STOCK_ADJUSTMENT'").ShouldBe(0L);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM damage_correction WHERE damage_id=@damageId", new { damageId }).ShouldBe(1L);
+        var reports = new ReportService(fixture.Database, fixture.Settings, new FixedClock(fixture.Today));
+        (await reports.GetPnlAsync(correctionDate, correctionDate, ct)).TotalExpenses.ShouldBe(new Money(-45));
+        DamageItem corrected = (await fixture.MoneyOut.GetDamagesAsync(fixture.Today, fixture.Today, ct)).Single();
+        corrected.Quantity.ShouldBe(new Quantity(1));
+        corrected.Notes.ShouldBeNull();
+        await Should.ThrowAsync<DomainException>(() => fixture.MoneyOut.CorrectDamageAsync(original,
+            new(new Quantity(3), Money.Zero, "BROKEN", null), correctionDate,
+            "Stale", OperationGuard.NewId(), ct));
     }
 
     [Fact]
@@ -106,6 +143,59 @@ public sealed class MoneyOutTests
         connection.ExecuteScalar<string>("SELECT entry_date FROM v_pnl_entry WHERE head_code='SALARIES' ORDER BY amount DESC LIMIT 1")
             .ShouldBe("2026-08-31");
         connection.ExecuteScalar<long>("SELECT amount FROM v_pnl_entry WHERE head_code='EXPENSE_CATEGORY'").ShouldBe(500000L);
+    }
+
+    [Fact]
+    public async Task PostedSalaryCorrection_PreservesOriginalPostingAndAdjustsPnl()
+    {
+        using var fixture = new Fixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long employee = await fixture.MoneyOut.SaveEmployeeAsync(null,
+            new("Asha", null, null, null, null, new Money(1000), true, null), ct);
+        await fixture.MoneyOut.RecordOtherSalaryPaymentAsync(employee, fixture.Today, new Money(1000),
+            "BANK", "Advance", OperationGuard.NewId(), ct);
+        YearMonth month = YearMonth.From(fixture.Today);
+        SalaryPaymentItem original = (await fixture.MoneyOut.GetSalaryRegisterAsync(month, month, ct)).Single();
+        DateOnly correctionDate = fixture.Today.AddDays(1);
+        long correctionId = await fixture.MoneyOut.CorrectSalaryPaymentAsync(original,
+            new(fixture.Today.AddDays(2), new Money(900), "CASH", null), correctionDate,
+            "Bank transfer was returned", OperationGuard.NewId(), ct);
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<long>("SELECT amount FROM salary_payment WHERE id=@id", new { id = original.Id }).ShouldBe(1_000_000L);
+        connection.ExecuteScalar<long>("SELECT amount_delta FROM salary_correction WHERE id=@correctionId", new { correctionId }).ShouldBe(-100_000L);
+        connection.ExecuteScalar<long>("SELECT amount FROM v_pnl_entry WHERE head_code='SALARIES' AND entry_date=@date",
+            new { date = correctionDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) }).ShouldBe(-100_000L);
+        var reports = new ReportService(fixture.Database, fixture.Settings, new FixedClock(fixture.Today));
+        (await reports.GetPnlAsync(correctionDate, correctionDate, ct)).TotalExpenses.ShouldBe(new Money(-100));
+        SalaryPaymentItem corrected = (await fixture.MoneyOut.GetSalaryRegisterAsync(month, month, ct)).Single();
+        corrected.Amount.ShouldBe(new Money(900));
+        corrected.Mode.ShouldBe("CASH");
+        corrected.PayDate.ShouldBe(fixture.Today.AddDays(2));
+        corrected.Notes.ShouldBeNull();
+        await Should.ThrowAsync<DomainException>(() => fixture.MoneyOut.CorrectSalaryPaymentAsync(original,
+            new(fixture.Today, new Money(800), "BANK", null), correctionDate,
+            "Stale", OperationGuard.NewId(), ct));
+    }
+
+    [Fact]
+    public async Task PostedExpenseCorrection_UpdatesReportsAndRecordsBeforeAfterAudit()
+    {
+        using var fixture = new Fixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long category = (await fixture.MoneyOut.GetExpenseCategoriesAsync(cancellationToken: ct))[0].Id;
+        await fixture.MoneyOut.RecordExpenseAsync(
+            new(fixture.Today, category, new Money(500), "UPI", "Power Co", "OLD", null),
+            OperationGuard.NewId(), ct);
+        ExpenseItem original = (await fixture.MoneyOut.GetExpensesAsync(fixture.Today, fixture.Today, ct)).Single();
+        await fixture.MoneyOut.CorrectExpenseAsync(original,
+            new(fixture.Today, category, new Money(450), "BANK", "Power Co", "FIXED", "Invoice correction"),
+            "Wrong amount and payment mode", ct);
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<long>("SELECT amount FROM v_pnl_entry WHERE head_code='EXPENSE_CATEGORY'").ShouldBe(450_000L);
+        connection.ExecuteScalar<string>("SELECT changes FROM audit_log WHERE entity='expense' AND entity_id=@id AND action='CORRECT'",
+            new { id = original.Id })!.ShouldContain("Wrong amount and payment mode");
+        await Should.ThrowAsync<DomainException>(() => fixture.MoneyOut.CorrectExpenseAsync(original,
+            new(fixture.Today, category, new Money(400), "BANK", null, null, null), "Stale", ct));
     }
 
     [Fact]

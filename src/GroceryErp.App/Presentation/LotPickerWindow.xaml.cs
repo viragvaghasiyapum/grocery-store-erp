@@ -7,6 +7,7 @@ namespace GroceryErp.App.Presentation;
 
 public partial class LotPickerWindow : Window
 {
+    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
     private readonly InventoryService? _inventory;
     private readonly long _productId;
     private readonly long _currentLotId;
@@ -30,6 +31,7 @@ public partial class LotPickerWindow : Window
         InitializeComponent();
         _currentLotId = currentLotId;
         SearchBox.Visibility = Visibility.Collapsed;
+        PageSizeBox.Visibility = Visibility.Collapsed;
         LotsGrid.ItemsSource = lots;
         LotsGrid.SelectedItem = lots.FirstOrDefault(lot => lot.Id == currentLotId) ??
             (lots.Count > 0 ? lots[0] : null);
@@ -53,7 +55,7 @@ public partial class LotPickerWindow : Window
         try
         {
             LotPage page = await _inventory.GetLotPageAsync(_productId, SearchBox.Text,
-                _beforeId, availableOnly: true);
+                _beforeId, limit: PageSize, availableOnly: true);
             if (version != _searchVersion) return;
             _page = page;
             var items = page.Items.ToList();
@@ -98,6 +100,13 @@ public partial class LotPickerWindow : Window
     {
         if (_loading || _previous.Count == 0) return;
         _beforeId = _previous.Pop();
+        await LoadPageAsync();
+    }
+
+    private async void PageSize_OnChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded || _inventory is null) return;
+        _previous.Clear(); _beforeId = null;
         await LoadPageAsync();
     }
 }

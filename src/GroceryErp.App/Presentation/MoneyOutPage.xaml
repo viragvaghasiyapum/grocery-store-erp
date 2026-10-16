@@ -8,24 +8,25 @@
     <DataTemplate x:Key="ExpiryLotTemplate">
       <Grid Margin="4">
         <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="90"/><ColumnDefinition Width="220"/><ColumnDefinition Width="120"/>
+          <ColumnDefinition Width="35"/><ColumnDefinition Width="90"/><ColumnDefinition Width="220"/><ColumnDefinition Width="120"/>
           <ColumnDefinition Width="105"/><ColumnDefinition Width="75"/><ColumnDefinition Width="95"/>
           <ColumnDefinition Width="110"/><ColumnDefinition Width="140"/>
         </Grid.ColumnDefinitions>
-        <TextBlock Text="{Binding Sku}"/>
-        <StackPanel Grid.Column="1"><TextBlock Text="{Binding ProductName}"/><TextBlock FontSize="11" Foreground="Gray" Text="{Binding ProductNameLocal}"/></StackPanel>
-        <TextBlock Grid.Column="2" Text="{Binding LotCode}"/>
-        <TextBlock Grid.Column="3" Text="{Binding ExpiryDate}"/>
-        <TextBlock Grid.Column="4" Text="{Binding DaysLeft}"/>
-        <TextBlock Grid.Column="5" Text="{Binding Quantity}"/>
-        <TextBlock Grid.Column="6" Text="{Binding CostValue}"/>
-        <TextBlock Grid.Column="7" Text="{Binding VendorName}"/>
+        <CheckBox Grid.Column="0" Loaded="ExpiryCheck_OnLoaded" Click="ExpiryCheck_OnClick" AutomationProperties.Name="Select lot"/>
+        <TextBlock Grid.Column="1" Text="{Binding Sku}"/>
+        <StackPanel Grid.Column="2"><TextBlock Text="{Binding ProductName}"/><TextBlock FontSize="11" Foreground="Gray" Text="{Binding ProductNameLocal}"/></StackPanel>
+        <TextBlock Grid.Column="3" Text="{Binding LotCode}"/>
+        <TextBlock Grid.Column="4" Text="{Binding ExpiryDate}"/>
+        <TextBlock Grid.Column="5" Text="{Binding DaysLeft}"/>
+        <TextBlock Grid.Column="6" Text="{Binding Quantity}"/>
+        <TextBlock Grid.Column="7" Text="{Binding CostValue}"/>
+        <TextBlock Grid.Column="8" Text="{Binding VendorName}"/>
       </Grid>
     </DataTemplate>
   </Page.Resources>
   <Grid Margin="{StaticResource PagePadding}">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr MoneyOut_Title}" />
+    <DockPanel><ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" DockPanel.Dock="Right" Width="65" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox><TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr MoneyOut_Title}" /></DockPanel>
     <TabControl x:Name="MoneyOutTabs" Grid.Row="1" Margin="0,18,0,0" SelectionChanged="Tabs_OnSelectionChanged">
       <TabItem Header="{l:Tr MoneyOut_Expiry}">
         <DockPanel>
@@ -37,19 +38,25 @@
             <TextBox x:Name="DamageQuantity" Width="100" Margin="8,0" ToolTip="{l:Tr Stock_Quantity}" />
             <TextBox x:Name="DamageRecovered" Width="110" Margin="0,0,8,0" Text="0" ToolTip="{l:Tr MoneyOut_Recovered}" />
             <Button Margin="0,0,8,0" Click="RecordDamage_OnClick" Content="{l:Tr MoneyOut_RecordDamage}" />
-            <Button Margin="0,0,8,0" Click="BulkWriteOff_OnClick" Content="{l:Tr MoneyOut_WriteOff}" />
+            <Button x:Name="BulkWriteOffButton" IsEnabled="False" Margin="0,0,8,0" Click="BulkWriteOff_OnClick" Content="{l:Tr MoneyOut_WriteOff}" />
             <Button Margin="0,0,8,0" Click="BlockLot_OnClick" Content="{l:Tr MoneyOut_BlockLot}" />
             <Button Margin="0,0,8,0" Click="MarkDown_OnClick" Content="{l:Tr MoneyOut_MarkDown}" />
             <Button Click="PrintExpiry_OnClick" Content="{l:Tr MoneyOut_PrintVendorList}" />
+          </WrapPanel>
+          <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Button Margin="0,0,8,0" Click="SelectExpiryPage_OnClick" Content="{l:Tr Selection_ThisPage}"/>
+            <Button x:Name="SelectAllExpiryButton" Margin="0,0,8,0" Click="SelectAllExpiry_OnClick" Content="{l:Tr Selection_AllMatching}"/>
+            <Button x:Name="ClearExpirySelectionButton" IsEnabled="False" Margin="0,0,8,0" Click="ClearExpirySelection_OnClick" Content="{l:Tr Selection_Clear}"/>
+            <TextBlock x:Name="ExpirySelectedCount" VerticalAlignment="Center" Text="0 selected"/>
           </WrapPanel>
           <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
             <Button x:Name="PreviousExpiryButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousExpiry_OnClick" Content="{l:Tr Sales_Previous}"/>
             <Button x:Name="NextExpiryButton" IsEnabled="False" Click="NextExpiry_OnClick" Content="{l:Tr Sales_Next}"/>
           </StackPanel>
           <TabControl x:Name="ExpiryTabs" SelectionChanged="ExpiryTabs_OnSelectionChanged">
-            <TabItem Header="{l:Tr MoneyOut_Expired}"><ListBox x:Name="ExpiredList" ItemTemplate="{StaticResource ExpiryLotTemplate}" SelectionMode="Extended"/></TabItem>
-            <TabItem Header="{l:Tr MoneyOut_Critical}"><ListBox x:Name="CriticalList" ItemTemplate="{StaticResource ExpiryLotTemplate}" SelectionMode="Extended"/></TabItem>
-            <TabItem Header="{l:Tr MoneyOut_Soon}"><ListBox x:Name="SoonList" ItemTemplate="{StaticResource ExpiryLotTemplate}" SelectionMode="Extended"/></TabItem>
+            <TabItem Header="{l:Tr MoneyOut_Expired}"><ListBox x:Name="ExpiredList" ItemTemplate="{StaticResource ExpiryLotTemplate}" SelectionMode="Single"/></TabItem>
+            <TabItem Header="{l:Tr MoneyOut_Critical}"><ListBox x:Name="CriticalList" ItemTemplate="{StaticResource ExpiryLotTemplate}" SelectionMode="Single"/></TabItem>
+            <TabItem Header="{l:Tr MoneyOut_Soon}"><ListBox x:Name="SoonList" ItemTemplate="{StaticResource ExpiryLotTemplate}" SelectionMode="Single"/></TabItem>
           </TabControl>
         </DockPanel>
       </TabItem>
@@ -59,6 +66,7 @@
           <DatePicker x:Name="DamageFromBox" Width="130" Margin="0,0,6,0"/>
           <DatePicker x:Name="DamageToBox" Width="130" Margin="0,0,6,0"/>
           <Button Click="DamageFilter_OnClick" Content="Search history"/>
+          <Button x:Name="CorrectDamageButton" Margin="8,0,0,0" IsEnabled="False" Click="CorrectDamage_OnClick" Content="{l:Tr MoneyOut_CorrectPosted}"/>
         </WrapPanel>
         <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10" ItemHeight="64">
             <StackPanel Width="260" Margin="0,0,8,0"><TextBlock Text="{l:Tr Stock_Lots}"/><TextBox x:Name="DamageLotSearchBox" ToolTip="Product or lot"/><Button Click="SearchDamageLot_OnClick" Content="Search"/><ComboBox x:Name="DamageLot" IsTextSearchEnabled="True" TextSearch.TextPath="ProductName"><ComboBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding ProductName}"/><TextBlock FontSize="11" Text="{Binding LotCode}"/></StackPanel></DataTemplate></ComboBox.ItemTemplate></ComboBox></StackPanel>
@@ -72,7 +80,7 @@
           <Button x:Name="PreviousDamageButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousDamage_OnClick" Content="{l:Tr Sales_Previous}"/>
           <Button x:Name="NextDamageButton" IsEnabled="False" Click="NextDamage_OnClick" Content="{l:Tr Sales_Next}"/>
         </StackPanel>
-        <DataGrid x:Name="DamageGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+        <DataGrid x:Name="DamageGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="DamageGrid_OnSelectionChanged">
           <DataGrid.Columns>
             <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Document}" Binding="{Binding DocumentNumber}"/>
             <DataGridTextColumn Width="105" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date}"/>
@@ -101,11 +109,26 @@
             <StackPanel Width="120" Margin="0,0,8,4"><TextBlock Text="{l:Tr MoneyOut_Reference}"/><TextBox x:Name="ExpenseReference"/></StackPanel>
             <StackPanel Width="150" Margin="0,0,8,4"><TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="ExpenseNotes"/></StackPanel>
             <Button Margin="0,17,8,4" Click="SaveExpense_OnClick" Content="{l:Tr MoneyOut_SaveExpense}"/>
+            <Button Margin="0,17,8,4" Click="NewExpense_OnClick" Content="{l:Tr MoneyOut_NewEntry}"/>
             <Button Margin="0,17,8,4" Click="RepeatExpense_OnClick" Content="{l:Tr MoneyOut_RepeatLastMonth}"/>
             <Button Margin="0,17,0,4" Click="OpenAssets_OnClick" Content="{l:Tr MoneyOut_OpenAssets}"/>
           </WrapPanel>
+          <StackPanel x:Name="ExpenseCorrectionPanel" DockPanel.Dock="Top" Orientation="Horizontal" Visibility="Collapsed" Margin="0,0,0,8">
+            <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{l:Tr MoneyOut_RequiredCorrectionReason}"/>
+            <TextBox x:Name="ExpenseCorrectionReason" Width="330" MaxLength="240"/>
+          </StackPanel>
           <Expander DockPanel.Dock="Top" Header="{l:Tr MoneyOut_RepeatCategories}" Margin="0,0,0,8">
-            <ListBox x:Name="RepeatCategories" Height="82" SelectionMode="Multiple" DisplayMemberPath="Name"/>
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,4">
+                <Button Click="ClearRepeatCategories_OnClick" Content="{l:Tr Selection_Clear}" Margin="0,0,8,0"/>
+                <TextBlock x:Name="RepeatCategorySelectedCount" VerticalAlignment="Center"/>
+              </StackPanel>
+              <ListBox x:Name="RepeatCategories" Height="82" SelectionMode="Multiple" SelectionChanged="RepeatCategories_OnSelectionChanged">
+                <ListBox.ItemTemplate><DataTemplate>
+                  <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}, Mode=TwoWay}"/>
+                </DataTemplate></ListBox.ItemTemplate>
+              </ListBox>
+            </DockPanel>
           </Expander>
           <DataGrid x:Name="RepeatDraftGrid" DockPanel.Dock="Top" Height="110" Margin="0,0,0,10" AutoGenerateColumns="False" CanUserAddRows="False" Visibility="Collapsed" SelectionChanged="RepeatDraftGrid_OnSelectionChanged">
             <DataGrid.Columns>
@@ -128,7 +151,7 @@
             <Button x:Name="PreviousExpenseButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousExpense_OnClick" Content="{l:Tr Sales_Previous}"/>
             <Button x:Name="NextExpenseButton" IsEnabled="False" Click="NextExpense_OnClick" Content="{l:Tr Sales_Next}"/>
           </StackPanel>
-          <DataGrid x:Name="ExpenseGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+          <DataGrid x:Name="ExpenseGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="ExpenseGrid_OnSelectionChanged">
             <DataGrid.Columns>
               <DataGridTextColumn Width="110" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date}"/>
               <DataGridTextColumn Width="220" Header="{l:Tr Catalog_Category}" Binding="{Binding CategoryName}"/>
@@ -168,15 +191,38 @@
           <DataGrid x:Name="EmployeeGrid" Grid.Row="1" Style="{StaticResource CatalogGrid}" SelectionChanged="EmployeeGrid_OnSelectionChanged">
             <DataGrid.Columns><DataGridTextColumn Width="260" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}"/><DataGridTextColumn Width="160" Header="{l:Tr MoneyOut_Role}" Binding="{Binding Role}"/><DataGridTextColumn Width="150" Header="{l:Tr MoneyOut_Salary}" Binding="{Binding MonthlySalary}"/></DataGrid.Columns>
           </DataGrid>
-          <DataGrid x:Name="SalaryGrid" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False">
-            <DataGrid.Columns>
-              <DataGridTextColumn Width="130" Header="{l:Tr MoneyOut_EmployeeId}" Binding="{Binding EmployeeId}" IsReadOnly="True"/>
-              <DataGridTextColumn Width="130" Header="{l:Tr MoneyOut_Salary}" Binding="{Binding BaseSalary}"/>
-              <DataGridTextColumn Width="130" Header="{l:Tr MoneyOut_LeaveDeduction}" Binding="{Binding LeaveDeduction}"/>
-              <DataGridTextColumn Width="120" Header="{l:Tr MoneyOut_Overtime}" Binding="{Binding Overtime}"/>
-              <DataGridTextColumn Width="120" Header="{l:Tr MoneyOut_Bonus}" Binding="{Binding Bonus}"/>
-            </DataGrid.Columns>
-          </DataGrid>
+          <TabControl Grid.Row="2">
+            <TabItem Header="{l:Tr MoneyOut_PrepareSalary}">
+              <DataGrid x:Name="SalaryGrid" AutoGenerateColumns="False" CanUserAddRows="False">
+                <DataGrid.Columns>
+                  <DataGridTextColumn Width="130" Header="{l:Tr MoneyOut_EmployeeId}" Binding="{Binding EmployeeId}" IsReadOnly="True"/>
+                  <DataGridTextColumn Width="130" Header="{l:Tr MoneyOut_Salary}" Binding="{Binding BaseSalary}"/>
+                  <DataGridTextColumn Width="130" Header="{l:Tr MoneyOut_LeaveDeduction}" Binding="{Binding LeaveDeduction}"/>
+                  <DataGridTextColumn Width="120" Header="{l:Tr MoneyOut_Overtime}" Binding="{Binding Overtime}"/>
+                  <DataGridTextColumn Width="120" Header="{l:Tr MoneyOut_Bonus}" Binding="{Binding Bonus}"/>
+                </DataGrid.Columns>
+              </DataGrid>
+            </TabItem>
+            <TabItem Header="{l:Tr MoneyOut_PostedPayments}">
+              <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                  <Button Margin="0,0,8,0" Click="RefreshSalaryRegister_OnClick" Content="{l:Tr Stock_Refresh}"/>
+                  <Button x:Name="CorrectSalaryButton" IsEnabled="False" Click="CorrectSalary_OnClick" Content="{l:Tr MoneyOut_CorrectPosted}"/>
+                </StackPanel>
+                <DataGrid x:Name="SalaryRegisterGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="SalaryRegisterGrid_OnSelectionChanged">
+                  <DataGrid.Columns>
+                    <DataGridTextColumn Width="180" Header="{l:Tr MoneyOut_EmployeeName}" Binding="{Binding EmployeeName}"/>
+                    <DataGridTextColumn Width="110" Header="{l:Tr Assets_Period}" Binding="{Binding Period}"/>
+                    <DataGridTextColumn Width="110" Header="{l:Tr MoneyOut_PayDate}" Binding="{Binding PayDate}"/>
+                    <DataGridTextColumn Width="110" Header="{l:Tr MoneyOut_Reason}" Binding="{Binding Kind}"/>
+                    <DataGridTextColumn Width="120" Header="{l:Tr MoneyOut_Salary}" Binding="{Binding Amount}"/>
+                    <DataGridTextColumn Width="100" Header="{l:Tr Purchasing_Mode}" Binding="{Binding Mode}"/>
+                    <DataGridTextColumn Width="220" Header="{l:Tr Purchasing_Notes}" Binding="{Binding Notes}"/>
+                  </DataGrid.Columns>
+                </DataGrid>
+              </DockPanel>
+            </TabItem>
+          </TabControl>
         </Grid>
       </TabItem>
     </TabControl>

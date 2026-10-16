@@ -76,7 +76,7 @@ public sealed class TranslationSource : INotifyPropertyChanged
     public void RegisterShared(ResourceManager manager)
     {
         ArgumentNullException.ThrowIfNull(manager);
-        foreach (string prefix in new[] { "Common", "Error", "Validation", "Enum", "Print", "Pnl", "App", "Shell", "Demo", "Setup", "Seed", "Login", "Lock", "Startup", "Settings", "ReleaseNotes", "Catalog", "Purchasing", "Stock", "Sales", "Pos", "Receipt", "Dashboard", "MoneyOut", "Assets", "Reports" })
+        foreach (string prefix in new[] { "Common", "Selection", "Error", "Validation", "Enum", "Print", "Pnl", "App", "Shell", "Demo", "Setup", "Seed", "Login", "Lock", "Startup", "Settings", "ReleaseNotes", "Catalog", "Purchasing", "Stock", "Sales", "Pos", "Receipt", "Dashboard", "MoneyOut", "Assets", "Reports" })
         {
             _managers[prefix] = manager;
         }

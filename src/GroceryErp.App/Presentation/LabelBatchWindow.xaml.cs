@@ -33,6 +33,7 @@ public sealed class LabelBatchRow(
 
 public partial class LabelBatchWindow : Window
 {
+    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
     private readonly CatalogService _catalog;
     private readonly InventoryService _inventory;
     private readonly ISettings _settings;
@@ -127,7 +128,7 @@ public partial class LabelBatchWindow : Window
             {
                 long productId = _lotProductIds[_lotProductIndex];
                 LotPage page = await _inventory.GetLotPageAsync(productId, beforeId: _lotBeforeId,
-                    limit: 100, availableOnly: true);
+                    limit: PageSize, availableOnly: true);
                 ProductDetails product = await GetProductAsync(productId, products);
                 foreach (LotItem lot in page.Items)
                     await AddLotAsync(product, lot, isSelected: false);

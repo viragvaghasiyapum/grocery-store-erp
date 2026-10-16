@@ -17,7 +17,7 @@ namespace GroceryErp.App.Presentation;
 
 public partial class SalesHistoryPage : Page
 {
-    private const int PageSize = 50;
+    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
     private static readonly CultureInfo Digits = CultureInfo.GetCultureInfo("en-IN");
     private readonly SalesService _sales;
     private readonly ReceiptPrinter _printer;
@@ -103,7 +103,7 @@ public partial class SalesHistoryPage : Page
         {
             StatusText.Text = UserError.Message(exception);
             PreviousButton.IsEnabled = _previous.Count > 0;
-            NextButton.IsEnabled = HistoryGrid.ItemsSource is IReadOnlyList<SaleHistoryItem> { Count: PageSize };
+            NextButton.IsEnabled = HistoryGrid.ItemsSource is IReadOnlyList<SaleHistoryItem> rows && rows.Count == PageSize;
             return false;
         }
         finally
@@ -155,7 +155,7 @@ public partial class SalesHistoryPage : Page
     private async void Next_OnClick(object sender, RoutedEventArgs e)
     {
         if (_loadingHistory) return;
-        if (HistoryGrid.ItemsSource is not IReadOnlyList<SaleHistoryItem> { Count: PageSize } items) return;
+        if (HistoryGrid.ItemsSource is not IReadOnlyList<SaleHistoryItem> items || items.Count != PageSize) return;
         await RefreshAsync(reset: false, requestedDate: items[^1].SaleDate,
             requestedId: items[^1].Id, forward: true);
     }
@@ -165,6 +165,11 @@ public partial class SalesHistoryPage : Page
         if (_loadingHistory || _previous.Count == 0) return;
         (DateOnly? date, long? id) = _previous.Peek();
         await RefreshAsync(reset: false, requestedDate: date, requestedId: id, backward: true);
+    }
+
+    private async void PageSize_OnChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (IsLoaded) await RefreshAsync();
     }
 
     private async void HistoryGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)

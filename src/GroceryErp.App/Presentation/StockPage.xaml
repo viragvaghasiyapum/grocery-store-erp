@@ -10,6 +10,8 @@
     <StackPanel Grid.Row="1" Margin="0,16,0,4">
       <WrapPanel>
         <Button Margin="0,0,8,8" Click="OpeningImport_OnClick" Content="{l:Tr Stock_OpeningImport}" />
+        <TextBlock VerticalAlignment="Center" Margin="8,0,6,8" Text="{l:Tr Common_RowsPerPage}"/>
+        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="65" Margin="0,0,8,8" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
         <Button Margin="0,0,8,8" Click="OpeningTemplate_OnClick" Content="{l:Tr Stock_OpeningTemplate}" />
         <Button x:Name="ResumeCountButton" Margin="0,0,8,8" Click="Count_OnClick" Content="{l:Tr Stock_ResumeCount}" />
         <Button Margin="0,0,8,8" Click="NewCount_OnClick" Content="{l:Tr Stock_NewCount}" />
@@ -17,7 +19,7 @@
       </WrapPanel>
       <WrapPanel>
         <Button x:Name="AdjustButton" IsEnabled="False" Margin="0,0,8,8" Click="Adjust_OnClick" Content="{l:Tr Stock_Adjust}" />
-        <Button x:Name="PriceButton" IsEnabled="False" Margin="0,0,8,8" Click="Price_OnClick" Content="{l:Tr Stock_ChangePrice}" />
+        <Button x:Name="PriceButton" IsEnabled="False" Margin="0,0,8,8" Click="Price_OnClick" Content="{l:Tr Stock_CorrectLot}" />
         <Button x:Name="ToggleLotButton" IsEnabled="False" Margin="0,0,8,8" Click="ToggleLot_OnClick" Content="{l:Tr Stock_BlockToggle}" />
         <Button x:Name="WriteOffButton" IsEnabled="False" Margin="0,0,8,8" Click="WriteOff_OnClick" Content="{l:Tr Stock_WriteOffExpired}" />
       </WrapPanel>

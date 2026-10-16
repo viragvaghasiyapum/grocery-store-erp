@@ -33,6 +33,30 @@ public sealed class CatalogTests
     }
 
     [Fact]
+    public async Task BulkRemoveAndRestore_ApplyOnlyToEligibleProductsAtomically()
+    {
+        using var fixture = new CatalogFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long archived = await fixture.Service.CreateAsync(fixture.Product("Stocked", "stock"), ct);
+        long deleted = await fixture.Service.CreateAsync(fixture.Product("New", "new"), ct);
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("""
+                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,selling_price)
+                VALUES (@archived,'BULK-LOT','2026-09-26',1000,2000)
+                """, new { archived });
+        (await fixture.Service.BulkRemoveAsync([archived, deleted], ct)).ShouldBe(2);
+        using (var connection = fixture.Factory.Open())
+        {
+            connection.ExecuteScalar<long>("SELECT is_active FROM product WHERE id=@archived", new { archived }).ShouldBe(0);
+            connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE id=@deleted", new { deleted }).ShouldBe(0);
+        }
+        await Should.ThrowAsync<DomainException>(() => fixture.Service.BulkRestoreAsync([archived, deleted], ct));
+        using (var connection = fixture.Factory.Open())
+            connection.ExecuteScalar<long>("SELECT is_active FROM product WHERE id=@archived", new { archived }).ShouldBe(0);
+        (await fixture.Service.BulkRestoreAsync([archived], ct)).ShouldBe(1);
+    }
+
+    [Fact]
     public async Task BroadFtsSearch_FallsBackWhenEarlyNameWindowHasNoMatches()
     {
         using var fixture = new CatalogFixture();

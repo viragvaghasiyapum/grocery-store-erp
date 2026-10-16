@@ -51,6 +51,19 @@
 
       <Border Margin="0,16,0,0" Padding="20" CornerRadius="8" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
         <StackPanel>
+          <TextBlock FontSize="20" FontWeight="SemiBold" Text="{l:Tr Settings_ScannerTitle}"/>
+          <TextBlock Margin="0,8,0,12" Text="{l:Tr Settings_ScannerPortHelp}" TextWrapping="Wrap" Opacity="0.72"/>
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Margin="8,0,0,0" Click="RefreshScannerPorts_OnClick" Content="{l:Tr Stock_Refresh}"/>
+            <ComboBox x:Name="ScannerPort" MinWidth="220"/>
+          </DockPanel>
+          <Button x:Name="SaveScannerPortButton" HorizontalAlignment="Left" Margin="0,12,0,0"
+                  Click="SaveScannerPort_OnClick" Content="{l:Tr Settings_SaveScannerPort}"/>
+        </StackPanel>
+      </Border>
+
+      <Border Margin="0,16,0,0" Padding="20" CornerRadius="8" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+        <StackPanel>
           <TextBlock FontSize="20" FontWeight="SemiBold" Text="{l:Tr Settings_DataTitle}"/>
           <TextBlock Margin="0,12,0,4" Text="{l:Tr Setup_DataFolder}"/>
           <TextBox x:Name="DataRoot" IsReadOnly="True" ToolTip="{Binding Text, ElementName=DataRoot}"/>

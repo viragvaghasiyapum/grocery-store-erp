@@ -10,7 +10,7 @@ public sealed class InventoryModule(Type stockPage) : IModule
 {
     public string Key => "Stock";
     public ResourceManager Strings => SharedStrings.ResourceManager;
-    public IEnumerable<NavItem> Navigation => [new("Stock_Navigation", "Box24", stockPage, 40)];
+    public IEnumerable<NavItem> Navigation => [new("Stock_Navigation", "Box24", stockPage, 50)];
 
     public void Register(IServiceCollection services)
     {

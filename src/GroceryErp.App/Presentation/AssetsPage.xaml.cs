@@ -13,6 +13,7 @@ namespace GroceryErp.App.Presentation;
 
 public partial class AssetsPage : Page
 {
+    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
     private readonly AssetService _assets;
     private readonly IClock _clock;
     private readonly PurchasingService _purchasing;
@@ -144,7 +145,7 @@ public partial class AssetsPage : Page
         {
             long? selectedId = _editingAsset?.Id;
             AssetPage page = await _assets.GetAssetPageAsync(AssetSearchBox.Text,
-                IncludeDisposedBox.IsChecked == true, disposed, name, id);
+                IncludeDisposedBox.IsChecked == true, disposed, name, id, PageSize);
             _page = page;
             _cursor = (disposed, name, id);
             AssetVendor.ItemsSource = await _purchasing.GetVendorsAsync();
@@ -186,5 +187,12 @@ public partial class AssetsPage : Page
         if (!decimal.TryParse(text, NumberStyles.Number, CultureInfo.GetCultureInfo("en-IN"), out decimal value))
             throw new FormatException(TranslationSource.Instance["MoneyOut_ValidNumber"]);
         return value;
+    }
+
+    private async void PageSize_OnChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        _previousPages.Clear();
+        await LoadPageAsync(null, null, null);
     }
 }

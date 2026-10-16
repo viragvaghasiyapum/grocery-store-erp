@@ -20,6 +20,7 @@ public sealed record DamageItem(
     Quantity Quantity, Money UnitCost, Money CostValue, Money RecoveredAmount, string Reason, string? Notes);
 
 public sealed record DamagePage(IReadOnlyList<DamageItem> Items, bool HasMore, DateOnly? NextDate, long? NextId);
+public sealed record DamageCorrection(Quantity Quantity, Money RecoveredAmount, string Reason, string? Notes);
 
 public sealed record ExpenseCategoryItem(long Id, string Name, string? LocalName, bool IsActive);
 public sealed record ExpenseInput(DateOnly Date, long CategoryId, Money Amount, string Mode, string? PaidTo, string? Reference, string? Notes);
@@ -37,3 +38,4 @@ public sealed record SalaryRunLine(
     long EmployeeId, Money BaseSalary, Money LeaveDeduction, Money Overtime, Money Bonus, string? Notes);
 public sealed record SalaryRunInput(YearMonth Period, DateOnly PayDate, string Mode, IReadOnlyList<SalaryRunLine> Lines);
 public sealed record SalaryPaymentItem(long Id, long EmployeeId, string EmployeeName, YearMonth Period, DateOnly PayDate, string Kind, Money Amount, string Mode, string? Notes);
+public sealed record SalaryCorrection(DateOnly PayDate, Money Amount, string Mode, string? Notes);

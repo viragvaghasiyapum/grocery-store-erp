@@ -20,6 +20,7 @@ namespace GroceryErp.App.Presentation;
 
 public partial class StockCountWindow : Window
 {
+    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
     private readonly InventoryService _inventory;
     private ScanResolver? _scanner;
     private readonly long? _existingCountId;
@@ -130,7 +131,7 @@ public partial class StockCountWindow : Window
 
     private async Task LoadPageAsync()
     {
-        StockCountPage page = await _inventory.GetStockCountPageAsync(_countId, _pageAfter);
+        StockCountPage page = await _inventory.GetStockCountPageAsync(_countId, _pageAfter, PageSize);
         if (page.Status != "DRAFT") throw new InvalidOperationException("Stock count is already finalized.");
         _pageNext = page.NextLineId;
         _totalLines = page.Total;
@@ -178,6 +179,20 @@ public partial class StockCountWindow : Window
     private void CountEntry_OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(CountEditLine.Counted)) InvalidateReview();
+    }
+
+    private async void PageSize_OnChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded || _countId == 0) return;
+        try
+        {
+            SetBusy(true);
+            await SaveCountsAsync(requireComplete: false);
+            _pageBack.Clear(); _pageAfter = null;
+            await LoadPageAsync();
+        }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
+        finally { SetBusy(false); }
     }
 
     private void InvalidateReview()

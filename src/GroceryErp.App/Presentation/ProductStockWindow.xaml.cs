@@ -12,6 +12,7 @@ namespace GroceryErp.App.Presentation;
 
 public partial class ProductStockWindow : Window
 {
+    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
     private readonly InventoryService _inventory;
     private readonly long _productId;
     private readonly Stack<long?> _lotPrevious = new();
@@ -50,7 +51,7 @@ public partial class ProductStockWindow : Window
 
     private async Task LoadLotsAsync(long? beforeId)
     {
-        LotPage page = await _inventory.GetLotPageAsync(_productId, beforeId: beforeId);
+        LotPage page = await _inventory.GetLotPageAsync(_productId, beforeId: beforeId, limit: PageSize);
         _lotPage = page;
         _lotCursor = beforeId;
         LotsGrid.ItemsSource = page.Items;
@@ -59,7 +60,7 @@ public partial class ProductStockWindow : Window
 
     private async Task LoadLedgerAsync(long? beforeId)
     {
-        LedgerPage page = await _inventory.GetLedgerPageAsync(_productId, DateOnly.MinValue, DateOnly.MaxValue, beforeId);
+        LedgerPage page = await _inventory.GetLedgerPageAsync(_productId, DateOnly.MinValue, DateOnly.MaxValue, beforeId, limit: PageSize);
         _ledgerPage = page;
         _ledgerCursor = beforeId;
         LedgerGrid.ItemsSource = page.Items;
@@ -112,10 +113,22 @@ public partial class ProductStockWindow : Window
 
     private void LotsGrid_OnSelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
+        if (CorrectLotButton is not null) CorrectLotButton.IsEnabled = LotsGrid.SelectedItem is LotItem;
         if (PrintLotButton is not null)
             PrintLotButton.IsEnabled = LotsGrid.SelectedItem is LotItem { IsActive: true } lot && lot.OnHand.Value > 0;
         if (WriteOffButton is not null)
             WriteOffButton.IsEnabled = LotsGrid.SelectedItem is LotItem { ExpiryBucketCode: "EXPIRED", IsActive: true } expired && expired.OnHand > Quantity.Zero;
+    }
+
+    private async void CorrectLot_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (LotsGrid.SelectedItem is not LotItem lot) return;
+        if (new LotPriceWindow(_inventory, lot) { Owner = this }.ShowDialog() == true) await RefreshAsync();
+    }
+
+    private async void PageSize_OnChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (IsLoaded) await RefreshAsync();
     }
 
     private async void WriteOff_OnClick(object sender, RoutedEventArgs e)

@@ -9,6 +9,6 @@ public sealed class ExpensesModule(Type moneyOutPage) : IModule
 {
     public string Key => "MoneyOut";
     public ResourceManager Strings => SharedStrings.ResourceManager;
-    public IEnumerable<NavItem> Navigation => [new("MoneyOut_Navigation", "Money24", moneyOutPage, 50, "expiry")];
+    public IEnumerable<NavItem> Navigation => [new("MoneyOut_Navigation", "Money24", moneyOutPage, 70, "expiry")];
     public void Register(IServiceCollection services) => services.AddSingleton<MoneyOutService>();
 }

@@ -12,7 +12,17 @@
     </StackPanel>
     <CheckBox x:Name="AllCategoriesBox" Grid.Row="1" IsChecked="False" Checked="AllCategoriesBox_OnChanged"
               Unchecked="AllCategoriesBox_OnChanged" Content="{l:Tr Stock_AllCategories}" Margin="0,0,0,12"/>
-    <ListBox x:Name="CategoriesBox" Grid.Row="2" DisplayMemberPath="Name" SelectionMode="Multiple" IsEnabled="True"/>
+    <DockPanel Grid.Row="2">
+      <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+        <Button Click="ClearCategories_OnClick" Content="{l:Tr Selection_Clear}" Margin="0,0,8,0"/>
+        <TextBlock x:Name="CategorySelectedCount" VerticalAlignment="Center"/>
+      </StackPanel>
+      <ListBox x:Name="CategoriesBox" SelectionMode="Multiple" IsEnabled="True" SelectionChanged="CategoriesBox_OnSelectionChanged">
+        <ListBox.ItemTemplate><DataTemplate>
+          <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}, Mode=TwoWay}"/>
+        </DataTemplate></ListBox.ItemTemplate>
+      </ListBox>
+    </DockPanel>
     <StackPanel Grid.Row="3" Margin="0,12,0,0">
       <TextBlock Text="{l:Tr Purchasing_Notes}"/>
       <TextBox x:Name="NotesBox" Margin="0,4,0,0"/>

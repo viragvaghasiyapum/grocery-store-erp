@@ -9,6 +9,27 @@
   <data name="Shell_Language" xml:space="preserve"><value>ભાષા</value><comment>MT – needs review</comment></data>
   <data name="Shell_English" xml:space="preserve"><value>અંગ્રેજી</value><comment>MT – needs review</comment></data>
   <data name="Shell_Gujarati" xml:space="preserve"><value>ગુજરાતી</value><comment>MT – needs review</comment></data>
+  <data name="Shell_PrinterChecking" xml:space="preserve"><value>પ્રિન્ટર: તપાસ ચાલુ</value><comment>MT – needs review</comment></data>
+  <data name="Shell_PrinterReady" xml:space="preserve"><value>પ્રિન્ટર: તૈયાર</value><comment>MT – needs review</comment></data>
+  <data name="Shell_PrinterUnavailable" xml:space="preserve"><value>પ્રિન્ટર: ઉપલબ્ધ નથી</value><comment>MT – needs review</comment></data>
+  <data name="Shell_PrinterReview" xml:space="preserve"><value>પ્રિન્ટર: તપાસો</value><comment>MT – needs review</comment></data>
+  <data name="Shell_ScannerSelectPort" xml:space="preserve"><value>સ્કેનર: COM પસંદ કરો</value><comment>MT – needs review</comment></data>
+  <data name="Shell_ScannerSelectPortHelp" xml:space="preserve"><value>જોડાણની સ્થિતિ જોવા સેટિંગ્સમાં સ્કેનરનો COM પોર્ટ પસંદ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Shell_ScannerConnected" xml:space="preserve"><value>સ્કેનર: {0} જોડાયેલું</value><comment>MT – needs review</comment></data>
+  <data name="Shell_ScannerDisconnected" xml:space="preserve"><value>સ્કેનર: {0} મળ્યું નથી</value><comment>MT – needs review</comment></data>
+  <data name="Shell_ScannerVirtual" xml:space="preserve"><value>સ્કેનર: {0} ચકાસાયું નથી</value><comment>MT – needs review</comment></data>
+  <data name="Shell_ScannerConnectedHelp" xml:space="preserve"><value>પસંદ કરેલો સ્કેનર પોર્ટ {0} Windowsમાં હાજર છે.</value><comment>MT – needs review</comment></data>
+  <data name="Shell_ScannerDisconnectedHelp" xml:space="preserve"><value>પસંદ કરેલો સ્કેનર પોર્ટ {0} Windowsમાં મળ્યો નથી. સ્કેનરનું જોડાણ તપાસો.</value><comment>MT – needs review</comment></data>
+  <data name="Shell_ScannerVirtualHelp" xml:space="preserve"><value>{0} Bluetooth વર્ચ્યુઅલ COM પોર્ટ છે. તેની હાજરીથી સ્કેનર જોડાયેલું છે તેની ખાતરી થતી નથી.</value><comment>MT – needs review</comment></data>
+  <data name="Shell_ScannerLastScan" xml:space="preserve"><value>સ્કેનર: છેલ્લો {0}</value><comment>MT – needs review</comment></data>
+  <data name="Shell_ScannerLastScanHelp" xml:space="preserve"><value>છેલ્લો બારકોડ સ્કેન {0} વાગ્યે મળ્યો. સ્કેનર હજી જોડાયેલું છે તેની ખાતરી આથી થતી નથી.</value><comment>MT – needs review</comment></data>
+  <data name="Settings_ScannerTitle" xml:space="preserve"><value>સ્કેનર COM પોર્ટ</value><comment>MT – needs review</comment></data>
+  <data name="Settings_ScannerPortHelp" xml:space="preserve"><value>ઉપરની પટ્ટીમાં પોર્ટની હાજરી જોવા સ્કેનરનો COM પોર્ટ પસંદ કરો. સ્કેનર જોડ્યા પછી યાદી તાજી કરો. Bluetooth વર્ચ્યુઅલ પોર્ટથી જીવંત જોડાણની ખાતરી થતી નથી.</value><comment>MT – needs review</comment></data>
+  <data name="Settings_ScannerKeyboard" xml:space="preserve"><value>કીબોર્ડ સ્કેનર (COM પોર્ટ નથી)</value><comment>MT – needs review</comment></data>
+  <data name="Settings_ScannerBluetoothVirtual" xml:space="preserve"><value>{0} (Bluetooth વર્ચ્યુઅલ)</value><comment>MT – needs review</comment></data>
+  <data name="Settings_ScannerPortMissing" xml:space="preserve"><value>{0} (હાલ મળ્યું નથી)</value><comment>MT – needs review</comment></data>
+  <data name="Settings_SaveScannerPort" xml:space="preserve"><value>સ્કેનર પોર્ટ સાચવો</value><comment>MT – needs review</comment></data>
+  <data name="Settings_ScannerPortSaved" xml:space="preserve"><value>સ્કેનર પોર્ટ સાચવ્યો.</value><comment>MT – needs review</comment></data>
   <data name="Demo_Navigation" xml:space="preserve"><value>સ્વાગત</value><comment>MT – needs review</comment></data>
   <data name="Demo_Title" xml:space="preserve"><value>તમારી દુકાન, વ્યવસાય માટે તૈયાર</value><comment>MT – needs review</comment></data>
   <data name="Demo_Body" xml:space="preserve"><value>દુકાનનું કામ સંભાળવા માટે મેનૂનો ઉપયોગ કરો. નીચેની રકમ અને તારીખ ફોર્મેટના ઉદાહરણો છે.</value><comment>MT – needs review</comment></data>
@@ -1058,4 +1079,27 @@
   <data name="Reports_Weekday_Fri" xml:space="preserve"><value>શુક્ર</value></data>
   <data name="Reports_Weekday_Sat" xml:space="preserve"><value>શનિ</value></data>
   <data name="Reports_Weekday_Sun" xml:space="preserve"><value>રવિ</value></data>
+  <data name="Common_RowsPerPage" xml:space="preserve"><value>દર પાનાના રેકોર્ડ</value></data>
+  <data name="Selection_ThisPage" xml:space="preserve"><value>આ પાનું પસંદ કરો</value></data>
+  <data name="Selection_AllMatching" xml:space="preserve"><value>બધા મળતા પરિણામો પસંદ કરો</value></data>
+  <data name="Selection_Clear" xml:space="preserve"><value>પસંદગી સાફ કરો</value></data>
+  <data name="Selection_Count" xml:space="preserve"><value>{0} પસંદ કર્યાં</value></data>
+  <data name="Catalog_RemoveSelected" xml:space="preserve"><value>પસંદ કરેલા દૂર કરો</value></data>
+  <data name="Catalog_RestoreSelected" xml:space="preserve"><value>પસંદ કરેલા ફરી સક્રિય કરો</value></data>
+  <data name="Catalog_BulkRemoveConfirm" xml:space="preserve"><value>પસંદ કરેલા {0} ઉત્પાદનો દૂર અથવા સંગ્રહિત કરવા?</value></data>
+  <data name="Catalog_BulkRemoved" xml:space="preserve"><value>{0} ઉત્પાદનો દૂર અથવા સંગ્રહિત થયા.</value></data>
+  <data name="Catalog_BulkRestored" xml:space="preserve"><value>{0} ઉત્પાદનો ફરી સક્રિય થયા.</value></data>
+  <data name="Stock_CorrectLot" xml:space="preserve"><value>લોટ સુધારો</value></data>
+  <data name="Stock_CostCorrection" xml:space="preserve"><value>બાકી સ્ટોક અને ભાવિ વ્યવહારો માટે એકમ ખર્ચ</value></data>
+  <data name="Stock_QuantityCorrection" xml:space="preserve"><value>જથ્થાનો સુધારો (+ અથવા -)</value></data>
+  <data name="Stock_CorrectionReason" xml:space="preserve"><value>સુધારાનું કારણ</value></data>
+  <data name="Stock_CompletedBillPrices" xml:space="preserve"><value>પૂર્ણ થયેલા બિલમાં મૂળ વેચાણ કિંમત જ રહેશે.</value></data>
+  <data name="MoneyOut_NewEntry" xml:space="preserve"><value>નવી નોંધ</value></data>
+  <data name="MoneyOut_RequiredCorrectionReason" xml:space="preserve"><value>સુધારાનું કારણ (જરૂરી)</value></data>
+  <data name="MoneyOut_CorrectPosted" xml:space="preserve"><value>પસંદ કરેલી નોંધ સુધારો</value></data>
+  <data name="MoneyOut_CorrectDamage" xml:space="preserve"><value>નુકસાનની નોંધ સુધારો</value></data>
+  <data name="MoneyOut_CorrectSalary" xml:space="preserve"><value>પગાર ચુકવણી સુધારો</value></data>
+  <data name="MoneyOut_PostedPayments" xml:space="preserve"><value>નોંધાયેલ ચુકવણીઓ</value></data>
+  <data name="MoneyOut_CorrectionReason" xml:space="preserve"><value>સુધારાનું કારણ</value></data>
+  <data name="MoneyOut_CorrectionReasonRequired" xml:space="preserve"><value>ઓડિટ નોંધ માટે આવશ્યક</value></data>
 </root>

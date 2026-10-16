@@ -6,6 +6,7 @@ namespace GroceryErp.App.Presentation;
 
 public partial class DraftCountPickerWindow : Window
 {
+    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
     private readonly InventoryService _inventory;
     private readonly Stack<long?> _previous = new();
     private long? _beforeId;
@@ -26,7 +27,7 @@ public partial class DraftCountPickerWindow : Window
         PreviousButton.IsEnabled = NextButton.IsEnabled = false;
         try
         {
-            _page = await _inventory.GetDraftCountPageAsync(_beforeId);
+            _page = await _inventory.GetDraftCountPageAsync(_beforeId, PageSize);
             DraftGrid.ItemsSource = _page.Items;
             PreviousButton.IsEnabled = _previous.Count > 0;
             NextButton.IsEnabled = _page.HasMore;
@@ -66,4 +67,10 @@ public partial class DraftCountPickerWindow : Window
         DialogResult = true;
     }
     private void Cancel_OnClick(object sender, RoutedEventArgs e) => DialogResult = false;
+    private async void PageSize_OnChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        _previous.Clear(); _beforeId = null;
+        await LoadPageAsync();
+    }
 }

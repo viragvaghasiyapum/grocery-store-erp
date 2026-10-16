@@ -408,6 +408,24 @@ public sealed class SalesTests
     }
 
     [Fact]
+    public async Task CorrectedLotPrice_AppliesToFutureBillButPreservesCompletedBill()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long completedId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
+        await fixture.Sales.CompleteAsync(new(completedId, [new(PaymentMode.Cash, new Money(118))],
+            OperationGuard.NewId()), ct);
+        Money billedPrice = (await fixture.Sales.GetAsync(completedId, ct)).Lines.Single().UnitPrice;
+        LotItem original = (await fixture.Inventory.GetLotsByIdsAsync([fixture.LotId], ct)).Single();
+        await fixture.Inventory.CorrectLotAsync(new(original, original.BatchNumber, original.ExpiryDate,
+            original.UnitCost, new Money(110), original.Mrp, Quantity.Zero,
+            fixture.Clock.BusinessDate, "Price correction"), OperationGuard.NewId(), ct);
+        long futureId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
+        (await fixture.Sales.GetAsync(completedId, ct)).Lines.Single().UnitPrice.ShouldBe(billedPrice);
+        (await fixture.Sales.GetAsync(futureId, ct)).Lines.Single().UnitPrice.ShouldBe(new Money(110));
+    }
+
+    [Fact]
     public async Task ReceiptSnapshots_KeepIssueTimeStoreAndPrintSettings()
     {
         using var fixture = new SalesFixture();

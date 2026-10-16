@@ -9,6 +9,7 @@
       <TextBlock Text="{l:Tr Stock_CountHint}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,4,0,6"/>
       <TextBlock x:Name="ProgressText" FontWeight="SemiBold"/>
       <TextBlock x:Name="ReviewText" Margin="0,4,0,0"/>
+      <StackPanel Orientation="Horizontal" Margin="0,6,0,0"><TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/><ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="65" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox></StackPanel>
     </StackPanel>
     <Grid Grid.Row="1" Margin="0,0,0,8">
       <Grid.ColumnDefinitions><ColumnDefinition Width="280"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>

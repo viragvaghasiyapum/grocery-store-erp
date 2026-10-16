@@ -9,6 +9,27 @@
   <data name="Shell_Language" xml:space="preserve"><value>Language</value></data>
   <data name="Shell_English" xml:space="preserve"><value>English</value></data>
   <data name="Shell_Gujarati" xml:space="preserve"><value>Gujarati</value></data>
+  <data name="Shell_PrinterChecking" xml:space="preserve"><value>Printer: Checking</value></data>
+  <data name="Shell_PrinterReady" xml:space="preserve"><value>Printer: Ready</value></data>
+  <data name="Shell_PrinterUnavailable" xml:space="preserve"><value>Printer: Unavailable</value></data>
+  <data name="Shell_PrinterReview" xml:space="preserve"><value>Printer: Review</value></data>
+  <data name="Shell_ScannerSelectPort" xml:space="preserve"><value>Scanner: Select COM</value></data>
+  <data name="Shell_ScannerSelectPortHelp" xml:space="preserve"><value>Select the scanner's COM port in Settings to monitor its connection.</value></data>
+  <data name="Shell_ScannerConnected" xml:space="preserve"><value>Scanner: {0} connected</value></data>
+  <data name="Shell_ScannerDisconnected" xml:space="preserve"><value>Scanner: {0} missing</value></data>
+  <data name="Shell_ScannerVirtual" xml:space="preserve"><value>Scanner: {0} unverified</value></data>
+  <data name="Shell_ScannerConnectedHelp" xml:space="preserve"><value>The configured scanner port {0} is present in Windows.</value></data>
+  <data name="Shell_ScannerDisconnectedHelp" xml:space="preserve"><value>The configured scanner port {0} is not present in Windows. Check the scanner connection.</value></data>
+  <data name="Shell_ScannerVirtualHelp" xml:space="preserve"><value>{0} is a Bluetooth virtual COM port. Its presence does not confirm that the scanner is connected.</value></data>
+  <data name="Shell_ScannerLastScan" xml:space="preserve"><value>Scanner: Last {0}</value></data>
+  <data name="Shell_ScannerLastScanHelp" xml:space="preserve"><value>Last barcode scan detected at {0}. This does not confirm the scanner is still connected.</value></data>
+  <data name="Settings_ScannerTitle" xml:space="preserve"><value>Scanner COM port</value></data>
+  <data name="Settings_ScannerPortHelp" xml:space="preserve"><value>Select your scanner's COM port to show its presence in the top bar. Refresh this list after plugging in the scanner. Bluetooth virtual ports cannot confirm a live connection.</value></data>
+  <data name="Settings_ScannerKeyboard" xml:space="preserve"><value>Keyboard scanner (no COM port)</value></data>
+  <data name="Settings_ScannerBluetoothVirtual" xml:space="preserve"><value>{0} (Bluetooth virtual)</value></data>
+  <data name="Settings_ScannerPortMissing" xml:space="preserve"><value>{0} (currently missing)</value></data>
+  <data name="Settings_SaveScannerPort" xml:space="preserve"><value>Save scanner port</value></data>
+  <data name="Settings_ScannerPortSaved" xml:space="preserve"><value>Scanner port saved.</value></data>
   <data name="Demo_Navigation" xml:space="preserve"><value>Welcome</value></data>
   <data name="Demo_Title" xml:space="preserve"><value>Your store, ready for business</value></data>
   <data name="Demo_Body" xml:space="preserve"><value>Use the menu to manage your store. The amount and date below are formatting examples.</value></data>
@@ -1058,4 +1079,27 @@
   <data name="Reports_Weekday_Fri" xml:space="preserve"><value>Fri</value></data>
   <data name="Reports_Weekday_Sat" xml:space="preserve"><value>Sat</value></data>
   <data name="Reports_Weekday_Sun" xml:space="preserve"><value>Sun</value></data>
+  <data name="Common_RowsPerPage" xml:space="preserve"><value>Rows per page</value></data>
+  <data name="Selection_ThisPage" xml:space="preserve"><value>Select this page</value></data>
+  <data name="Selection_AllMatching" xml:space="preserve"><value>Select all matching results</value></data>
+  <data name="Selection_Clear" xml:space="preserve"><value>Clear selection</value></data>
+  <data name="Selection_Count" xml:space="preserve"><value>{0} selected</value></data>
+  <data name="Catalog_RemoveSelected" xml:space="preserve"><value>Remove selected</value></data>
+  <data name="Catalog_RestoreSelected" xml:space="preserve"><value>Restore selected</value></data>
+  <data name="Catalog_BulkRemoveConfirm" xml:space="preserve"><value>Remove or archive {0} selected products?</value></data>
+  <data name="Catalog_BulkRemoved" xml:space="preserve"><value>{0} products removed or archived.</value></data>
+  <data name="Catalog_BulkRestored" xml:space="preserve"><value>{0} products restored.</value></data>
+  <data name="Stock_CorrectLot" xml:space="preserve"><value>Correct lot</value></data>
+  <data name="Stock_CostCorrection" xml:space="preserve"><value>Unit cost for remaining stock and future transactions</value></data>
+  <data name="Stock_QuantityCorrection" xml:space="preserve"><value>Quantity adjustment (+ or -)</value></data>
+  <data name="Stock_CorrectionReason" xml:space="preserve"><value>Correction reason</value></data>
+  <data name="Stock_CompletedBillPrices" xml:space="preserve"><value>Completed bills keep their original selling price.</value></data>
+  <data name="MoneyOut_NewEntry" xml:space="preserve"><value>New entry</value></data>
+  <data name="MoneyOut_RequiredCorrectionReason" xml:space="preserve"><value>Correction reason (required)</value></data>
+  <data name="MoneyOut_CorrectPosted" xml:space="preserve"><value>Correct selected posting</value></data>
+  <data name="MoneyOut_CorrectDamage" xml:space="preserve"><value>Correct damage write-off</value></data>
+  <data name="MoneyOut_CorrectSalary" xml:space="preserve"><value>Correct salary payment</value></data>
+  <data name="MoneyOut_PostedPayments" xml:space="preserve"><value>Posted payments</value></data>
+  <data name="MoneyOut_CorrectionReason" xml:space="preserve"><value>Reason for correction</value></data>
+  <data name="MoneyOut_CorrectionReasonRequired" xml:space="preserve"><value>Required for the audit record</value></data>
 </root>

@@ -9,7 +9,7 @@ public sealed class ReportsModule(Type reportsPage) : IModule
 {
     public string Key => "Reports";
     public ResourceManager Strings => SharedStrings.ResourceManager;
-    public IEnumerable<NavItem> Navigation => [new("Reports_Navigation", "DataBarVertical24", reportsPage, 70)];
+    public IEnumerable<NavItem> Navigation => [new("Reports_Navigation", "DataBarVertical24", reportsPage, 80)];
 
     public void Register(IServiceCollection services)
     {

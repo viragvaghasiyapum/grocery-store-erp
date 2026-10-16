@@ -27,11 +27,29 @@
 
     <Border Padding="20,10" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
       <Grid>
-        <StackPanel VerticalAlignment="Center">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0" VerticalAlignment="Center">
           <TextBlock x:Name="StoreHeading" FontSize="18" FontWeight="SemiBold" Text="{l:Tr App_Title}" TextTrimming="CharacterEllipsis"/>
           <TextBlock x:Name="BusinessDate" FontSize="12" Opacity="0.72"/>
         </StackPanel>
-        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+        <StackPanel Grid.Column="1" HorizontalAlignment="Right" Orientation="Horizontal">
+          <Border x:Name="PrinterStatusBadge" Margin="0,0,8,0" Padding="8,4" CornerRadius="5"
+                  Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                  BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                  VerticalAlignment="Center">
+            <TextBlock x:Name="PrinterStatusText" FontSize="12" VerticalAlignment="Center"
+                       AutomationProperties.LiveSetting="Polite" />
+          </Border>
+          <Border x:Name="ScannerStatusBadge" Margin="0,0,8,0" Padding="8,4" CornerRadius="5"
+                  Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                  BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                  VerticalAlignment="Center">
+            <TextBlock x:Name="ScannerStatusText" FontSize="12" VerticalAlignment="Center"
+                       AutomationProperties.LiveSetting="Polite" />
+          </Border>
           <Button x:Name="BackupStatusButton" Margin="0,0,8,0" Click="BackupStatus_OnClick" Content="{l:Tr Settings_NoBackup}"/>
           <Button x:Name="UpdateButton" Margin="0,0,8,0" Click="Update_OnClick" Content="{l:Tr Settings_Update_CheckFolder}" />
           <Button x:Name="LockButton" Margin="0,0,8,0" Click="Lock_OnClick" Content="{l:Tr Lock_Command}" />
@@ -64,10 +82,6 @@
             Content="{l:Tr Dashboard_Navigation}"
             Icon="{ui:SymbolIcon Home24}"
             TargetPageType="{x:Type local:DashboardPage}" />
-        <ui:NavigationViewItem
-            Content="{l:Tr Demo_Navigation}"
-            Icon="{ui:SymbolIcon Home24}"
-            TargetPageType="{x:Type local:DemoPage}" />
       </ui:NavigationView.MenuItems>
     </ui:NavigationView>
 

@@ -35,6 +35,7 @@ public sealed record AppSettings(
     public string ProductPrefix => Get("barcode.product_prefix", "21");
     public int ScannerMaxGapMs => GetInt("scanner.max_gap_ms", 35, 1, 1000);
     public int ScannerMinLength => GetInt("scanner.min_length", 6, 1, 100);
+    public string ScannerComPort => Get("scanner.com_port", "");
     public string UiLanguage => Get("ui.language", "en-IN");
     public string UiTheme => Get("ui.theme", "Light");
     public string UiBackdrop => Get("ui.backdrop", "None");

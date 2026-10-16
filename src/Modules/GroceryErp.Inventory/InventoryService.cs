@@ -503,6 +503,76 @@ public sealed class InventoryService(
         }, cancellationToken);
     }
 
+    public async Task CorrectLotAsync(LotCorrection correction, string operationId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(correction);
+        LotItem original = correction.Original;
+        string reason = Required(correction.Reason, 240, nameof(correction.Reason));
+        string? batch = Optional(correction.BatchNumber, 100);
+        if (correction.UnitCost < Money.Zero || correction.SellingPrice < Money.Zero ||
+            correction.Mrp is { } mrp && correction.SellingPrice > mrp ||
+            correction.ExpiryDate < original.ReceivedDate)
+            throw new DomainException(ErrorCode.Validation, "Invalid lot correction.");
+        long productId = await database.WriteAsync(transaction =>
+        {
+            periods.EnsureOpen(correction.Date);
+            LotRow? current = transaction.Connection.QuerySingleOrDefault<LotRow>("""
+                SELECT id AS Id,product_id AS ProductId,batch_no AS BatchNumber,
+                       received_date AS ReceivedDate,expiry_date AS ExpiryDate,
+                       unit_cost AS UnitCost,mrp AS Mrp,selling_price AS SellingPrice,
+                       qty_received AS Received,qty_on_hand AS OnHand,is_active AS IsActive
+                FROM product_lot WHERE id=@id
+                """, new { id = original.Id }, transaction.Transaction);
+            if (current is null) throw new DomainException(ErrorCode.NotFound, "lot", original.Id);
+            OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.StockAdjustment);
+            if (replay is not null) return current.ProductId;
+            if (current.ProductId != original.ProductId || current.BatchNumber != original.BatchNumber ||
+                current.ExpiryDate != original.ExpiryDate || current.UnitCost != original.UnitCost.Scaled ||
+                current.Mrp != original.Mrp?.Scaled || current.SellingPrice != original.SellingPrice.Scaled ||
+                current.OnHand != original.OnHand.Scaled)
+                throw new DomainException(ErrorCode.Validation, "This lot changed since it was loaded. Refresh and try again.");
+            if (correction.QuantityChange != Quantity.Zero || correction.ExpiryDate != original.ExpiryDate)
+            {
+                ProductRule rule = LoadProductRule(transaction, current.ProductId);
+                ValidateProductQuantity(rule, correction.QuantityChange, correction.ExpiryDate);
+            }
+            if (correction.QuantityChange != Quantity.Zero)
+                ledger.Post(transaction, new(correction.Date, current.ProductId, original.Id, "ADJUSTMENT",
+                    correction.QuantityChange, original.UnitCost, "lot_correction", original.Id, reason));
+            long balance = current.OnHand + correction.QuantityChange.Scaled;
+            // Two opposite ledger entries revalue the remaining stock without changing its quantity.
+            // Their net value is visible in the stock-adjustment P&L and offsets inventory valuation.
+            if (current.UnitCost != correction.UnitCost.Scaled && balance != 0)
+            {
+                Quantity reverse = Quantity.FromScaled(-balance);
+                Quantity restore = Quantity.FromScaled(balance);
+                ledger.Post(transaction, new(correction.Date, current.ProductId, original.Id, "ADJUSTMENT",
+                    reverse, original.UnitCost, "lot_cost_correction", original.Id, reason));
+                ledger.Post(transaction, new(correction.Date, current.ProductId, original.Id, "ADJUSTMENT",
+                    restore, correction.UnitCost, "lot_cost_correction", original.Id, reason));
+            }
+            transaction.Connection.Execute("""
+                UPDATE product_lot SET batch_no=@batch,expiry_date=@expiry,
+                    unit_cost=@cost,selling_price=@price,mrp=@mrp WHERE id=@id
+                """, new { id = original.Id, batch, expiry = correction.ExpiryDate,
+                    cost = correction.UnitCost.Scaled, price = correction.SellingPrice.Scaled,
+                    mrp = correction.Mrp?.Scaled }, transaction.Transaction);
+            audit.Write(transaction, "product_lot", original.Id, "CORRECT", new
+            {
+                reason, before = new { original.BatchNumber, original.ExpiryDate,
+                    cost = original.UnitCost.Scaled, price = original.SellingPrice.Scaled,
+                    mrp = original.Mrp?.Scaled, quantity = original.OnHand.Scaled },
+                after = new { batch, correction.ExpiryDate, cost = correction.UnitCost.Scaled,
+                    price = correction.SellingPrice.Scaled, mrp = correction.Mrp?.Scaled,
+                    quantity = balance }
+            });
+            OperationGuard.Complete(transaction, operationId, "product_lot", original.Id);
+            return current.ProductId;
+        }, cancellationToken);
+        WeakReferenceMessenger.Default.Send(new StockChangedMessage([productId]));
+    }
+
     public Task SetLotActiveAsync(long lotId, bool active, CancellationToken cancellationToken = default) =>
         SetLotActiveCoreAsync(lotId, active, null, cancellationToken);
 

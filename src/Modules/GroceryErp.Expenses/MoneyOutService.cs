@@ -89,9 +89,13 @@ public sealed class MoneyOutService(
         EnsureRange(from, to);
         return database.ReadAsync(connection => (IReadOnlyList<DamageItem>)connection.Query<DamageRow>("""
             SELECT d.id AS Id,d.doc_no AS DocumentNumber,d.damage_date AS Date,p.name AS ProductName,
-                   l.lot_code AS LotCode,d.qty AS Quantity,d.unit_cost AS UnitCost,d.cost_value AS CostValue,
-                   d.recovered_amount AS RecoveredAmount,d.reason AS Reason,d.notes AS Notes
+                   l.lot_code AS LotCode,COALESCE(dc.new_qty,d.qty) AS Quantity,d.unit_cost AS UnitCost,
+                   CAST(ROUND(COALESCE(dc.new_qty,d.qty)*d.unit_cost/1000.0) AS INTEGER) AS CostValue,
+                   COALESCE(dc.new_recovered,d.recovered_amount) AS RecoveredAmount,
+                   COALESCE(dc.new_reason,d.reason) AS Reason,
+                   CASE WHEN dc.id IS NULL THEN d.notes ELSE dc.new_notes END AS Notes
             FROM damage d JOIN product p ON p.id=d.product_id JOIN product_lot l ON l.id=d.lot_id
+            LEFT JOIN damage_correction dc ON dc.id=(SELECT MAX(id) FROM damage_correction WHERE damage_id=d.id)
             WHERE d.damage_date BETWEEN @from AND @to ORDER BY d.damage_date DESC,d.id DESC
             """, new { from, to }).Select(static row => row.ToModel()).ToList(), cancellationToken);
     }
@@ -106,9 +110,13 @@ public sealed class MoneyOutService(
         {
             List<DamageItem> rows = connection.Query<DamageRow>("""
                 SELECT d.id AS Id,d.doc_no AS DocumentNumber,d.damage_date AS Date,p.name AS ProductName,
-                       l.lot_code AS LotCode,d.qty AS Quantity,d.unit_cost AS UnitCost,d.cost_value AS CostValue,
-                       d.recovered_amount AS RecoveredAmount,d.reason AS Reason,d.notes AS Notes
+                       l.lot_code AS LotCode,COALESCE(dc.new_qty,d.qty) AS Quantity,d.unit_cost AS UnitCost,
+                       CAST(ROUND(COALESCE(dc.new_qty,d.qty)*d.unit_cost/1000.0) AS INTEGER) AS CostValue,
+                       COALESCE(dc.new_recovered,d.recovered_amount) AS RecoveredAmount,
+                       COALESCE(dc.new_reason,d.reason) AS Reason,
+                       CASE WHEN dc.id IS NULL THEN d.notes ELSE dc.new_notes END AS Notes
                 FROM damage d JOIN product p ON p.id=d.product_id JOIN product_lot l ON l.id=d.lot_id
+                LEFT JOIN damage_correction dc ON dc.id=(SELECT MAX(id) FROM damage_correction WHERE damage_id=d.id)
                 WHERE d.damage_date BETWEEN @from AND @to
                   AND (@beforeDate IS NULL OR d.damage_date<@beforeDate
                        OR (d.damage_date=@beforeDate AND d.id<@beforeId))
@@ -120,6 +128,64 @@ public sealed class MoneyOutService(
             DamageItem? last = rows.LastOrDefault();
             return new DamagePage(rows, hasMore, last?.Date, last?.Id);
         }, cancellationToken);
+    }
+
+    public async Task<long> CorrectDamageAsync(DamageItem original, DamageCorrection replacement,
+        DateOnly correctionDate, string reason, string operationId, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(original);
+        ArgumentNullException.ThrowIfNull(replacement);
+        if (replacement.Quantity < Quantity.Zero || replacement.RecoveredAmount < Money.Zero ||
+            !DamageReasons.Contains(replacement.Reason))
+            throw new DomainException(ErrorCode.Validation, "Invalid damage correction.");
+        string correctionReason = Required(reason, 240);
+        string? notes = Optional(replacement.Notes, 500);
+        long productId = 0;
+        long result = await database.WriteAsync(transaction =>
+        {
+            OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.DamageCorrection);
+            if (replay is not null) return replay.RefId ?? 0;
+            periods.EnsureOpen(correctionDate);
+            DamageStateRow? current = transaction.Connection.QuerySingleOrDefault<DamageStateRow>("""
+                SELECT d.product_id AS ProductId,d.lot_id AS LotId,d.unit_cost AS UnitCost,
+                       COALESCE(dc.new_qty,d.qty) AS Quantity,
+                       COALESCE(dc.new_recovered,d.recovered_amount) AS RecoveredAmount,
+                       COALESCE(dc.new_reason,d.reason) AS Reason,
+                       CASE WHEN dc.id IS NULL THEN d.notes ELSE dc.new_notes END AS Notes
+                FROM damage d
+                LEFT JOIN damage_correction dc ON dc.id=(SELECT MAX(id) FROM damage_correction WHERE damage_id=d.id)
+                WHERE d.id=@id
+                """, new { id = original.Id }, transaction.Transaction);
+            if (current is null) throw new DomainException(ErrorCode.NotFound, "damage", original.Id);
+            if (current.Quantity != original.Quantity.Scaled || current.RecoveredAmount != original.RecoveredAmount.Scaled ||
+                current.UnitCost != original.UnitCost.Scaled || current.Reason != original.Reason || current.Notes != original.Notes)
+                throw new DomainException(ErrorCode.Validation, "This damage entry changed since it was loaded. Refresh and try again.");
+            productId = current.ProductId;
+            Quantity previousQty = Quantity.FromScaled(current.Quantity);
+            Money unitCost = Money.FromScaled(current.UnitCost);
+            Money previousExpense = unitCost * previousQty - Money.FromScaled(current.RecoveredAmount);
+            Money newExpense = unitCost * replacement.Quantity - replacement.RecoveredAmount;
+            long id = transaction.Connection.ExecuteScalar<long>("""
+                INSERT INTO damage_correction(damage_id,correction_date,previous_qty,new_qty,
+                    previous_recovered,new_recovered,new_reason,new_notes,expense_delta,correction_reason)
+                VALUES (@damageId,@date,@previousQty,@newQty,@previousRecovered,@newRecovered,
+                    @newReason,@notes,@delta,@correctionReason) RETURNING id
+                """, new { damageId = original.Id, date = Format(correctionDate), previousQty = current.Quantity,
+                    newQty = replacement.Quantity.Scaled, previousRecovered = current.RecoveredAmount,
+                    newRecovered = replacement.RecoveredAmount.Scaled, newReason = replacement.Reason,
+                    notes, delta = (newExpense - previousExpense).Scaled, correctionReason }, transaction.Transaction);
+            Quantity stockChange = new(previousQty.Value - replacement.Quantity.Value);
+            if (stockChange != Quantity.Zero)
+                stock.Post(transaction, new(correctionDate, current.ProductId, current.LotId, "ADJUSTMENT",
+                    stockChange, unitCost, "damage_correction", id, correctionReason));
+            audit.Write(transaction, "damage", original.Id, "CORRECT", new { correctionId = id,
+                reason = correctionReason, before = original, after = replacement,
+                expenseDelta = (newExpense - previousExpense).Scaled });
+            OperationGuard.Complete(transaction, operationId, "damage_correction", id);
+            return id;
+        }, cancellationToken);
+        if (productId > 0) WeakReferenceMessenger.Default.Send(new StockChangedMessage([productId]));
+        return result;
     }
 
     public async Task<long> RecordDamageAsync(DamageInput input, string operationId, CancellationToken cancellationToken = default)
@@ -319,6 +385,38 @@ public sealed class MoneyOutService(
         }, cancellationToken);
     }
 
+    public Task CorrectExpenseAsync(ExpenseItem original, ExpenseInput replacement, string reason,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(original);
+        ValidateExpense(replacement);
+        string note = Required(reason, 240);
+        return database.WriteAsync(transaction =>
+        {
+            periods.EnsureOpen(original.Date);
+            periods.EnsureOpen(replacement.Date);
+            ExpenseRow? current = transaction.Connection.QuerySingleOrDefault<ExpenseRow>("""
+                SELECT e.id AS Id,e.expense_date AS Date,e.category_id AS CategoryId,c.name AS CategoryName,
+                       e.amount AS Amount,e.mode AS Mode,e.paid_to AS PaidTo,e.reference AS Reference,e.notes AS Notes
+                FROM expense e JOIN expense_category c ON c.id=e.category_id WHERE e.id=@id
+                """, new { id = original.Id }, transaction.Transaction);
+            if (current is null) throw new DomainException(ErrorCode.NotFound, "expense", original.Id);
+            if (current.ToModel() != original)
+                throw new DomainException(ErrorCode.Validation, "This expense changed since it was loaded. Refresh and try again.");
+            int changed = transaction.Connection.Execute("""
+                UPDATE expense SET expense_date=@date,category_id=@categoryId,amount=@amount,
+                    mode=@mode,paid_to=@paidTo,reference=@reference,notes=@notes
+                WHERE id=@id AND EXISTS(SELECT 1 FROM expense_category
+                                        WHERE id=@categoryId AND is_active=1)
+                """, new { id = original.Id, date = Format(replacement.Date), categoryId = replacement.CategoryId,
+                    amount = replacement.Amount.Scaled, mode = replacement.Mode,
+                    paidTo = Optional(replacement.PaidTo, 150), reference = Optional(replacement.Reference, 100),
+                    notes = Optional(replacement.Notes, 500) }, transaction.Transaction);
+            if (changed != 1) throw new DomainException(ErrorCode.NotFound, "active expense category", replacement.CategoryId);
+            audit.Write(transaction, "expense", original.Id, "CORRECT", new { reason = note, before = original, after = replacement });
+        }, cancellationToken);
+    }
+
     public Task<IReadOnlyList<ExpenseInput>> RepeatLastMonthAsync(
         YearMonth target, IReadOnlyCollection<long> categoryIds, CancellationToken cancellationToken = default)
     {
@@ -443,10 +541,58 @@ public sealed class MoneyOutService(
         if (from > to) throw new DomainException(ErrorCode.Validation, "Invalid salary period.");
         return database.ReadAsync(connection => (IReadOnlyList<SalaryPaymentItem>)connection.Query<SalaryRow>("""
             SELECT s.id AS Id,s.employee_id AS EmployeeId,e.name AS EmployeeName,s.period_month AS Period,
-                   s.pay_date AS PayDate,s.kind AS Kind,s.amount AS Amount,s.mode AS Mode,s.notes AS Notes
+                   COALESCE(sc.new_pay_date,s.pay_date) AS PayDate,s.kind AS Kind,
+                   COALESCE(sc.new_amount,s.amount) AS Amount,COALESCE(sc.new_mode,s.mode) AS Mode,
+                   CASE WHEN sc.id IS NULL THEN s.notes ELSE sc.new_notes END AS Notes
             FROM salary_payment s JOIN employee e ON e.id=s.employee_id
+            LEFT JOIN salary_correction sc ON sc.id=(SELECT MAX(id) FROM salary_correction WHERE salary_payment_id=s.id)
             WHERE s.period_month BETWEEN @from AND @to ORDER BY s.period_month DESC,e.name,s.kind
             """, new { from = from.ToString(), to = to.ToString() }).Select(static row => row.ToModel()).ToList(), cancellationToken);
+    }
+
+    public Task<long> CorrectSalaryPaymentAsync(SalaryPaymentItem original, SalaryCorrection replacement,
+        DateOnly correctionDate, string reason, string operationId, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(original);
+        ArgumentNullException.ThrowIfNull(replacement);
+        if (replacement.Amount <= Money.Zero || !SalaryModes.Contains(replacement.Mode))
+            throw new DomainException(ErrorCode.Validation, "Invalid salary correction.");
+        string correctionReason = Required(reason, 240);
+        string? notes = Optional(replacement.Notes, 500);
+        return database.WriteAsync(transaction =>
+        {
+            OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.SalaryCorrection);
+            if (replay is not null) return replay.RefId ?? 0;
+            periods.EnsureOpen(correctionDate);
+            SalaryRow? current = transaction.Connection.QuerySingleOrDefault<SalaryRow>("""
+                SELECT s.id AS Id,s.employee_id AS EmployeeId,e.name AS EmployeeName,s.period_month AS Period,
+                       COALESCE(sc.new_pay_date,s.pay_date) AS PayDate,s.kind AS Kind,
+                       COALESCE(sc.new_amount,s.amount) AS Amount,COALESCE(sc.new_mode,s.mode) AS Mode,
+                       CASE WHEN sc.id IS NULL THEN s.notes ELSE sc.new_notes END AS Notes
+                FROM salary_payment s JOIN employee e ON e.id=s.employee_id
+                LEFT JOIN salary_correction sc ON sc.id=(SELECT MAX(id) FROM salary_correction WHERE salary_payment_id=s.id)
+                WHERE s.id=@id
+                """, new { id = original.Id }, transaction.Transaction);
+            if (current is null) throw new DomainException(ErrorCode.NotFound, "salary_payment", original.Id);
+            SalaryPaymentItem posted = current.ToModel();
+            if (posted.Amount != original.Amount || posted.PayDate != original.PayDate ||
+                posted.Mode != original.Mode || posted.Notes != original.Notes ||
+                posted.EmployeeId != original.EmployeeId || posted.Period != original.Period || posted.Kind != original.Kind)
+                throw new DomainException(ErrorCode.Validation, "This payment changed since it was loaded. Refresh and try again.");
+            long id = transaction.Connection.ExecuteScalar<long>("""
+                INSERT INTO salary_correction(salary_payment_id,correction_date,previous_amount,new_amount,
+                    new_pay_date,new_mode,new_notes,amount_delta,correction_reason)
+                VALUES (@paymentId,@date,@previousAmount,@newAmount,@newPayDate,@newMode,@notes,@delta,@correctionReason)
+                RETURNING id
+                """, new { paymentId = original.Id, date = Format(correctionDate),
+                    previousAmount = original.Amount.Scaled, newAmount = replacement.Amount.Scaled,
+                    newPayDate = Format(replacement.PayDate), newMode = replacement.Mode, notes,
+                    delta = (replacement.Amount - original.Amount).Scaled, correctionReason }, transaction.Transaction);
+            audit.Write(transaction, "salary_payment", original.Id, "CORRECT", new { correctionId = id,
+                reason = correctionReason, before = original, after = replacement });
+            OperationGuard.Complete(transaction, operationId, "salary_correction", id);
+            return id;
+        }, cancellationToken);
     }
 
     private static long InsertSalary(DbTx transaction, long employeeId, SalaryRunInput run, string kind, Money amount, string? notes, long firstId)
@@ -526,6 +672,7 @@ public sealed class MoneyOutService(
     private sealed class LotRow { public long ProductId { get; init; } public long OnHand { get; init; } public long UnitCost { get; init; } }
     private sealed class BulkLotRow { public long LotId { get; init; } public long ProductId { get; init; } public long OnHand { get; init; } public long UnitCost { get; init; } public DateOnly? ExpiryDate { get; init; } }
     private sealed class DamageRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public DateOnly Date { get; init; } public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public long Quantity { get; init; } public long UnitCost { get; init; } public long CostValue { get; init; } public long RecoveredAmount { get; init; } public string Reason { get; init; } = ""; public string? Notes { get; init; } public DamageItem ToModel() => new(Id, DocumentNumber, Date, ProductName, LotCode, GroceryErp.Core.Numerics.Quantity.FromScaled(Quantity), Money.FromScaled(UnitCost), Money.FromScaled(CostValue), Money.FromScaled(RecoveredAmount), Reason, Notes); }
+    private sealed class DamageStateRow { public long ProductId { get; init; } public long LotId { get; init; } public long UnitCost { get; init; } public long Quantity { get; init; } public long RecoveredAmount { get; init; } public string Reason { get; init; } = ""; public string? Notes { get; init; } }
     private sealed class CategoryRow { public long Id { get; init; } public string Name { get; init; } = ""; public string? LocalName { get; init; } public bool IsActive { get; init; } public ExpenseCategoryItem ToModel() => new(Id, Name, LocalName, IsActive); }
     private sealed class ExpenseRow { public long Id { get; init; } public DateOnly Date { get; init; } public long CategoryId { get; init; } public string CategoryName { get; init; } = ""; public long Amount { get; init; } public string Mode { get; init; } = ""; public string? PaidTo { get; init; } public string? Reference { get; init; } public string? Notes { get; init; } public ExpenseItem ToModel() => new(Id, Date, CategoryId, CategoryName, Money.FromScaled(Amount), Mode, PaidTo, Reference, Notes); }
     private sealed class ExpenseDraftRow { public long CategoryId { get; init; } public long Amount { get; init; } public string Mode { get; init; } = ""; public string? PaidTo { get; init; } public string? Reference { get; init; } public string? Notes { get; init; } public int Day { get; init; } public ExpenseInput ToModel(YearMonth target) => new(new DateOnly(target.Year, target.Month, Math.Min(Day, DateTime.DaysInMonth(target.Year, target.Month))), CategoryId, Money.FromScaled(Amount), Mode, PaidTo, Reference, Notes); }

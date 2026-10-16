@@ -97,6 +97,10 @@
   <Grid Grid.Row="4">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+    <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
+    <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="65" SelectedIndex="2" SelectionChanged="PageSize_OnChanged">
+     <ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/>
+    </ComboBox>
     <Button x:Name="PreviousButton" Margin="12,0,0,0" Click="Previous_OnClick" Content="{l:Tr Sales_Previous}"/>
     <Button x:Name="NextButton" Margin="6,0,0,0" Click="Next_OnClick" Content="{l:Tr Sales_Next}"/>
    </StackPanel>

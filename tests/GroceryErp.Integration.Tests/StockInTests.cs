@@ -559,6 +559,35 @@ public sealed class StockInTests
     }
 
     [Fact]
+    public async Task LotCorrection_RevaluesRemainingStockThroughLedgerAndKeepsQuantityAccurate()
+    {
+        using var fixture = new StockInFixture();
+        long lotId = await fixture.Inventory.ImportOpeningStockAsync(
+            [new(fixture.ProductId, new Quantity(10), new Money(20), new Money(30), new Money(35),
+                fixture.Date.AddMonths(2), "OLD", fixture.Date)],
+            OperationGuard.NewId(), TestContext.Current.CancellationToken);
+        LotItem original = (await fixture.Inventory.GetLotsByIdsAsync([lotId], TestContext.Current.CancellationToken)).Single();
+        await fixture.Inventory.CorrectLotAsync(new(original, "FIXED", fixture.Date.AddMonths(3),
+            new Money(25), new Money(32), new Money(35), new Quantity(-2), fixture.Date,
+            "Receiving count and cost correction"), OperationGuard.NewId(), TestContext.Current.CancellationToken);
+
+        using var connection = fixture.Factory.Open();
+        connection.QuerySingle<(long Quantity, long Cost, long Selling)>("""
+            SELECT quantity,cost_value,selling_value FROM product_stock_total WHERE product_id=@id
+            """, new { id = fixture.ProductId }).ShouldBe((8_000L, 200_000L, 256_000L));
+        connection.ExecuteScalar<long>("""
+            SELECT COALESCE(SUM(CAST(ROUND(-qty*unit_cost/1000.0) AS INTEGER)),0)
+            FROM stock_movement WHERE lot_id=@lotId AND type_code='ADJUSTMENT'
+            """, new { lotId }).ShouldBe(0L);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity='product_lot' AND entity_id=@lotId AND action='CORRECT'",
+            new { lotId }).ShouldBe(1L);
+        DomainException stale = await Should.ThrowAsync<DomainException>(() => fixture.Inventory.CorrectLotAsync(
+            new(original, "STALE", null, new Money(20), new Money(30), new Money(35),
+                Quantity.Zero, fixture.Date, "Stale edit"), OperationGuard.NewId(), TestContext.Current.CancellationToken));
+        stale.Code.ShouldBe(ErrorCode.Validation);
+    }
+
+    [Fact]
     public async Task NegativeStockFefo_DoesNotFallBackToExpiredLot()
     {
         using var fixture = new StockInFixture();

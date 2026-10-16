@@ -309,11 +309,25 @@ internal static class ReportDefinitions
                 """, [T("Status", "Status"), T("Sku", "SKU"), T("Product", "Product"), T("LocalName", "Local name"), T("Lot", "Lot"), T("Batch", "Batch"), D("Expiry", "Expiry"), I("DaysLeft", "Days left"), Q("Quantity", "Quantity"), M("CostValue", "Cost value"), T("Vendor", "Vendor")]),
 
             [ReportKind.Damages] = new("Damages", true, """
-                SELECT d.damage_date AS Date,d.doc_no AS Document,p.name AS Product,p.name_local AS LocalName,c.name AS Category,
-                       d.reason AS Reason,v.name AS Vendor,d.qty AS Quantity,d.cost_value AS CostValue,d.recovered_amount AS Recovered
-                FROM damage d JOIN product p ON p.id=d.product_id JOIN category c ON c.id=p.category_id
-                JOIN product_lot l ON l.id=d.lot_id LEFT JOIN vendor v ON v.id=l.vendor_id
-                WHERE d.damage_date BETWEEN @from AND @to ORDER BY d.damage_date,d.id LIMIT @Limit
+                SELECT Date,Document,Product,LocalName,Category,Reason,Vendor,Quantity,CostValue,Recovered
+                FROM (
+                    SELECT d.damage_date AS Date,d.doc_no AS Document,p.name AS Product,p.name_local AS LocalName,
+                           c.name AS Category,d.reason AS Reason,v.name AS Vendor,d.qty AS Quantity,
+                           d.cost_value AS CostValue,d.recovered_amount AS Recovered,d.id AS SortId
+                    FROM damage d JOIN product p ON p.id=d.product_id JOIN category c ON c.id=p.category_id
+                    JOIN product_lot l ON l.id=d.lot_id LEFT JOIN vendor v ON v.id=l.vendor_id
+                    WHERE d.damage_date BETWEEN @from AND @to
+                    UNION ALL
+                    SELECT dc.correction_date,d.doc_no || ' / correction',p.name,p.name_local,c.name,
+                           dc.new_reason,v.name,dc.new_qty-dc.previous_qty,
+                           CAST(ROUND(dc.new_qty*d.unit_cost/1000.0) AS INTEGER)
+                             -CAST(ROUND(dc.previous_qty*d.unit_cost/1000.0) AS INTEGER),
+                           dc.new_recovered-dc.previous_recovered,dc.id
+                    FROM damage_correction dc JOIN damage d ON d.id=dc.damage_id
+                    JOIN product p ON p.id=d.product_id JOIN category c ON c.id=p.category_id
+                    JOIN product_lot l ON l.id=d.lot_id LEFT JOIN vendor v ON v.id=l.vendor_id
+                    WHERE dc.correction_date BETWEEN @from AND @to
+                ) ORDER BY Date,SortId LIMIT @Limit
                 """, [D("Date", "Date"), T("Document", "Document"), T("Product", "Product"), T("LocalName", "Local name"), T("Category", "Category"), T("Reason", "Reason"), T("Vendor", "Vendor"), Q("Quantity", "Quantity"), M("CostValue", "Cost value"), M("Recovered", "Recovered")]),
 
             [ReportKind.Expenses] = new("Expenses by category", true, """
@@ -325,8 +339,12 @@ internal static class ReportDefinitions
 
             [ReportKind.SalaryRegister] = new("Salary register", true, """
                 SELECT e.name AS Employee,e.role AS Role,sp.period_month AS Month,
-                       SUM(CASE WHEN sp.kind='SALARY' THEN sp.amount ELSE 0 END) AS Salary,
-                       SUM(CASE WHEN sp.kind<>'SALARY' THEN sp.amount ELSE 0 END) AS Other,SUM(sp.amount) AS Total
+                       SUM(CASE WHEN sp.kind='SALARY' THEN sp.amount+COALESCE((SELECT SUM(sc.amount_delta)
+                           FROM salary_correction sc WHERE sc.salary_payment_id=sp.id),0) ELSE 0 END) AS Salary,
+                       SUM(CASE WHEN sp.kind<>'SALARY' THEN sp.amount+COALESCE((SELECT SUM(sc.amount_delta)
+                           FROM salary_correction sc WHERE sc.salary_payment_id=sp.id),0) ELSE 0 END) AS Other,
+                       SUM(sp.amount+COALESCE((SELECT SUM(sc.amount_delta) FROM salary_correction sc
+                           WHERE sc.salary_payment_id=sp.id),0)) AS Total
                 FROM salary_payment sp JOIN employee e ON e.id=sp.employee_id
                 WHERE sp.period_month BETWEEN @firstMonth AND @lastMonth
                 GROUP BY e.id,sp.period_month ORDER BY e.name,sp.period_month LIMIT @Limit
