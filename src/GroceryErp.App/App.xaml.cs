@@ -45,6 +45,7 @@ public partial class App : Application
     {
         base.OnStartup(e);
         ScrollWheelRouting.Register();
+        TableColumnLayouts.Register();
         void RecordStartup(string phase) => PerformanceMetrics.UiStartupStageMilliseconds.Record(
             Stopwatch.GetElapsedTime(Program.LaunchTimestamp).TotalMilliseconds,
             new KeyValuePair<string, object?>("phase", phase));

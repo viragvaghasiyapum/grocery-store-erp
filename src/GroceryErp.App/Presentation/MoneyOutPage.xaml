@@ -47,7 +47,7 @@
   </Page.Resources>
   <Grid Margin="{StaticResource PagePadding}">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <DockPanel><ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" DockPanel.Dock="Right" Width="65" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox><TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr MoneyOut_Title}" /></DockPanel>
+    <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr MoneyOut_Title}" />
     <TabControl x:Name="MoneyOutTabs" Grid.Row="1" Margin="0,18,0,0" SelectionChanged="Tabs_OnSelectionChanged">
       <TabItem Header="{l:Tr MoneyOut_Expiry}">
         <DockPanel>
@@ -247,6 +247,12 @@
         </Grid>
       </TabItem>
     </TabControl>
-    <TextBlock x:Name="StatusText" Grid.Row="2" Margin="0,10,0,0" />
+    <DockPanel Grid.Row="2" Margin="0,10,0,0">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{l:Tr Common_RowsPerPage}"/>
+        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="88" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
+      </StackPanel>
+      <TextBlock x:Name="StatusText" VerticalAlignment="Center" />
+    </DockPanel>
   </Grid>
 </Page>

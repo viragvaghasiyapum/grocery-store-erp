@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -191,10 +192,16 @@ public sealed class PhaseZeroSmokeTests
         Thread thread = new(() =>
         {
             string root = Path.Combine(Path.GetTempPath(), $"grocery-erp-ui-{Guid.NewGuid():N}");
+            string? previousTestRoot = Environment.GetEnvironmentVariable("GROCERY_ERP_TEST_DATA_ROOT");
+            Environment.SetEnvironmentVariable("GROCERY_ERP_TEST_DATA_ROOT", root);
             try
             {
                 GroceryErp.App.App application = new();
                 application.InitializeComponent();
+                Type layouts = typeof(GroceryErp.App.App).Assembly.GetType(
+                    "GroceryErp.App.Presentation.TableColumnLayouts")!;
+                layouts.GetMethod("Register", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, null);
+                Environment.SetEnvironmentVariable("GROCERY_ERP_TEST_DATA_ROOT", previousTestRoot);
                 TranslationSource translations = TranslationSource.Instance;
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 DisplayFormatter formatter = new();
@@ -343,7 +350,23 @@ public sealed class PhaseZeroSmokeTests
                 ((Button)products.FindName("EditButton")).Content.ShouldBe("ફેરફાર");
                 Capture(productsWindow, "products.gu.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                VerifyStickyProductTable(productsWindow, products);
+                ((DataGrid)products.FindName("ProductsGrid")).Columns[1].Width =
+                    new DataGridLength(176, DataGridLengthUnitType.Pixel);
+                productsWindow.UpdateLayout();
                 productsWindow.Close();
+                File.Exists(Path.Combine(root, "table-columns.json")).ShouldBeTrue();
+                var restoredProducts = new ProductsPage(catalog, settings,
+                    new ProductExcelImporter(database, new AuditLog(), settings), loadOnShow: false);
+                var restoredHost = new Window { Content = restoredProducts, Width = 1080, Height = 700 };
+                restoredHost.Show();
+                restoredHost.UpdateLayout();
+                var restoredGrid = (DataGrid)restoredProducts.FindName("ProductsGrid");
+                restoredGrid.IsLoaded.ShouldBeTrue();
+                restoredGrid.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent, restoredGrid));
+                double restoredWidth = restoredGrid.Columns[1].ActualWidth;
+                Math.Abs(restoredWidth - 176).ShouldBeLessThan(1);
+                restoredHost.Close();
 
                 var inventory = new InventoryService(database, new StockLedger(settings),
                     new DocNumberService(settings), new PeriodGuard(settings), new AuditLog());
@@ -999,6 +1022,8 @@ public sealed class PhaseZeroSmokeTests
 
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 Capture(shell, "shell.en.png");
+                ((Border)shell.FindName("LockOverlay")).Visibility = Visibility.Visible;
+                Capture(shell, "session-lock.en.png");
                 shell.Close();
                 application.Shutdown();
                 completion.SetResult();
@@ -1009,6 +1034,7 @@ public sealed class PhaseZeroSmokeTests
             }
             finally
             {
+                Environment.SetEnvironmentVariable("GROCERY_ERP_TEST_DATA_ROOT", previousTestRoot);
                 SqliteConnectionFactory.ClearPoolForDataRoot(root);
                 if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
             }
@@ -1080,6 +1106,31 @@ public sealed class PhaseZeroSmokeTests
             if (FindVisualChild<T>(child) is { } nested) return nested;
         }
         return null;
+    }
+
+    private static void VerifyStickyProductTable(Window window, ProductsPage page)
+    {
+        var grid = (DataGrid)page.FindName("ProductsGrid");
+        var rows = Enumerable.Range(1, 120).Select(index => new ProductListItem
+        {
+            Id = index,
+            Sku = $"SKU{index:000}",
+            Name = $"Product {index}",
+        }).ToArray();
+        grid.ItemsSource = rows;
+        window.UpdateLayout();
+        var toolbar = (Button)page.FindName("EditButton");
+        var pageSize = (ComboBox)page.FindName("PageSizeBox");
+        var header = FindVisualChild<DataGridColumnHeadersPresenter>(grid)!;
+        double toolbarY = toolbar.TranslatePoint(new Point(), window).Y;
+        double pageSizeY = pageSize.TranslatePoint(new Point(), window).Y;
+        double headerY = header.TranslatePoint(new Point(), window).Y;
+        grid.ScrollIntoView(rows[^1]);
+        grid.UpdateLayout();
+        FindVisualChild<ScrollViewer>(grid)!.VerticalOffset.ShouldBeGreaterThan(0);
+        Math.Abs(toolbar.TranslatePoint(new Point(), window).Y - toolbarY).ShouldBeLessThan(1);
+        Math.Abs(pageSize.TranslatePoint(new Point(), window).Y - pageSizeY).ShouldBeLessThan(1);
+        Math.Abs(header.TranslatePoint(new Point(), window).Y - headerY).ShouldBeLessThan(1);
     }
 
     private static void Capture(Window window, string fileName)

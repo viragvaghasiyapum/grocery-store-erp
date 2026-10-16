@@ -4,26 +4,31 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-    Title="{l:Tr Login_Title}" Width="440" Height="390" MinWidth="400" MinHeight="380" ResizeMode="CanResize"
+    Title="{l:Tr Login_Title}" Width="900" Height="500" MinWidth="760" MinHeight="430" ResizeMode="CanResize"
     WindowStartupLocation="CenterScreen" FontFamily="{StaticResource AppFont}">
   <DockPanel>
     <ui:TitleBar DockPanel.Dock="Top" Title="{l:Tr Login_Title}"/>
-  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-  <Grid Margin="32">
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-    </Grid.RowDefinitions>
-    <TextBlock FontSize="26" FontWeight="SemiBold" Text="{l:Tr Login_Title}"/>
-    <TextBlock Grid.Row="1" Margin="0,22,0,6" Text="{l:Tr Login_Username}"/>
-    <TextBox x:Name="UsernameBox" Grid.Row="2" Height="34" Text="owner"/>
-    <TextBlock Grid.Row="3" Margin="0,14,0,6" Text="{l:Tr Login_Password}"/>
-    <PasswordBox x:Name="PasswordBox" Grid.Row="4" Height="34" KeyDown="PasswordBox_OnKeyDown"/>
-    <StackPanel Grid.Row="5" Margin="0,20,0,0">
-      <TextBlock x:Name="ErrorText" Margin="0,0,0,8" Foreground="Crimson" TextWrapping="Wrap"/>
-      <Button Height="36" Click="Login_OnClick" Content="{l:Tr Login_Action}"/>
-    </StackPanel>
-  </Grid>
-  </ScrollViewer>
+    <Grid Background="White" Margin="34,28">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" MinWidth="280"/>
+        <ColumnDefinition Width="2"/>
+        <ColumnDefinition Width="*" MinWidth="330"/>
+      </Grid.ColumnDefinitions>
+      <Image Source="/GroceryErp.App;component/Assets/logo.jpeg" Stretch="Uniform"
+             MaxWidth="350" MaxHeight="350" Margin="12,0,28,0" VerticalAlignment="Center"/>
+      <Border Grid.Column="1" Width="2" Margin="0,14" Background="#B7C4D5"/>
+      <ScrollViewer Grid.Column="2" Margin="28,0,0,0" VerticalScrollBarVisibility="Auto"
+                    HorizontalScrollBarVisibility="Disabled" VerticalAlignment="Center">
+        <StackPanel MaxWidth="340">
+          <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Login_Title}"/>
+          <TextBlock Margin="0,24,0,6" Text="{l:Tr Login_Username}"/>
+          <TextBox x:Name="UsernameBox" Height="36" Text="owner"/>
+          <TextBlock Margin="0,18,0,6" Text="{l:Tr Login_Password}"/>
+          <PasswordBox x:Name="PasswordBox" Height="36" KeyDown="PasswordBox_OnKeyDown"/>
+          <TextBlock x:Name="ErrorText" Margin="0,14,0,0" Foreground="Crimson" TextWrapping="Wrap"/>
+          <Button Height="38" Margin="0,18,0,0" Click="Login_OnClick" Content="{l:Tr Login_Action}"/>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
   </DockPanel>
 </ui:FluentWindow>

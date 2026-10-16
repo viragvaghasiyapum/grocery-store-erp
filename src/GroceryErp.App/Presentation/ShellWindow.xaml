@@ -90,14 +90,25 @@
       </ui:NavigationView.MenuItems>
     </ui:NavigationView>
 
-    <Border x:Name="LockOverlay" Grid.RowSpan="3" Panel.ZIndex="20" Background="#F7F8FA" Visibility="Collapsed">
-      <StackPanel Width="360" VerticalAlignment="Center" HorizontalAlignment="Center">
-        <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Lock_Title}" />
-        <TextBlock Margin="0,10,0,18" Text="{l:Tr Lock_Body}" TextWrapping="Wrap" />
-        <PasswordBox x:Name="UnlockPassword" Height="36" KeyDown="UnlockPassword_OnKeyDown" />
-        <Button Margin="0,12,0,0" Click="Unlock_OnClick" Content="{l:Tr Lock_Action}" />
-        <TextBlock x:Name="LockError" Margin="0,10,0,0" Foreground="Crimson" TextWrapping="Wrap" />
-      </StackPanel>
+    <Border x:Name="LockOverlay" Grid.RowSpan="3" Panel.ZIndex="20" Background="White" Visibility="Collapsed">
+      <Grid MaxWidth="1000" Margin="48,32" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" MinWidth="280"/>
+          <ColumnDefinition Width="2"/>
+          <ColumnDefinition Width="*" MinWidth="330"/>
+        </Grid.ColumnDefinitions>
+        <Image Source="/GroceryErp.App;component/Assets/logo.jpeg" Stretch="Uniform"
+               MaxWidth="420" MaxHeight="420" Margin="0,0,36,0" VerticalAlignment="Center"/>
+        <Border Grid.Column="1" Width="2" Margin="0,32" Background="#B7C4D5"/>
+        <StackPanel Grid.Column="2" MaxWidth="360" Margin="36,0,0,0"
+                    VerticalAlignment="Center" HorizontalAlignment="Center">
+          <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Lock_Title}" />
+          <TextBlock Margin="0,10,0,24" Text="{l:Tr Lock_Body}" TextWrapping="Wrap" />
+          <PasswordBox x:Name="UnlockPassword" Height="38" KeyDown="UnlockPassword_OnKeyDown" />
+          <Button Margin="0,16,0,0" Click="Unlock_OnClick" Content="{l:Tr Lock_Action}" />
+          <TextBlock x:Name="LockError" Margin="0,12,0,0" Foreground="Crimson" TextWrapping="Wrap" />
+        </StackPanel>
+      </Grid>
     </Border>
   </Grid>
   </DockPanel>

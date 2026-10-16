@@ -9,7 +9,6 @@
       <TextBlock Text="{l:Tr Stock_CountHint}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,4,0,6"/>
       <TextBlock x:Name="ProgressText" FontWeight="SemiBold"/>
       <TextBlock x:Name="ReviewText" Margin="0,4,0,0"/>
-      <StackPanel Orientation="Horizontal" Margin="0,6,0,0"><TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/><ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="65" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox></StackPanel>
     </StackPanel>
     <Grid Grid.Row="1" Margin="0,0,0,8">
       <Grid.ColumnDefinitions><ColumnDefinition Width="280"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
@@ -30,6 +29,29 @@
         <DataGridTextColumn Width="120" IsReadOnly="True" Header="{l:Tr Stock_DifferenceValue}" Binding="{Binding DifferenceValue}"/>
       </DataGrid.Columns>
     </DataGrid>
-    <Grid Grid.Row="3" Margin="0,14,0,0"><TextBlock x:Name="ErrorText" Foreground="Crimson" VerticalAlignment="Center" TextWrapping="Wrap"/><StackPanel HorizontalAlignment="Right" Orientation="Horizontal"><Button x:Name="PreviousButton" Margin="0,0,8,0" Click="Previous_OnClick" Content="{l:Tr Sales_Previous}"/><Button x:Name="NextButton" Margin="0,0,8,0" Click="Next_OnClick" Content="{l:Tr Sales_Next}"/><Button Margin="0,0,8,0" Click="Print_OnClick" Content="{l:Tr Stock_PrintCount}"/><Button x:Name="RefreshButton" Margin="0,0,8,0" Click="Refresh_OnClick" Content="{l:Tr Stock_RefreshLots}"/><Button x:Name="SaveButton" Margin="0,0,8,0" Click="Save_OnClick" Content="{l:Tr Stock_SaveCount}"/><Button x:Name="ReviewButton" Margin="0,0,8,0" Click="Review_OnClick" Content="{l:Tr Stock_ReviewCount}"/><Button x:Name="PostButton" IsEnabled="False" Margin="0,0,8,0" Click="Post_OnClick" Content="{l:Tr Purchasing_Post}"/><Button Click="Cancel_OnClick" Content="{l:Tr Stock_DiscardCount}"/></StackPanel></Grid>
+    <StackPanel Grid.Row="3" Margin="0,14,0,0">
+      <DockPanel Margin="0,0,0,10">
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+          <Button x:Name="PreviousButton" Margin="0,0,8,0" Click="Previous_OnClick" Content="{l:Tr Sales_Previous}"/>
+          <Button x:Name="NextButton" Click="Next_OnClick" Content="{l:Tr Sales_Next}"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal">
+          <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{l:Tr Common_RowsPerPage}"/>
+          <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="88" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
+        </StackPanel>
+      </DockPanel>
+      <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <TextBlock x:Name="ErrorText" Foreground="Crimson" TextWrapping="Wrap"/>
+        <WrapPanel Grid.Row="1" HorizontalAlignment="Right" Margin="0,6,0,0">
+          <Button Margin="0,0,8,8" Click="Print_OnClick" Content="{l:Tr Stock_PrintCount}"/>
+          <Button x:Name="RefreshButton" Margin="0,0,8,8" Click="Refresh_OnClick" Content="{l:Tr Stock_RefreshLots}"/>
+          <Button x:Name="SaveButton" Margin="0,0,8,8" Click="Save_OnClick" Content="{l:Tr Stock_SaveCount}"/>
+          <Button x:Name="ReviewButton" Margin="0,0,8,8" Click="Review_OnClick" Content="{l:Tr Stock_ReviewCount}"/>
+          <Button x:Name="PostButton" IsEnabled="False" Margin="0,0,8,8" Click="Post_OnClick" Content="{l:Tr Purchasing_Post}"/>
+          <Button Margin="0,0,0,8" Click="Cancel_OnClick" Content="{l:Tr Stock_DiscardCount}"/>
+        </WrapPanel>
+      </Grid>
+    </StackPanel>
   </Grid>
 </Window>

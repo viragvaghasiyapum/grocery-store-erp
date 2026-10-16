@@ -10,8 +10,6 @@
     <StackPanel Grid.Row="1" Margin="0,16,0,4">
       <WrapPanel>
         <Button Margin="0,0,8,8" Click="OpeningImport_OnClick" Content="{l:Tr Stock_OpeningImport}" />
-        <TextBlock VerticalAlignment="Center" Margin="8,0,6,8" Text="{l:Tr Common_RowsPerPage}"/>
-        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="65" Margin="0,0,8,8" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
         <Button Margin="0,0,8,8" Click="OpeningTemplate_OnClick" Content="{l:Tr Stock_OpeningTemplate}" />
         <Button x:Name="ResumeCountButton" Margin="0,0,8,8" Click="Count_OnClick" Content="{l:Tr Stock_ResumeCount}" />
         <Button Margin="0,0,8,8" Click="NewCount_OnClick" Content="{l:Tr Stock_NewCount}" />
@@ -26,7 +24,7 @@
     </StackPanel>
     <TabControl x:Name="StockTabs" Grid.Row="2" Margin="0,8,0,0">
       <TabItem Header="{l:Tr Stock_Overview}">
-        <DockPanel>
+        <DockPanel Margin="0,8,0,0">
         <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
           <TextBox x:Name="OverviewSearchBox" Width="240" Margin="0,0,6,0" ToolTip="Product name or SKU"/>
           <Button Click="OverviewSearch_OnClick" Content="Search"/>
@@ -48,7 +46,7 @@
         </DockPanel>
       </TabItem>
       <TabItem Header="{l:Tr Stock_Lots}">
-        <DockPanel>
+        <DockPanel Margin="0,8,0,0">
         <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
           <TextBox x:Name="LotSearchBox" Width="240" Margin="0,0,6,0" ToolTip="Product, lot or batch"/>
           <Button Click="LotSearch_OnClick" Content="Search"/>
@@ -73,7 +71,7 @@
         </DockPanel>
       </TabItem>
       <TabItem Header="{l:Tr Stock_Ledger}">
-        <Grid>
+        <Grid Margin="0,8,0,0">
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <StackPanel Grid.Row="0" Margin="0,8,0,10">
           <TextBlock x:Name="LedgerProductText" Text="{l:Tr Stock_LedgerSelectProduct}" Margin="0,0,0,8"
@@ -108,7 +106,7 @@
         </Grid>
       </TabItem>
       <TabItem Header="{l:Tr Stock_Valuation}">
-        <DataGrid Style="{StaticResource CatalogGrid}" x:Name="ValuationGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+        <DataGrid Margin="0,8,0,0" Style="{StaticResource CatalogGrid}" x:Name="ValuationGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
           <DataGrid.Columns>
             <DataGridTextColumn Width="260" Header="{l:Tr Catalog_Category}" Binding="{Binding CategoryName}"/>
             <DataGridTextColumn Width="120" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
@@ -119,6 +117,12 @@
         </DataGrid>
       </TabItem>
     </TabControl>
-    <TextBlock x:Name="StatusText" Grid.Row="3" Margin="0,10,0,0" VerticalAlignment="Center" />
+    <DockPanel Grid.Row="3" Margin="0,10,0,0">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+        <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{l:Tr Common_RowsPerPage}"/>
+        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="88" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
+      </StackPanel>
+      <TextBlock x:Name="StatusText" VerticalAlignment="Center" />
+    </DockPanel>
   </Grid>
 </Page>

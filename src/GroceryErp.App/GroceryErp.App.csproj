@@ -10,6 +10,7 @@
     <Page Include="App.xaml" />
     <EmbeddedResource Include="CHANGELOG.en.md" />
     <EmbeddedResource Include="CHANGELOG.gu.md" />
+    <Resource Include="../../logo/logo.jpeg" Link="Assets/logo.jpeg" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../GroceryErp.Localization/GroceryErp.Localization.csproj" />
