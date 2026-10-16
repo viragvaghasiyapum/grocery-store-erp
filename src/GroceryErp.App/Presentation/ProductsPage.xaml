@@ -6,8 +6,8 @@
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
   <Grid Margin="{StaticResource PagePadding}">
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
-      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
     <DockPanel Margin="0,0,0,16">
       <WrapPanel DockPanel.Dock="Right" HorizontalAlignment="Right">
@@ -41,7 +41,7 @@
         </WrapPanel>
       </StackPanel>
     </Border>
-    <Grid Grid.Row="2">
+    <Grid Grid.Row="3">
       <DataGrid x:Name="ProductsGrid" Style="{StaticResource CatalogGrid}" SelectionMode="Single" SelectionChanged="ProductsGrid_OnSelectionChanged" MouseDoubleClick="ProductsGrid_OnDoubleClick">
         <DataGrid.Columns>
           <DataGridTemplateColumn Width="42" Header="✓"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" Loaded="ProductCheck_OnLoaded" Click="ProductCheck_OnClick" AutomationProperties.Name="Select product"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
@@ -61,7 +61,7 @@
       </DataGrid>
       <TextBlock x:Name="EmptyText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" Text="{l:Tr Catalog_Empty}"/>
     </Grid>
-    <WrapPanel Grid.Row="3" Margin="0,12,0,0">
+    <WrapPanel Grid.Row="2" Margin="0,0,0,12">
       <Button Margin="0,0,8,8" Click="SelectPage_OnClick" Content="{l:Tr Selection_ThisPage}"/>
       <Button x:Name="SelectMatchingButton" Margin="0,0,8,8" Click="SelectMatching_OnClick" Content="{l:Tr Selection_AllMatching}"/>
       <Button x:Name="ClearSelectionButton" IsEnabled="False" Margin="0,0,8,8" Click="ClearSelection_OnClick" Content="{l:Tr Selection_Clear}"/>

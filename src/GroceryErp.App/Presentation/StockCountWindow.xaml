@@ -17,7 +17,7 @@
       <Button Grid.Column="1" Margin="8,0,0,0" Click="CountSearch_OnClick" Content="{l:Tr Stock_FindLot}"/>
       <TextBlock Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="{l:Tr Stock_CountSearchHint}"/>
     </Grid>
-    <DataGrid x:Name="CountGrid" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False"
+    <DataGrid Style="{StaticResource CatalogGrid}" x:Name="CountGrid" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="False"
               GridLinesVisibility="Horizontal" HeadersVisibility="Column" RowHeight="40" ColumnHeaderHeight="40"
               CurrentCellChanged="CountGrid_OnCurrentCellChanged" CellEditEnding="CountGrid_OnCellEditEnding">
       <DataGrid.Columns>

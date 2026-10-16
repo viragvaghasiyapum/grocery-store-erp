@@ -33,6 +33,7 @@ public partial class ProductStockWindow : Window
         SkuText.Text = product.Sku;
         StockTabs.SelectedIndex = showLedger ? 1 : 0;
         StockTabs.SelectionChanged += (_, _) => UpdatePageButtons();
+        UpdatePageButtons();
         if (loadOnShow) Loaded += async (_, _) => await RefreshAsync();
     }
 

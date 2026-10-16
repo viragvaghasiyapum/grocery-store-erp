@@ -292,6 +292,7 @@ public partial class SalesHistoryPage : Page
         _exportCancellation = cancellation;
         ExportButton.IsEnabled = false;
         CancelExportButton.IsEnabled = true;
+        ExportProgress.Visibility = Visibility.Visible;
         try
         {
             SaleHistoryFilter filter = CreateFilter(null, null, 500);
@@ -344,6 +345,7 @@ public partial class SalesHistoryPage : Page
             _exportCancellation = null;
             ExportButton.IsEnabled = true;
             CancelExportButton.IsEnabled = false;
+            ExportProgress.Visibility = Visibility.Collapsed;
         }
     }
 

@@ -7,12 +7,18 @@
     FontFamily="{StaticResource AppFont}"
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
   <Grid Margin="20">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <StackPanel Margin="0,0,0,14">
       <TextBlock x:Name="ProductNameText" Style="{StaticResource SectionTitle}"/>
       <TextBlock x:Name="SkuText" Margin="0,4,0,0" Opacity="0.7"/>
     </StackPanel>
-    <TabControl x:Name="StockTabs" Grid.Row="1">
+    <WrapPanel Grid.Row="1" Margin="0,0,0,12">
+      <Button x:Name="PrintLotButton" IsEnabled="False" Margin="0,0,8,8" Click="PrintLot_OnClick" Content="{l:Tr Catalog_PrintLabels}"/>
+      <Button x:Name="CorrectLotButton" IsEnabled="False" Margin="0,0,8,8" Click="CorrectLot_OnClick" Content="{l:Tr Stock_CorrectLot}"/>
+      <Button x:Name="WriteOffButton" IsEnabled="False" Margin="0,0,8,8" Click="WriteOff_OnClick" Content="{l:Tr Stock_WriteOffExpired}"/>
+      <Button x:Name="OpenSourceButton" IsEnabled="False" Margin="0,0,0,8" Click="OpenSource_OnClick" Content="{l:Tr Stock_OpenSource}"/>
+    </WrapPanel>
+    <TabControl x:Name="StockTabs" Grid.Row="2">
       <TabItem Header="{l:Tr Stock_Lots}">
         <DataGrid x:Name="LotsGrid" Style="{StaticResource CatalogGrid}" SelectionChanged="LotsGrid_OnSelectionChanged">
           <DataGrid.Columns>
@@ -41,21 +47,17 @@
         </DataGrid>
       </TabItem>
     </TabControl>
-    <Grid Grid.Row="2" Margin="0,12,0,0">
-      <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextWrapping="Wrap"/>
-      <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+    <DockPanel Grid.Row="3" Margin="0,12,0,0">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
         <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
         <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="65" Margin="0,0,8,0" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
         <Button x:Name="PreviousLotButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousLot_OnClick" Content="{l:Tr Sales_Previous}"/>
         <Button x:Name="NextLotButton" IsEnabled="False" Margin="0,0,8,0" Click="NextLot_OnClick" Content="{l:Tr Sales_Next}"/>
         <Button x:Name="PreviousLedgerButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousLedger_OnClick" Content="{l:Tr Sales_Previous}"/>
         <Button x:Name="NextLedgerButton" IsEnabled="False" Margin="0,0,8,0" Click="NextLedger_OnClick" Content="{l:Tr Sales_Next}"/>
-        <Button x:Name="PrintLotButton" IsEnabled="False" Margin="0,0,8,0" Click="PrintLot_OnClick" Content="{l:Tr Catalog_PrintLabels}"/>
-        <Button x:Name="CorrectLotButton" IsEnabled="False" Margin="0,0,8,0" Click="CorrectLot_OnClick" Content="{l:Tr Stock_CorrectLot}"/>
-        <Button x:Name="WriteOffButton" IsEnabled="False" Margin="0,0,8,0" Click="WriteOff_OnClick" Content="{l:Tr Stock_WriteOffExpired}"/>
-        <Button x:Name="OpenSourceButton" IsEnabled="False" Margin="0,0,8,0" Click="OpenSource_OnClick" Content="{l:Tr Stock_OpenSource}"/>
         <Button IsCancel="True" Content="{l:Tr Common_Close}"/>
       </StackPanel>
-    </Grid>
+      <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextWrapping="Wrap"/>
+    </DockPanel>
   </Grid>
 </Window>

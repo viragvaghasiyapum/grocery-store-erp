@@ -5,7 +5,7 @@
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     Title="{l:Tr Assets_Title}">
   <Grid Margin="{StaticResource PagePadding}">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Assets_Title}"/>
     <WrapPanel Grid.Row="1" Margin="0,16,0,12" ItemHeight="68">
       <StackPanel Width="174" Margin="0,0,8,4"><TextBlock Text="{l:Tr Catalog_Name}"/><TextBox x:Name="AssetName"/></StackPanel>
@@ -21,7 +21,17 @@
       <Button x:Name="SaveAssetButton" Margin="0,17,8,4" Click="AddAsset_OnClick" Content="{l:Tr Common_Save}"/>
       <Button Margin="0,17,0,4" Click="NewAsset_OnClick" Content="{l:Tr Assets_New}"/>
     </WrapPanel>
-    <Grid Grid.Row="2"><Grid.RowDefinitions><RowDefinition Height="3*"/><RowDefinition Height="2*"/></Grid.RowDefinitions>
+    <WrapPanel Grid.Row="2" Margin="0,0,0,12">
+      <TextBox x:Name="AssetSearchBox" Width="160" Margin="0,0,8,8" ToolTip="Asset name or category"/>
+      <CheckBox x:Name="IncludeDisposedBox" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,8" Content="Disposed"/>
+      <Button Margin="0,0,16,8" Click="AssetSearch_OnClick" Content="Search"/>
+      <DatePicker x:Name="DisposalDate" Width="140" Margin="0,0,8,8" SelectedDateFormat="Short" ToolTip="{l:Tr Assets_Disposed}"/>
+      <TextBox x:Name="DisposalValue" Width="110" Margin="0,0,8,8" Text="0" ToolTip="{l:Tr Assets_Proceeds}"/>
+      <Button Margin="0,0,8,8" Click="Dispose_OnClick" Content="{l:Tr Assets_Dispose}"/>
+      <Button Margin="0,0,8,8" Click="Post_OnClick" Content="{l:Tr Assets_PostNow}"/>
+      <Button Margin="0,0,0,8" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
+    </WrapPanel>
+    <Grid Grid.Row="3"><Grid.RowDefinitions><RowDefinition Height="3*"/><RowDefinition Height="2*"/></Grid.RowDefinitions>
       <DataGrid x:Name="AssetGrid" Style="{StaticResource CatalogGrid}" SelectionChanged="AssetGrid_OnSelectionChanged">
         <DataGrid.Columns>
           <DataGridTextColumn Width="220" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}"/>
@@ -37,22 +47,14 @@
         <DataGrid.Columns><DataGridTextColumn Width="180" Header="{l:Tr Assets_Period}" Binding="{Binding Period}"/><DataGridTextColumn Width="180" Header="{l:Tr Assets_Opening}" Binding="{Binding OpeningValue}"/><DataGridTextColumn Width="180" Header="{l:Tr Assets_Depreciation}" Binding="{Binding Amount}"/><DataGridTextColumn Width="180" Header="{l:Tr Assets_Closing}" Binding="{Binding ClosingValue}"/></DataGrid.Columns>
       </DataGrid>
     </Grid>
-    <DockPanel Grid.Row="3" Margin="0,12,0,0">
-      <TextBlock x:Name="StatusText" VerticalAlignment="Center"/>
+    <DockPanel Grid.Row="4" Margin="0,12,0,0">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-        <TextBox x:Name="AssetSearchBox" Width="140" Margin="0,0,6,0" ToolTip="Asset name or category"/>
-        <CheckBox x:Name="IncludeDisposedBox" IsChecked="True" VerticalAlignment="Center" Margin="0,0,6,0" Content="Disposed"/>
-        <Button Margin="0,0,8,0" Click="AssetSearch_OnClick" Content="Search"/>
         <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
         <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="65" Margin="0,0,8,0" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
         <Button x:Name="PreviousAssetButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousAsset_OnClick" Content="{l:Tr Sales_Previous}"/>
-        <Button x:Name="NextAssetButton" IsEnabled="False" Margin="0,0,8,0" Click="NextAsset_OnClick" Content="{l:Tr Sales_Next}"/>
-        <DatePicker x:Name="DisposalDate" Width="135" SelectedDateFormat="Short"/>
-        <TextBox x:Name="DisposalValue" Width="110" Margin="8,0" Text="0" ToolTip="{l:Tr Assets_Proceeds}"/>
-        <Button Margin="0,0,8,0" Click="Dispose_OnClick" Content="{l:Tr Assets_Dispose}"/>
-        <Button Margin="0,0,8,0" Click="Post_OnClick" Content="{l:Tr Assets_PostNow}"/>
-        <Button Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
+        <Button x:Name="NextAssetButton" IsEnabled="False" Click="NextAsset_OnClick" Content="{l:Tr Sales_Next}"/>
       </StackPanel>
+      <TextBlock x:Name="StatusText" VerticalAlignment="Center"/>
     </DockPanel>
   </Grid>
 </Page>

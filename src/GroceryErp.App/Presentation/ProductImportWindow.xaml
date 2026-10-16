@@ -19,7 +19,7 @@
       <Button x:Name="BrowseButton" Grid.Column="1" Margin="8,0,0,0" Click="Browse_OnClick" Content="{l:Tr Catalog_Browse}" />
       <Button Grid.Column="2" Margin="8,0,0,0" Click="Template_OnClick" Content="{l:Tr Catalog_DownloadTemplate}" />
     </Grid>
-    <DataGrid x:Name="PreviewGrid" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False" CurrentCellChanged="PreviewGrid_OnCurrentCellChanged">
+    <DataGrid Style="{StaticResource CatalogGrid}" x:Name="PreviewGrid" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="False" CurrentCellChanged="PreviewGrid_OnCurrentCellChanged">
       <DataGrid.Resources>
         <Style x:Key="ImportSelectionStyle" TargetType="CheckBox">
           <EventSetter Event="Checked" Handler="PreviewSelection_OnChanged"/>

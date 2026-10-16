@@ -172,6 +172,7 @@ public partial class SettingsPage : Page
         try
         {
             ExportButton.IsEnabled = false;
+            ExportProgress.Visibility = Visibility.Visible;
             ShowStatus("Settings_ExportRunning");
             await ((App)Application.Current).WaitForStartupMaintenanceAsync();
             IReadOnlyList<string> copied = await Task.Run(() => _backups.ExportToUsb(drive));
@@ -185,7 +186,11 @@ public partial class SettingsPage : Page
             RefreshStatus();
         }
         catch (Exception exception) { ShowError(exception); }
-        finally { ExportButton.IsEnabled = true; }
+        finally
+        {
+            ExportButton.IsEnabled = true;
+            ExportProgress.Visibility = Visibility.Collapsed;
+        }
     }
 
     private async void Restore_OnClick(object sender, RoutedEventArgs e)

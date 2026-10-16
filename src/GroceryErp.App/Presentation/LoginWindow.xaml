@@ -4,8 +4,11 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-    Title="{l:Tr Login_Title}" Width="420" Height="330" ResizeMode="NoResize"
+    Title="{l:Tr Login_Title}" Width="440" Height="390" MinWidth="400" MinHeight="380" ResizeMode="CanResize"
     WindowStartupLocation="CenterScreen" FontFamily="{StaticResource AppFont}">
+  <DockPanel>
+    <ui:TitleBar DockPanel.Dock="Top" Title="{l:Tr Login_Title}"/>
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
   <Grid Margin="32">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
@@ -21,4 +24,6 @@
       <Button Height="36" Click="Login_OnClick" Content="{l:Tr Login_Action}"/>
     </StackPanel>
   </Grid>
+  </ScrollViewer>
+  </DockPanel>
 </ui:FluentWindow>

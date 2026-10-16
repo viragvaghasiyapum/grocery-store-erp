@@ -8,6 +8,8 @@
     WindowStartupLocation="CenterScreen" FontFamily="{StaticResource AppFont}"
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN"
     NumberSubstitution.Substitution="European">
+  <DockPanel>
+    <ui:TitleBar DockPanel.Dock="Top" Title="{l:Tr Setup_Title}"/>
   <Grid Margin="28">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TextBlock FontSize="26" FontWeight="SemiBold" Text="{l:Tr Setup_Title}"/>
@@ -76,4 +78,5 @@
       <StackPanel HorizontalAlignment="Right" Orientation="Horizontal"><Button x:Name="BackButton" Width="90" Margin="0,0,8,0" Click="Back_OnClick" Content="{l:Tr Setup_Back}"/><Button x:Name="NextButton" Width="110" Click="Next_OnClick"/></StackPanel>
     </Grid>
   </Grid>
+  </DockPanel>
 </ui:FluentWindow>

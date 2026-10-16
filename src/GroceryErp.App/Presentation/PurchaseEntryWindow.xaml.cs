@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using GroceryErp.Catalog;
 using GroceryErp.Catalog.Barcodes;
 using GroceryErp.Core;
@@ -222,11 +223,50 @@ public partial class PurchaseEntryWindow : Window
                 ProductSearchBox.Clear();
                 ErrorText.Text = "";
             }
-            else ErrorText.Text = matches.Count == 0
-                ? TranslationSource.Instance["Purchasing_NoProduct"]
-                : TranslationSource.Instance.Format("Purchasing_MatchesFound", matches.Count);
+            else
+            {
+                ErrorText.Text = matches.Count == 0
+                    ? TranslationSource.Instance["Purchasing_NoProduct"]
+                    : TranslationSource.Instance.Format("Purchasing_MatchesFound", matches.Count);
+                if (matches.Count > 1) OpenProductChoices();
+            }
         }
         catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
+    }
+
+    private void OpenProductChoices()
+    {
+        PurchaseEditLine? line = Lines.FirstOrDefault(static item => item.ProductId == 0);
+        if (line is null)
+        {
+            line = new PurchaseEditLine();
+            Lines.Add(line);
+        }
+        LinesGrid.SelectedItem = line;
+        LinesGrid.CurrentCell = new DataGridCellInfo(line, ProductColumn);
+        LinesGrid.ScrollIntoView(line, ProductColumn);
+        Dispatcher.BeginInvoke(() =>
+        {
+            LinesGrid.Focus();
+            LinesGrid.BeginEdit();
+            if (FindVisualChild<ComboBox>(LinesGrid) is { } choices)
+            {
+                choices.MaxDropDownHeight = 320;
+                choices.Focus();
+                choices.IsDropDownOpen = true;
+            }
+        }, DispatcherPriority.Loaded);
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (int index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T result) return result;
+            if (FindVisualChild<T>(child) is { } nested) return nested;
+        }
+        return null;
     }
 
     private async Task EnsureProductChoiceAsync(long productId)

@@ -44,6 +44,7 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        ScrollWheelRouting.Register();
         void RecordStartup(string phase) => PerformanceMetrics.UiStartupStageMilliseconds.Record(
             Stopwatch.GetElapsedTime(Program.LaunchTimestamp).TotalMilliseconds,
             new KeyValuePair<string, object?>("phase", phase));

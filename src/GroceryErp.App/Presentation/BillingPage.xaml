@@ -47,7 +47,7 @@
       <TextBlock x:Name="PrinterStatusText" Grid.Column="1" Margin="12,0,0,0" FontSize="12" VerticalAlignment="Top"/>
     </Grid>
     <Grid Grid.Row="2" Margin="0,8,0,12">
-      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="300"/></Grid.ColumnDefinitions>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="340"/></Grid.ColumnDefinitions>
       <DataGrid x:Name="BillGrid" Style="{StaticResource CatalogGrid}" SelectionMode="Single" RowHeight="60"
                 SelectionChanged="BillGrid_OnSelectionChanged">
         <DataGrid.Columns>
@@ -70,39 +70,49 @@
       </DataGrid>
       <Border Grid.Column="1" Margin="14,0,0,0" Style="{StaticResource CatalogCard}">
         <StackPanel>
-          <TextBlock FontSize="14" Text="{l:Tr Sales_Gross}"/>
-          <TextBlock x:Name="GrossText" FontSize="18" FontWeight="SemiBold"/>
-          <TextBlock Margin="0,2,0,0" FontSize="14" Text="{l:Tr Purchasing_Discount}"/>
-          <TextBlock x:Name="DiscountText" FontSize="18"/>
-          <TextBlock Margin="0,2,0,0" FontSize="14" Text="{l:Tr Purchasing_Gst}"/>
-          <TextBlock x:Name="TaxText" FontSize="18"/>
-          <TextBlock Margin="0,2,0,0" FontSize="14" Text="{l:Tr Sales_RoundOff}"/>
-          <TextBlock x:Name="RoundOffText" FontSize="18"/>
-          <Separator Margin="0,3"/>
-          <TextBlock FontSize="16" FontWeight="SemiBold" Text="{l:Tr Sales_Pay}"/>
-          <TextBlock x:Name="TotalText" FontSize="25" FontWeight="Bold"/>
-          <TextBlock x:Name="SavingsText" FontSize="13"/>
-          <Grid Margin="0,3,0,0">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-            <Button Margin="0,0,4,0" Height="32" Click="Cash_OnClick" Content="{l:Tr Sales_Cash}"/>
-            <Button Grid.Column="1" Margin="4,0,0,0" Height="32" Click="Upi_OnClick" Content="{l:Tr Sales_Upi}"/>
+          <Grid Margin="0,0,0,9"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBlock VerticalAlignment="Center" Text="{l:Tr Sales_Gross}"/>
+            <TextBlock x:Name="GrossText" Grid.Column="1" FontSize="17" FontWeight="SemiBold"/>
           </Grid>
-          <Button Margin="0,3,0,0" Height="32" Click="Split_OnClick" Content="{l:Tr Sales_Split}"/>
+          <Grid Margin="0,0,0,9"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBlock VerticalAlignment="Center" Text="{l:Tr Purchasing_Discount}"/>
+            <TextBlock x:Name="DiscountText" Grid.Column="1" FontSize="16"/>
+          </Grid>
+          <Grid Margin="0,0,0,9"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBlock VerticalAlignment="Center" Text="{l:Tr Purchasing_Gst}"/>
+            <TextBlock x:Name="TaxText" Grid.Column="1" FontSize="16"/>
+          </Grid>
+          <Grid Margin="0,0,0,9"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBlock VerticalAlignment="Center" Text="{l:Tr Sales_RoundOff}"/>
+            <TextBlock x:Name="RoundOffText" Grid.Column="1" FontSize="16"/>
+          </Grid>
+          <Separator Margin="0,4,0,12"/>
+          <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBlock VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" Text="{l:Tr Sales_Pay}"/>
+            <TextBlock x:Name="TotalText" Grid.Column="1" FontSize="24" FontWeight="Bold"/>
+          </Grid>
+          <TextBlock x:Name="SavingsText" Margin="0,4,0,0" FontSize="13"/>
+          <Grid Margin="0,18,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Button Margin="0,0,4,0" Click="Cash_OnClick" Content="{l:Tr Sales_Cash}"/>
+            <Button Grid.Column="1" Margin="4,0,0,0" Click="Upi_OnClick" Content="{l:Tr Sales_Upi}"/>
+          </Grid>
+          <Button Margin="0,8,0,0" Click="Split_OnClick" Content="{l:Tr Sales_Split}"/>
         </StackPanel>
       </Border>
     </Grid>
     <TextBlock x:Name="StatusText" Grid.Row="3" Margin="0,0,0,8" TextWrapping="Wrap"/>
     <WrapPanel Grid.Row="4">
-        <Button Margin="0,0,8,0" Click="New_OnClick" Content="{l:Tr Sales_New}"/>
-        <Button x:Name="QuantityButton" Margin="0,0,8,0" Click="Quantity_OnClick" Content="{l:Tr Sales_Quantity}"/>
-        <Button x:Name="LotButton" Margin="0,0,8,0" Click="Lot_OnClick" Content="{l:Tr Sales_ChooseLotShortcut}"/>
-        <Button x:Name="PriceButton" Margin="0,0,8,0" Click="Price_OnClick" Content="{l:Tr Sales_PriceOverride}"/>
-        <Button x:Name="LineDiscountButton" Margin="0,0,8,0" Click="LineDiscount_OnClick" Content="{l:Tr Sales_LineDiscount}"/>
-        <Button Margin="0,0,8,0" Click="BillDiscount_OnClick" Content="{l:Tr Sales_BillDiscount}"/>
-        <Button Margin="0,0,8,0" Click="Customer_OnClick" Content="{l:Tr Sales_CustomerShortcut}"/>
-        <Button x:Name="DeleteButton" Margin="0,0,8,0" Click="Delete_OnClick" Content="{l:Tr Sales_Remove}"/>
-        <Button Margin="0,0,8,0" Click="Hold_OnClick" Content="{l:Tr Sales_Hold}"/>
-        <Button Click="Resume_OnClick" Content="{l:Tr Sales_Resume}"/>
+        <Button Margin="0,0,8,8" Click="New_OnClick" Content="{l:Tr Sales_New}"/>
+        <Button x:Name="QuantityButton" Margin="0,0,8,8" Click="Quantity_OnClick" Content="{l:Tr Sales_Quantity}"/>
+        <Button x:Name="LotButton" Margin="0,0,8,8" Click="Lot_OnClick" Content="{l:Tr Sales_ChooseLotShortcut}"/>
+        <Button x:Name="PriceButton" Margin="0,0,8,8" Click="Price_OnClick" Content="{l:Tr Sales_PriceOverride}"/>
+        <Button x:Name="LineDiscountButton" Margin="0,0,8,8" Click="LineDiscount_OnClick" Content="{l:Tr Sales_LineDiscount}"/>
+        <Button Margin="0,0,8,8" Click="BillDiscount_OnClick" Content="{l:Tr Sales_BillDiscount}"/>
+        <Button Margin="0,0,8,8" Click="Customer_OnClick" Content="{l:Tr Sales_CustomerShortcut}"/>
+        <Button x:Name="DeleteButton" Margin="0,0,8,8" Click="Delete_OnClick" Content="{l:Tr Sales_Remove}"/>
+        <Button Margin="0,0,8,8" Click="Hold_OnClick" Content="{l:Tr Sales_Hold}"/>
+        <Button Margin="0,0,0,8" Click="Resume_OnClick" Content="{l:Tr Sales_Resume}"/>
     </WrapPanel>
   </Grid>
 </Page>

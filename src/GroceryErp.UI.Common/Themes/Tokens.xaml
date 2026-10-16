@@ -11,6 +11,10 @@
   <SolidColorBrush x:Key="ExpiryCriticalBrush" Color="#B54708"/>
   <SolidColorBrush x:Key="ExpirySoonBrush" Color="#9A6700"/>
   <SolidColorBrush x:Key="ExpiryReadyBrush" Color="#067647"/>
+  <SolidColorBrush x:Key="TableRuleBrush" Color="#D9DFE7"/>
+  <SolidColorBrush x:Key="TableAlternateBrush" Color="#F5F7FA"/>
+  <SolidColorBrush x:Key="SelectedTabBrush" Color="#E8F1FF"/>
+  <SolidColorBrush x:Key="SelectedTabTextBrush" Color="#174EA6"/>
   <Style TargetType="Button">
     <Setter Property="MinHeight" Value="36" />
     <Setter Property="MinWidth" Value="88" />
@@ -33,12 +37,65 @@
     <Setter Property="CanUserAddRows" Value="False"/>
     <Setter Property="CanUserResizeRows" Value="False"/>
     <Setter Property="HeadersVisibility" Value="Column"/>
-    <Setter Property="GridLinesVisibility" Value="Horizontal"/>
-    <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}"/>
+    <Setter Property="GridLinesVisibility" Value="All"/>
+    <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource TableRuleBrush}"/>
+    <Setter Property="VerticalGridLinesBrush" Value="{StaticResource TableRuleBrush}"/>
+    <Setter Property="AlternatingRowBackground" Value="{StaticResource TableAlternateBrush}"/>
+    <Setter Property="RowBackground" Value="White"/>
+    <Setter Property="BorderBrush" Value="{StaticResource TableRuleBrush}"/>
+    <Setter Property="BorderThickness" Value="1"/>
     <Setter Property="RowHeight" Value="54"/>
     <Setter Property="ColumnHeaderHeight" Value="40"/>
     <Setter Property="EnableRowVirtualization" Value="True"/>
     <Setter Property="EnableColumnVirtualization" Value="True"/>
     <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
+    <Setter Property="ColumnHeaderStyle">
+      <Setter.Value>
+        <Style TargetType="DataGridColumnHeader">
+          <Setter Property="Padding" Value="10,6"/>
+          <Setter Property="FontWeight" Value="SemiBold"/>
+          <Setter Property="Background" Value="#EDF1F6"/>
+          <Setter Property="BorderBrush" Value="{StaticResource TableRuleBrush}"/>
+          <Setter Property="BorderThickness" Value="0,0,1,1"/>
+        </Style>
+      </Setter.Value>
+    </Setter>
+    <Setter Property="CellStyle">
+      <Setter.Value>
+        <Style TargetType="DataGridCell">
+          <Setter Property="Padding" Value="8,4"/>
+          <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style TargetType="TabItem">
+    <Setter Property="Margin" Value="0,0,8,0"/>
+    <Setter Property="Padding" Value="14,9"/>
+    <Setter Property="MinHeight" Value="38"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TabItem">
+          <Border x:Name="TabBorder" Background="#F4F6F9" BorderBrush="{StaticResource TableRuleBrush}"
+                  BorderThickness="1" CornerRadius="6,6,0,0" Padding="{TemplateBinding Padding}">
+            <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="TabBorder" Property="Background" Value="#EAF0F8"/>
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter TargetName="TabBorder" Property="Background" Value="{StaticResource SelectedTabBrush}"/>
+              <Setter TargetName="TabBorder" Property="BorderBrush" Value="#3975C6"/>
+              <Setter TargetName="TabBorder" Property="TextElement.Foreground" Value="{StaticResource SelectedTabTextBrush}"/>
+              <Setter TargetName="TabBorder" Property="TextElement.FontWeight" Value="SemiBold"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.5"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
   </Style>
 </ResourceDictionary>

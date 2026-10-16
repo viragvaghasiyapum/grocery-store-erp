@@ -6,20 +6,24 @@
  <Grid Margin="20,16,20,16">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <TextBlock FontSize="26" FontWeight="SemiBold" Text="{l:Tr Reports_Title}"/>
-  <Border Grid.Row="1" Margin="0,14,0,8" Padding="12" CornerRadius="8" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-   <WrapPanel>
-    <StackPanel Margin="0,0,12,6"><TextBlock Text="{l:Tr Reports_Report}"/><ComboBox x:Name="ReportPicker" Width="220" SelectionChanged="ReportPicker_OnSelectionChanged"/></StackPanel>
-    <StackPanel Margin="0,0,12,6"><TextBlock Text="{l:Tr Reports_Period}"/><ComboBox x:Name="PeriodPicker" Width="130" SelectionChanged="PeriodPicker_OnSelectionChanged"/></StackPanel>
-    <StackPanel Margin="0,0,12,6"><TextBlock Text="{l:Tr Reports_From}"/><DatePicker x:Name="FromPicker" Width="125" Language="en-IN" SelectedDateFormat="Short" SelectedDateChanged="DatePicker_OnSelectedDateChanged"/></StackPanel>
-    <StackPanel Margin="0,0,12,6"><TextBlock Text="{l:Tr Reports_To}"/><DatePicker x:Name="ToPicker" Width="125" Language="en-IN" SelectedDateFormat="Short" SelectedDateChanged="DatePicker_OnSelectedDateChanged"/></StackPanel>
-    <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,0,0,6">
-     <Button Margin="0,0,6,0" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
-     <Button x:Name="ExportExcelButton" Margin="0,0,6,0" Click="Export_OnClick" Content="{l:Tr Reports_ExportExcel}"/>
-     <Button x:Name="FullCsvButton" Margin="0,0,6,0" Click="ExportFullCsv_OnClick" Content="{l:Tr Reports_ExportFullCsv}"/>
-     <Button x:Name="CancelExportButton" IsEnabled="False" Margin="0,0,6,0" Click="CancelExport_OnClick" Content="{l:Tr Reports_CancelExport}"/>
-     <Button x:Name="PreviewA4Button" Click="Preview_OnClick" Content="{l:Tr Reports_PrintA4}"/>
-    </StackPanel>
-   </WrapPanel>
+  <Border Grid.Row="1" Margin="0,14,0,12" Padding="16" CornerRadius="8" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+   <StackPanel>
+    <WrapPanel>
+     <StackPanel Margin="0,0,16,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_Report}"/><ComboBox x:Name="ReportPicker" Width="220" SelectionChanged="ReportPicker_OnSelectionChanged"/></StackPanel>
+     <StackPanel Margin="0,0,16,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_Period}"/><ComboBox x:Name="PeriodPicker" Width="140" SelectionChanged="PeriodPicker_OnSelectionChanged"/></StackPanel>
+     <StackPanel Margin="0,0,16,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_From}"/><DatePicker x:Name="FromPicker" Width="140" Language="en-IN" SelectedDateFormat="Short" SelectedDateChanged="DatePicker_OnSelectedDateChanged"/></StackPanel>
+     <StackPanel Margin="0,0,0,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_To}"/><DatePicker x:Name="ToPicker" Width="140" Language="en-IN" SelectedDateFormat="Short" SelectedDateChanged="DatePicker_OnSelectedDateChanged"/></StackPanel>
+    </WrapPanel>
+    <Separator Margin="0,4,0,12"/>
+    <WrapPanel>
+     <Button Margin="0,0,8,6" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
+     <Button x:Name="ExportExcelButton" Margin="0,0,8,6" Click="Export_OnClick" Content="{l:Tr Reports_ExportExcel}"/>
+     <Button x:Name="FullCsvButton" Margin="0,0,8,6" Click="ExportFullCsv_OnClick" Content="{l:Tr Reports_ExportFullCsv}"/>
+     <Button x:Name="CancelExportButton" IsEnabled="False" Margin="0,0,8,6" Click="CancelExport_OnClick" Content="{l:Tr Reports_CancelExport}"/>
+     <Button x:Name="PreviewA4Button" Margin="0,0,12,6" Click="Preview_OnClick" Content="{l:Tr Reports_PrintA4}"/>
+     <ProgressBar x:Name="ExportProgress" Width="72" Height="5" Margin="0,0,0,6" VerticalAlignment="Center" IsIndeterminate="True" Visibility="Collapsed"/>
+    </WrapPanel>
+   </StackPanel>
   </Border>
   <Expander x:Name="MoreFiltersExpander" Grid.Row="2" Header="{l:Tr Reports_MoreFilters}" Margin="0,0,0,8">
    <Border Padding="12" CornerRadius="8" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
@@ -39,18 +43,16 @@
    </Border>
   </Expander>
   <Border Grid.Row="3" Padding="8" CornerRadius="8" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"><Grid>
-   <DataGrid x:Name="ReportGrid" IsReadOnly="True" CanUserAddRows="False" AutoGenerateColumns="False"
-             EnableRowVirtualization="True" EnableColumnVirtualization="True" RowHeight="32"/>
-    <ScrollViewer x:Name="PnlPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-    <StackPanel>
+   <DataGrid x:Name="ReportGrid" Style="{StaticResource CatalogGrid}" RowHeight="38"/>
+    <Grid x:Name="PnlPanel" Visibility="Collapsed">
+     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
      <TextBlock Text="{l:Tr Reports_PnlExplanation}" TextWrapping="Wrap" Margin="0,0,0,12"/>
-     <DataGrid x:Name="PnlGrid" IsReadOnly="True" CanUserAddRows="False" AutoGenerateColumns="False" EnableRowVirtualization="True">
+     <DataGrid x:Name="PnlGrid" Grid.Row="1" Style="{StaticResource CatalogGrid}" RowHeight="38">
       <DataGrid.Columns><DataGridTextColumn Width="*" MinWidth="420" Header="{l:Tr Reports_Particulars}" Binding="{Binding Label}"/><DataGridTextColumn Width="180" Header="{l:Tr Reports_Amount}" Binding="{Binding Amount}"/></DataGrid.Columns>
      </DataGrid>
-     <TextBlock x:Name="PnlTotals" Margin="0,12,0,0" FontSize="16" FontWeight="SemiBold"/>
-     <TextBlock Text="{l:Tr Reports_PnlCutMonthNote}" Margin="0,8,0,0" TextWrapping="Wrap"/>
-    </StackPanel>
-   </ScrollViewer>
+     <TextBlock x:Name="PnlTotals" Grid.Row="2" Margin="0,12,0,0" FontSize="16" FontWeight="SemiBold"/>
+     <TextBlock Grid.Row="3" Text="{l:Tr Reports_PnlCutMonthNote}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+    </Grid>
     <ScrollViewer x:Name="HourlyPanel" Visibility="Collapsed" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
      <StackPanel>
       <TextBlock Text="{l:Tr Reports_HourlyHint}" Margin="4,2,4,12" TextWrapping="Wrap"/>

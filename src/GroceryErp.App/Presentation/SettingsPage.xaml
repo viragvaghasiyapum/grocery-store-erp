@@ -40,6 +40,7 @@
           <WrapPanel>
             <Button x:Name="BackupButton" Style="{StaticResource SettingsPrimaryAction}" Margin="0,0,8,8" Click="Backup_OnClick" Content="{l:Tr Settings_BackupNow}"/>
             <Button x:Name="ExportButton" Margin="0,0,8,8" Click="Export_OnClick" Content="{l:Tr Settings_ExportUsb}"/>
+            <ProgressBar x:Name="ExportProgress" Width="64" Height="5" Margin="0,0,12,8" VerticalAlignment="Center" IsIndeterminate="True" Visibility="Collapsed"/>
             <Button x:Name="RestoreActionButton" Margin="0,0,8,8" Click="Restore_OnClick" Content="{l:Tr Settings_RestoreAction}"/>
           </WrapPanel>
           <TextBlock Margin="0,10,0,4" Text="{l:Tr Settings_RemovableDrive}"/>

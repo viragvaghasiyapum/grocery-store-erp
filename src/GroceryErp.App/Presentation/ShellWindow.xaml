@@ -12,12 +12,16 @@
     Height="760"
     MinWidth="960"
     MinHeight="640"
+    WindowState="Maximized"
+    ResizeMode="CanResize"
     WindowStartupLocation="CenterScreen"
     FontFamily="{StaticResource AppFont}"
     NumberSubstitution.CultureSource="Override"
     NumberSubstitution.CultureOverride="en-IN"
     NumberSubstitution.Substitution="European"
     mc:Ignorable="d">
+  <DockPanel>
+    <ui:TitleBar DockPanel.Dock="Top" Title="{l:Tr App_Title}"/>
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -80,6 +84,7 @@
       <ui:NavigationView.MenuItems>
         <ui:NavigationViewItem
             Content="{l:Tr Dashboard_Navigation}"
+            ToolTip="{l:Tr Dashboard_Navigation}"
             Icon="{ui:SymbolIcon Home24}"
             TargetPageType="{x:Type local:DashboardPage}" />
       </ui:NavigationView.MenuItems>
@@ -95,4 +100,5 @@
       </StackPanel>
     </Border>
   </Grid>
+  </DockPanel>
 </ui:FluentWindow>

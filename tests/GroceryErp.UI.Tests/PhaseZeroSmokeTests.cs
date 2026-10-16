@@ -943,7 +943,7 @@ public sealed class PhaseZeroSmokeTests
                         new { Label = "Gross profit", Amount = "30.000" },
                     };
                     ((TextBlock)reportsPage.FindName("PnlTotals")).Text = "Gross profit ₹30.000 (33.333%) · Net profit ₹30.000 (33.333%)";
-                    ((ScrollViewer)reportsPage.FindName("PnlPanel")).Visibility = Visibility.Visible;
+                    ((FrameworkElement)reportsPage.FindName("PnlPanel")).Visibility = Visibility.Visible;
                     ((DataGrid)reportsPage.FindName("ReportGrid")).Visibility = Visibility.Collapsed;
                     Capture(reportsHost, "reports-pnl.en.png");
                     reportsHost.Width = 740;
@@ -1114,7 +1114,7 @@ public sealed class PhaseZeroSmokeTests
             new { Date = "04-10-2026", Invoice = "RPT-1", Status = translations["Reports_StatusCompleted"], Total = "30.000" },
             new { Date = "05-10-2026", Invoice = "RPT-2", Status = translations["Reports_StatusCompleted"], Total = "60.000" },
         };
-        ((ScrollViewer)page.FindName("PnlPanel")).Visibility = Visibility.Collapsed;
+        ((FrameworkElement)page.FindName("PnlPanel")).Visibility = Visibility.Collapsed;
         grid.Visibility = Visibility.Visible;
         ((TextBlock)page.FindName("StatusText")).Text = translations.Format("Reports_RowCount", 2);
         ((TextBlock)page.FindName("TotalsText")).Text = translations["Reports_Column_Total"] + ": 90.000";

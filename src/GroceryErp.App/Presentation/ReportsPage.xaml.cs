@@ -430,6 +430,7 @@ public partial class ReportsPage : Page
         using var cancellation = new CancellationTokenSource();
         _exportCancellation = cancellation;
         CancelExportButton.IsEnabled = true;
+        ExportProgress.Visibility = Visibility.Visible;
         PnlStatement? pnl = _currentPnl;
         TabularReport? report = _currentReport;
         try
@@ -449,6 +450,7 @@ public partial class ReportsPage : Page
         {
             _exportCancellation = null;
             CancelExportButton.IsEnabled = false;
+            ExportProgress.Visibility = Visibility.Collapsed;
         }
     }
 
@@ -462,6 +464,7 @@ public partial class ReportsPage : Page
         _exportCancellation = cancellation;
         FullCsvButton.IsEnabled = false;
         CancelExportButton.IsEnabled = true;
+        ExportProgress.Visibility = Visibility.Visible;
         try
         {
             DateOnly from = FromPicker.SelectedDate is { } fromDate
@@ -493,6 +496,7 @@ public partial class ReportsPage : Page
             _exportCancellation = null;
             FullCsvButton.IsEnabled = true;
             CancelExportButton.IsEnabled = false;
+            ExportProgress.Visibility = Visibility.Collapsed;
         }
     }
 

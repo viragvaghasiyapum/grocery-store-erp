@@ -7,6 +7,8 @@
     WindowStartupLocation="CenterOwner" FontFamily="{StaticResource AppFont}"
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN"
     NumberSubstitution.Substitution="European">
+  <DockPanel>
+    <ui:TitleBar DockPanel.Dock="Top" Title="{l:Tr Settings_RestoreTitle}"/>
   <Grid Margin="28">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TextBlock FontSize="26" FontWeight="SemiBold" Text="{l:Tr Settings_RestoreTitle}"/>
@@ -26,4 +28,5 @@
       <Button x:Name="RestoreButton" IsEnabled="False" Click="Restore_OnClick" Content="{l:Tr Settings_RestoreAction}"/>
     </StackPanel>
   </Grid>
+  </DockPanel>
 </ui:FluentWindow>

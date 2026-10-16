@@ -35,7 +35,7 @@
           <Button x:Name="PreviousOverviewButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousOverview_OnClick" Content="{l:Tr Sales_Previous}"/>
           <Button x:Name="NextOverviewButton" IsEnabled="False" Click="NextOverview_OnClick" Content="{l:Tr Sales_Next}"/>
         </StackPanel>
-        <DataGrid x:Name="OverviewGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="OverviewGrid_OnSelectionChanged">
+        <DataGrid Style="{StaticResource CatalogGrid}" x:Name="OverviewGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="OverviewGrid_OnSelectionChanged">
           <DataGrid.Columns>
             <DataGridTextColumn Width="120" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}" />
             <DataGridTextColumn Width="260" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}" />
@@ -57,7 +57,7 @@
           <Button x:Name="PreviousLotButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousLot_OnClick" Content="{l:Tr Sales_Previous}"/>
           <Button x:Name="NextLotButton" IsEnabled="False" Click="NextLot_OnClick" Content="{l:Tr Sales_Next}"/>
         </StackPanel>
-        <DataGrid x:Name="LotsGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="LotsGrid_OnSelectionChanged">
+        <DataGrid Style="{StaticResource CatalogGrid}" x:Name="LotsGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="LotsGrid_OnSelectionChanged">
           <DataGrid.Columns>
             <DataGridTextColumn Width="210" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}" />
             <DataGridTextColumn Width="105" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}" />
@@ -88,7 +88,7 @@
             <Button Click="ApplyLedgerFilter_OnClick" Content="{l:Tr Stock_ApplyFilter}"/>
           </WrapPanel>
           </StackPanel>
-          <DataGrid x:Name="LedgerGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="LedgerGrid_OnSelectionChanged">
+          <DataGrid Style="{StaticResource CatalogGrid}" x:Name="LedgerGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="LedgerGrid_OnSelectionChanged">
           <DataGrid.Columns>
             <DataGridTextColumn Width="110" Header="{l:Tr Stock_MoveDate}" Binding="{Binding MoveDate}"/>
             <DataGridTextColumn Width="130" Header="{l:Tr Stock_MovementType}" Binding="{Binding Type}"/>
@@ -108,7 +108,7 @@
         </Grid>
       </TabItem>
       <TabItem Header="{l:Tr Stock_Valuation}">
-        <DataGrid x:Name="ValuationGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+        <DataGrid Style="{StaticResource CatalogGrid}" x:Name="ValuationGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
           <DataGrid.Columns>
             <DataGridTextColumn Width="260" Header="{l:Tr Catalog_Category}" Binding="{Binding CategoryName}"/>
             <DataGridTextColumn Width="120" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>

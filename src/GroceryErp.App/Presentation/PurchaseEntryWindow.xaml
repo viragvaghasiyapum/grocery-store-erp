@@ -21,8 +21,8 @@
       <Button Grid.Column="1" Margin="8,0,0,0" Click="FindProduct_OnClick" Content="{l:Tr Purchasing_FindProduct}"/>
       <TextBlock Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="{l:Tr Purchasing_ProductSearchHint}"/>
     </Grid>
-    <DataGrid x:Name="LinesGrid" Grid.Row="3" ItemsSource="{Binding Lines}" AutoGenerateColumns="False" CanUserAddRows="True"
-              Margin="0,8,0,0" GridLinesVisibility="Horizontal" HeadersVisibility="Column" RowHeight="38" ColumnHeaderHeight="38"
+    <DataGrid Style="{StaticResource CatalogGrid}" x:Name="LinesGrid" Grid.Row="3" ItemsSource="{Binding Lines}" AutoGenerateColumns="False" CanUserAddRows="True" IsReadOnly="False"
+              Margin="0,8,0,0" GridLinesVisibility="All" HeadersVisibility="Column" RowHeight="38" ColumnHeaderHeight="38"
               CurrentCellChanged="LinesGrid_OnCurrentCellChanged" CellEditEnding="LinesGrid_OnCellEditEnding">
       <DataGrid.Columns>
         <DataGridComboBoxColumn Width="195" Header="{l:Tr Catalog_Name}" SelectedValueBinding="{Binding ProductId}" SelectedValuePath="Id" DisplayMemberPath="Name" x:Name="ProductColumn"/>

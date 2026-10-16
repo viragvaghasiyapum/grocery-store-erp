@@ -60,6 +60,7 @@ public partial class ShellWindow : FluentWindow
             var view = new NavigationViewItem
             {
                 Content = TranslationSource.Instance[item.TitleKey],
+                ToolTip = TranslationSource.Instance[item.TitleKey],
                 Icon = new SymbolIcon { Symbol = Enum.Parse<SymbolRegular>(item.Icon) },
                 TargetPageType = item.PageType,
             };
@@ -133,7 +134,10 @@ public partial class ShellWindow : FluentWindow
             RenderPrinterStatus();
             RenderScannerStatus();
             foreach ((NavigationViewItem view, string key) in _moduleNavigation)
+            {
                 view.Content = TranslationSource.Instance[key];
+                view.ToolTip = TranslationSource.Instance[key];
+            }
         }
     }
 

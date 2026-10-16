@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
-    Title="{l:Tr Catalog_BulkEdit}" Width="480" Height="330" ResizeMode="NoResize"
+    Title="{l:Tr Catalog_BulkEdit}" Width="480" Height="360" MinWidth="440" MinHeight="340" ResizeMode="CanResize"
     WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
   <Grid Margin="22">
     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>

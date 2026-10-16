@@ -68,7 +68,7 @@ internal sealed class MoneyOutCorrectionWindow : Window
         SizeToContent = SizeToContent.Height;
         MinHeight = 300;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        ResizeMode = ResizeMode.NoResize;
+        ResizeMode = ResizeMode.CanResize;
         Content = new ScrollViewer { Content = new StackPanel { Margin = new Thickness(18) } };
     }
 

@@ -14,7 +14,7 @@
    <StackPanel><TextBlock Text="{l:Tr Stock_Reason}"/><TextBox x:Name="ReasonBox" Width="350" Height="34"/></StackPanel>
   </WrapPanel>
   <TextBlock Grid.Row="2" Margin="0,0,0,10" Text="{l:Tr Purchasing_ReturnHint}" TextWrapping="Wrap"/>
-  <DataGrid x:Name="ReturnGrid" Grid.Row="3" AutoGenerateColumns="False" CanUserAddRows="False" RowHeight="42">
+  <DataGrid Style="{StaticResource CatalogGrid}" x:Name="ReturnGrid" Grid.Row="3" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="False" RowHeight="42">
    <DataGrid.Columns>
     <DataGridTextColumn Width="*" MinWidth="200" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}" IsReadOnly="True"/>
     <DataGridTextColumn Width="120" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}" IsReadOnly="True"/>

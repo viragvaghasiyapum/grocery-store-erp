@@ -11,7 +11,7 @@
   <Grid x:Name="ReturnFields" Grid.Row="2">
    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
    <TextBlock Text="{l:Tr Sales_ReturnLine}"/>
-   <DataGrid x:Name="ReturnGrid" Grid.Row="1" Margin="0,6,0,10" AutoGenerateColumns="False" CanUserAddRows="False" RowHeight="38">
+   <DataGrid Style="{StaticResource CatalogGrid}" x:Name="ReturnGrid" Grid.Row="1" Margin="0,6,0,10" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="False" RowHeight="38">
     <DataGrid.Columns>
      <DataGridTextColumn Width="*" MinWidth="230" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}" IsReadOnly="True"/>
      <DataGridTextColumn Width="100" Header="{l:Tr Sales_ReturnRemainingHeader}" Binding="{Binding Remaining}" IsReadOnly="True"/>
