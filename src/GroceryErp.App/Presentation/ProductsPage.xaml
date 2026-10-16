@@ -8,7 +8,7 @@
   <Grid Margin="{StaticResource PagePadding}">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-      <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
     <DockPanel Margin="0,0,0,16">
       <WrapPanel DockPanel.Dock="Right" HorizontalAlignment="Right">
@@ -24,7 +24,7 @@
     <Border Grid.Row="1" Style="{StaticResource CatalogCard}" Margin="0,0,0,16">
       <StackPanel>
         <Grid>
-          <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <TextBlock Margin="0,0,0,6" Text="{l:Tr Catalog_SearchHint}"/>
           <TextBlock Grid.Column="1" Margin="12,0,0,6" Text="{l:Tr Catalog_Category}"/>
@@ -32,20 +32,52 @@
           <TextBox x:Name="SearchBox" Grid.Row="1" MinHeight="36" VerticalContentAlignment="Center" TextChanged="SearchBox_OnTextChanged" AutomationProperties.Name="{l:Tr Catalog_SearchHint}"/>
           <ComboBox x:Name="CategoryFilter" Grid.Row="1" Grid.Column="1" Margin="12,0,0,0" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="MasterFilter_OnChanged" ToolTip="{l:Tr Catalog_Category}"/>
           <ComboBox x:Name="BrandFilter" Grid.Row="1" Grid.Column="2" Margin="12,0,0,0" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="MasterFilter_OnChanged" ToolTip="{l:Tr Catalog_Brand}"/>
+          <Menu Grid.Row="1" Grid.Column="3" Margin="12,0,0,0" VerticalAlignment="Center">
+            <MenuItem Header="{l:Tr Catalog_Filters}">
+              <MenuItem x:Name="LowStockFilter" IsCheckable="True" Click="Filter_OnChanged" Header="{l:Tr Catalog_LowStock}"/>
+              <MenuItem x:Name="NoBarcodeFilter" IsCheckable="True" Click="Filter_OnChanged" Header="{l:Tr Catalog_NoBarcode}"/>
+              <MenuItem x:Name="MissingLocalFilter" IsCheckable="True" Click="Filter_OnChanged" Header="{l:Tr Catalog_MissingLocal}"/>
+              <MenuItem x:Name="LooseFilter" IsCheckable="True" Click="Filter_OnChanged" Header="{l:Tr Catalog_Loose}"/>
+              <MenuItem x:Name="ArchivedFilter" IsCheckable="True" Click="Filter_OnChanged" Header="{l:Tr Catalog_IncludeArchived}"/>
+            </MenuItem>
+          </Menu>
         </Grid>
-        <WrapPanel Margin="0,12,0,0">
-          <CheckBox x:Name="LowStockFilter" Margin="0,0,20,8" Checked="Filter_OnChanged" Unchecked="Filter_OnChanged" Content="{l:Tr Catalog_LowStock}"/>
-          <CheckBox x:Name="NoBarcodeFilter" Margin="0,0,20,8" Checked="Filter_OnChanged" Unchecked="Filter_OnChanged" Content="{l:Tr Catalog_NoBarcode}"/>
-          <CheckBox x:Name="MissingLocalFilter" Margin="0,0,20,8" Checked="Filter_OnChanged" Unchecked="Filter_OnChanged" Content="{l:Tr Catalog_MissingLocal}"/>
-          <CheckBox x:Name="LooseFilter" Margin="0,0,20,8" Checked="Filter_OnChanged" Unchecked="Filter_OnChanged" Content="{l:Tr Catalog_Loose}"/>
-          <CheckBox x:Name="ArchivedFilter" Margin="0,0,0,8" Checked="Filter_OnChanged" Unchecked="Filter_OnChanged" Content="{l:Tr Catalog_IncludeArchived}"/>
-        </WrapPanel>
       </StackPanel>
     </Border>
-    <Grid Grid.Row="3">
+    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,10">
+      <Button x:Name="EditButton" IsEnabled="False" Margin="0,0,8,0" Click="Edit_OnClick" Content="{l:Tr Catalog_Edit}"/>
+      <Button x:Name="LotsButton" IsEnabled="False" Margin="0,0,8,0" Click="Lots_OnClick" Content="{l:Tr Stock_Lots}"/>
+      <Button x:Name="LedgerButton" IsEnabled="False" Margin="0,0,8,0" Click="Ledger_OnClick" Content="{l:Tr Stock_Ledger}"/>
+      <Button x:Name="LabelsButton" IsEnabled="False" Margin="0,0,8,0" Click="Labels_OnClick" Content="{l:Tr Catalog_PrintLabels}"/>
+      <Button x:Name="BarcodeButton" IsEnabled="False" Margin="0,0,8,0" Click="GenerateBarcode_OnClick" Content="{l:Tr Catalog_GenerateBarcode}"/>
+      <Button x:Name="RestoreButton" IsEnabled="False" Margin="0,0,8,0" Click="Restore_OnClick" Content="{l:Tr Catalog_Restore}"/>
+    </StackPanel>
+    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,10">
+      <Menu x:Name="BulkActionsMenu" IsEnabled="False" Visibility="Collapsed" VerticalAlignment="Center">
+        <MenuItem Header="{l:Tr Catalog_BulkActions}">
+          <MenuItem x:Name="BulkRestoreButton" IsEnabled="False" Click="BulkRestore_OnClick" Header="{l:Tr Catalog_RestoreSelected}"/>
+          <MenuItem x:Name="BulkRemoveButton" IsEnabled="False" Click="BulkRemove_OnClick" Header="{l:Tr Catalog_RemoveSelected}"/>
+          <MenuItem x:Name="BulkButton" Click="Bulk_OnClick" Header="{l:Tr Catalog_BulkEdit}"/>
+          <MenuItem Click="BulkLabels_OnClick" Header="{l:Tr Catalog_PrintLabelsSelected}"/>
+          <MenuItem x:Name="BulkBarcodeButton" IsEnabled="False" Click="BulkBarcode_OnClick" Header="{l:Tr Catalog_GenerateBarcodeSelected}"/>
+        </MenuItem>
+      </Menu>
+      <TextBlock x:Name="SelectedCountText" VerticalAlignment="Center" Margin="12,0,0,0" Text="0 selected"/>
+    </StackPanel>
+    <Grid Grid.Row="4">
       <DataGrid x:Name="ProductsGrid" Style="{StaticResource CatalogGrid}" SelectionMode="Single" SelectionChanged="ProductsGrid_OnSelectionChanged" MouseDoubleClick="ProductsGrid_OnDoubleClick">
         <DataGrid.Columns>
-          <DataGridTemplateColumn Width="42" Header="✓"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" Loaded="ProductCheck_OnLoaded" Click="ProductCheck_OnClick" AutomationProperties.Name="Select product"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+          <DataGridTemplateColumn Width="42">
+            <DataGridTemplateColumn.HeaderTemplate><DataTemplate>
+              <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" IsThreeState="True"
+                        Loaded="PageSelectionCheck_OnLoaded" Click="PageSelectionCheck_OnClick"
+                        AutomationProperties.Name="Select all products on this page"/>
+            </DataTemplate></DataGridTemplateColumn.HeaderTemplate>
+            <DataGridTemplateColumn.CellTemplate><DataTemplate>
+              <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" Loaded="ProductCheck_OnLoaded"
+                        Click="ProductCheck_OnClick" AutomationProperties.Name="Select product"/>
+            </DataTemplate></DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
           <DataGridTextColumn Width="110" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}"/>
           <DataGridTemplateColumn Width="2*" MinWidth="170" Header="{l:Tr Catalog_Name}">
             <DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel VerticalAlignment="Center">
@@ -57,28 +89,18 @@
           <DataGridTextColumn Width="95" Header="{l:Tr Catalog_Stock}" Binding="{Binding Stock}"/>
           <DataGridTextColumn Width="95" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}"/>
           <DataGridTextColumn Width="95" Header="{l:Tr Catalog_Mrp}" Binding="{Binding Mrp}"/>
-          <DataGridCheckBoxColumn Width="80" Header="{l:Tr Catalog_Active}" Binding="{Binding IsActive}"/>
+          <DataGridTemplateColumn Width="80" Header="{l:Tr Catalog_Active}">
+            <DataGridTemplateColumn.CellTemplate><DataTemplate>
+              <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center"
+                        IsChecked="{Binding IsActive, Mode=OneWay}" Click="ProductActive_OnClick"
+                        AutomationProperties.Name="{l:Tr Catalog_Active}"/>
+            </DataTemplate></DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
         </DataGrid.Columns>
       </DataGrid>
       <TextBlock x:Name="EmptyText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" Text="{l:Tr Catalog_Empty}"/>
     </Grid>
-    <WrapPanel Grid.Row="2" Margin="0,0,0,12">
-      <Button Margin="0,0,8,8" Click="SelectPage_OnClick" Content="{l:Tr Selection_ThisPage}"/>
-      <Button x:Name="SelectMatchingButton" Margin="0,0,8,8" Click="SelectMatching_OnClick" Content="{l:Tr Selection_AllMatching}"/>
-      <Button x:Name="ClearSelectionButton" IsEnabled="False" Margin="0,0,8,8" Click="ClearSelection_OnClick" Content="{l:Tr Selection_Clear}"/>
-      <TextBlock x:Name="SelectedCountText" VerticalAlignment="Center" Margin="0,0,16,8" Text="0 selected"/>
-      <Button x:Name="EditButton" IsEnabled="False" Margin="0,0,8,8" Click="Edit_OnClick" Content="{l:Tr Catalog_Edit}"/>
-      <Button x:Name="LotsButton" IsEnabled="False" Margin="0,0,8,8" Click="Lots_OnClick" Content="{l:Tr Stock_Lots}"/>
-      <Button x:Name="LedgerButton" IsEnabled="False" Margin="0,0,8,8" Click="Ledger_OnClick" Content="{l:Tr Stock_Ledger}"/>
-      <Button x:Name="LabelsButton" IsEnabled="False" Margin="0,0,8,8" Click="Labels_OnClick" Content="{l:Tr Catalog_PrintLabels}"/>
-      <Button x:Name="BarcodeButton" IsEnabled="False" Margin="0,0,8,8" Click="GenerateBarcode_OnClick" Content="{l:Tr Catalog_GenerateBarcode}"/>
-      <Button x:Name="BulkButton" IsEnabled="False" Margin="0,0,8,8" Click="Bulk_OnClick" Content="{l:Tr Catalog_BulkEdit}"/>
-      <Button x:Name="RestoreButton" IsEnabled="False" Margin="0,0,8,8" Click="Restore_OnClick" Content="{l:Tr Catalog_Restore}"/>
-      <Button x:Name="RemoveButton" IsEnabled="False" Margin="0,0,0,8" Click="Remove_OnClick" Content="{l:Tr Catalog_Remove}"/>
-      <Button x:Name="BulkRemoveButton" IsEnabled="False" Margin="8,0,8,8" Click="BulkRemove_OnClick" Content="{l:Tr Catalog_RemoveSelected}"/>
-      <Button x:Name="BulkRestoreButton" IsEnabled="False" Margin="0,0,8,8" Click="BulkRestore_OnClick" Content="{l:Tr Catalog_RestoreSelected}"/>
-    </WrapPanel>
-    <DockPanel Grid.Row="4">
+    <DockPanel Grid.Row="5">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
         <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
         <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" SelectedIndex="2" SelectionChanged="PageSize_OnChanged">

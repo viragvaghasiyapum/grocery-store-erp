@@ -1,5 +1,4 @@
 using System.Collections.Specialized;
-using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -19,8 +18,6 @@ internal static class TableColumnLayouts
     private static readonly string LayoutPath = ResolveLayoutPath();
     private static readonly Dictionary<string, double[]> Saved = Load();
     private static readonly ConditionalWeakTable<DataGrid, GridState> States = new();
-    private static readonly DependencyPropertyDescriptor WidthDescriptor =
-        DependencyPropertyDescriptor.FromProperty(DataGridColumn.WidthProperty, typeof(DataGridColumn))!;
 
     internal static void Register()
     {
@@ -59,8 +56,6 @@ internal static class TableColumnLayouts
         States.Add(grid, state);
         grid.Columns.CollectionChanged += state.OnColumnsChanged;
         grid.Unloaded += state.OnUnloaded;
-        Window.GetWindow(grid)?.Closing += state.OnWindowClosing;
-        state.AttachColumns();
         if (restore) state.Restore();
         return state;
     }
@@ -120,79 +115,25 @@ internal static class TableColumnLayouts
 
     private sealed class GridState(DataGrid grid, string owner)
     {
-        private readonly Window? _window = Window.GetWindow(grid);
-        private readonly HashSet<DataGridColumn> _attached = [];
-        private readonly DispatcherTimer _saveTimer = new(DispatcherPriority.Background)
-        {
-            Interval = TimeSpan.FromMilliseconds(450),
-        };
-        private bool _restoring;
-        private bool _dirty;
-
-        public void AttachColumns()
-        {
-            foreach (DataGridColumn column in grid.Columns)
-                if (_attached.Add(column)) WidthDescriptor.AddValueChanged(column, OnWidthChanged);
-            _saveTimer.Tick -= OnSaveTick;
-            _saveTimer.Tick += OnSaveTick;
-        }
-
         public void OnColumnsChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
-            _saveTimer.Stop();
-            _dirty = false;
-            if (e.OldItems is not null)
-                foreach (DataGridColumn column in e.OldItems)
-                    if (_attached.Remove(column)) WidthDescriptor.RemoveValueChanged(column, OnWidthChanged);
-            AttachColumns();
             grid.Dispatcher.BeginInvoke(Restore, DispatcherPriority.Loaded);
         }
 
         public void OnUnloaded(object sender, RoutedEventArgs e)
         {
-            _saveTimer.Stop();
-            if (_dirty) Save();
             grid.Columns.CollectionChanged -= OnColumnsChanged;
             grid.Unloaded -= OnUnloaded;
-            if (_window is not null) _window.Closing -= OnWindowClosing;
-            foreach (DataGridColumn column in _attached)
-                WidthDescriptor.RemoveValueChanged(column, OnWidthChanged);
-            _attached.Clear();
             States.Remove(grid);
-        }
-
-        public void OnWindowClosing(object? sender, CancelEventArgs e)
-        {
-            _saveTimer.Stop();
-            if (_dirty) Save();
         }
 
         public void Restore()
         {
             string key = Key(grid, owner);
             if (!Saved.TryGetValue(key, out double[]? widths) || widths.Length != grid.Columns.Count) return;
-            _restoring = true;
-            try
-            {
-                for (int index = 0; index < widths.Length; index++)
-                    if (double.IsFinite(widths[index]) && widths[index] >= 24)
-                        grid.Columns[index].Width = new DataGridLength(widths[index], DataGridLengthUnitType.Pixel);
-            }
-            finally { _restoring = false; }
-        }
-
-        private void OnWidthChanged(object? sender, EventArgs e)
-        {
-            if (_restoring) return;
-            _dirty = true;
-            _saveTimer.Stop();
-            _saveTimer.Start();
-        }
-
-        private void OnSaveTick(object? sender, EventArgs e)
-        {
-            _saveTimer.Stop();
-            Save();
+            for (int index = 0; index < widths.Length; index++)
+                if (double.IsFinite(widths[index]) && widths[index] >= 24)
+                    grid.Columns[index].Width = new DataGridLength(widths[index], DataGridLengthUnitType.Pixel);
         }
 
         private void Save()
@@ -201,13 +142,8 @@ internal static class TableColumnLayouts
             if (widths.Length == 0 || widths.Any(width => !double.IsFinite(width) || width < 24)) return;
             Saved[Key(grid, owner)] = widths;
             Write();
-            _dirty = false;
         }
 
-        public void SaveNow()
-        {
-            _saveTimer.Stop();
-            Save();
-        }
+        public void SaveNow() => Save();
     }
 }

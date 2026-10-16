@@ -371,6 +371,25 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             audit.Write(transaction, "product", id, "RESTORE", null);
         }, cancellationToken);
 
+    public Task SetActiveAsync(long id, bool active, bool expectedActive,
+        CancellationToken cancellationToken = default) => database.WriteAsync(transaction =>
+    {
+        if (active == expectedActive) return;
+        int changed = transaction.Connection.Execute("""
+            UPDATE product SET is_active=@active, updated_at=datetime('now','localtime')
+            WHERE id=@id AND is_active=@expectedActive
+            """, new { id, active = active ? 1 : 0, expectedActive = expectedActive ? 1 : 0 },
+            transaction.Transaction);
+        if (changed == 0)
+        {
+            long exists = transaction.Connection.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM product WHERE id=@id", new { id }, transaction.Transaction);
+            if (exists == 0) throw new DomainException(ErrorCode.NotFound, "product", id);
+            throw new DomainException(ErrorCode.Validation, "This product changed since it was loaded. Refresh it and try again.");
+        }
+        audit.Write(transaction, "product", id, active ? "RESTORE" : "ARCHIVE", null);
+    }, cancellationToken);
+
     public Task<int> BulkRemoveAsync(IReadOnlyCollection<long> productIds, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(productIds);
@@ -436,7 +455,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                 "SELECT COUNT(*) FROM product WHERE id=@productId", new { productId }, transaction.Transaction);
             if (exists == 0) throw new DomainException(ErrorCode.NotFound, "product", productId);
             string? existingBarcode = transaction.Connection.QueryFirstOrDefault<string>(
-                "SELECT barcode FROM product_barcode WHERE product_id=@productId AND source='INTERNAL' ORDER BY id LIMIT 1",
+                "SELECT barcode FROM product_barcode WHERE product_id=@productId AND lot_id IS NULL AND source='INTERNAL' ORDER BY id LIMIT 1",
                 new { productId }, transaction.Transaction);
             if (existingBarcode is not null) return existingBarcode;
             string barcode = Ean.Internal(prefix, productId);
@@ -588,7 +607,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                       AND (@CategoryId IS NULL OR p.category_id=@CategoryId)
                       AND (@BrandId IS NULL OR p.brand_id=@BrandId)
                       {{lowStockFilter}}
-                      AND (@NoBarcodeOnly=0 OR NOT EXISTS(SELECT 1 FROM product_barcode pb WHERE pb.product_id=p.id))
+                      AND (@NoBarcodeOnly=0 OR NOT EXISTS(SELECT 1 FROM product_barcode pb WHERE pb.product_id=p.id AND pb.lot_id IS NULL))
                       AND (@MissingLocalNameOnly=0 OR p.name_local IS NULL OR trim(p.name_local)='')
                       AND (@LooseOnly=0 OR p.is_loose=1)
                       AND (@afterName IS NULL OR p.name COLLATE NOCASE > @afterName COLLATE NOCASE
@@ -602,7 +621,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                        COALESCE(l.selling_price,p.default_selling_price) AS SellingPriceScaled,
                        COALESCE(l.mrp,p.default_mrp) AS MrpScaled,
                        p.is_loose AS IsLoose, p.is_active AS IsActive,
-                       EXISTS(SELECT 1 FROM product_barcode pb WHERE pb.product_id=p.id) AS HasBarcode
+                       EXISTS(SELECT 1 FROM product_barcode pb WHERE pb.product_id=p.id AND pb.lot_id IS NULL) AS HasBarcode
                 FROM visible page JOIN product p ON p.id=page.id
                 LEFT JOIN product_stock_total total ON total.product_id=p.id
                 JOIN category c ON c.id=p.category_id

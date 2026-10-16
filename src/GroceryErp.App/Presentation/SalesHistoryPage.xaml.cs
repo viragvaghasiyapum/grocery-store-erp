@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using GroceryErp.Core;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
@@ -26,6 +27,9 @@ public partial class SalesHistoryPage : Page
     private DateOnly? _beforeDate;
     private long? _beforeId;
     private SaleDetails? _selectedDetails;
+    private SaleHistoryActivity? _selectedActivity;
+    private readonly int[] _detailPages = new int[3];
+    private const int DetailPageSize = 50;
     private bool _loadingHistory;
     private bool _pendingReset;
     private CancellationTokenSource? _exportCancellation;
@@ -54,6 +58,7 @@ public partial class SalesHistoryPage : Page
         {
             TranslationSource.Instance.PropertyChanged -= OnLanguageChanged;
             _exportCancellation?.Cancel();
+            CloseDetails();
         };
         UpdateActions();
     }
@@ -64,6 +69,7 @@ public partial class SalesHistoryPage : Page
         {
             HistoryGrid.Items.Refresh();
             RefreshDetailHeading();
+            RenderDetailPage();
         }
     }
 
@@ -93,6 +99,7 @@ public partial class SalesHistoryPage : Page
             _beforeDate = pageDate;
             _beforeId = pageId;
             timing.Bind(() => HistoryGrid.ItemsSource = items);
+            CloseDetails();
             StatusText.Text = TranslationSource.Instance.Format("Sales_ResultCount", items.Count);
             PreviousButton.IsEnabled = _previous.Count > 0;
             NextButton.IsEnabled = items.Count == PageSize;
@@ -172,30 +179,93 @@ public partial class SalesHistoryPage : Page
         if (IsLoaded) await RefreshAsync();
     }
 
-    private async void HistoryGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void HistoryGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         UpdateActions();
-        if (HistoryGrid.SelectedItem is not SaleHistoryItem item)
-        {
-            _selectedDetails = null;
-            DetailGrid.ItemsSource = null;
-            ReturnsGrid.ItemsSource = null;
-            MovementsGrid.ItemsSource = null;
-            DetailHeading.Text = TranslationSource.Instance["Sales_SelectHistory"];
-            return;
-        }
+        CloseDetails();
+    }
+
+    private async void ViewBillItems_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: SaleHistoryItem item }) return;
+        HistoryGrid.SelectedItem = item;
         try
         {
             SaleDetails sale = await _sales.GetAsync(item.Id);
             SaleHistoryActivity activity = await _sales.GetHistoryActivityAsync(item.Id);
             if (HistoryGrid.SelectedItem is not SaleHistoryItem selected || selected.Id != item.Id) return;
             _selectedDetails = sale;
-            DetailGrid.ItemsSource = sale.Lines;
-            ReturnsGrid.ItemsSource = activity.Returns;
-            MovementsGrid.ItemsSource = activity.Movements;
+            _selectedActivity = activity;
+            Array.Clear(_detailPages);
+            DetailTabs.SelectedIndex = 0;
+            RenderDetailPage();
             RefreshDetailHeading();
+            SideOverlayMotion.Show(DetailOverlay, DetailPanel, DetailBackdrop);
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private void CloseDetails()
+    {
+        DetailOverlay.Visibility = Visibility.Collapsed;
+        _selectedDetails = null;
+        _selectedActivity = null;
+        DetailGrid.ItemsSource = null;
+        ReturnsGrid.ItemsSource = null;
+        MovementsGrid.ItemsSource = null;
+        DetailHeading.Text = TranslationSource.Instance["Sales_SelectHistory"];
+    }
+
+    private void CloseDetails_OnClick(object sender, RoutedEventArgs e) => CloseDetails();
+
+    private void DetailBackdrop_OnMouseDown(object sender, MouseButtonEventArgs e) => CloseDetails();
+
+    private void DetailTabs_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (e.Source == DetailTabs) RenderDetailPage();
+    }
+
+    private void PreviousDetail_OnClick(object sender, RoutedEventArgs e)
+    {
+        int tab = DetailTabs.SelectedIndex;
+        if (tab < 0 || _detailPages[tab] == 0) return;
+        _detailPages[tab]--;
+        RenderDetailPage();
+    }
+
+    private void NextDetail_OnClick(object sender, RoutedEventArgs e)
+    {
+        int tab = DetailTabs.SelectedIndex;
+        if (tab < 0 || (_detailPages[tab] + 1) * DetailPageSize >= DetailCount(tab)) return;
+        _detailPages[tab]++;
+        RenderDetailPage();
+    }
+
+    private int DetailCount(int tab) => tab switch
+    {
+        0 => _selectedDetails?.Lines.Count ?? 0,
+        1 => _selectedActivity?.Returns.Count ?? 0,
+        2 => _selectedActivity?.Movements.Count ?? 0,
+        _ => 0,
+    };
+
+    private void RenderDetailPage()
+    {
+        if (DetailTabs is null || DetailPageText is null) return;
+        int tab = DetailTabs.SelectedIndex;
+        if (tab < 0 || tab >= _detailPages.Length) return;
+        int count = DetailCount(tab);
+        int start = _detailPages[tab] * DetailPageSize;
+        if (start >= count && count > 0) start = (_detailPages[tab] = (count - 1) / DetailPageSize) * DetailPageSize;
+        switch (tab)
+        {
+            case 0: DetailGrid.ItemsSource = _selectedDetails?.Lines.Skip(start).Take(DetailPageSize).ToArray(); break;
+            case 1: ReturnsGrid.ItemsSource = _selectedActivity?.Returns.Skip(start).Take(DetailPageSize).ToArray(); break;
+            case 2: MovementsGrid.ItemsSource = _selectedActivity?.Movements.Skip(start).Take(DetailPageSize).ToArray(); break;
+        }
+        DetailPageText.Text = count == 0 ? "0" : $"{start + 1}–{Math.Min(start + DetailPageSize, count)} / {count}";
+        PreviousDetailButton.IsEnabled = start > 0;
+        NextDetailButton.IsEnabled = start + DetailPageSize < count;
     }
 
     private void RefreshDetailHeading()

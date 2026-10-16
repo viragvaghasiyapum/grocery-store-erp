@@ -143,8 +143,6 @@ public partial class ShellWindow : FluentWindow
 
     internal void RefreshBackupStatus()
     {
-        if (_settings is not null) StoreHeading.Text = string.IsNullOrWhiteSpace(_settings.Current.StoreName)
-            ? TranslationSource.Instance["App_Title"] : _settings.Current.StoreName;
         if (_clock is not null) BusinessDate.Text = _clock.BusinessDate.ToString("dd MMM yyyy", TranslationSource.FormatCulture);
         if (_backups is null) return;
         BackupHealth health = _backups.GetHealth();

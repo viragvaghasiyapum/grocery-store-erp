@@ -4,7 +4,7 @@
   <resheader name="version"><value>2.0</value></resheader>
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
-  <data name="App_Title" xml:space="preserve"><value>ગ્રોસરી ERP</value><comment>MT – needs review</comment></data>
+  <data name="App_Title" xml:space="preserve"><value>Hare Krushna</value><comment>MT – needs review</comment></data>
   <data name="App_UnexpectedError" xml:space="preserve"><value>એક અનપેક્ષિત ભૂલ થઈ. વિગતો લૉગમાં લખવામાં આવી છે.</value></data>
   <data name="Shell_Language" xml:space="preserve"><value>ભાષા</value><comment>MT – needs review</comment></data>
   <data name="Shell_English" xml:space="preserve"><value>અંગ્રેજી</value><comment>MT – needs review</comment></data>
@@ -211,7 +211,7 @@
   <data name="Catalog_TemplateShelfEdge" xml:space="preserve"><value>શેલ્ફ લેબલ</value><comment>MT - needs review</comment></data>
   <data name="Catalog_LabelSource" xml:space="preserve"><value>સ્રોત</value><comment>MT - needs review</comment></data>
   <data name="Catalog_LabelProduct" xml:space="preserve"><value>ઉત્પાદન</value><comment>MT - needs review</comment></data>
-  <data name="Catalog_LabelSelectionHint" xml:space="preserve"><value>પંક્તિઓ પસંદ કરો અને દરેકની નકલો નક્કી કરો. લોટ માટે શરૂઆતનો આંક પ્રાપ્ત જથ્થો છે.</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_LabelSelectionHint" xml:space="preserve"><value>ઉત્પાદન અને લોટ લેબલ પસંદ કરો, પછી દરેકની નકલો નક્કી કરો. લોટ લેબલ એક નકલથી શરૂ થાય છે.</value><comment>MT - needs review</comment></data>
   <data name="Catalog_BatchCopiesRange" xml:space="preserve"><value>દરેક પસંદ કરેલી પંક્તિ માટે 1 થી 100,000 નકલો જરૂરી છે.</value><comment>MT - needs review</comment></data>
   <data name="Catalog_NoLabels" xml:space="preserve"><value>છાપી શકાય એવા ઉત્પાદન અથવા લોટ મળ્યા નથી.</value><comment>MT - needs review</comment></data>
   <data name="Catalog_SelectLabels" xml:space="preserve"><value>ઓછામાં ઓછું એક લેબલ પસંદ કરો.</value><comment>MT - needs review</comment></data>
@@ -466,6 +466,9 @@
   <data name="MoneyOut_Damages" xml:space="preserve"><value>નુકસાન</value></data>
   <data name="MoneyOut_Expenses" xml:space="preserve"><value>ખર્ચ</value></data>
   <data name="MoneyOut_Payroll" xml:space="preserve"><value>કર્મચારી અને પગાર</value></data>
+  <data name="MoneyOut_Employees" xml:space="preserve"><value>કર્મચારીઓ</value></data>
+  <data name="MoneyOut_SelectSalary" xml:space="preserve"><value>પગાર પસંદ કરો</value></data>
+  <data name="MoneyOut_SearchHistory" xml:space="preserve"><value>ઇતિહાસ શોધો</value></data>
   <data name="MoneyOut_RecordDamage" xml:space="preserve"><value>નુકસાન નોંધો</value></data>
   <data name="MoneyOut_WriteOff" xml:space="preserve"><value>સમાપ્ત માલ કાઢો</value></data>
   <data name="MoneyOut_BlockLot" xml:space="preserve"><value>લોટ બ્લોક કરો</value></data>
@@ -526,6 +529,14 @@
   <data name="Assets_Other" xml:space="preserve"><value>અન્ય</value></data>
   <data name="Assets_DisposeConfirm" xml:space="preserve"><value>“{0}”નો નિકાલ કરવો? ઘસારો પોસ્ટ થશે અને મળેલી રકમ નોંધાશે.</value></data>
   <data name="Assets_PostResult" xml:space="preserve"><value>{0} મહિના પોસ્ટ થયા; {1} મહિના બંધ છે.</value></data>
+  <data name="Assets_Details" xml:space="preserve"><value>મિલકતની વિગતો</value></data>
+  <data name="Assets_Search" xml:space="preserve"><value>મિલકત શોધો</value></data>
+  <data name="Assets_SearchHint" xml:space="preserve"><value>મિલકતનું નામ અથવા શ્રેણી</value></data>
+  <data name="Assets_IncludeDisposed" xml:space="preserve"><value>નિકાલ કરેલી મિલકતો સહિત</value></data>
+  <data name="Assets_DisposalDate" xml:space="preserve"><value>નિકાલની તારીખ</value></data>
+  <data name="Assets_SelectToDispose" xml:space="preserve"><value>નિકાલ માટે મિલકત પસંદ કરો</value></data>
+  <data name="Assets_EditSelected" xml:space="preserve"><value>પસંદ કરેલી મિલકત સુધારો</value></data>
+  <data name="Assets_PostAllHint" xml:space="preserve"><value>બધી યોગ્ય મિલકતો માટે બાકી ઘસારો નોંધે છે.</value></data>
   <data name="MoneyOut_New" xml:space="preserve"><value>નવું</value></data>
   <data name="MoneyOut_Active" xml:space="preserve"><value>સક્રિય</value></data>
   <data name="MoneyOut_ChooseCategory" xml:space="preserve"><value>ફેરફાર માટે વર્ગ પસંદ કરો</value></data>
@@ -570,6 +581,16 @@
   <data name="Common_Open" xml:space="preserve"><value>ખોલો</value></data>
   <data name="Purchasing_Filter" xml:space="preserve"><value>ફિલ્ટર</value></data>
   <data name="Purchasing_ClearFilters" xml:space="preserve"><value>ફિલ્ટર હટાવો</value></data>
+  <data name="Purchasing_ProductFilter" xml:space="preserve"><value>ઉત્પાદન</value></data>
+  <data name="Purchasing_SelectPurchase" xml:space="preserve"><value>ખરીદી પસંદ કરો</value></data>
+  <data name="Purchasing_CancelSelected" xml:space="preserve"><value>પસંદ કરેલી ખરીદીઓ રદ કરો</value></data>
+  <data name="Purchasing_BulkCancelConfirm" xml:space="preserve"><value>પસંદ કરેલી {0} ખરીદીઓ રદ કરવી છે? ફક્ત અસ્પર્શિત સ્ટોક ધરાવતી ખરીદીઓ રદ થઈ શકે છે. કેટલીક સફળ અને કેટલીક નિષ્ફળ થઈ શકે છે.</value></data>
+  <data name="Purchasing_BulkCancelResult" xml:space="preserve"><value>{0} ખરીદીઓ રદ થઈ; {1} નિષ્ફળ ગઈ.</value></data>
+  <data name="Purchasing_SelectVendor" xml:space="preserve"><value>વિક્રેતા પસંદ કરો</value></data>
+  <data name="Purchasing_ActivateSelectedVendors" xml:space="preserve"><value>પસંદ કરેલા સક્રિય કરો</value></data>
+  <data name="Purchasing_DeactivateSelectedVendors" xml:space="preserve"><value>પસંદ કરેલા નિષ્ક્રિય કરો</value></data>
+  <data name="Purchasing_DeactivateVendorsConfirm" xml:space="preserve"><value>પસંદ કરેલા {0} વિક્રેતાઓ નિષ્ક્રિય કરવા છે? તેઓ ખરીદી અને ચુકવણીના ઇતિહાસમાં રહેશે, પરંતુ નવી ખરીદીમાં વાપરી શકાશે નહીં.</value></data>
+  <data name="Purchasing_VendorStatusChanged" xml:space="preserve"><value>{0} વિક્રેતાઓની સ્થિતિ બદલાઈ.</value></data>
   <data name="Reports_ExportFullCsv" xml:space="preserve"><value>આખો CSV એક્સપોર્ટ કરો</value></data>
   <data name="Reports_CancelExport" xml:space="preserve"><value>એક્સપોર્ટ રદ કરો</value></data>
   <data name="Reports_ExportedRows" xml:space="preserve"><value>{0} લાઇન એક્સપોર્ટ થઈ.</value></data>
@@ -600,7 +621,7 @@
   <data name="Settings_Update_SelectFolder" xml:space="preserve"><value>USB ડ્રાઇવ પર Releases ફોલ્ડર પસંદ કરો</value></data>
   <data name="Settings_Update_None" xml:space="preserve"><value>આ ફોલ્ડરમાં નવું સંસ્કરણ મળ્યું નથી.</value></data>
   <data name="Settings_Update_Confirm" xml:space="preserve"><value>સંસ્કરણ {0} ઇન્સ્ટોલ કરવું છે? એપ ફરી શરૂ થાય તે પહેલાં ચકાસાયેલ બેકઅપ બનશે.</value></data>
-  <data name="Startup_AlreadyRunning" xml:space="preserve"><value>Grocery ERP પહેલેથી ખુલ્લું છે. હાલની વિંડો પર જાઓ.</value><comment>MT – needs review</comment></data>
+  <data name="Startup_AlreadyRunning" xml:space="preserve"><value>Hare Krushna પહેલેથી ખુલ્લું છે. હાલની વિંડો પર જાઓ.</value><comment>MT – needs review</comment></data>
   <data name="Purchasing_Date" xml:space="preserve"><value>તારીખ</value><comment>MT – needs review</comment></data>
   <data name="Purchasing_Document" xml:space="preserve"><value>દસ્તાવેજ</value><comment>MT – needs review</comment></data>
   <data name="Settings_Title" xml:space="preserve"><value>સેટિંગ્સ</value><comment>MT – needs review</comment></data>
@@ -636,8 +657,8 @@
   <data name="Settings_ActionFailed" xml:space="preserve"><value>ક્રિયા નિષ્ફળ ગઈ. ફોલ્ડર અથવા પ્રિન્ટર તપાસીને ફરી પ્રયત્ન કરો.</value><comment>MT – needs review</comment></data>
   <data name="Settings_RestoreTitle" xml:space="preserve"><value>બેકઅપ પુનઃસ્થાપિત કરો</value><comment>MT – needs review</comment></data>
   <data name="Settings_RestoreAction" xml:space="preserve"><value>બેકઅપ પુનઃસ્થાપિત કરો</value><comment>MT – needs review</comment></data>
-  <data name="Settings_SelectBackup" xml:space="preserve"><value>Grocery ERP બેકઅપ પસંદ કરો</value><comment>MT – needs review</comment></data>
-  <data name="Settings_SelectBackupFilter" xml:space="preserve"><value>Grocery ERP બેકઅપ (*.zip)|*.zip</value><comment>MT – needs review</comment></data>
+  <data name="Settings_SelectBackup" xml:space="preserve"><value>Hare Krushna બેકઅપ પસંદ કરો</value><comment>MT – needs review</comment></data>
+  <data name="Settings_SelectBackupFilter" xml:space="preserve"><value>Hare Krushna બેકઅપ (*.zip)|*.zip</value><comment>MT – needs review</comment></data>
   <data name="Settings_InspectRunning" xml:space="preserve"><value>પસંદ કરેલો બેકઅપ ચકાસી રહ્યા છીએ…</value><comment>MT – needs review</comment></data>
   <data name="Settings_RestoreWarning" xml:space="preserve"><value>પુનઃસ્થાપનથી હાલના રેકોર્ડ બદલાશે. પહેલા ચકાસાયેલ સુરક્ષા બેકઅપ બનશે. આગળ વધતા પહેલાં બંને બાજુ સરખાવો.</value><comment>MT – needs review</comment></data>
   <data name="Settings_CurrentData" xml:space="preserve"><value>હાલનો ડેટા</value><comment>MT – needs review</comment></data>
@@ -667,7 +688,7 @@
   <data name="Error_DatabaseCorrupt" xml:space="preserve"><value>સ્ટોરનો ડેટાબેઝ સુરક્ષિત રીતે વાંચી શકાયો નથી. આ ડેટા ફોલ્ડરનો ઉપયોગ બંધ કરો અને ચકાસેલું બેકઅપ પુનઃસ્થાપિત કરો અથવા સહાય મેળવો.</value><comment>MT – needs review</comment></data>
   <data name="Error_RestoreRecovered" xml:space="preserve"><value>પુનઃસ્થાપિત ડેટાબેઝ શરૂઆતની તપાસમાં નિષ્ફળ ગયો. અગાઉનો સ્ટોર પાછો મેળવાયો છે. એપ ફરી શરૂ કરો અને ફરી પ્રયાસ કરતા પહેલાં બેકઅપ તપાસો.</value><comment>MT – needs review</comment></data>
   <data name="Error_DatabaseIo" xml:space="preserve"><value>ડેટા ડ્રાઇવ ક્રિયા પૂર્ણ કરી શકી નથી. ફરી પ્રયાસ કરતા પહેલાં છેલ્લો દસ્તાવેજ તપાસો, ખાસ કરીને ચુકવણી પછી, અને ડ્રાઇવની ભૂલ ચાલુ રહે તો સહાય મેળવો.</value><comment>MT – needs review</comment></data>
-  <data name="Error_DatabaseNewerThanApp" xml:space="preserve"><value>આ બેકઅપ માટે Grocery ERPનું નવું સંસ્કરણ જરૂરી છે.</value><comment>MT – needs review</comment></data>
+  <data name="Error_DatabaseNewerThanApp" xml:space="preserve"><value>આ બેકઅપ માટે Hare Krushnaનું નવું સંસ્કરણ જરૂરી છે.</value><comment>MT – needs review</comment></data>
   <data name="Setup_PrintTest" xml:space="preserve"><value>પરીક્ષણ છાપો</value><comment>MT – needs review</comment></data>
   <data name="Setup_TestDocument" xml:space="preserve"><value>પ્રિન્ટર પરીક્ષણ</value><comment>MT – needs review</comment></data>
   <data name="Setup_TestSent" xml:space="preserve"><value>પરીક્ષણ પાનું પ્રિન્ટરને મોકલ્યું.</value><comment>MT – needs review</comment></data>
@@ -798,6 +819,14 @@
   <data name="Stock_Expiry_EMPTY" xml:space="preserve"><value>ખાલી</value><comment>MT - needs review</comment></data>
   <data name="Stock_WriteOffExpired" xml:space="preserve"><value>મુદત વીતેલો સ્ટોક કાઢો</value><comment>MT - needs review</comment></data>
   <data name="Stock_WriteOffConfirm" xml:space="preserve"><value>લોટ {0} ના બધા {1} એકમ કાઢી નાખવા? આ નુકસાનનો દસ્તાવેજ બનાવશે અને પાછું ફેરવી શકાશે નહીં.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_SelectLot" xml:space="preserve"><value>લોટ પસંદ કરો</value></data>
+  <data name="Stock_BlockSelected" xml:space="preserve"><value>પસંદ કરેલા લોટ અવરોધો</value></data>
+  <data name="Stock_UnblockSelected" xml:space="preserve"><value>પસંદ કરેલા લોટ ખોલો</value></data>
+  <data name="Stock_WriteOffSelectedExpired" xml:space="preserve"><value>પસંદ કરેલા મુદત વીતેલા લોટ કાઢો</value></data>
+  <data name="Stock_BlockSelectedConfirm" xml:space="preserve"><value>પસંદ કરેલા {0} લોટ અવરોધવા છે? અવરોધિત લોટ નવા વેચાણમાં વાપરી શકાશે નહીં.</value></data>
+  <data name="Stock_LotStatusChanged" xml:space="preserve"><value>{0} લોટની સ્થિતિ બદલાઈ.</value></data>
+  <data name="Stock_BulkWriteOffConfirm" xml:space="preserve"><value>પસંદ કરેલા {0} મુદત વીતેલા લોટનો બધો સ્ટોક કાઢવો છે? આ નુકસાનના દસ્તાવેજો બનાવશે અને પાછું ફેરવી શકાશે નહીં.</value></data>
+  <data name="Stock_BulkWriteOffResult" xml:space="preserve"><value>{0} મુદત વીતેલા લોટ કાઢવામાં આવ્યા.</value></data>
   <data name="Stock_SourceDocument" xml:space="preserve"><value>મૂળ દસ્તાવેજ</value><comment>MT - needs review</comment></data>
   <data name="Stock_OpenSource" xml:space="preserve"><value>મૂળ દસ્તાવેજ ખોલો</value><comment>MT - needs review</comment></data>
   <data name="Stock_SourceDoc_Purchase" xml:space="preserve"><value>ખરીદી</value><comment>MT - needs review</comment></data>
@@ -1102,4 +1131,11 @@
   <data name="MoneyOut_PostedPayments" xml:space="preserve"><value>નોંધાયેલ ચુકવણીઓ</value></data>
   <data name="MoneyOut_CorrectionReason" xml:space="preserve"><value>સુધારાનું કારણ</value></data>
   <data name="MoneyOut_CorrectionReasonRequired" xml:space="preserve"><value>ઓડિટ નોંધ માટે આવશ્યક</value></data>
+  <data name="Sales_ViewBillItems" xml:space="preserve"><value>બિલની વસ્તુઓ જુઓ</value></data>
+  <data name="Assets_ViewTimeline" xml:space="preserve"><value>સમયરેખા જુઓ</value></data>
+  <data name="Catalog_Filters" xml:space="preserve"><value>ફિલ્ટર ▾</value></data>
+  <data name="Catalog_BulkActions" xml:space="preserve"><value>સમૂહ ક્રિયાઓ ▾</value></data>
+  <data name="Catalog_PrintLabelsSelected" xml:space="preserve"><value>પસંદ કરેલાં માટે લેબલ છાપો</value></data>
+  <data name="Catalog_GenerateBarcodeSelected" xml:space="preserve"><value>પસંદ કરેલાં માટે બારકોડ બનાવો</value></data>
+  <data name="Catalog_BarcodesGenerated" xml:space="preserve"><value>{0} ઉત્પાદનો માટે બારકોડ બનાવાયા.</value></data>
 </root>

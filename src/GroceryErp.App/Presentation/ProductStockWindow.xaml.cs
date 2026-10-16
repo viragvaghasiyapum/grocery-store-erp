@@ -121,6 +121,26 @@ public partial class ProductStockWindow : Window
             WriteOffButton.IsEnabled = LotsGrid.SelectedItem is LotItem { ExpiryBucketCode: "EXPIRED", IsActive: true } expired && expired.OnHand > Quantity.Zero;
     }
 
+    private async void LotActive_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.CheckBox { DataContext: LotItem lot } box) return;
+        bool active = box.IsChecked == true;
+        if (active == lot.IsActive) return;
+        box.IsEnabled = false;
+        try
+        {
+            await _inventory.SetLotActiveAsync(lot.Id, active, lot.IsActive);
+            await LoadLotsAsync(_lotCursor);
+            StatusText.Text = string.Empty;
+        }
+        catch (Exception exception)
+        {
+            box.IsChecked = lot.IsActive;
+            StatusText.Text = UserError.Message(exception);
+        }
+        finally { box.IsEnabled = true; }
+    }
+
     private async void CorrectLot_OnClick(object sender, RoutedEventArgs e)
     {
         if (LotsGrid.SelectedItem is not LotItem lot) return;

@@ -580,6 +580,31 @@ public sealed class InventoryService(
         CancellationToken cancellationToken = default) =>
         SetLotActiveCoreAsync(lotId, active, expectedActive, cancellationToken);
 
+    public Task<int> BulkSetLotsActiveAsync(IReadOnlyCollection<long> lotIds, bool active,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(lotIds);
+        long[] ids = lotIds.Where(static id => id > 0).Distinct().ToArray();
+        if (ids.Length == 0) throw new DomainException(ErrorCode.Validation, "Select at least one lot.");
+        return database.WriteAsync(transaction =>
+        {
+            int changed = 0;
+            foreach (long id in ids)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                bool? current = transaction.Connection.QuerySingleOrDefault<bool?>(
+                    "SELECT is_active FROM product_lot WHERE id=@id", new { id }, transaction.Transaction);
+                if (current is null) throw new DomainException(ErrorCode.NotFound, "lot", id);
+                if (current == active) continue;
+                transaction.Connection.Execute("UPDATE product_lot SET is_active=@active WHERE id=@id",
+                    new { id, active = active ? 1 : 0 }, transaction.Transaction);
+                audit.Write(transaction, "product_lot", id, active ? "UNBLOCK" : "BLOCK", null);
+                changed++;
+            }
+            return changed;
+        }, cancellationToken);
+    }
+
     private Task SetLotActiveCoreAsync(long lotId, bool active, bool? expectedActive,
         CancellationToken cancellationToken) =>
         database.WriteAsync(transaction =>

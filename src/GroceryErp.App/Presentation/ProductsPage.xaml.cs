@@ -24,7 +24,8 @@ public partial class ProductsPage : Page
     private long? _afterId;
     private ProductSearchPage? _currentPage;
     private readonly Dictionary<long, bool> _selectedProducts = new();
-    private int _selectionVersion;
+    private CheckBox? _pageSelectionCheck;
+    private bool _checkboxSelectionUsed;
     private bool _pageLoading;
     private CancellationTokenSource? _pageLoadCancellation;
 
@@ -207,6 +208,8 @@ public partial class ProductsPage : Page
 
     private void ProductsGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_selectedProducts.Count == 0 && e.AddedItems.Count > 0)
+            _checkboxSelectionUsed = false;
         UpdateSelectionActions();
     }
 
@@ -219,52 +222,66 @@ public partial class ProductsPage : Page
     private void ProductCheck_OnClick(object sender, RoutedEventArgs e)
     {
         if (sender is not CheckBox { DataContext: ProductListItem item } box) return;
+        _checkboxSelectionUsed = true;
         if (box.IsChecked == true) _selectedProducts[item.Id] = item.IsActive;
         else _selectedProducts.Remove(item.Id);
         UpdateSelectionActions();
     }
 
-    private void SelectPage_OnClick(object sender, RoutedEventArgs e)
+    private async void ProductActive_OnClick(object sender, RoutedEventArgs e)
     {
-        foreach (ProductListItem item in _currentPage?.Items ?? []) _selectedProducts[item.Id] = item.IsActive;
+        if (sender is not CheckBox { DataContext: ProductListItem item } box) return;
+        bool active = box.IsChecked == true;
+        if (active == item.IsActive) return;
+        box.IsEnabled = false;
+        try
+        {
+            await _catalog.SetActiveAsync(item.Id, active, item.IsActive);
+            ClearSelection();
+            await RefreshAsync();
+        }
+        catch (Exception exception)
+        {
+            box.IsChecked = item.IsActive;
+            ShowError(exception);
+        }
+        finally { box.IsEnabled = true; }
+    }
+
+    private void PageSelectionCheck_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        _pageSelectionCheck = sender as CheckBox;
+        UpdatePageSelectionCheck();
+    }
+
+    private void PageSelectionCheck_OnClick(object sender, RoutedEventArgs e)
+    {
+        ProductListItem[] pageItems = ProductsGrid.Items.OfType<ProductListItem>().ToArray();
+        if (pageItems.Length == 0) return;
+        bool allSelected = pageItems.All(item => _selectedProducts.ContainsKey(item.Id));
+        _checkboxSelectionUsed = true;
+        foreach (ProductListItem item in pageItems)
+        {
+            if (allSelected) _selectedProducts.Remove(item.Id);
+            else _selectedProducts[item.Id] = item.IsActive;
+        }
+        if (allSelected) ProductsGrid.UnselectAll();
         ProductsGrid.Items.Refresh();
         UpdateSelectionActions();
     }
 
-    private async void SelectMatching_OnClick(object sender, RoutedEventArgs e)
+    private void UpdatePageSelectionCheck()
     {
-        int version = _refreshVersion;
-        int selectionVersion = _selectionVersion;
-        var selected = new Dictionary<long, bool>();
-        ProductSearchFilter filter = CurrentFilter(100);
-        string? name = null;
-        long? id = null;
-        SelectMatchingButton.IsEnabled = false;
-        try
-        {
-            while (true)
-            {
-                ProductSearchPage page = await _catalog.SearchPageAsync(filter, name, id);
-                if (version != _refreshVersion || selectionVersion != _selectionVersion) return;
-                foreach (ProductListItem item in page.Items) selected[item.Id] = item.IsActive;
-                if (!page.HasMore || page.NextName is null || page.NextId is null) break;
-                name = page.NextName;
-                id = page.NextId;
-            }
-            foreach ((long productId, bool active) in selected) _selectedProducts[productId] = active;
-            ProductsGrid.Items.Refresh();
-            UpdateSelectionActions();
-        }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
-        finally { SelectMatchingButton.IsEnabled = true; }
+        if (_pageSelectionCheck is null) return;
+        ProductListItem[] pageItems = ProductsGrid.Items.OfType<ProductListItem>().ToArray();
+        int selected = pageItems.Count(item => _selectedProducts.ContainsKey(item.Id));
+        _pageSelectionCheck.IsChecked = selected == 0 ? false : selected == pageItems.Length ? true : null;
     }
-
-    private void ClearSelection_OnClick(object sender, RoutedEventArgs e) => ClearSelection();
 
     private void ClearSelection()
     {
-        ++_selectionVersion;
         _selectedProducts.Clear();
+        _checkboxSelectionUsed = false;
         ProductsGrid?.UnselectAll();
         if (ProductsGrid is not null) ProductsGrid.Items.Refresh();
         UpdateSelectionActions();
@@ -273,22 +290,37 @@ public partial class ProductsPage : Page
     private void UpdateSelectionActions()
     {
         if (EditButton is null) return;
-        bool hasSelection = _selectedProducts.Count > 0 || ProductsGrid.SelectedItems.Count > 0;
-        bool single = ProductsGrid.SelectedItems.Count == 1;
-        bool active = single && ProductsGrid.SelectedItem is ProductListItem { IsActive: true };
-        bool archived = single && ProductsGrid.SelectedItem is ProductListItem { IsActive: false };
+        long[] ids = SelectedProductIds();
+        ProductListItem? product = SelectedSingleProduct();
+        bool single = ids.Length == 1 && product is not null;
+        bool active = single && product!.IsActive;
+        bool archived = single && !product!.IsActive;
+        bool multiple = ids.Length > 1;
         EditButton.IsEnabled = single;
         LotsButton.IsEnabled = single;
         LedgerButton.IsEnabled = single;
-        LabelsButton.IsEnabled = hasSelection;
+        LabelsButton.IsEnabled = single && active;
         BarcodeButton.IsEnabled = active;
-        BulkButton.IsEnabled = hasSelection;
         RestoreButton.IsEnabled = archived;
-        RemoveButton.IsEnabled = active;
-        BulkRemoveButton.IsEnabled = _selectedProducts.Count > 0 && _selectedProducts.Values.All(static active => active);
-        BulkRestoreButton.IsEnabled = _selectedProducts.Count > 0 && _selectedProducts.Values.All(static active => !active);
-        ClearSelectionButton.IsEnabled = _selectedProducts.Count > 0;
-        SelectedCountText.Text = TranslationSource.Instance.Format("Selection_Count", _selectedProducts.Count);
+        BulkActionsMenu.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
+        BulkActionsMenu.IsEnabled = multiple;
+        BulkRemoveButton.IsEnabled = multiple && _selectedProducts.Values.All(static value => value);
+        BulkRestoreButton.IsEnabled = multiple && _selectedProducts.Values.All(static value => !value);
+        BulkBarcodeButton.IsEnabled = multiple && _selectedProducts.Values.All(static value => value);
+        SelectedCountText.Text = TranslationSource.Instance.Format("Selection_Count", ids.Length);
+        UpdatePageSelectionCheck();
+    }
+
+    private long[] SelectedProductIds() => _selectedProducts.Count > 0 || _checkboxSelectionUsed
+        ? _selectedProducts.Keys.ToArray()
+        : ProductsGrid.SelectedItems.Cast<ProductListItem>().Select(static item => item.Id).ToArray();
+
+    private ProductListItem? SelectedSingleProduct()
+    {
+        long[] ids = SelectedProductIds();
+        if (ids.Length != 1) return null;
+        return (_currentPage?.Items ?? []).FirstOrDefault(item => item.Id == ids[0])
+            ?? (ProductsGrid.SelectedItem is ProductListItem item && item.Id == ids[0] ? item : null);
     }
 
     private async void BulkRemove_OnClick(object sender, RoutedEventArgs e)
@@ -321,17 +353,17 @@ public partial class ProductsPage : Page
 
     private void ProductsGrid_OnDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (ProductsGrid.SelectedItem is ProductListItem) Edit_OnClick(sender, e);
+        if (SelectedSingleProduct() is not null) Edit_OnClick(sender, e);
     }
 
     private async void GenerateBarcode_OnClick(object sender, RoutedEventArgs e)
     {
-        if (ProductsGrid.SelectedItem is not ProductListItem product) return;
+        if (SelectedSingleProduct() is not { IsActive: true } product) return;
         try
         {
             string barcode = await _catalog.GenerateInternalBarcodeAsync(product.Id, _settings.Current.ProductPrefix);
-            MessageBox.Show(barcode, TranslationSource.Instance["Catalog_GenerateBarcode"], MessageBoxButton.OK, MessageBoxImage.Information);
             await RefreshAsync();
+            StatusText.Text = $"{TranslationSource.Instance["Catalog_GenerateBarcode"]}: {barcode}";
         }
         catch (Exception exception)
         {
@@ -347,7 +379,7 @@ public partial class ProductsPage : Page
 
     private async void Edit_OnClick(object sender, RoutedEventArgs e)
     {
-        if (ProductsGrid.SelectedItem is not ProductListItem product) return;
+        if (SelectedSingleProduct() is not ProductListItem product) return;
         var editor = new ProductEditorWindow(_catalog, product.Id) { Owner = Window.GetWindow(this) };
         if (editor.ShowDialog() == true) await RefreshAsync();
     }
@@ -358,7 +390,7 @@ public partial class ProductsPage : Page
 
     private void OpenStock(bool showLedger)
     {
-        if (ProductsGrid.SelectedItem is not ProductListItem product) return;
+        if (SelectedSingleProduct() is not ProductListItem product) return;
         var inventory = ((App)Application.Current).Services.GetRequiredService<InventoryService>();
         new ProductStockWindow(inventory, product, showLedger) { Owner = Window.GetWindow(this) }.ShowDialog();
     }
@@ -373,7 +405,7 @@ public partial class ProductsPage : Page
 
     private async void Restore_OnClick(object sender, RoutedEventArgs e)
     {
-        if (ProductsGrid.SelectedItem is not ProductListItem { IsActive: false } product) return;
+        if (SelectedSingleProduct() is not { IsActive: false } product) return;
         try
         {
             await _catalog.RestoreAsync(product.Id);
@@ -391,9 +423,20 @@ public partial class ProductsPage : Page
 
     private void Labels_OnClick(object sender, RoutedEventArgs e)
     {
-        long[] ids = _selectedProducts.Keys.Concat(ProductsGrid.SelectedItems.Cast<ProductListItem>()
-            .Select(static item => item.Id)).Distinct().ToArray();
-        if (ids.Length == 0) return;
+        long[] ids = SelectedProductIds();
+        if (ids.Length != 1) return;
+        OpenLabels(ids);
+    }
+
+    private void BulkLabels_OnClick(object sender, RoutedEventArgs e)
+    {
+        long[] ids = SelectedProductIds();
+        if (ids.Length < 2) return;
+        OpenLabels(ids);
+    }
+
+    private void OpenLabels(long[] ids)
+    {
         try
         {
             var inventory = ((App)Application.Current).Services.GetRequiredService<InventoryService>();
@@ -411,31 +454,27 @@ public partial class ProductsPage : Page
 
     private async void Bulk_OnClick(object sender, RoutedEventArgs e)
     {
-        long[] ids = _selectedProducts.Keys.Concat(ProductsGrid.SelectedItems.Cast<ProductListItem>()
-            .Select(static item => item.Id)).Distinct().ToArray();
-        if (ids.Length == 0) return;
+        long[] ids = SelectedProductIds();
+        if (ids.Length < 2) return;
         var bulk = new CatalogBulkEditWindow(_catalog, ids) { Owner = Window.GetWindow(this) };
         if (bulk.ShowDialog() == true) await RefreshAsync();
     }
 
-    private async void Remove_OnClick(object sender, RoutedEventArgs e)
+    private async void BulkBarcode_OnClick(object sender, RoutedEventArgs e)
     {
-        if (ProductsGrid.SelectedItem is not ProductListItem product) return;
-        MessageBoxResult choice = MessageBox.Show(
-            TranslationSource.Instance.Format("Catalog_RemoveConfirm", product.Name),
-            TranslationSource.Instance["Catalog_Title"], MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        if (choice != MessageBoxResult.Yes) return;
+        long[] ids = SelectedProductIds();
+        if (ids.Length < 2 || _selectedProducts.Values.Any(static active => !active)) return;
         try
         {
-            ProductRemoval removal = await _catalog.RemoveAsync(product.Id);
-            StatusText.Text = TranslationSource.Instance[removal == ProductRemoval.Deleted ? "Catalog_Deleted" : "Catalog_ArchivedResult"];
+            BulkActionsMenu.IsEnabled = false;
+            foreach (long id in ids)
+                await _catalog.GenerateInternalBarcodeAsync(id, _settings.Current.ProductPrefix);
             ClearSelection();
             await RefreshAsync();
+            StatusText.Text = TranslationSource.Instance.Format("Catalog_BarcodesGenerated", ids.Length);
         }
-        catch (Exception exception)
-        {
-            ShowError(exception);
-        }
+        catch (Exception exception) { ShowError(exception); }
+        finally { UpdateSelectionActions(); }
     }
 
     private static void ShowError(Exception exception)

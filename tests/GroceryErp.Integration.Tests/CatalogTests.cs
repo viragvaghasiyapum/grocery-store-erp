@@ -337,6 +337,53 @@ public sealed class CatalogTests
     }
 
     [Fact]
+    public async Task ProductActiveStatus_ArchivesWithoutDeletingAndRestores()
+    {
+        using var fixture = new CatalogFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long id = await fixture.Service.CreateAsync(fixture.Product("Status toggle", "status"), ct);
+        await fixture.Service.SetActiveAsync(id, false, true, ct);
+        (await fixture.Service.GetAsync(id, ct)).IsActive.ShouldBeFalse();
+        (await fixture.Service.SearchAsync(new ProductSearchFilter(), ct)).ShouldNotContain(item => item.Id == id);
+        (await fixture.Service.SearchAsync(new ProductSearchFilter(IncludeArchived: true), ct))
+            .ShouldContain(item => item.Id == id && !item.IsActive);
+        await Should.ThrowAsync<DomainException>(() => fixture.Service.SetActiveAsync(id, false, true, ct));
+        await fixture.Service.SetActiveAsync(id, true, false, ct);
+        (await fixture.Service.GetAsync(id, ct)).IsActive.ShouldBeTrue();
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE id=@id", new { id }).ShouldBe(1);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity='product' AND entity_id=@id AND action IN ('ARCHIVE','RESTORE')", new { id }).ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task ProductBarcode_GeneratesItsOwnCodeWhenLotBarcodeAlreadyExists()
+    {
+        using var fixture = new CatalogFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long productId = await fixture.Service.CreateAsync(fixture.Product("Two label types", "labels"), ct);
+        long lotId;
+        using (var connection = fixture.Factory.Open())
+            lotId = connection.ExecuteScalar<long>("""
+                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,selling_price)
+                VALUES (@productId,'LOT-1','2026-10-16',1000,2000) RETURNING id
+                """, new { productId });
+
+        string lotBarcode = await fixture.Service.EnsureLotBarcodeAsync(lotId, "20", ct);
+        (await fixture.Service.SearchAsync(new ProductSearchFilter(NoBarcodeOnly: true), ct))
+            .ShouldContain(item => item.Id == productId && !item.HasBarcode);
+        string productBarcode = await fixture.Service.GenerateInternalBarcodeAsync(productId, "21", ct);
+        productBarcode.ShouldNotBe(lotBarcode);
+        (await fixture.Service.GenerateInternalBarcodeAsync(productId, "21", ct)).ShouldBe(productBarcode);
+        (await fixture.Service.GetAsync(productId, ct)).Product.Barcodes
+            .ShouldContain(item => item.Barcode == productBarcode);
+        (await fixture.Service.SearchAsync(new ProductSearchFilter(NoBarcodeOnly: true), ct))
+            .ShouldNotContain(item => item.Id == productId);
+        using var check = fixture.Factory.Open();
+        check.ExecuteScalar<long>("SELECT COUNT(*) FROM product_barcode WHERE product_id=@productId AND lot_id IS NULL AND barcode=@productBarcode",
+            new { productId, productBarcode }).ShouldBe(1);
+    }
+
+    [Fact]
     public async Task CatalogSearch_GujaratiDigitsAndShortLocalPrefix_FindProduct()
     {
         using var fixture = new CatalogFixture();

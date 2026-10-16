@@ -24,27 +24,27 @@
       <TabItem Header="{l:Tr MoneyOut_Expiry}">
         <DockPanel>
           <WrapPanel DockPanel.Dock="Bottom" Margin="0,10,0,0" HorizontalAlignment="Right">
-            <ComboBox x:Name="DamageReason" Width="150" SelectedIndex="0">
+            <StackPanel Width="150" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_Reason}"/><ComboBox x:Name="DamageReason" SelectedIndex="0">
               <ComboBoxItem Tag="EXPIRED" Content="{l:Tr MoneyOut_ReasonExpired}"/><ComboBoxItem Tag="BROKEN" Content="{l:Tr MoneyOut_ReasonBroken}"/><ComboBoxItem Tag="SPOILED" Content="{l:Tr MoneyOut_ReasonSpoiled}"/>
               <ComboBoxItem Tag="PEST" Content="{l:Tr MoneyOut_ReasonPest}"/><ComboBoxItem Tag="LOST" Content="{l:Tr MoneyOut_ReasonLost}"/><ComboBoxItem Tag="OTHER" Content="{l:Tr MoneyOut_ReasonOther}"/>
-            </ComboBox>
-            <TextBox x:Name="DamageQuantity" Width="100" Margin="8,0" ToolTip="{l:Tr Stock_Quantity}" />
-            <TextBox x:Name="DamageRecovered" Width="110" Margin="0,0,8,0" Text="0" ToolTip="{l:Tr MoneyOut_Recovered}" />
-            <Button Margin="0,0,8,0" Click="RecordDamage_OnClick" Content="{l:Tr MoneyOut_RecordDamage}" />
-            <Button x:Name="BulkWriteOffButton" IsEnabled="False" Margin="0,0,8,0" Click="BulkWriteOff_OnClick" Content="{l:Tr MoneyOut_WriteOff}" />
-            <Button Margin="0,0,8,0" Click="BlockLot_OnClick" Content="{l:Tr MoneyOut_BlockLot}" />
-            <Button Margin="0,0,8,0" Click="MarkDown_OnClick" Content="{l:Tr MoneyOut_MarkDown}" />
-            <Button Click="PrintExpiry_OnClick" Content="{l:Tr MoneyOut_PrintVendorList}" />
+            </ComboBox></StackPanel>
+            <StackPanel Width="100" Margin="0,0,8,0"><TextBlock Text="{l:Tr Stock_Quantity}"/><TextBox x:Name="DamageQuantity"/></StackPanel>
+            <StackPanel Width="110" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_Recovered}"/><TextBox x:Name="DamageRecovered" Text="0"/></StackPanel>
+            <Button x:Name="ExpiryRecordDamageButton" IsEnabled="False" Margin="0,18,8,0" Click="RecordDamage_OnClick" Content="{l:Tr MoneyOut_RecordDamage}" />
+            <Button x:Name="ExpiryBlockLotButton" IsEnabled="False" Margin="0,18,8,0" Click="BlockLot_OnClick" Content="{l:Tr MoneyOut_BlockLot}" />
+            <Button x:Name="ExpiryMarkDownButton" IsEnabled="False" Margin="0,18,0,0" Click="MarkDown_OnClick" Content="{l:Tr MoneyOut_MarkDown}" />
           </WrapPanel>
           <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
             <Button Margin="0,0,8,0" Click="SelectExpiryPage_OnClick" Content="{l:Tr Selection_ThisPage}"/>
             <Button x:Name="SelectAllExpiryButton" Margin="0,0,8,0" Click="SelectAllExpiry_OnClick" Content="{l:Tr Selection_AllMatching}"/>
             <Button x:Name="ClearExpirySelectionButton" IsEnabled="False" Margin="0,0,8,0" Click="ClearExpirySelection_OnClick" Content="{l:Tr Selection_Clear}"/>
             <TextBlock x:Name="ExpirySelectedCount" VerticalAlignment="Center" Text="0 selected"/>
+            <Button x:Name="BulkWriteOffButton" IsEnabled="False" Margin="12,0,8,0" Click="BulkWriteOff_OnClick" Content="{l:Tr MoneyOut_WriteOff}" />
+            <Button Click="PrintExpiry_OnClick" Content="{l:Tr MoneyOut_PrintVendorList}" />
           </WrapPanel>
           <TabControl x:Name="ExpiryTabs" Margin="0,12,0,0" SelectionChanged="ExpiryTabs_OnSelectionChanged">
             <TabItem Header="{l:Tr MoneyOut_Expired}">
-              <DataGrid x:Name="ExpiredList" Margin="0,10,0,0" Style="{StaticResource CatalogGrid}" AutoGenerateColumns="False">
+              <DataGrid x:Name="ExpiredList" Margin="0,10,0,0" Style="{StaticResource CatalogGrid}" AutoGenerateColumns="False" SelectionChanged="ExpiryList_OnSelectionChanged">
                 <DataGrid.Columns>
                   <DataGridTemplateColumn Width="48" CellTemplate="{StaticResource ExpiryCheckTemplate}"/>
                   <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}"/>
@@ -59,7 +59,7 @@
               </DataGrid>
             </TabItem>
             <TabItem Header="{l:Tr MoneyOut_Critical}">
-              <DataGrid x:Name="CriticalList" Margin="0,10,0,0" Style="{StaticResource CatalogGrid}" AutoGenerateColumns="False">
+              <DataGrid x:Name="CriticalList" Margin="0,10,0,0" Style="{StaticResource CatalogGrid}" AutoGenerateColumns="False" SelectionChanged="ExpiryList_OnSelectionChanged">
                 <DataGrid.Columns>
                   <DataGridTemplateColumn Width="48" CellTemplate="{StaticResource ExpiryCheckTemplate}"/>
                   <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}"/>
@@ -74,7 +74,7 @@
               </DataGrid>
             </TabItem>
             <TabItem Header="{l:Tr MoneyOut_Soon}">
-              <DataGrid x:Name="SoonList" Margin="0,10,0,0" Style="{StaticResource CatalogGrid}" AutoGenerateColumns="False">
+              <DataGrid x:Name="SoonList" Margin="0,10,0,0" Style="{StaticResource CatalogGrid}" AutoGenerateColumns="False" SelectionChanged="ExpiryList_OnSelectionChanged">
                 <DataGrid.Columns>
                   <DataGridTemplateColumn Width="48" CellTemplate="{StaticResource ExpiryCheckTemplate}"/>
                   <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}"/>
@@ -94,10 +94,12 @@
       <TabItem Header="{l:Tr MoneyOut_Damages}">
         <DockPanel>
         <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
-          <DatePicker x:Name="DamageFromBox" Width="140" Margin="0,0,8,8" SelectedDateFormat="Short"/>
-          <DatePicker x:Name="DamageToBox" Width="140" Margin="0,0,8,8" SelectedDateFormat="Short"/>
-          <Button Click="DamageFilter_OnClick" Content="Search history"/>
-          <Button x:Name="CorrectDamageButton" Margin="8,0,0,0" IsEnabled="False" Click="CorrectDamage_OnClick" Content="{l:Tr MoneyOut_CorrectPosted}"/>
+          <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Reports_From}"/>
+          <DatePicker x:Name="DamageFromBox" Width="140" Margin="0,0,12,0" SelectedDateFormat="Short"/>
+          <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Reports_To}"/>
+          <DatePicker x:Name="DamageToBox" Width="140" Margin="0,0,12,0" SelectedDateFormat="Short"/>
+          <Button Click="DamageFilter_OnClick" Content="{l:Tr MoneyOut_SearchHistory}"/>
+          <Button x:Name="CorrectDamageButton" Margin="12,0,0,0" IsEnabled="False" Click="CorrectDamage_OnClick" Content="{l:Tr MoneyOut_CorrectPosted}"/>
         </WrapPanel>
         <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10">
           <StackPanel Width="300" Margin="0,0,8,0">
@@ -132,11 +134,14 @@
       <TabItem Header="{l:Tr MoneyOut_Expenses}">
         <DockPanel>
           <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
-            <DatePicker x:Name="ExpenseFromBox" Width="140" Margin="0,0,8,8" SelectedDateFormat="Short"/>
-            <DatePicker x:Name="ExpenseToBox" Width="140" Margin="0,0,8,8" SelectedDateFormat="Short"/>
-            <Button Click="ExpenseFilter_OnClick" Content="Search history"/>
+            <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Reports_From}"/>
+            <DatePicker x:Name="ExpenseFromBox" Width="140" Margin="0,0,12,0" SelectedDateFormat="Short"/>
+            <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Reports_To}"/>
+            <DatePicker x:Name="ExpenseToBox" Width="140" Margin="0,0,12,0" SelectedDateFormat="Short"/>
+            <Button Margin="0,0,12,0" Click="ExpenseFilter_OnClick" Content="{l:Tr MoneyOut_SearchHistory}"/>
+            <Button Click="OpenAssets_OnClick" Content="{l:Tr MoneyOut_OpenAssets}"/>
           </WrapPanel>
-          <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10" ItemHeight="64">
+          <WrapPanel DockPanel.Dock="Top" MaxWidth="950" HorizontalAlignment="Left" Margin="0,0,0,10" ItemHeight="64">
             <StackPanel Width="140" Margin="0,0,8,4"><TextBlock Text="{l:Tr Purchasing_Date}"/><DatePicker x:Name="ExpenseDate" SelectedDateFormat="Short"/></StackPanel>
             <StackPanel Width="180" Margin="0,0,8,4"><TextBlock Text="{l:Tr Catalog_Category}"/><ComboBox x:Name="ExpenseCategory" DisplayMemberPath="Name" SelectedValuePath="Id"/></StackPanel>
             <StackPanel Width="110" Margin="0,0,8,4"><TextBlock Text="{l:Tr MoneyOut_Amount}"/><TextBox x:Name="ExpenseAmount"/></StackPanel>
@@ -146,8 +151,7 @@
             <StackPanel Width="150" Margin="0,0,8,4"><TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="ExpenseNotes"/></StackPanel>
             <Button Margin="0,17,8,4" Click="SaveExpense_OnClick" Content="{l:Tr MoneyOut_SaveExpense}"/>
             <Button Margin="0,17,8,4" Click="NewExpense_OnClick" Content="{l:Tr MoneyOut_NewEntry}"/>
-            <Button Margin="0,17,8,4" Click="RepeatExpense_OnClick" Content="{l:Tr MoneyOut_RepeatLastMonth}"/>
-            <Button Margin="0,17,0,4" Click="OpenAssets_OnClick" Content="{l:Tr MoneyOut_OpenAssets}"/>
+            <Button Margin="0,17,0,4" Click="RepeatExpense_OnClick" Content="{l:Tr MoneyOut_RepeatLastMonth}"/>
           </WrapPanel>
           <StackPanel x:Name="ExpenseCorrectionPanel" DockPanel.Dock="Top" Orientation="Horizontal" Visibility="Collapsed" Margin="0,0,0,8">
             <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{l:Tr MoneyOut_RequiredCorrectionReason}"/>
@@ -195,9 +199,10 @@
         </DockPanel>
       </TabItem>
       <TabItem Header="{l:Tr MoneyOut_Payroll}">
-        <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-          <StackPanel Margin="0,0,0,10">
-            <WrapPanel ItemHeight="62">
+        <TabControl x:Name="PayrollTabs" Margin="0,8,0,0">
+          <TabItem Header="{l:Tr MoneyOut_Employees}">
+            <DockPanel Margin="0,8,0,0">
+            <WrapPanel DockPanel.Dock="Top" MaxWidth="950" HorizontalAlignment="Left" Margin="0,0,0,10" ItemHeight="62">
               <StackPanel Width="170" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_EmployeeName}"/><TextBox x:Name="EmployeeName"/></StackPanel>
               <StackPanel Width="120" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_Phone}"/><TextBox x:Name="EmployeePhone"/></StackPanel>
               <StackPanel Width="130" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_Role}"/><TextBox x:Name="EmployeeRole"/></StackPanel>
@@ -209,38 +214,51 @@
               <Button Margin="0,16,8,0" Click="NewEmployee_OnClick" Content="{l:Tr MoneyOut_New}"/>
               <Button Margin="0,16,0,0" Click="AddEmployee_OnClick" Content="{l:Tr Common_Save}"/>
             </WrapPanel>
-            <WrapPanel ItemHeight="60">
-              <StackPanel Width="95" Margin="0,0,8,0"><TextBlock Text="{l:Tr Assets_Period}"/><TextBox x:Name="SalaryPeriod" Text="2026-09"/></StackPanel>
-              <StackPanel Width="125" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_PayDate}"/><DatePicker x:Name="SalaryPayDate" SelectedDateFormat="Short"/></StackPanel>
-              <StackPanel Width="115" Margin="0,0,8,0"><TextBlock Text="{l:Tr Purchasing_Mode}"/><ComboBox x:Name="SalaryMode" SelectedIndex="2"><ComboBoxItem Tag="CASH" Content="{l:Tr MoneyOut_ModeCash}"/><ComboBoxItem Tag="UPI" Content="UPI"/><ComboBoxItem Tag="BANK" Content="{l:Tr MoneyOut_ModeBank}"/><ComboBoxItem Tag="OTHER" Content="{l:Tr MoneyOut_ReasonOther}"/></ComboBox></StackPanel>
-              <Button Margin="0,16,8,0" Click="PrepareSalary_OnClick" Content="{l:Tr MoneyOut_PrepareSalary}"/>
-              <Button Margin="0,16,8,0" Click="PostSalary_OnClick" Content="{l:Tr MoneyOut_PostSalary}"/>
-              <StackPanel Width="110" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_Advance}"/><TextBox x:Name="AdvanceAmount"/></StackPanel>
-              <StackPanel Width="135" Margin="0,0,8,0"><TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="AdvanceNotes"/></StackPanel>
-              <Button Margin="0,16,0,0" Click="RecordAdvance_OnClick" Content="{l:Tr MoneyOut_RecordAdvance}"/>
-            </WrapPanel>
-          </StackPanel>
-          <DataGrid x:Name="EmployeeGrid" Grid.Row="1" Style="{StaticResource CatalogGrid}" SelectionChanged="EmployeeGrid_OnSelectionChanged">
+            <DataGrid x:Name="EmployeeGrid" Style="{StaticResource CatalogGrid}" SelectionChanged="EmployeeGrid_OnSelectionChanged">
             <DataGrid.Columns><DataGridTextColumn Width="260" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}"/><DataGridTextColumn Width="160" Header="{l:Tr MoneyOut_Role}" Binding="{Binding Role}"/><DataGridTextColumn Width="150" Header="{l:Tr MoneyOut_Salary}" Binding="{Binding MonthlySalary}"/></DataGrid.Columns>
-          </DataGrid>
-          <TabControl Grid.Row="2">
-            <TabItem Header="{l:Tr MoneyOut_PrepareSalary}">
+            </DataGrid>
+            </DockPanel>
+          </TabItem>
+          <TabItem Header="{l:Tr MoneyOut_PrepareSalary}">
+            <DockPanel Margin="0,8,0,0">
+              <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                <StackPanel Width="100" Margin="0,0,8,0"><TextBlock Text="{l:Tr Assets_Period}"/><TextBox x:Name="SalaryPeriod"/></StackPanel>
+                <StackPanel Width="135" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_PayDate}"/><DatePicker x:Name="SalaryPayDate" SelectedDateFormat="Short"/></StackPanel>
+                <StackPanel Width="115" Margin="0,0,8,0"><TextBlock Text="{l:Tr Purchasing_Mode}"/><ComboBox x:Name="SalaryMode" SelectedIndex="2"><ComboBoxItem Tag="CASH" Content="{l:Tr MoneyOut_ModeCash}"/><ComboBoxItem Tag="UPI" Content="UPI"/><ComboBoxItem Tag="BANK" Content="{l:Tr MoneyOut_ModeBank}"/><ComboBoxItem Tag="OTHER" Content="{l:Tr MoneyOut_ReasonOther}"/></ComboBox></StackPanel>
+                <Button Margin="0,18,8,0" Click="PrepareSalary_OnClick" Content="{l:Tr MoneyOut_PrepareSalary}"/>
+                <Button x:Name="PostSalaryButton" IsEnabled="False" Margin="0,18,8,0" Click="PostSalary_OnClick" Content="{l:Tr MoneyOut_PostSalary}"/>
+                <TextBlock x:Name="SalarySelectedCount" VerticalAlignment="Bottom" Margin="0,0,0,8" Text="0 selected"/>
+              </WrapPanel>
               <DataGrid Style="{StaticResource CatalogGrid}" x:Name="SalaryGrid" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="False">
                 <DataGrid.Columns>
-                  <DataGridTextColumn Width="130" Header="{l:Tr MoneyOut_EmployeeId}" Binding="{Binding EmployeeId}" IsReadOnly="True"/>
+                  <DataGridTemplateColumn Width="48">
+                    <DataGridTemplateColumn.HeaderTemplate><DataTemplate><CheckBox HorizontalAlignment="Center" IsThreeState="True" Loaded="SalaryPageCheck_OnLoaded" Click="SalaryPageCheck_OnClick" AutomationProperties.Name="{l:Tr Selection_ThisPage}"/></DataTemplate></DataGridTemplateColumn.HeaderTemplate>
+                    <DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox HorizontalAlignment="Center" IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Click="SalaryCheck_OnClick" AutomationProperties.Name="{l:Tr MoneyOut_SelectSalary}"/></DataTemplate></DataGridTemplateColumn.CellTemplate>
+                  </DataGridTemplateColumn>
+                  <DataGridTextColumn Width="180" Header="{l:Tr MoneyOut_EmployeeName}" Binding="{Binding EmployeeName}" IsReadOnly="True"/>
                   <DataGridTextColumn Width="130" Header="{l:Tr MoneyOut_Salary}" Binding="{Binding BaseSalary}"/>
                   <DataGridTextColumn Width="130" Header="{l:Tr MoneyOut_LeaveDeduction}" Binding="{Binding LeaveDeduction}"/>
                   <DataGridTextColumn Width="120" Header="{l:Tr MoneyOut_Overtime}" Binding="{Binding Overtime}"/>
                   <DataGridTextColumn Width="120" Header="{l:Tr MoneyOut_Bonus}" Binding="{Binding Bonus}"/>
                 </DataGrid.Columns>
               </DataGrid>
-            </TabItem>
-            <TabItem Header="{l:Tr MoneyOut_PostedPayments}">
-              <DockPanel>
-                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
-                  <Button Margin="0,0,8,0" Click="RefreshSalaryRegister_OnClick" Content="{l:Tr Stock_Refresh}"/>
-                  <Button x:Name="CorrectSalaryButton" IsEnabled="False" Click="CorrectSalary_OnClick" Content="{l:Tr MoneyOut_CorrectPosted}"/>
-                </StackPanel>
+            </DockPanel>
+          </TabItem>
+          <TabItem Header="{l:Tr MoneyOut_PostedPayments}">
+              <DockPanel Margin="0,8,0,0">
+                <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                  <StackPanel Width="100" Margin="0,0,8,0"><TextBlock Text="{l:Tr Assets_Period}"/><TextBox x:Name="SalaryRegisterPeriod"/></StackPanel>
+                  <Button Margin="0,18,8,0" Click="RefreshSalaryRegister_OnClick" Content="{l:Tr Stock_Refresh}"/>
+                  <Button x:Name="CorrectSalaryButton" IsEnabled="False" Margin="0,18,0,0" Click="CorrectSalary_OnClick" Content="{l:Tr MoneyOut_CorrectPosted}"/>
+                </WrapPanel>
+                <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                  <StackPanel Width="190" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_EmployeeName}"/><ComboBox x:Name="AdvanceEmployeeBox" DisplayMemberPath="Name" SelectedValuePath="Id"/></StackPanel>
+                  <StackPanel Width="135" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_PayDate}"/><DatePicker x:Name="AdvancePayDate" SelectedDateFormat="Short"/></StackPanel>
+                  <StackPanel Width="115" Margin="0,0,8,0"><TextBlock Text="{l:Tr Purchasing_Mode}"/><ComboBox x:Name="AdvanceMode" SelectedIndex="2"><ComboBoxItem Tag="CASH" Content="{l:Tr MoneyOut_ModeCash}"/><ComboBoxItem Tag="UPI" Content="UPI"/><ComboBoxItem Tag="BANK" Content="{l:Tr MoneyOut_ModeBank}"/><ComboBoxItem Tag="OTHER" Content="{l:Tr MoneyOut_ReasonOther}"/></ComboBox></StackPanel>
+                  <StackPanel Width="110" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_Advance}"/><TextBox x:Name="AdvanceAmount"/></StackPanel>
+                  <StackPanel Width="180" Margin="0,0,8,0"><TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="AdvanceNotes"/></StackPanel>
+                  <Button Margin="0,18,0,0" Click="RecordAdvance_OnClick" Content="{l:Tr MoneyOut_RecordAdvance}"/>
+                </WrapPanel>
                 <DataGrid Style="{StaticResource CatalogGrid}" x:Name="SalaryRegisterGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="SalaryRegisterGrid_OnSelectionChanged">
                   <DataGrid.Columns>
                     <DataGridTextColumn Width="180" Header="{l:Tr MoneyOut_EmployeeName}" Binding="{Binding EmployeeName}"/>
@@ -253,13 +271,13 @@
                   </DataGrid.Columns>
                 </DataGrid>
               </DockPanel>
-            </TabItem>
-          </TabControl>
-        </Grid>
+          </TabItem>
+        </TabControl>
       </TabItem>
     </TabControl>
-    <DockPanel Grid.Row="2" Margin="0,10,0,0">
-      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+    <Grid Grid.Row="2" Margin="0,10,0,0">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <StackPanel x:Name="PageControls" Grid.Column="1" Orientation="Horizontal" MinWidth="420">
         <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{l:Tr Common_RowsPerPage}"/>
         <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
         <StackPanel x:Name="ExpiryPager" Orientation="Horizontal" Margin="12,0,0,0">
@@ -276,6 +294,6 @@
         </StackPanel>
       </StackPanel>
       <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-    </DockPanel>
+    </Grid>
   </Grid>
 </Page>

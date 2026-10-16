@@ -26,11 +26,55 @@
     </Grid>
     <Grid Grid.Row="2">
       <Grid.ColumnDefinitions><ColumnDefinition Width="1.5*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-      <DataGrid x:Name="LabelsGrid" Style="{StaticResource CatalogGrid}" IsReadOnly="False"
+      <DataGrid x:Name="LabelsGrid" Style="{StaticResource CatalogGrid}" IsReadOnly="False" RowHeight="64" RowDetailsVisibilityMode="Visible"
                 SelectionChanged="LabelsGrid_OnSelectionChanged" CurrentCellChanged="LabelsGrid_OnCurrentCellChanged">
+        <DataGrid.RowDetailsTemplate>
+          <DataTemplate>
+            <Grid Margin="18,0,0,6" Visibility="{Binding ExpandedLotsVisibility}">
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+              <Grid Background="#EDF1F6" Height="28">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="55"/><ColumnDefinition Width="*"/><ColumnDefinition Width="90"/><ColumnDefinition Width="75"/></Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Margin="8,6" Text="{l:Tr Catalog_Select}"/>
+                <TextBlock Grid.Column="1" Margin="8,6" Text="{l:Tr Catalog_LabelSource}"/>
+                <TextBlock Grid.Column="2" Margin="8,6" Text="{l:Tr Catalog_Price}"/>
+                <TextBlock Grid.Column="3" Margin="8,6" Text="{l:Tr Catalog_Copies}"/>
+              </Grid>
+              <ScrollViewer Grid.Row="1" MaxHeight="220" VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Lots}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid Height="38" Background="White" MouseLeftButtonDown="LotRow_OnMouseDown">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="55"/><ColumnDefinition Width="*"/><ColumnDefinition Width="90"/><ColumnDefinition Width="75"/></Grid.ColumnDefinitions>
+                        <CheckBox Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center" IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" Click="LotCheck_OnClick"/>
+                        <TextBlock Grid.Column="1" Margin="8,0" VerticalAlignment="Center" Text="{Binding Source}" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Grid.Column="2" Margin="8,0" VerticalAlignment="Center" Text="{Binding Price}"/>
+                        <TextBox Grid.Column="3" Margin="4,3" VerticalContentAlignment="Center" Text="{Binding CopiesText, UpdateSourceTrigger=PropertyChanged}"/>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </Grid>
+          </DataTemplate>
+        </DataGrid.RowDetailsTemplate>
         <DataGrid.Columns>
-          <DataGridCheckBoxColumn Width="55" Header="{l:Tr Catalog_Select}" Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"/>
-          <DataGridTextColumn Width="210" IsReadOnly="True" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}"/>
+          <DataGridTemplateColumn Width="55" Header="{l:Tr Catalog_Select}"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsPrintable}" Click="ProductLabelCheck_OnClick"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+      <DataGridTemplateColumn Width="210" Header="{l:Tr Catalog_Name}">
+        <DataGridTemplateColumn.CellTemplate>
+          <DataTemplate>
+            <StackPanel VerticalAlignment="Center">
+              <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+              <Button HorizontalAlignment="Left" Margin="0,3,0,0" Padding="0" MinHeight="18"
+                      BorderThickness="0" Background="Transparent" FontSize="11" FontWeight="Normal"
+                      Visibility="{Binding LotsVisibility}" Click="ToggleLots_OnClick">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Text="{l:Tr Stock_Lots}"/><TextBlock Margin="4,0,0,0" Text="{Binding LotsArrow}"/>
+                </StackPanel>
+              </Button>
+            </StackPanel>
+          </DataTemplate>
+        </DataGridTemplateColumn.CellTemplate>
+      </DataGridTemplateColumn>
           <DataGridTextColumn Width="145" IsReadOnly="True" Header="{l:Tr Catalog_LabelSource}" Binding="{Binding Source}"/>
           <DataGridTextColumn Width="90" IsReadOnly="True" Header="{l:Tr Catalog_Price}" Binding="{Binding Price}"/>
           <DataGridTextColumn Width="75" Header="{l:Tr Catalog_Copies}" Binding="{Binding CopiesText, UpdateSourceTrigger=PropertyChanged}"/>
@@ -59,8 +103,19 @@
     <Grid Grid.Row="3" Margin="0,14,0,0">
       <TextBlock x:Name="StatusText" Margin="0,0,340,0" VerticalAlignment="Center" TextWrapping="Wrap" Foreground="Crimson"/>
       <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
-        <ComboBox x:Name="PageSizeBox" Width="120" Margin="0,0,8,0" SelectedIndex="2" ToolTip="{l:Tr Common_RowsPerPage}"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
-        <Button x:Name="LoadMoreLotsButton" Margin="0,0,8,0" IsEnabled="False" Click="LoadMoreLots_OnClick" Content="{l:Tr Sales_Next}"/>
+        <StackPanel x:Name="PaginationPanel" Orientation="Horizontal" Margin="0,0,8,0">
+          <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
+          <Menu VerticalAlignment="Center" Margin="0,0,8,0">
+            <MenuItem x:Name="PageSizeMenu" Header="50 ▾" ToolTip="{l:Tr Common_RowsPerPage}">
+              <MenuItem Tag="20" Header="20" Click="PageSize_OnClick"/>
+              <MenuItem Tag="30" Header="30" Click="PageSize_OnClick"/>
+              <MenuItem Tag="50" Header="50" Click="PageSize_OnClick"/>
+              <MenuItem Tag="100" Header="100" Click="PageSize_OnClick"/>
+            </MenuItem>
+          </Menu>
+          <Button x:Name="PreviousLotsButton" Margin="0,0,6,0" IsEnabled="False" Click="PreviousLots_OnClick" Content="{l:Tr Sales_Previous}"/>
+          <Button x:Name="NextLotsButton" Margin="0,0,8,0" IsEnabled="False" Click="NextLots_OnClick" Content="{l:Tr Sales_Next}"/>
+        </StackPanel>
         <Button Margin="0,0,8,0" IsCancel="True" Content="{l:Tr Common_Close}"/>
         <Button x:Name="SaveButton" Margin="0,0,8,0" Click="Save_OnClick" Content="{l:Tr Catalog_SavePrintFile}"/>
         <Button x:Name="PrintButton" Click="Print_OnClick" Content="{l:Tr Catalog_Print}"/>

@@ -5,9 +5,17 @@
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     Title="{l:Tr Assets_Title}" ScrollViewer.CanContentScroll="False">
   <Grid Margin="{StaticResource PagePadding}">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Assets_Title}"/>
-    <WrapPanel Grid.Row="1" Margin="0,16,0,12" ItemHeight="68">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <DockPanel>
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <Button Margin="0,0,8,0" Click="NewAsset_OnClick" Content="{l:Tr Assets_New}"/>
+        <Button Click="Post_OnClick" Content="{l:Tr Assets_PostNow}" ToolTip="{l:Tr Assets_PostAllHint}"/>
+      </StackPanel>
+      <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Assets_Title}"/>
+    </DockPanel>
+    <Expander x:Name="AssetDetailsExpander" Grid.Row="1" Margin="0,12,0,12" Header="{l:Tr Assets_Details}" IsExpanded="False">
+      <StackPanel Margin="0,8,0,0">
+      <WrapPanel ItemHeight="68">
       <StackPanel Width="174" Margin="0,0,8,4"><TextBlock Text="{l:Tr Catalog_Name}"/><TextBox x:Name="AssetName"/></StackPanel>
       <StackPanel Width="132" Margin="0,0,8,4"><TextBlock Text="{l:Tr Catalog_Category}"/><ComboBox x:Name="AssetCategory" SelectedIndex="0" SelectionChanged="AssetCategory_OnSelectionChanged"><ComboBoxItem Tag="Furniture" Content="{l:Tr Assets_Furniture}"/><ComboBoxItem Tag="Equipment" Content="{l:Tr Assets_Equipment}"/><ComboBoxItem Tag="Electronics" Content="{l:Tr Assets_Electronics}"/><ComboBoxItem Tag="Vehicle" Content="{l:Tr Assets_Vehicle}"/><ComboBoxItem Tag="Other" Content="{l:Tr Assets_Other}"/></ComboBox></StackPanel>
       <StackPanel Width="130" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_PurchaseDate}"/><DatePicker x:Name="PurchaseDate" SelectedDateFormat="Short"/></StackPanel>
@@ -18,22 +26,36 @@
       <StackPanel Width="110" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_Salvage}"/><TextBox x:Name="AssetSalvage" Text="0"/></StackPanel>
       <StackPanel Width="150" Margin="0,0,8,4"><TextBlock Text="{l:Tr Purchasing_Vendor}"/><ComboBox x:Name="AssetVendor" DisplayMemberPath="Name" SelectedValuePath="Id"/></StackPanel>
       <StackPanel Width="168" Margin="0,0,8,4"><TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="AssetNotes"/></StackPanel>
-      <Button x:Name="SaveAssetButton" Margin="0,17,8,4" Click="AddAsset_OnClick" Content="{l:Tr Common_Save}"/>
-      <Button Margin="0,17,0,4" Click="NewAsset_OnClick" Content="{l:Tr Assets_New}"/>
-    </WrapPanel>
+      </WrapPanel>
+      <WrapPanel>
+        <Button x:Name="SaveAssetButton" Click="AddAsset_OnClick" Content="{l:Tr Common_Save}"/>
+      </WrapPanel>
+      </StackPanel>
+    </Expander>
     <WrapPanel Grid.Row="2" Margin="0,0,0,12">
-      <TextBox x:Name="AssetSearchBox" Width="160" Margin="0,0,8,8" ToolTip="Asset name or category"/>
-      <CheckBox x:Name="IncludeDisposedBox" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,8" Content="Disposed"/>
-      <Button Margin="0,0,16,8" Click="AssetSearch_OnClick" Content="Search"/>
-      <DatePicker x:Name="DisposalDate" Width="140" Margin="0,0,8,8" SelectedDateFormat="Short" ToolTip="{l:Tr Assets_Disposed}"/>
-      <TextBox x:Name="DisposalValue" Width="110" Margin="0,0,8,8" Text="0" ToolTip="{l:Tr Assets_Proceeds}"/>
-      <Button Margin="0,0,8,8" Click="Dispose_OnClick" Content="{l:Tr Assets_Dispose}"/>
-      <Button Margin="0,0,8,8" Click="Post_OnClick" Content="{l:Tr Assets_PostNow}"/>
-      <Button Margin="0,0,0,8" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
+      <StackPanel Width="220" Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Assets_Search}"/><TextBox x:Name="AssetSearchBox" ToolTip="{l:Tr Assets_SearchHint}" AutomationProperties.Name="{l:Tr Assets_Search}"/></StackPanel>
+      <CheckBox x:Name="IncludeDisposedBox" IsChecked="True" VerticalAlignment="Bottom" Margin="0,0,12,4" Content="{l:Tr Assets_IncludeDisposed}"/>
+      <Button Margin="0,18,8,0" Click="AssetSearch_OnClick" Content="{l:Tr Assets_Search}"/>
+      <Button Margin="0,18,8,0" Click="ClearAssetFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
+      <Button Margin="0,18,0,0" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
     </WrapPanel>
-    <Grid Grid.Row="3"><Grid.RowDefinitions><RowDefinition Height="3*"/><RowDefinition Height="2*"/></Grid.RowDefinitions>
+    <WrapPanel Grid.Row="3" Margin="0,0,0,12">
+      <TextBlock x:Name="SelectedAssetText" Width="220" VerticalAlignment="Bottom" Margin="0,0,12,4" Text="{l:Tr Assets_SelectToDispose}" TextTrimming="CharacterEllipsis"/>
+      <Button x:Name="EditAssetButton" IsEnabled="False" Margin="0,18,12,0" Click="EditAsset_OnClick" Content="{l:Tr Assets_EditSelected}"/>
+      <StackPanel Width="140" Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Assets_DisposalDate}"/><DatePicker x:Name="DisposalDate" IsEnabled="False" SelectedDateFormat="Short"/></StackPanel>
+      <StackPanel Width="130" Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Assets_Proceeds}"/><TextBox x:Name="DisposalValue" IsEnabled="False" Text="0"/></StackPanel>
+      <Button x:Name="DisposeButton" IsEnabled="False" Margin="0,18,0,0" Click="Dispose_OnClick" Content="{l:Tr Assets_Dispose}"/>
+    </WrapPanel>
+    <Grid Grid.Row="4">
       <DataGrid x:Name="AssetGrid" Style="{StaticResource CatalogGrid}" SelectionChanged="AssetGrid_OnSelectionChanged">
         <DataGrid.Columns>
+          <DataGridTemplateColumn Width="125" Header="{l:Tr Assets_ViewTimeline}">
+            <DataGridTemplateColumn.CellTemplate><DataTemplate>
+              <Button Content="{l:Tr Assets_ViewTimeline}" Tag="{Binding}" Click="ViewTimeline_OnClick"
+                      HorizontalAlignment="Center" VerticalAlignment="Center" Height="28" MinHeight="0" MinWidth="0"
+                      Padding="8,2" FontSize="11"/>
+            </DataTemplate></DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
           <DataGridTextColumn Width="220" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}"/>
           <DataGridTextColumn Width="120" Header="{l:Tr Catalog_Category}" Binding="{Binding Category}"/>
           <DataGridTextColumn Width="125" Header="{l:Tr Assets_Cost}" Binding="{Binding Cost}"/>
@@ -43,11 +65,8 @@
           <DataGridTextColumn Width="140" Header="{l:Tr Assets_Disposed}" Binding="{Binding DisposedDate}"/>
         </DataGrid.Columns>
       </DataGrid>
-      <DataGrid x:Name="ScheduleGrid" Grid.Row="1" Margin="0,12,0,0" Style="{StaticResource CatalogGrid}">
-        <DataGrid.Columns><DataGridTextColumn Width="180" Header="{l:Tr Assets_Period}" Binding="{Binding Period}"/><DataGridTextColumn Width="180" Header="{l:Tr Assets_Opening}" Binding="{Binding OpeningValue}"/><DataGridTextColumn Width="180" Header="{l:Tr Assets_Depreciation}" Binding="{Binding Amount}"/><DataGridTextColumn Width="180" Header="{l:Tr Assets_Closing}" Binding="{Binding ClosingValue}"/></DataGrid.Columns>
-      </DataGrid>
     </Grid>
-    <DockPanel Grid.Row="4" Margin="0,12,0,0">
+    <DockPanel Grid.Row="5" Margin="0,12,0,0">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
         <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
         <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" Margin="0,0,8,0" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
@@ -56,5 +75,27 @@
       </StackPanel>
       <TextBlock x:Name="StatusText" VerticalAlignment="Center"/>
     </DockPanel>
+    <Grid x:Name="TimelineOverlay" Grid.RowSpan="6" Panel.ZIndex="10" Visibility="Collapsed">
+      <Border x:Name="TimelineBackdrop" Background="#88000000" MouseDown="TimelineBackdrop_OnMouseDown"/>
+      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Border x:Name="TimelinePanel" Grid.Column="1" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1,0,0,0" Padding="18">
+          <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <TextBlock x:Name="TimelineHeading" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+              <Button Grid.Column="1" Margin="12,0,0,0" Click="CloseTimeline_OnClick" Content="{l:Tr Common_Close}"/>
+            </Grid>
+            <DataGrid x:Name="ScheduleGrid" Grid.Row="1" Margin="0,14,0,0" Style="{StaticResource CatalogGrid}">
+              <DataGrid.Columns><DataGridTextColumn Width="140" Header="{l:Tr Assets_Period}" Binding="{Binding Period}"/><DataGridTextColumn Width="160" Header="{l:Tr Assets_Opening}" Binding="{Binding OpeningValue}"/><DataGridTextColumn Width="160" Header="{l:Tr Assets_Depreciation}" Binding="{Binding Amount}"/><DataGridTextColumn Width="160" Header="{l:Tr Assets_Closing}" Binding="{Binding ClosingValue}"/></DataGrid.Columns>
+            </DataGrid>
+            <StackPanel Grid.Row="2" Margin="0,12,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+              <TextBlock x:Name="TimelinePageText" VerticalAlignment="Center" Margin="0,0,12,0"/>
+              <Button x:Name="PreviousTimelineButton" Click="PreviousTimeline_OnClick" Content="{l:Tr Sales_Previous}"/>
+              <Button x:Name="NextTimelineButton" Margin="6,0,0,0" Click="NextTimeline_OnClick" Content="{l:Tr Sales_Next}"/>
+            </StackPanel>
+          </Grid>
+        </Border>
+      </Grid>
+    </Grid>
   </Grid>
 </Page>

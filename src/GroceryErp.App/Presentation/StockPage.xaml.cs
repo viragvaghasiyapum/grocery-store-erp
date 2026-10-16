@@ -27,6 +27,9 @@ public partial class StockPage : Page
     private bool _overviewLoading;
     private bool _lotLoading;
     private bool _ledgerLoading;
+    private readonly Dictionary<long, LotItem> _selectedLots = new();
+    private CheckBox? _lotPageSelectionCheck;
+    private bool _lotCheckboxSelectionUsed;
 
     public StockPage() : this(null) { }
 
@@ -34,7 +37,15 @@ public partial class StockPage : Page
     {
         InitializeComponent();
         _inventory = inventory ?? ((App)Application.Current).Services.GetRequiredService<InventoryService>();
+        UpdateLotSelectionActions();
+        Loaded += (_, _) => TranslationSource.Instance.PropertyChanged += TranslationChanged;
+        Unloaded += (_, _) => TranslationSource.Instance.PropertyChanged -= TranslationChanged;
         if (loadOnShow) Loaded += async (_, _) => await RefreshAsync();
+    }
+
+    private void TranslationChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == "Item[]" && IsLoaded) UpdateLotSelectionActions();
     }
 
     private void StockTabs_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -48,9 +59,31 @@ public partial class StockPage : Page
         OverviewPager.Visibility = StockTabs.SelectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
         LotsPager.Visibility = StockTabs.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
         LedgerPager.Visibility = StockTabs.SelectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
+        PageSizePanel.Visibility = StockTabs.SelectedIndex == 3 ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    private async void Refresh_OnClick(object sender, RoutedEventArgs e) => await RefreshAsync();
+    private async void Refresh_OnClick(object sender, RoutedEventArgs e)
+    {
+        switch (StockTabs.SelectedIndex)
+        {
+            case 0:
+                _overviewPrevious.Clear();
+                await LoadOverviewPageAsync(null, null);
+                break;
+            case 1:
+                _lotPrevious.Clear();
+                ClearLotSelection();
+                await LoadLotPageAsync(null);
+                break;
+            case 2:
+                await ReloadLedgerAsync();
+                break;
+            case 3:
+                try { ValuationGrid.ItemsSource = await _inventory.GetValuationAsync(); }
+                catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+                break;
+        }
+    }
 
     private async void OpeningImport_OnClick(object sender, RoutedEventArgs e)
     {
@@ -80,7 +113,7 @@ public partial class StockPage : Page
 
     private async void Adjust_OnClick(object sender, RoutedEventArgs e)
     {
-        if (LotsGrid.SelectedItem is not LotItem lot) return;
+        if (SelectedSingleLot() is not LotItem lot) return;
         var window = new StockAdjustmentWindow(_inventory, lot) { Owner = Window.GetWindow(this) };
         if (window.ShowDialog() == true) await RefreshAsync();
     }
@@ -110,24 +143,156 @@ public partial class StockPage : Page
 
     private async void Price_OnClick(object sender, RoutedEventArgs e)
     {
-        if (LotsGrid.SelectedItem is not LotItem lot) return;
+        if (SelectedSingleLot() is not LotItem lot) return;
         var window = new LotPriceWindow(_inventory, lot) { Owner = Window.GetWindow(this) };
         if (window.ShowDialog() == true) await RefreshAsync();
     }
 
     private void LotsGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        bool selected = LotsGrid.SelectedItem is LotItem;
-        if (AdjustButton is not null) AdjustButton.IsEnabled = selected;
-        if (PriceButton is not null) PriceButton.IsEnabled = selected;
-        if (ToggleLotButton is not null) ToggleLotButton.IsEnabled = selected;
-        if (WriteOffButton is not null) WriteOffButton.IsEnabled =
-            LotsGrid.SelectedItem is LotItem { ExpiryBucketCode: "EXPIRED", IsActive: true } lot && lot.OnHand > GroceryErp.Core.Numerics.Quantity.Zero;
+        if (_selectedLots.Count == 0 && e.AddedItems.Count > 0) _lotCheckboxSelectionUsed = false;
+        UpdateLotSelectionActions();
+    }
+
+    private void LotCheck_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox { DataContext: LotItem lot } box)
+            box.IsChecked = _selectedLots.ContainsKey(lot.Id);
+    }
+
+    private void LotCheck_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox { DataContext: LotItem lot } box) return;
+        _lotCheckboxSelectionUsed = true;
+        if (box.IsChecked == true) _selectedLots[lot.Id] = lot;
+        else _selectedLots.Remove(lot.Id);
+        UpdateLotSelectionActions();
+    }
+
+    private void LotPageCheck_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        _lotPageSelectionCheck = sender as CheckBox;
+        UpdateLotPageSelectionCheck();
+    }
+
+    private void LotPageCheck_OnClick(object sender, RoutedEventArgs e)
+    {
+        LotItem[] pageItems = LotsGrid.Items.OfType<LotItem>().ToArray();
+        if (pageItems.Length == 0) return;
+        bool allSelected = pageItems.All(item => _selectedLots.ContainsKey(item.Id));
+        _lotCheckboxSelectionUsed = true;
+        foreach (LotItem item in pageItems)
+        {
+            if (allSelected) _selectedLots.Remove(item.Id);
+            else _selectedLots[item.Id] = item;
+        }
+        if (allSelected) LotsGrid.UnselectAll();
+        LotsGrid.Items.Refresh();
+        UpdateLotSelectionActions();
+    }
+
+    private LotItem? SelectedSingleLot() => _selectedLots.Count switch
+    {
+        > 1 => null,
+        1 => _selectedLots.Values.Single(),
+        _ => _lotCheckboxSelectionUsed ? null : LotsGrid.SelectedItem as LotItem,
+    };
+
+    private void UpdateLotPageSelectionCheck()
+    {
+        if (_lotPageSelectionCheck is null) return;
+        LotItem[] pageItems = LotsGrid.Items.OfType<LotItem>().ToArray();
+        int selected = pageItems.Count(item => _selectedLots.ContainsKey(item.Id));
+        _lotPageSelectionCheck.IsChecked = selected == 0 ? false : selected == pageItems.Length ? true : null;
+    }
+
+    private void UpdateLotSelectionActions()
+    {
+        if (AdjustButton is null) return;
+        LotItem? lot = SelectedSingleLot();
+        AdjustButton.IsEnabled = lot is not null;
+        PriceButton.IsEnabled = lot is not null;
+        ToggleLotButton.IsEnabled = lot is not null;
+        WriteOffButton.IsEnabled = lot is not null && CanWriteOff(lot);
+        bool multiple = _selectedLots.Count > 1;
+        BulkBlockLotsButton.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
+        BulkUnblockLotsButton.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
+        BulkWriteOffLotsButton.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
+        BulkBlockLotsButton.IsEnabled = multiple && _selectedLots.Values.Any(static item => item.IsActive);
+        BulkUnblockLotsButton.IsEnabled = multiple && _selectedLots.Values.Any(static item => !item.IsActive);
+        BulkWriteOffLotsButton.IsEnabled = multiple && _selectedLots.Values.All(CanWriteOff);
+        int count = _selectedLots.Count > 0 || _lotCheckboxSelectionUsed
+            ? _selectedLots.Count : lot is null ? 0 : 1;
+        LotSelectedCountText.Text = TranslationSource.Instance.Format("Selection_Count", count);
+        UpdateLotPageSelectionCheck();
+    }
+
+    private static bool CanWriteOff(LotItem lot) =>
+        lot is { ExpiryBucketCode: "EXPIRED", IsActive: true } &&
+        lot.OnHand > GroceryErp.Core.Numerics.Quantity.Zero;
+
+    private void ClearLotSelection()
+    {
+        _selectedLots.Clear();
+        _lotCheckboxSelectionUsed = false;
+        LotsGrid.UnselectAll();
+        LotsGrid.Items.Refresh();
+        UpdateLotSelectionActions();
+    }
+
+    private async void BulkBlockLots_OnClick(object sender, RoutedEventArgs e) => await ChangeLotsActiveAsync(false);
+
+    private async void BulkUnblockLots_OnClick(object sender, RoutedEventArgs e) => await ChangeLotsActiveAsync(true);
+
+    private async Task ChangeLotsActiveAsync(bool active)
+    {
+        LotItem[] lots = _selectedLots.Values.ToArray();
+        if (lots.Length < 2 || lots.All(item => item.IsActive == active)) return;
+        if (!active && MessageBox.Show(TranslationSource.Instance.Format("Stock_BlockSelectedConfirm", lots.Length),
+            TranslationSource.Instance["Stock_BlockSelected"], MessageBoxButton.YesNo,
+            MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        BulkBlockLotsButton.IsEnabled = false;
+        BulkUnblockLotsButton.IsEnabled = false;
+        try
+        {
+            int changed = await _inventory.BulkSetLotsActiveAsync(lots.Select(static item => item.Id).ToArray(), active);
+            await RefreshAsync();
+            StatusText.Text = TranslationSource.Instance.Format("Stock_LotStatusChanged", changed);
+        }
+        catch (Exception exception)
+        {
+            StatusText.Text = UserError.Message(exception);
+            UpdateLotSelectionActions();
+        }
+    }
+
+    private async void BulkWriteOffLots_OnClick(object sender, RoutedEventArgs e)
+    {
+        LotItem[] lots = _selectedLots.Values.ToArray();
+        if (lots.Length < 2 || lots.Any(static item => !CanWriteOff(item))) return;
+        if (MessageBox.Show(TranslationSource.Instance.Format("Stock_BulkWriteOffConfirm", lots.Length),
+            TranslationSource.Instance["Stock_WriteOffSelectedExpired"], MessageBoxButton.YesNo,
+            MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        BulkWriteOffLotsButton.IsEnabled = false;
+        try
+        {
+            IServiceProvider services = ((App)Application.Current).Services;
+            IReadOnlyList<long> writtenOff = await services.GetRequiredService<MoneyOutService>()
+                .WriteOffExpiredAsync(lots.Select(static item => item.Id).ToArray(),
+                    services.GetRequiredService<IClock>().BusinessDate, OperationGuard.NewId());
+            await RefreshAsync();
+            StatusText.Text = TranslationSource.Instance.Format("Stock_BulkWriteOffResult", writtenOff.Count);
+        }
+        catch (Exception exception)
+        {
+            StatusText.Text = UserError.Message(exception);
+            UpdateLotSelectionActions();
+        }
     }
 
     private async void WriteOff_OnClick(object sender, RoutedEventArgs e)
     {
-        if (LotsGrid.SelectedItem is not LotItem { ExpiryBucketCode: "EXPIRED", IsActive: true } lot) return;
+        if (SelectedSingleLot() is not LotItem { ExpiryBucketCode: "EXPIRED", IsActive: true } lot) return;
         if (MessageBox.Show(TranslationSource.Instance.Format("Stock_WriteOffConfirm", lot.LotCode, lot.OnHand),
             TranslationSource.Instance["Stock_WriteOffExpired"], MessageBoxButton.YesNo,
             MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
@@ -143,9 +308,30 @@ public partial class StockPage : Page
 
     private async void ToggleLot_OnClick(object sender, RoutedEventArgs e)
     {
-        if (LotsGrid.SelectedItem is not LotItem lot) return;
+        if (SelectedSingleLot() is not LotItem lot) return;
         try { await _inventory.SetLotActiveAsync(lot.Id, !lot.IsActive, lot.IsActive); await RefreshAsync(); }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async void LotActive_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox { DataContext: LotItem lot } box) return;
+        bool active = box.IsChecked == true;
+        if (active == lot.IsActive) return;
+        box.IsEnabled = false;
+        try
+        {
+            await _inventory.SetLotActiveAsync(lot.Id, active, lot.IsActive);
+            ClearLotSelection();
+            await LoadLotPageAsync(_lotCursor);
+            StatusText.Text = string.Empty;
+        }
+        catch (Exception exception)
+        {
+            box.IsChecked = lot.IsActive;
+            StatusText.Text = UserError.Message(exception);
+        }
+        finally { box.IsEnabled = true; }
     }
 
     private async void OverviewGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -241,6 +427,7 @@ public partial class StockPage : Page
         {
             _overviewPrevious.Clear();
             _lotPrevious.Clear();
+            ClearLotSelection();
             await LoadOverviewPageAsync(null, null);
             await LoadLotPageAsync(null);
             var valuation = await _inventory.GetValuationAsync();
@@ -280,6 +467,7 @@ public partial class StockPage : Page
             _lotPage = page;
             _lotCursor = beforeId;
             UiRefreshProbe.RecordBinding("stock", () => LotsGrid.ItemsSource = page.Items);
+            UpdateLotSelectionActions();
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
         finally
@@ -299,6 +487,7 @@ public partial class StockPage : Page
     private async void LotSearch_OnClick(object sender, RoutedEventArgs e)
     {
         _lotPrevious.Clear();
+        ClearLotSelection();
         await LoadLotPageAsync(null);
     }
 

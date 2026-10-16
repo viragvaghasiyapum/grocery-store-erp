@@ -5,26 +5,18 @@
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     Title="{l:Tr Stock_Title}" ScrollViewer.CanContentScroll="False">
   <Grid Margin="24">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Stock_Title}" />
-    <StackPanel Grid.Row="1" Margin="0,16,0,4">
-      <WrapPanel>
-        <Button Margin="0,0,8,8" Click="OpeningImport_OnClick" Content="{l:Tr Stock_OpeningImport}" />
-        <Button Margin="0,0,8,8" Click="OpeningTemplate_OnClick" Content="{l:Tr Stock_OpeningTemplate}" />
-        <Button x:Name="ResumeCountButton" Margin="0,0,8,8" Click="Count_OnClick" Content="{l:Tr Stock_ResumeCount}" />
-        <Button Margin="0,0,8,8" Click="NewCount_OnClick" Content="{l:Tr Stock_NewCount}" />
-        <Button Margin="0,0,8,8" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
-      </WrapPanel>
-      <WrapPanel>
-        <Button x:Name="AdjustButton" IsEnabled="False" Margin="0,0,8,8" Click="Adjust_OnClick" Content="{l:Tr Stock_Adjust}" />
-        <Button x:Name="PriceButton" IsEnabled="False" Margin="0,0,8,8" Click="Price_OnClick" Content="{l:Tr Stock_CorrectLot}" />
-        <Button x:Name="ToggleLotButton" IsEnabled="False" Margin="0,0,8,8" Click="ToggleLot_OnClick" Content="{l:Tr Stock_BlockToggle}" />
-        <Button x:Name="WriteOffButton" IsEnabled="False" Margin="0,0,8,8" Click="WriteOff_OnClick" Content="{l:Tr Stock_WriteOffExpired}" />
-      </WrapPanel>
-    </StackPanel>
-    <TabControl x:Name="StockTabs" Grid.Row="2" Margin="0,8,0,0" SelectionChanged="StockTabs_OnSelectionChanged">
+    <TabControl x:Name="StockTabs" Grid.Row="1" Margin="0,16,0,0" SelectionChanged="StockTabs_OnSelectionChanged">
       <TabItem Header="{l:Tr Stock_Overview}">
         <DockPanel Margin="0,8,0,0">
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+          <Button Margin="0,0,8,0" Click="OpeningImport_OnClick" Content="{l:Tr Stock_OpeningImport}" />
+          <Button Margin="0,0,8,0" Click="OpeningTemplate_OnClick" Content="{l:Tr Stock_OpeningTemplate}" />
+          <Button x:Name="ResumeCountButton" Margin="0,0,8,0" Click="Count_OnClick" Content="{l:Tr Stock_ResumeCount}" />
+          <Button Margin="0,0,8,0" Click="NewCount_OnClick" Content="{l:Tr Stock_NewCount}" />
+          <Button Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
+        </WrapPanel>
         <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
           <TextBox x:Name="OverviewSearchBox" Width="240" Margin="0,0,6,0" ToolTip="Product name or SKU"/>
           <Button Click="OverviewSearch_OnClick" Content="Search"/>
@@ -43,12 +35,33 @@
       </TabItem>
       <TabItem Header="{l:Tr Stock_Lots}">
         <DockPanel Margin="0,8,0,0">
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+          <Button x:Name="AdjustButton" IsEnabled="False" Margin="0,0,8,0" Click="Adjust_OnClick" Content="{l:Tr Stock_Adjust}" />
+          <Button x:Name="PriceButton" IsEnabled="False" Margin="0,0,8,0" Click="Price_OnClick" Content="{l:Tr Stock_CorrectLot}" />
+          <Button x:Name="ToggleLotButton" IsEnabled="False" Margin="0,0,8,0" Click="ToggleLot_OnClick" Content="{l:Tr Stock_BlockToggle}" />
+          <Button x:Name="WriteOffButton" IsEnabled="False" Margin="0,0,8,0" Click="WriteOff_OnClick" Content="{l:Tr Stock_WriteOffExpired}" />
+          <Button Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
+        </WrapPanel>
         <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
           <TextBox x:Name="LotSearchBox" Width="240" Margin="0,0,6,0" ToolTip="Product, lot or batch"/>
           <Button Click="LotSearch_OnClick" Content="Search"/>
         </WrapPanel>
-        <DataGrid Style="{StaticResource CatalogGrid}" x:Name="LotsGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="LotsGrid_OnSelectionChanged">
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+          <Button x:Name="BulkBlockLotsButton" IsEnabled="False" Visibility="Collapsed" Margin="0,0,8,0" Click="BulkBlockLots_OnClick" Content="{l:Tr Stock_BlockSelected}"/>
+          <Button x:Name="BulkUnblockLotsButton" IsEnabled="False" Visibility="Collapsed" Margin="0,0,8,0" Click="BulkUnblockLots_OnClick" Content="{l:Tr Stock_UnblockSelected}"/>
+          <Button x:Name="BulkWriteOffLotsButton" IsEnabled="False" Visibility="Collapsed" Margin="0,0,8,0" Click="BulkWriteOffLots_OnClick" Content="{l:Tr Stock_WriteOffSelectedExpired}"/>
+          <TextBlock x:Name="LotSelectedCountText" VerticalAlignment="Center" Text="0 selected"/>
+        </StackPanel>
+        <DataGrid Style="{StaticResource CatalogGrid}" x:Name="LotsGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Single" SelectionChanged="LotsGrid_OnSelectionChanged">
           <DataGrid.Columns>
+            <DataGridTemplateColumn Width="42">
+              <DataGridTemplateColumn.HeaderTemplate><DataTemplate>
+                <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" IsThreeState="True" Loaded="LotPageCheck_OnLoaded" Click="LotPageCheck_OnClick" AutomationProperties.Name="{l:Tr Selection_ThisPage}"/>
+              </DataTemplate></DataGridTemplateColumn.HeaderTemplate>
+              <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" Loaded="LotCheck_OnLoaded" Click="LotCheck_OnClick" AutomationProperties.Name="{l:Tr Stock_SelectLot}"/>
+              </DataTemplate></DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
             <DataGridTextColumn Width="210" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}" />
             <DataGridTextColumn Width="105" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}" />
             <DataGridTextColumn Width="90" Header="{l:Tr Stock_Batch}" Binding="{Binding BatchNumber}" />
@@ -57,7 +70,13 @@
             <DataGridTextColumn Width="90" Header="{l:Tr Stock_OnHand}" Binding="{Binding OnHand}" />
             <DataGridTextColumn Width="90" Header="{l:Tr Stock_UnitCost}" Binding="{Binding UnitCost}" />
             <DataGridTextColumn Width="90" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}" />
-            <DataGridCheckBoxColumn Width="70" Header="{l:Tr Catalog_Active}" Binding="{Binding IsActive}" />
+            <DataGridTemplateColumn Width="70" Header="{l:Tr Catalog_Active}">
+              <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center"
+                          IsChecked="{Binding IsActive, Mode=OneWay}" Click="LotActive_OnClick"
+                          AutomationProperties.Name="{l:Tr Catalog_Active}"/>
+              </DataTemplate></DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
           </DataGrid.Columns>
         </DataGrid>
         </DockPanel>
@@ -94,7 +113,9 @@
         </Grid>
       </TabItem>
       <TabItem Header="{l:Tr Stock_Valuation}">
-        <DataGrid Margin="0,8,0,0" Style="{StaticResource CatalogGrid}" x:Name="ValuationGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+        <DockPanel Margin="0,8,0,0">
+        <Button DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
+        <DataGrid Style="{StaticResource CatalogGrid}" x:Name="ValuationGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
           <DataGrid.Columns>
             <DataGridTextColumn Width="260" Header="{l:Tr Catalog_Category}" Binding="{Binding CategoryName}"/>
             <DataGridTextColumn Width="120" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
@@ -103,10 +124,11 @@
             <DataGridTextColumn Width="140" Header="{l:Tr Stock_MrpValue}" Binding="{Binding MrpValue}"/>
           </DataGrid.Columns>
         </DataGrid>
+        </DockPanel>
       </TabItem>
     </TabControl>
-    <DockPanel Grid.Row="3" Margin="0,10,0,0">
-      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+    <DockPanel Grid.Row="2" Margin="0,10,0,0">
+      <StackPanel x:Name="PageSizePanel" DockPanel.Dock="Right" Orientation="Horizontal">
         <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{l:Tr Common_RowsPerPage}"/>
         <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
         <StackPanel x:Name="OverviewPager" Orientation="Horizontal" Margin="12,0,0,0">

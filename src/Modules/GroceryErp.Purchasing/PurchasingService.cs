@@ -59,12 +59,14 @@ public sealed class PurchasingService(
 
     public Task<PurchasePage> GetPurchasesPageAsync(DateOnly? beforeDate = null, long? beforeId = null,
         DateOnly? from = null, DateOnly? to = null, long? vendorId = null, int limit = 100,
+        string? productQuery = null,
         CancellationToken cancellationToken = default)
     {
         if (beforeDate is null != (beforeId is null) || limit is < 1 or > 200 || from > to)
             throw new DomainException(ErrorCode.Validation, "Invalid purchase page filter.");
         return database.ReadAsync(connection =>
         {
+            string? productPattern = string.IsNullOrWhiteSpace(productQuery) ? null : $"%{productQuery.Trim()}%";
             List<PurchaseListItem> rows = connection.Query<PurchaseListRow>("""
                 SELECT p.id AS Id,p.doc_no AS DocumentNumber,v.name AS VendorName,
                        p.vendor_invoice_no AS VendorInvoiceNumber,p.received_date AS ReceivedDate,
@@ -73,10 +75,14 @@ public sealed class PurchasingService(
                 WHERE (@from IS NULL OR p.received_date>=@from)
                   AND (@to IS NULL OR p.received_date<=@to)
                   AND (@vendorId IS NULL OR p.vendor_id=@vendorId)
+                  AND (@productPattern IS NULL OR EXISTS (
+                      SELECT 1 FROM purchase_line pl JOIN product item ON item.id=pl.product_id
+                      WHERE pl.purchase_id=p.id AND (item.name LIKE @productPattern COLLATE NOCASE
+                          OR item.sku LIKE @productPattern COLLATE NOCASE)))
                   AND (@beforeDate IS NULL OR p.received_date<@beforeDate
                        OR (p.received_date=@beforeDate AND p.id<@beforeId))
                 ORDER BY p.received_date DESC,p.id DESC LIMIT @take
-                """, new { beforeDate, beforeId, from, to, vendorId, take = limit + 1 })
+                """, new { beforeDate, beforeId, from, to, vendorId, productPattern, take = limit + 1 })
                 .Select(static row => row.ToModel()).ToList();
             bool hasMore = rows.Count > limit;
             if (hasMore) rows.RemoveAt(limit);
@@ -101,7 +107,7 @@ public sealed class PurchasingService(
         }, cancellationToken);
     }
 
-    public Task UpdateVendorAsync(long id, VendorInput input, bool isActive = true, CancellationToken cancellationToken = default)
+    public Task UpdateVendorAsync(long id, VendorInput input, bool? isActive = null, CancellationToken cancellationToken = default)
     {
         ValidVendor vendor = ValidateVendor(input);
         if (id <= 0) throw new DomainException(ErrorCode.Validation, nameof(id));
@@ -111,7 +117,7 @@ public sealed class PurchasingService(
                 UPDATE vendor SET name=@Name,contact_person=@ContactPerson,phone=@Phone,alt_phone=@AlternatePhone,
                     email=@Email,address=@Address,city=@City,state=@State,pincode=@Pincode,gstin=@Gstin,pan=@Pan,
                     upi_id=@UpiId,bank_details=@BankDetails,payment_terms_days=@PaymentTermsDays,
-                    opening_balance=@OpeningBalance,notes=@Notes,is_active=@isActive WHERE id=@id
+                    opening_balance=@OpeningBalance,notes=@Notes,is_active=COALESCE(@isActive,is_active) WHERE id=@id
                 """, new
             {
                 id,
@@ -131,10 +137,35 @@ public sealed class PurchasingService(
                 vendor.PaymentTermsDays,
                 vendor.OpeningBalance,
                 vendor.Notes,
-                isActive = isActive ? 1 : 0,
+                isActive = isActive is null ? (int?)null : isActive.Value ? 1 : 0,
             }, transaction.Transaction);
             if (changed == 0) throw new DomainException(ErrorCode.NotFound, "vendor", id);
             audit.Write(transaction, "vendor", id, "UPDATE", new { vendor.Name, vendor.Gstin, isActive });
+        }, cancellationToken);
+    }
+
+    public Task<int> BulkSetVendorsActiveAsync(IReadOnlyCollection<long> vendorIds, bool active,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(vendorIds);
+        long[] ids = vendorIds.Where(static id => id > 0).Distinct().ToArray();
+        if (ids.Length == 0) throw new DomainException(ErrorCode.Validation, "Select at least one vendor.");
+        return database.WriteAsync(transaction =>
+        {
+            int changed = 0;
+            foreach (long id in ids)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                bool? current = transaction.Connection.QuerySingleOrDefault<bool?>(
+                    "SELECT is_active FROM vendor WHERE id=@id", new { id }, transaction.Transaction);
+                if (current is null) throw new DomainException(ErrorCode.NotFound, "vendor", id);
+                if (current == active) continue;
+                transaction.Connection.Execute("UPDATE vendor SET is_active=@active WHERE id=@id",
+                    new { id, active = active ? 1 : 0 }, transaction.Transaction);
+                audit.Write(transaction, "vendor", id, active ? "ACTIVATE" : "DEACTIVATE", null);
+                changed++;
+            }
+            return changed;
         }, cancellationToken);
     }
 
@@ -388,7 +419,7 @@ public sealed class PurchasingService(
             OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.VendorPayment);
             if (replay is not null) return replay.RefId ?? 0;
             periods.EnsureOpen(input.Date);
-            EnsureVendor(transaction, input.VendorId);
+            EnsureVendorExists(transaction, input.VendorId);
             if (input.PurchaseId is not null && transaction.Connection.ExecuteScalar<long>("""
                     SELECT COUNT(*) FROM purchase WHERE id=@PurchaseId AND vendor_id=@VendorId AND status='POSTED'
                     """, input, transaction.Transaction) != 1)
@@ -830,6 +861,13 @@ public sealed class PurchasingService(
     private static void EnsureVendor(DbTx transaction, long vendorId)
     {
         if (transaction.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM vendor WHERE id=@vendorId AND is_active=1",
+                new { vendorId }, transaction.Transaction) != 1)
+            throw new DomainException(ErrorCode.NotFound, "vendor", vendorId);
+    }
+
+    private static void EnsureVendorExists(DbTx transaction, long vendorId)
+    {
+        if (transaction.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM vendor WHERE id=@vendorId",
                 new { vendorId }, transaction.Transaction) != 1)
             throw new DomainException(ErrorCode.NotFound, "vendor", vendorId);
     }

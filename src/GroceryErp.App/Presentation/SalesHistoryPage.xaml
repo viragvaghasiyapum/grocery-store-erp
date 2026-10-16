@@ -11,7 +11,7 @@
  </Page.Resources>
  <Grid Margin="20">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
-   <RowDefinition Height="250"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+   <RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <Grid Grid.Row="0">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Sales_History_Title}"/>
@@ -46,6 +46,13 @@
   <DataGrid x:Name="HistoryGrid" Grid.Row="2" Margin="0,0,0,10" Style="{StaticResource CatalogGrid}"
             SelectionChanged="HistoryGrid_OnSelectionChanged">
    <DataGrid.Columns>
+    <DataGridTemplateColumn Width="125" Header="{l:Tr Sales_ViewBillItems}">
+     <DataGridTemplateColumn.CellTemplate><DataTemplate>
+      <Button Content="{l:Tr Sales_ViewBillItems}" Tag="{Binding}" Click="ViewBillItems_OnClick"
+              HorizontalAlignment="Center" VerticalAlignment="Center" Height="28" MinHeight="0" MinWidth="0"
+              Padding="8,2" FontSize="11"/>
+     </DataTemplate></DataGridTemplateColumn.CellTemplate>
+    </DataGridTemplateColumn>
     <DataGridTextColumn Width="155" Header="{l:Tr Sales_Invoice}" Binding="{Binding InvoiceNumber}"/>
     <DataGridTextColumn Width="115" Header="{l:Tr Sales_Date}" Binding="{Binding SaleDate}"/>
     <DataGridTextColumn Width="100" Header="{l:Tr Purchasing_Status}" Binding="{Binding Status,Converter={StaticResource SaleStatusConverter}}"/>
@@ -54,11 +61,18 @@
     <DataGridTextColumn Width="155" Header="{l:Tr Purchasing_Mode}" Binding="{Binding PaymentModes,Converter={StaticResource PaymentModesConverter}}"/>
    </DataGrid.Columns>
   </DataGrid>
-  <Border Grid.Row="3" Style="{StaticResource CatalogCard}" Margin="0,0,0,10">
+  <Grid Grid.RowSpan="4" Panel.ZIndex="10" Visibility="Collapsed" x:Name="DetailOverlay">
+   <Border x:Name="DetailBackdrop" Background="#88000000" MouseDown="DetailBackdrop_OnMouseDown"/>
+   <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+   <Border x:Name="DetailPanel" Grid.Column="1" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+           BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1,0,0,0" Padding="18">
    <Grid>
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-    <TextBlock x:Name="DetailHeading" FontSize="16" FontWeight="SemiBold" Text="{l:Tr Sales_SelectHistory}"/>
-    <TabControl Grid.Row="1" Margin="0,8,0,0">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <TextBlock x:Name="DetailHeading" FontSize="17" FontWeight="SemiBold" Text="{l:Tr Sales_SelectHistory}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+     <Button Grid.Column="1" Margin="12,0,0,0" Click="CloseDetails_OnClick" Content="{l:Tr Common_Close}"/>
+    </Grid>
+    <TabControl x:Name="DetailTabs" Grid.Row="1" Margin="0,12,0,0" SelectionChanged="DetailTabs_OnSelectionChanged">
      <TabItem Header="{l:Tr Sales_Items}">
     <DataGrid x:Name="DetailGrid" Style="{StaticResource CatalogGrid}" RowHeight="40">
      <DataGrid.Columns>
@@ -94,9 +108,15 @@
       </DataGrid>
      </TabItem>
     </TabControl>
+    <StackPanel Grid.Row="2" Margin="0,12,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+     <TextBlock x:Name="DetailPageText" VerticalAlignment="Center" Margin="0,0,12,0"/>
+     <Button x:Name="PreviousDetailButton" Click="PreviousDetail_OnClick" Content="{l:Tr Sales_Previous}"/>
+     <Button x:Name="NextDetailButton" Margin="6,0,0,0" Click="NextDetail_OnClick" Content="{l:Tr Sales_Next}"/>
+    </StackPanel>
    </Grid>
-  </Border>
-  <Grid Grid.Row="4">
+   </Border></Grid>
+  </Grid>
+  <Grid Grid.Row="3">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
     <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>

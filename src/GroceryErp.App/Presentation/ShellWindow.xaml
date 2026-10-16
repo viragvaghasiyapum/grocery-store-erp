@@ -35,9 +35,18 @@
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <StackPanel Grid.Column="0" VerticalAlignment="Center">
-          <TextBlock x:Name="StoreHeading" FontSize="18" FontWeight="SemiBold" Text="{l:Tr App_Title}" TextTrimming="CharacterEllipsis"/>
-          <TextBlock x:Name="BusinessDate" FontSize="12" Opacity="0.72"/>
+        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+          <Image Width="48" Height="48" Margin="0,0,10,0"
+                 Source="/GroceryErp.App;component/Assets/logo.jpeg" Stretch="Uniform"/>
+          <Grid Height="48" VerticalAlignment="Center">
+            <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <TextBlock x:Name="StoreHeading" FontSize="20" FontWeight="SemiBold" Text="Hare Krushna"
+                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+            <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center">
+              <TextBlock FontSize="12" Text="Dairy &amp; Grocery Store"/>
+              <TextBlock x:Name="BusinessDate" Margin="10,0,0,0" FontSize="11" Opacity="0.72"/>
+            </StackPanel>
+          </Grid>
         </StackPanel>
         <StackPanel Grid.Column="1" HorizontalAlignment="Right" Orientation="Horizontal">
           <Border x:Name="PrinterStatusBadge" Margin="0,0,8,0" Padding="8,4" CornerRadius="5"

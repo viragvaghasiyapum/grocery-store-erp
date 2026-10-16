@@ -33,6 +33,7 @@ public partial class MoneyOutPage : Page
     private ExpenseItem? _editingExpense;
     private readonly Dictionary<long, ExpiryLot> _selectedExpiryLots = new();
     private int _expirySelectionVersion;
+    private CheckBox? _salaryPageCheck;
 
     public MoneyOutPage() : this(null, null, null) { }
 
@@ -51,9 +52,14 @@ public partial class MoneyOutPage : Page
         EmployeeJoinDate.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
         SalaryPayDate.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
         SalaryPeriod.Text = YearMonth.From(_clock.BusinessDate).ToString();
+        SalaryRegisterPeriod.Text = SalaryPeriod.Text;
+        AdvancePayDate.SelectedDate = SalaryPayDate.SelectedDate;
         DateTime today = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
         DamageFromBox.SelectedDate = ExpenseFromBox.SelectedDate = today.AddYears(-1);
         DamageToBox.SelectedDate = ExpenseToBox.SelectedDate = today;
+        UpdatePagerVisibility();
+        UpdateExpiryActionVisibility();
+        UpdateSalarySelection();
         if (loadOnShow) Loaded += async (_, _) => await RefreshAsync();
     }
 
@@ -70,11 +76,27 @@ public partial class MoneyOutPage : Page
         ExpiryPager.Visibility = MoneyOutTabs.SelectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
         DamagePager.Visibility = MoneyOutTabs.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
         ExpensePager.Visibility = MoneyOutTabs.SelectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
+        PageControls.Visibility = MoneyOutTabs.SelectedIndex == 3 ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void ExpiryTabs_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (ReferenceEquals(e.OriginalSource, ExpiryTabs)) UpdateExpiryButtons();
+        if (!ReferenceEquals(e.OriginalSource, ExpiryTabs)) return;
+        if (IsLoaded) ClearExpirySelection();
+        UpdateExpiryButtons();
+        UpdateExpiryActionVisibility();
+    }
+
+    private void ExpiryList_OnSelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateExpiryActionVisibility();
+
+    private void UpdateExpiryActionVisibility()
+    {
+        if (ExpiryTabs is null || BulkWriteOffButton is null || ExpiryRecordDamageButton is null) return;
+        BulkWriteOffButton.Visibility = ExpiryTabs.SelectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
+        bool hasLot = ActiveExpiryList().SelectedItem is ExpiryLot;
+        ExpiryRecordDamageButton.IsEnabled = hasLot;
+        ExpiryBlockLotButton.IsEnabled = hasLot;
+        ExpiryMarkDownButton.IsEnabled = hasLot;
     }
 
     private async void RecordDamage_OnClick(object sender, RoutedEventArgs e)
@@ -348,8 +370,49 @@ public partial class MoneyOutPage : Page
 
     private async void PrepareSalary_OnClick(object sender, RoutedEventArgs e)
     {
-        try { SalaryGrid.ItemsSource = (await _service.PrepareSalaryRunAsync(YearMonth.Parse(SalaryPeriod.Text))).Select(SalaryEditRow.From).ToList(); }
+        try
+        {
+            Dictionary<long, string> employeeNames = EmployeeGrid.Items.OfType<EmployeeItem>()
+                .ToDictionary(static employee => employee.Id, static employee => employee.Name);
+            SalaryGrid.ItemsSource = (await _service.PrepareSalaryRunAsync(YearMonth.Parse(SalaryPeriod.Text)))
+                .Select(line => SalaryEditRow.From(line, employeeNames.GetValueOrDefault(line.EmployeeId,
+                    line.EmployeeId.ToString(TranslationSource.FormatCulture)))).ToList();
+            UpdateSalarySelection();
+        }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private void SalaryPageCheck_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        _salaryPageCheck = (CheckBox)sender;
+        UpdateSalarySelection();
+    }
+
+    private void SalaryPageCheck_OnClick(object sender, RoutedEventArgs e)
+    {
+        SalaryEditRow[] rows = SalaryGrid.Items.Cast<SalaryEditRow>().ToArray();
+        if (rows.Length == 0) return;
+        bool select = !rows.All(static row => row.IsSelected);
+        foreach (SalaryEditRow row in rows) row.IsSelected = select;
+        SalaryGrid.Items.Refresh();
+        UpdateSalarySelection();
+    }
+
+    private void SalaryCheck_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox { DataContext: SalaryEditRow row } box) row.IsSelected = box.IsChecked == true;
+        UpdateSalarySelection();
+    }
+
+    private void UpdateSalarySelection()
+    {
+        if (SalaryGrid is null || SalarySelectedCount is null) return;
+        SalaryEditRow[] rows = SalaryGrid.ItemsSource is null ? [] : SalaryGrid.Items.Cast<SalaryEditRow>().ToArray();
+        int selected = rows.Count(static row => row.IsSelected);
+        SalarySelectedCount.Text = TranslationSource.Instance.Format("Selection_Count", selected);
+        PostSalaryButton.IsEnabled = selected > 0;
+        if (_salaryPageCheck is not null)
+            _salaryPageCheck.IsChecked = rows.Length == 0 ? false : selected == 0 ? false : selected == rows.Length ? true : null;
     }
 
     private async void PostSalary_OnClick(object sender, RoutedEventArgs e)
@@ -361,19 +424,23 @@ public partial class MoneyOutPage : Page
             string mode = ((ComboBoxItem)SalaryMode.SelectedItem).Tag?.ToString() ?? "BANK";
             SalaryGrid.CommitEdit(DataGridEditingUnit.Cell, true);
             SalaryGrid.CommitEdit(DataGridEditingUnit.Row, true);
-            List<SalaryRunLine> lines = SalaryGrid.Items.Cast<SalaryEditRow>().Select(static row => row.ToModel()).ToList();
+            List<SalaryRunLine> lines = SalaryGrid.Items.Cast<SalaryEditRow>()
+                .Where(static row => row.IsSelected).Select(static row => row.ToModel()).ToList();
+            if (lines.Count == 0) return;
             await _service.PostSalaryRunAsync(new(period, DateOnly.FromDateTime(payDate), mode, lines), OperationGuard.NewId());
-            SalaryGrid.ItemsSource = null; await RefreshAsync();
+            SalaryGrid.ItemsSource = null;
+            UpdateSalarySelection();
+            await RefreshAsync();
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void RecordAdvance_OnClick(object sender, RoutedEventArgs e)
     {
-        if (EmployeeGrid.SelectedItem is not EmployeeItem employee || SalaryPayDate.SelectedDate is not { } payDate) return;
+        if (AdvanceEmployeeBox.SelectedItem is not EmployeeItem employee || AdvancePayDate.SelectedDate is not { } payDate) return;
         try
         {
-            string mode = ((ComboBoxItem)SalaryMode.SelectedItem).Tag?.ToString() ?? "BANK";
+            string mode = ((ComboBoxItem)AdvanceMode.SelectedItem).Tag?.ToString() ?? "BANK";
             await _service.RecordOtherSalaryPaymentAsync(employee.Id, DateOnly.FromDateTime(payDate),
                 new Money(Parse(AdvanceAmount.Text)), mode, AdvanceNotes.Text, OperationGuard.NewId());
             AdvanceAmount.Clear(); AdvanceNotes.Clear();
@@ -402,7 +469,7 @@ public partial class MoneyOutPage : Page
 
     private async Task RefreshSalaryRegisterAsync()
     {
-        YearMonth month = YearMonth.Parse(SalaryPeriod.Text);
+        YearMonth month = YearMonth.Parse(SalaryRegisterPeriod.Text);
         SalaryRegisterGrid.ItemsSource = await _service.GetSalaryRegisterAsync(month, month);
     }
 
@@ -443,6 +510,9 @@ public partial class MoneyOutPage : Page
                     IReadOnlyList<EmployeeItem> employees = await _service.GetEmployeesAsync(includeInactive: true);
                     EmployeeGrid.ItemsSource = employees;
                     EmployeeGrid.SelectedItem = employees.FirstOrDefault(item => item.Id == _editingEmployeeId);
+                    long? advanceEmployeeId = AdvanceEmployeeBox.SelectedValue as long?;
+                    AdvanceEmployeeBox.ItemsSource = employees.Where(static employee => employee.IsActive).ToList();
+                    AdvanceEmployeeBox.SelectedValue = advanceEmployeeId;
                     await RefreshSalaryRegisterAsync();
                     break;
             }
@@ -702,12 +772,19 @@ public partial class MoneyOutPage : Page
 
     private sealed class SalaryEditRow
     {
+        public bool IsSelected { get; set; } = true;
         public long EmployeeId { get; init; }
+        public string EmployeeName { get; init; } = "";
         public string BaseSalary { get; set; } = "0.000";
         public string LeaveDeduction { get; set; } = "0.000";
         public string Overtime { get; set; } = "0.000";
         public string Bonus { get; set; } = "0.000";
-        public static SalaryEditRow From(SalaryRunLine line) => new() { EmployeeId = line.EmployeeId, BaseSalary = line.BaseSalary.Value.ToString("0.000", TranslationSource.FormatCulture) };
+        public static SalaryEditRow From(SalaryRunLine line, string employeeName) => new()
+        {
+            EmployeeId = line.EmployeeId,
+            EmployeeName = employeeName,
+            BaseSalary = line.BaseSalary.Value.ToString("0.000", TranslationSource.FormatCulture),
+        };
         public SalaryRunLine ToModel() => new(EmployeeId, new Money(Parse(BaseSalary)), new Money(Parse(LeaveDeduction)), new Money(Parse(Overtime)), new Money(Parse(Bonus)), null);
     }
 }

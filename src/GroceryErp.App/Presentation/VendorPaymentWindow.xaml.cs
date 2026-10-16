@@ -27,7 +27,7 @@ public partial class VendorPaymentWindow : Window
         _purchasing = purchasing;
         Loaded += async (_, _) =>
         {
-            VendorBox.ItemsSource = await _purchasing.GetVendorsAsync();
+            VendorBox.ItemsSource = await _purchasing.GetVendorsAsync(includeInactive: true);
             DateBox.SelectedDate = ((App)Application.Current).Services.GetRequiredService<IClock>()
                 .BusinessDate.ToDateTime(TimeOnly.MinValue);
             ModeBox.SelectedIndex = 0;

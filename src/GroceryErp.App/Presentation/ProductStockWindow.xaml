@@ -29,7 +29,13 @@
             <DataGridTextColumn Width="95" Header="{l:Tr Stock_OnHand}" Binding="{Binding OnHand}"/>
             <DataGridTextColumn Width="95" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}"/>
             <DataGridTextColumn Width="95" Header="{l:Tr Stock_Mrp}" Binding="{Binding Mrp}"/>
-            <DataGridCheckBoxColumn Width="70" Header="{l:Tr Catalog_Active}" Binding="{Binding IsActive}"/>
+            <DataGridTemplateColumn Width="70" Header="{l:Tr Catalog_Active}">
+              <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center"
+                          IsChecked="{Binding IsActive, Mode=OneWay}" Click="LotActive_OnClick"
+                          AutomationProperties.Name="{l:Tr Catalog_Active}"/>
+              </DataTemplate></DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
           </DataGrid.Columns>
         </DataGrid>
       </TabItem>

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using GroceryErp.Assets;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
@@ -22,6 +23,9 @@ public partial class AssetsPage : Page
     private (bool? Disposed, string? Name, long? Id) _cursor;
     private AssetPage? _page;
     private bool _loadingPage;
+    private IReadOnlyList<DepreciationEntry> _timeline = [];
+    private int _timelinePage;
+    private const int TimelinePageSize = 50;
 
     public AssetsPage() : this(null, null, null) { }
 
@@ -39,6 +43,18 @@ public partial class AssetsPage : Page
         InUseDate.SelectedDate = today;
         DisposalDate.SelectedDate = today;
         if (loadOnShow) Loaded += async (_, _) => await RefreshAsync();
+        Loaded += (_, _) => TranslationSource.Instance.PropertyChanged += TranslationChanged;
+        Unloaded += (_, _) =>
+        {
+            TranslationSource.Instance.PropertyChanged -= TranslationChanged;
+            CloseTimeline();
+        };
+    }
+
+    private void TranslationChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == "Item[]" && IsLoaded)
+            UpdateDisposalTarget(AssetGrid.SelectedItem as AssetItem);
     }
 
     private async void AddAsset_OnClick(object sender, RoutedEventArgs e)
@@ -53,6 +69,7 @@ public partial class AssetsPage : Page
                 method == "WDV" ? DepreciationMethod.Wdv : DepreciationMethod.Slm,
                 new Percent(Parse(AssetRate.Text)), new Money(Parse(AssetSalvage.Text)), AssetNotes.Text));
             NewAsset_OnClick(sender, e);
+            AssetDetailsExpander.IsExpanded = false;
             await RefreshAsync();
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
@@ -72,10 +89,16 @@ public partial class AssetsPage : Page
 
     private async void Dispose_OnClick(object sender, RoutedEventArgs e)
     {
-        if (AssetGrid.SelectedItem is not AssetItem asset || DisposalDate.SelectedDate is not { } date) return;
+        if (AssetGrid.SelectedItem is not AssetItem { DisposedDate: null } asset ||
+            DisposalDate.SelectedDate is not { } date) return;
         if (MessageBox.Show(TranslationSource.Instance.Format("Assets_DisposeConfirm", asset.Name),
             TranslationSource.Instance["Assets_Dispose"], MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-        try { await _assets.DisposeAsync(asset.Id, DateOnly.FromDateTime(date), new Money(Parse(DisposalValue.Text)), OperationGuard.NewId()); await RefreshAsync(); }
+        try
+        {
+            await _assets.DisposeAsync(asset.Id, DateOnly.FromDateTime(date), new Money(Parse(DisposalValue.Text)), OperationGuard.NewId());
+            AssetDetailsExpander.IsExpanded = false;
+            await RefreshAsync();
+        }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
@@ -94,7 +117,17 @@ public partial class AssetsPage : Page
 
     private async void AssetGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (AssetGrid.SelectedItem is not AssetItem asset) return;
+        CloseTimeline();
+        AssetItem? asset = AssetGrid.SelectedItem as AssetItem;
+        UpdateDisposalTarget(asset);
+        if (asset is null)
+        {
+            SaveAssetButton.IsEnabled = _editingAsset is null;
+            EditAssetButton.IsEnabled = false;
+            return;
+        }
+        SaveAssetButton.IsEnabled = false;
+        EditAssetButton.IsEnabled = false;
         try
         {
             _editingAsset = asset;
@@ -109,10 +142,22 @@ public partial class AssetsPage : Page
             AssetVendor.SelectedValue = asset.VendorId;
             AssetNotes.Text = asset.Notes ?? "";
             IReadOnlyList<DepreciationEntry> schedule = await _assets.GetScheduleAsync(asset.Id);
-            ScheduleGrid.ItemsSource = schedule;
-            SaveAssetButton.IsEnabled = asset.DisposedDate is null && schedule.Count == 0;
+            if (AssetGrid.SelectedItem is not AssetItem selected || selected.Id != asset.Id) return;
+            bool editable = asset.DisposedDate is null && schedule.Count == 0;
+            SaveAssetButton.IsEnabled = editable;
+            EditAssetButton.IsEnabled = editable;
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private void UpdateDisposalTarget(AssetItem? asset)
+    {
+        if (DisposeButton is null) return;
+        bool canDispose = asset is { DisposedDate: null };
+        SelectedAssetText.Text = asset?.Name ?? TranslationSource.Instance["Assets_SelectToDispose"];
+        DisposeButton.IsEnabled = canDispose;
+        DisposalDate.IsEnabled = canDispose;
+        DisposalValue.IsEnabled = canDispose;
     }
 
     private void NewAsset_OnClick(object sender, RoutedEventArgs e)
@@ -126,7 +171,17 @@ public partial class AssetsPage : Page
         PurchaseDate.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
         InUseDate.SelectedDate = PurchaseDate.SelectedDate;
         SaveAssetButton.IsEnabled = true;
-        ScheduleGrid.ItemsSource = null;
+        EditAssetButton.IsEnabled = false;
+        UpdateDisposalTarget(null);
+        CloseTimeline();
+        AssetDetailsExpander.IsExpanded = true;
+        AssetName.Focus();
+    }
+
+    private void EditAsset_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (AssetGrid.SelectedItem is not AssetItem || !EditAssetButton.IsEnabled) return;
+        AssetDetailsExpander.IsExpanded = true;
         AssetName.Focus();
     }
 
@@ -148,8 +203,9 @@ public partial class AssetsPage : Page
                 IncludeDisposedBox.IsChecked == true, disposed, name, id, PageSize);
             _page = page;
             _cursor = (disposed, name, id);
-            AssetVendor.ItemsSource = await _purchasing.GetVendorsAsync();
+            AssetVendor.ItemsSource = await _purchasing.GetVendorsAsync(includeInactive: true);
             timing.Bind(() => AssetGrid.ItemsSource = page.Items);
+            CloseTimeline();
             AssetGrid.SelectedItem = page.Items.FirstOrDefault(asset => asset.Id == selectedId);
             StatusText.Text = TranslationSource.Instance["MoneyOut_Ready"];
         }
@@ -163,6 +219,13 @@ public partial class AssetsPage : Page
     }
 
     private async void AssetSearch_OnClick(object sender, RoutedEventArgs e) => await RefreshAsync();
+
+    private async void ClearAssetFilters_OnClick(object sender, RoutedEventArgs e)
+    {
+        AssetSearchBox.Clear();
+        IncludeDisposedBox.IsChecked = true;
+        await RefreshAsync();
+    }
 
     private async void NextAsset_OnClick(object sender, RoutedEventArgs e)
     {
@@ -194,5 +257,58 @@ public partial class AssetsPage : Page
         if (!IsLoaded) return;
         _previousPages.Clear();
         await LoadPageAsync(null, null, null);
+    }
+
+    private async void ViewTimeline_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: AssetItem asset }) return;
+        AssetGrid.SelectedItem = asset;
+        try
+        {
+            IReadOnlyList<DepreciationEntry> schedule = await _assets.GetScheduleAsync(asset.Id);
+            if (AssetGrid.SelectedItem is not AssetItem selected || selected.Id != asset.Id) return;
+            _timeline = schedule;
+            _timelinePage = 0;
+            TimelineHeading.Text = $"{asset.Name} · {TranslationSource.Instance["Assets_ViewTimeline"]}";
+            RenderTimelinePage();
+            SideOverlayMotion.Show(TimelineOverlay, TimelinePanel, TimelineBackdrop);
+        }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private void CloseTimeline()
+    {
+        TimelineOverlay.Visibility = Visibility.Collapsed;
+        _timeline = [];
+        _timelinePage = 0;
+        ScheduleGrid.ItemsSource = null;
+    }
+
+    private void CloseTimeline_OnClick(object sender, RoutedEventArgs e) => CloseTimeline();
+
+    private void TimelineBackdrop_OnMouseDown(object sender, MouseButtonEventArgs e) => CloseTimeline();
+
+    private void PreviousTimeline_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_timelinePage == 0) return;
+        _timelinePage--;
+        RenderTimelinePage();
+    }
+
+    private void NextTimeline_OnClick(object sender, RoutedEventArgs e)
+    {
+        if ((_timelinePage + 1) * TimelinePageSize >= _timeline.Count) return;
+        _timelinePage++;
+        RenderTimelinePage();
+    }
+
+    private void RenderTimelinePage()
+    {
+        int start = _timelinePage * TimelinePageSize;
+        ScheduleGrid.ItemsSource = _timeline.Skip(start).Take(TimelinePageSize).ToArray();
+        TimelinePageText.Text = _timeline.Count == 0 ? "0" :
+            $"{start + 1}–{Math.Min(start + TimelinePageSize, _timeline.Count)} / {_timeline.Count}";
+        PreviousTimelineButton.IsEnabled = start > 0;
+        NextTimelineButton.IsEnabled = start + TimelinePageSize < _timeline.Count;
     }
 }

@@ -155,6 +155,14 @@ public sealed class StockInTests
             from: fixture.Date, to: fixture.Date, vendorId: fixture.VendorId,
             limit: 2, cancellationToken: ct);
         dated.Items.Count.ShouldBe(2);
+        PurchasePage productMatches = await fixture.Purchasing.GetPurchasesPageAsync(
+            productQuery: "phase three", limit: 2, cancellationToken: ct);
+        productMatches.Items.Count.ShouldBe(2);
+        productMatches.HasMore.ShouldBeTrue();
+        (await fixture.Purchasing.GetPurchasesPageAsync(productQuery: "PH3-001", limit: 2,
+            cancellationToken: ct)).Items.Count.ShouldBe(2);
+        (await fixture.Purchasing.GetPurchasesPageAsync(productQuery: "missing product",
+            cancellationToken: ct)).Items.ShouldBeEmpty();
     }
 
     [Fact]
@@ -451,6 +459,35 @@ public sealed class StockInTests
     }
 
     [Fact]
+    public async Task VendorBulkStatus_IsAtomicAndEditingPreservesStatus()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        VendorInput first = await fixture.Purchasing.GetVendorAsync(fixture.VendorId, ct);
+        long secondId = await fixture.Purchasing.CreateVendorAsync(first with { Name = "Second Supplier", Gstin = null }, ct);
+
+        await Should.ThrowAsync<DomainException>(() => fixture.Purchasing.BulkSetVendorsActiveAsync(
+            [fixture.VendorId, long.MaxValue], false, ct));
+        (await fixture.Purchasing.GetVendorsAsync(includeInactive: true, cancellationToken: ct))
+            .Single(item => item.Id == fixture.VendorId).IsActive.ShouldBeTrue();
+
+        (await fixture.Purchasing.BulkSetVendorsActiveAsync([fixture.VendorId, secondId], false, ct)).ShouldBe(2);
+        (await fixture.Purchasing.GetVendorsAsync(includeInactive: true, cancellationToken: ct))
+            .Where(item => item.Id == fixture.VendorId || item.Id == secondId)
+            .All(static item => !item.IsActive).ShouldBeTrue();
+        await fixture.Purchasing.RecordPaymentAsync(new(fixture.VendorId, null, fixture.Date,
+            new Money(10), "CASH", null, null), OperationGuard.NewId(), ct);
+        (await fixture.Purchasing.GetVendorsAsync(includeInactive: true, cancellationToken: ct))
+            .Single(item => item.Id == fixture.VendorId).BalanceDue.ShouldBe(new Money(90));
+
+        await fixture.Purchasing.UpdateVendorAsync(fixture.VendorId, first with { Name = "Edited Supplier" },
+            cancellationToken: ct);
+        (await fixture.Purchasing.GetVendorsAsync(includeInactive: true, cancellationToken: ct))
+            .Single(item => item.Id == fixture.VendorId).IsActive.ShouldBeFalse();
+        (await fixture.Purchasing.BulkSetVendorsActiveAsync([fixture.VendorId, secondId], true, ct)).ShouldBe(2);
+    }
+
+    [Fact]
     public async Task StockCount_RejectsEmptySheetAndLocksEnteredQuantitiesAfterPosting()
     {
         using var fixture = new StockInFixture();
@@ -556,6 +593,30 @@ public sealed class StockInTests
             SELECT quantity,cost_value,selling_value,mrp_value
             FROM product_stock_total WHERE product_id=@productId
             """, new { productId = fixture.ProductId }).ShouldBe((1_000L, 20_000L, 31_000L, 35_000L));
+    }
+
+    [Fact]
+    public async Task LotBulkStatus_IsAtomicAndKeepsStockQuantities()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long firstId = await fixture.Inventory.ImportOpeningStockAsync(
+            [new(fixture.ProductId, new Quantity(2), new Money(20), new Money(30), new Money(35),
+                fixture.Date.AddMonths(2), "BULK-A", fixture.Date)], OperationGuard.NewId(), ct);
+        long secondId = await fixture.Inventory.ImportOpeningStockAsync(
+            [new(fixture.ProductId, new Quantity(3), new Money(20), new Money(30), new Money(35),
+                fixture.Date.AddMonths(2), "BULK-B", fixture.Date)], OperationGuard.NewId(), ct);
+
+        await Should.ThrowAsync<DomainException>(() => fixture.Inventory.BulkSetLotsActiveAsync(
+            [firstId, long.MaxValue], false, ct));
+        (await fixture.Inventory.GetLotsByIdsAsync([firstId], ct)).Single().IsActive.ShouldBeTrue();
+        (await fixture.Inventory.BulkSetLotsActiveAsync([firstId, secondId], false, ct)).ShouldBe(2);
+        (await fixture.Inventory.GetLotsByIdsAsync([firstId, secondId], ct))
+            .All(static item => !item.IsActive).ShouldBeTrue();
+        (await fixture.Inventory.BulkSetLotsActiveAsync([firstId, secondId], true, ct)).ShouldBe(2);
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<long>("SELECT quantity FROM product_stock_total WHERE product_id=@id",
+            new { id = fixture.ProductId }).ShouldBe(5_000L);
     }
 
     [Fact]

@@ -357,6 +357,49 @@ public sealed class PhaseZeroSmokeTests
                 ((DataGrid)products.FindName("ProductsGrid")).RaiseEvent(
                     new DragCompletedEventArgs(0, 0, false) { RoutedEvent = Thumb.DragCompletedEvent });
                 File.Exists(Path.Combine(root, "table-columns.json")).ShouldBeTrue();
+                // A later layout pass must not replace the width chosen by the user.
+                ((DataGrid)products.FindName("ProductsGrid")).Columns[1].Width =
+                    new DataGridLength(110, DataGridLengthUnitType.Pixel);
+                productsWindow.UpdateLayout();
+                var productGrid = (DataGrid)products.FindName("ProductsGrid");
+                var firstProduct = (ProductListItem)productGrid.Items[0];
+                var secondProduct = new ProductListItem { Id = 2, Sku = "SALT002", Name = "Other salt", IsActive = true };
+                productGrid.ItemsSource = new[] { firstProduct, secondProduct };
+                var checkProduct = typeof(ProductsPage).GetMethod("ProductCheck_OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                checkProduct.Invoke(products, [new CheckBox { DataContext = firstProduct, IsChecked = true }, new RoutedEventArgs()]);
+                checkProduct.Invoke(products, [new CheckBox { DataContext = secondProduct, IsChecked = true }, new RoutedEventArgs()]);
+                ((Menu)products.FindName("BulkActionsMenu")).Visibility.ShouldBe(Visibility.Visible);
+                ((Button)products.FindName("EditButton")).IsEnabled.ShouldBeFalse();
+                ((Button)products.FindName("LabelsButton")).IsEnabled.ShouldBeFalse();
+                ((Button)products.FindName("BarcodeButton")).IsEnabled.ShouldBeFalse();
+                var pageSelection = new CheckBox();
+                typeof(ProductsPage).GetMethod("PageSelectionCheck_OnLoaded", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(products, [pageSelection, new RoutedEventArgs()]);
+                pageSelection.IsChecked.ShouldBe(true);
+                productGrid.ItemsSource = new[] { new ProductListItem { Id = 3, Name = "Next page", IsActive = true } };
+                typeof(ProductsPage).GetMethod("UpdateSelectionActions", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(products, null);
+                pageSelection.IsChecked.ShouldBe(false);
+                productGrid.ItemsSource = new[] { firstProduct, secondProduct };
+                typeof(ProductsPage).GetMethod("UpdateSelectionActions", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(products, null);
+                pageSelection.IsChecked.ShouldBe(true);
+                typeof(ProductsPage).GetMethod("PageSelectionCheck_OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(products, [pageSelection, new RoutedEventArgs()]);
+                pageSelection.IsChecked.ShouldBe(false);
+                ((TextBlock)products.FindName("SelectedCountText")).Text.ShouldContain("0");
+                typeof(ProductsPage).GetMethod("PageSelectionCheck_OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(products, [pageSelection, new RoutedEventArgs()]);
+                pageSelection.IsChecked.ShouldBe(true);
+                typeof(ProductsPage).GetMethod("ClearSelection", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(products, null);
+                productGrid.ItemsSource = new[]
+                {
+                    new ProductListItem { Id = 3, Sku = "OLD001", Name = "Archived salt", IsActive = false },
+                };
+                productGrid.SelectedIndex = 0;
+                ((Button)products.FindName("RestoreButton")).IsEnabled.ShouldBeTrue();
+                ((Button)products.FindName("BarcodeButton")).IsEnabled.ShouldBeFalse();
                 productsWindow.Close();
                 var savedLayouts = (Dictionary<string, double[]>)layouts.GetField("Saved",
                     BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
@@ -409,11 +452,96 @@ public sealed class PhaseZeroSmokeTests
                 priceChange.Close();
 
                 var batch = new LabelBatchWindow(catalog, inventory, settings, loadOnShow: false);
-                batch.Rows.Add(new LabelBatchRow("Tata Salt 1 kg", "ટાટા મીઠું 1 kg", "Lot L000001",
-                    "2000000000015", 27.5m, 30m, "10", true));
+                var productLabel = new LabelBatchRow("Tata Salt 1 kg", "ટાટા મીઠું 1 kg", "Product",
+                    "2000000000015", 27.5m, 30m, "1", true);
+                var secondProductLabel = new LabelBatchRow("Second salt", null, "Product",
+                    "2000000000022", 30m, 35m, "1", true);
+                var firstLotLabel = new LabelBatchRow("Tata Salt 1 kg", "ટાટા મીઠું 1 kg", "Lot L000001",
+                    "2000000000015", 27.5m, 30m, "1", false, isLot: true);
+                var secondLotLabel = new LabelBatchRow("Second salt", null, "Lot L000002",
+                    "2000000000022", 30m, 35m, "1", false, isLot: true);
+                var nextLotLabel = new LabelBatchRow("Tata Salt 1 kg", "ટાટા મીઠું 1 kg", "Lot L000003",
+                    "2000000000039", 28m, 30m, "1", false, isLot: true);
+                batch.Rows.Add(productLabel);
+                batch.Rows.Add(secondProductLabel);
+                var productRows = (Dictionary<long, LabelBatchRow>)typeof(LabelBatchWindow)
+                    .GetField("_productRows", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(batch)!;
+                productRows.Add(1, productLabel);
+                productRows.Add(2, secondProductLabel);
+                var lotRows = (Dictionary<long, LabelBatchRow>)typeof(LabelBatchWindow)
+                    .GetField("_lotRows", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(batch)!;
+                lotRows.Add(1, firstLotLabel);
+                lotRows.Add(2, secondLotLabel);
+                lotRows.Add(3, nextLotLabel);
+                var lotPages = (List<Dictionary<long, LotPage>>)typeof(LabelBatchWindow)
+                    .GetField("_lotPages", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(batch)!;
+                var firstLot = new LotItem(1, 1, "Tata Salt 1 kg", "L000001", null,
+                    new DateOnly(2026, 10, 1), null, new Money(20), new Money(30), new Money(27.5m),
+                    Quantity.One, Quantity.One, true);
+                var secondLot = firstLot with { Id = 2, ProductId = 2, ProductName = "Second salt", LotCode = "L000002" };
+                var nextLot = firstLot with { Id = 3, LotCode = "L000003" };
+                lotPages.Add(new Dictionary<long, LotPage>
+                {
+                    [1] = new LotPage([firstLot], true, 1),
+                    [2] = new LotPage([secondLot], false, 2),
+                });
+                lotPages.Add(new Dictionary<long, LotPage>
+                {
+                    [1] = new LotPage([nextLot], false, 3),
+                    [2] = new LotPage([secondLot], false, 2),
+                });
                 batch.Show();
+                typeof(LabelBatchWindow).GetMethod("ShowLotPage", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(batch, [0]);
                 ((DataGrid)batch.FindName("LabelsGrid")).SelectedIndex = 0;
+                var productLabelCheck = typeof(LabelBatchWindow).GetMethod("ProductLabelCheck_OnClick",
+                    BindingFlags.Instance | BindingFlags.NonPublic)!;
+                productLabelCheck.Invoke(batch, [new CheckBox { DataContext = productLabel, IsChecked = false }, new RoutedEventArgs()]);
+                ((TextBlock)batch.FindName("PreviewName")).Text.ShouldBe(secondProductLabel.Name);
+                productLabelCheck.Invoke(batch, [new CheckBox { DataContext = secondProductLabel, IsChecked = false }, new RoutedEventArgs()]);
+                ((TextBlock)batch.FindName("PreviewName")).Text.ShouldBeEmpty();
+                ((Button)batch.FindName("PrintButton")).IsEnabled.ShouldBeFalse();
+                typeof(LabelBatchWindow).GetMethod("LotCheck_OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(batch, [new CheckBox { DataContext = firstLotLabel, IsChecked = true }, new RoutedEventArgs()]);
+                ((TextBlock)batch.FindName("PreviewBarcodeText")).Text.ShouldBe(firstLotLabel.Barcode);
+                ((Button)batch.FindName("PrintButton")).IsEnabled.ShouldBeTrue();
+                productLabelCheck.Invoke(batch, [new CheckBox { DataContext = productLabel, IsChecked = true }, new RoutedEventArgs()]);
+                productLabelCheck.Invoke(batch, [new CheckBox { DataContext = secondProductLabel, IsChecked = true }, new RoutedEventArgs()]);
+                firstLotLabel.IsSelected = false;
+                typeof(LabelBatchWindow).GetMethod("UpdatePreview", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(batch, [productLabel]);
+                var pageSizeMenu = (MenuItem)batch.FindName("PageSizeMenu");
+                pageSizeMenu.IsSubmenuOpen = true;
+                batch.UpdateLayout();
+                pageSizeMenu.IsSubmenuOpen.ShouldBeTrue();
+                pageSizeMenu.IsSubmenuOpen = false;
+                productLabel.ToggleLots();
+                secondProductLabel.ToggleLots();
+                batch.Rows.Count.ShouldBe(2);
+                batch.Rows[0].Lots.Count.ShouldBe(1);
+                batch.Rows[1].Lots.Count.ShouldBe(1);
+                ((Button)batch.FindName("NextLotsButton")).IsEnabled.ShouldBeTrue();
+                var labelGrid = (DataGrid)batch.FindName("LabelsGrid");
+                var labelRow = FindVisualChild<DataGridRow>(labelGrid);
+                labelRow.ShouldNotBeNull();
+                labelRow.ActualHeight.ShouldBeGreaterThan(0);
+                labelRow.IsVisible.ShouldBeTrue();
+                labelRow.TranslatePoint(new Point(), labelGrid).Y.ShouldBeGreaterThan(40);
+                labelRow.TranslatePoint(new Point(), labelGrid).Y.ShouldBeLessThan(labelGrid.ActualHeight);
                 Capture(batch, "label-batch.en.png");
+                firstLotLabel.IsSelected = true;
+                firstLotLabel.CopiesText = "7";
+                typeof(LabelBatchWindow).GetMethod("NextLots_OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(batch, [batch, new RoutedEventArgs()]);
+                batch.Rows[0].Lots[0].ShouldBeSameAs(nextLotLabel);
+                batch.Rows[1].Lots[0].ShouldBeSameAs(secondLotLabel);
+                ((Button)batch.FindName("PreviousLotsButton")).IsEnabled.ShouldBeTrue();
+                ((IReadOnlyList<TsplLabel>)typeof(LabelBatchWindow).GetMethod("BuildLabels", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(batch, null)!).Count.ShouldBe(3);
+                typeof(LabelBatchWindow).GetMethod("PreviousLots_OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(batch, [batch, new RoutedEventArgs()]);
+                batch.Rows[0].Lots[0].ShouldBeSameAs(firstLotLabel);
+                firstLotLabel.CopiesText.ShouldBe("7");
                 batch.Close();
 
                 var unknown = new UnknownBarcodeWindow(catalog, inventory, "4006381333931", new DateOnly(2026, 9, 29));
@@ -723,12 +851,25 @@ public sealed class PhaseZeroSmokeTests
                 moneyOutHost.Show();
                 Capture(moneyOutHost, "expiry.en.png");
                 VerifyStickyMoneyOutTable(moneyOutHost, moneyOutPage);
+                var expiryTabs = (TabControl)moneyOutPage.FindName("ExpiryTabs");
+                expiryTabs.SelectedIndex = 1;
+                ((Button)moneyOutPage.FindName("BulkWriteOffButton")).Visibility.ShouldBe(Visibility.Collapsed);
+                expiryTabs.SelectedIndex = 0;
+                ((Button)moneyOutPage.FindName("BulkWriteOffButton")).Visibility.ShouldBe(Visibility.Visible);
                 ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 1;
                 Capture(moneyOutHost, "damages.en.png");
                 ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 2;
                 Capture(moneyOutHost, "expenses.en.png");
                 ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 3;
                 Capture(moneyOutHost, "payroll.en.png");
+                ((DataGrid)moneyOutPage.FindName("SalaryGrid")).ItemsSource = null;
+                var payrollTabs = (TabControl)moneyOutPage.FindName("PayrollTabs");
+                payrollTabs.SelectedIndex = 1;
+                ((Button)moneyOutPage.FindName("PostSalaryButton")).IsEnabled.ShouldBeFalse();
+                ((StackPanel)moneyOutPage.FindName("PageControls")).Visibility.ShouldBe(Visibility.Collapsed);
+                payrollTabs.SelectedIndex = 2;
+                ((Button)moneyOutPage.FindName("CorrectSalaryButton")).IsEnabled.ShouldBeFalse();
+                payrollTabs.SelectedIndex = 0;
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 Capture(moneyOutHost, "payroll.gu.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
