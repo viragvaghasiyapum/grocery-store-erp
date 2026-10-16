@@ -1134,6 +1134,19 @@
   <data name="Sales_ViewBillItems" xml:space="preserve"><value>View bill items</value></data>
   <data name="Assets_ViewTimeline" xml:space="preserve"><value>View timeline</value></data>
   <data name="Catalog_Filters" xml:space="preserve"><value>Filters ▾</value></data>
+  <data name="Common_Actions" xml:space="preserve"><value>Actions ▾</value></data>
+  <data name="Catalog_BasicDetails" xml:space="preserve"><value>Product details</value></data>
+  <data name="Catalog_PricingStock" xml:space="preserve"><value>Pricing &amp; stock</value></data>
+  <data name="Purchasing_Filters" xml:space="preserve"><value>Purchase filters</value></data>
+  <data name="Purchasing_AdditionalDetails" xml:space="preserve"><value>Notes and charges</value></data>
+  <data name="Stock_OverviewSearch" xml:space="preserve"><value>Product or SKU</value></data>
+  <data name="Stock_LotSearch" xml:space="preserve"><value>Product, lot or batch</value></data>
+  <data name="Assets_DisposalDetails" xml:space="preserve"><value>Dispose selected asset</value></data>
+  <data name="MoneyOut_ExpenseEntry" xml:space="preserve"><value>Expense entry</value></data>
+  <data name="MoneyOut_DamageEntry" xml:space="preserve"><value>Record damage</value></data>
+  <data name="MoneyOut_CategoryDetails" xml:space="preserve"><value>Expense categories</value></data>
+  <data name="MoneyOut_EmployeeDetails" xml:space="preserve"><value>Employee details</value></data>
+  <data name="MoneyOut_AdvanceDetails" xml:space="preserve"><value>Record advance</value></data>
   <data name="Catalog_BulkActions" xml:space="preserve"><value>Bulk actions ▾</value></data>
   <data name="Catalog_PrintLabelsSelected" xml:space="preserve"><value>Print labels for selected</value></data>
   <data name="Catalog_GenerateBarcodeSelected" xml:space="preserve"><value>Generate barcodes for selected</value></data>

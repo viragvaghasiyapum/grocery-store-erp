@@ -9,15 +9,18 @@
     <TabControl x:Name="PurchasingTabs" Grid.Row="1" Margin="0,16,0,0">
       <TabItem Header="{l:Tr Purchasing_Purchases}">
         <Grid Margin="0,12,0,0">
-          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <WrapPanel Margin="0,0,0,8">
             <Button Margin="0,0,8,0" Click="NewPurchase_OnClick" Content="{l:Tr Purchasing_NewPurchase}" />
             <Button x:Name="OpenDraftButton" IsEnabled="False" Margin="0,0,8,0" Click="OpenDraft_OnClick" Content="{l:Tr Purchasing_EditDraft}" />
             <Button x:Name="CancelPurchaseButton" IsEnabled="False" Margin="0,0,8,0" Click="CancelPurchase_OnClick" Content="{l:Tr Purchasing_CancelPurchase}" />
             <Button x:Name="VendorReturnButton" IsEnabled="False" Margin="0,0,8,0" Click="VendorReturn_OnClick" Content="{l:Tr Purchasing_VendorReturn}" />
-            <Button Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
+            <Button Margin="0,0,12,0" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
+            <Button x:Name="BulkCancelPurchaseButton" IsEnabled="False" Visibility="Collapsed" Margin="0,0,8,0" Click="BulkCancelPurchases_OnClick" Content="{l:Tr Purchasing_CancelSelected}"/>
+            <TextBlock x:Name="PurchaseSelectedCountText" VerticalAlignment="Center" Text="0 selected"/>
           </WrapPanel>
-          <WrapPanel Grid.Row="1" Margin="0,0,0,8">
+          <Expander Grid.Row="1" Header="{l:Tr Purchasing_Filters}" Margin="0,0,0,8" IsExpanded="False">
+          <WrapPanel Margin="0,8,0,0">
             <StackPanel Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Reports_From}"/><DatePicker x:Name="PurchaseFromBox" Width="130" ToolTip="{l:Tr Reports_From}"/></StackPanel>
             <StackPanel Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Reports_To}"/><DatePicker x:Name="PurchaseToBox" Width="130" ToolTip="{l:Tr Reports_To}"/></StackPanel>
             <StackPanel Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Purchasing_Vendor}"/><ComboBox x:Name="PurchaseVendorFilter" Width="170" DisplayMemberPath="Name" SelectedValuePath="Id" ToolTip="{l:Tr Purchasing_Vendor}"/></StackPanel>
@@ -25,11 +28,8 @@
             <Button Margin="0,18,8,0" Click="FilterPurchases_OnClick" Content="{l:Tr Purchasing_Filter}"/>
             <Button Margin="0,18,0,0" Click="ClearPurchaseFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
           </WrapPanel>
-          <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,8">
-            <Button x:Name="BulkCancelPurchaseButton" IsEnabled="False" Visibility="Collapsed" Margin="0,0,8,0" Click="BulkCancelPurchases_OnClick" Content="{l:Tr Purchasing_CancelSelected}"/>
-            <TextBlock x:Name="PurchaseSelectedCountText" VerticalAlignment="Center" Text="0 selected"/>
-          </StackPanel>
-          <DataGrid x:Name="PurchasesGrid" Grid.Row="3" Style="{StaticResource CatalogGrid}" SelectionMode="Single" SelectionChanged="PurchasesGrid_OnSelectionChanged">
+          </Expander>
+          <DataGrid x:Name="PurchasesGrid" Grid.Row="2" Style="{StaticResource CatalogGrid}" SelectionMode="Single" SelectionChanged="PurchasesGrid_OnSelectionChanged">
             <DataGrid.Columns>
               <DataGridTemplateColumn Width="42">
                 <DataGridTemplateColumn.HeaderTemplate><DataTemplate>
@@ -47,7 +47,7 @@
               <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Total}" Binding="{Binding GrandTotal}" />
             </DataGrid.Columns>
           </DataGrid>
-          <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+          <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
             <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
             <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
             <Button x:Name="PreviousPurchaseButton" IsEnabled="False" Margin="8,0" Click="PreviousPurchase_OnClick" Content="{l:Tr Sales_Previous}"/>
@@ -57,20 +57,18 @@
       </TabItem>
       <TabItem Header="{l:Tr Purchasing_Vendors}">
         <Grid Margin="0,12,0,0">
-          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
           <WrapPanel Margin="0,0,0,8">
             <Button Margin="0,0,8,0" Click="NewVendor_OnClick" Content="{l:Tr Purchasing_NewVendor}" />
             <Button x:Name="EditVendorButton" IsEnabled="False" Margin="0,0,8,0" Click="EditVendor_OnClick" Content="{l:Tr Purchasing_EditVendor}" />
             <Button x:Name="VendorLedgerButton" IsEnabled="False" Margin="0,0,8,0" Click="VendorLedger_OnClick" Content="{l:Tr Purchasing_VendorLedger}" />
             <Button x:Name="PaymentButton" Margin="0,0,8,0" Click="Payment_OnClick" Content="{l:Tr Purchasing_Payment}" />
-            <Button Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
-          </WrapPanel>
-          <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
+            <Button Margin="0,0,12,0" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
             <Button x:Name="ActivateVendorsButton" IsEnabled="False" Visibility="Collapsed" Margin="0,0,8,0" Click="ActivateVendors_OnClick" Content="{l:Tr Purchasing_ActivateSelectedVendors}"/>
             <Button x:Name="DeactivateVendorsButton" IsEnabled="False" Visibility="Collapsed" Margin="0,0,8,0" Click="DeactivateVendors_OnClick" Content="{l:Tr Purchasing_DeactivateSelectedVendors}"/>
             <TextBlock x:Name="VendorSelectedCountText" VerticalAlignment="Center" Text="0 selected"/>
-          </StackPanel>
-          <DataGrid x:Name="VendorsGrid" Grid.Row="2" Style="{StaticResource CatalogGrid}" SelectionMode="Single" SelectionChanged="VendorsGrid_OnSelectionChanged">
+          </WrapPanel>
+          <DataGrid x:Name="VendorsGrid" Grid.Row="1" Style="{StaticResource CatalogGrid}" SelectionMode="Single" SelectionChanged="VendorsGrid_OnSelectionChanged">
             <DataGrid.Columns>
               <DataGridTemplateColumn Width="42">
                 <DataGridTemplateColumn.HeaderTemplate><DataTemplate>

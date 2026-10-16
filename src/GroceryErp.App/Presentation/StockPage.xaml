@@ -10,16 +10,17 @@
     <TabControl x:Name="StockTabs" Grid.Row="1" Margin="0,16,0,0" SelectionChanged="StockTabs_OnSelectionChanged">
       <TabItem Header="{l:Tr Stock_Overview}">
         <DockPanel Margin="0,8,0,0">
-        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-          <Button Margin="0,0,8,0" Click="OpeningImport_OnClick" Content="{l:Tr Stock_OpeningImport}" />
-          <Button Margin="0,0,8,0" Click="OpeningTemplate_OnClick" Content="{l:Tr Stock_OpeningTemplate}" />
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8" VerticalAlignment="Center">
+          <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{l:Tr Stock_OverviewSearch}"/>
+          <TextBox x:Name="OverviewSearchBox" Width="210" Margin="0,0,6,0" ToolTip="{l:Tr Stock_OverviewSearch}" AutomationProperties.Name="{l:Tr Stock_OverviewSearch}"/>
+          <Button Margin="0,0,12,0" Click="OverviewSearch_OnClick" Content="Search"/>
           <Button x:Name="ResumeCountButton" Margin="0,0,8,0" Click="Count_OnClick" Content="{l:Tr Stock_ResumeCount}" />
           <Button Margin="0,0,8,0" Click="NewCount_OnClick" Content="{l:Tr Stock_NewCount}" />
+          <Menu VerticalAlignment="Center" Margin="0,0,8,0" MinHeight="36" Padding="2" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"><MenuItem Header="{l:Tr Common_Actions}">
+            <MenuItem Click="OpeningImport_OnClick" Header="{l:Tr Stock_OpeningImport}" />
+            <MenuItem Click="OpeningTemplate_OnClick" Header="{l:Tr Stock_OpeningTemplate}" />
+          </MenuItem></Menu>
           <Button Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
-        </WrapPanel>
-        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
-          <TextBox x:Name="OverviewSearchBox" Width="240" Margin="0,0,6,0" ToolTip="Product name or SKU"/>
-          <Button Click="OverviewSearch_OnClick" Content="Search"/>
         </WrapPanel>
         <DataGrid Style="{StaticResource CatalogGrid}" x:Name="OverviewGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="OverviewGrid_OnSelectionChanged">
           <DataGrid.Columns>
@@ -36,15 +37,16 @@
       <TabItem Header="{l:Tr Stock_Lots}">
         <DockPanel Margin="0,8,0,0">
         <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+          <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{l:Tr Stock_LotSearch}"/>
+          <TextBox x:Name="LotSearchBox" Width="210" Margin="0,0,6,0" ToolTip="{l:Tr Stock_LotSearch}" AutomationProperties.Name="{l:Tr Stock_LotSearch}"/>
+          <Button Margin="0,0,12,0" Click="LotSearch_OnClick" Content="Search"/>
           <Button x:Name="AdjustButton" IsEnabled="False" Margin="0,0,8,0" Click="Adjust_OnClick" Content="{l:Tr Stock_Adjust}" />
-          <Button x:Name="PriceButton" IsEnabled="False" Margin="0,0,8,0" Click="Price_OnClick" Content="{l:Tr Stock_CorrectLot}" />
-          <Button x:Name="ToggleLotButton" IsEnabled="False" Margin="0,0,8,0" Click="ToggleLot_OnClick" Content="{l:Tr Stock_BlockToggle}" />
-          <Button x:Name="WriteOffButton" IsEnabled="False" Margin="0,0,8,0" Click="WriteOff_OnClick" Content="{l:Tr Stock_WriteOffExpired}" />
+          <Menu VerticalAlignment="Center" Margin="0,0,8,0" MinHeight="36" Padding="2" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"><MenuItem Header="{l:Tr Common_Actions}">
+            <MenuItem x:Name="PriceButton" IsEnabled="False" Click="Price_OnClick" Header="{l:Tr Stock_CorrectLot}" />
+            <MenuItem x:Name="ToggleLotButton" IsEnabled="False" Click="ToggleLot_OnClick" Header="{l:Tr Stock_BlockToggle}" />
+            <MenuItem x:Name="WriteOffButton" IsEnabled="False" Click="WriteOff_OnClick" Header="{l:Tr Stock_WriteOffExpired}" />
+          </MenuItem></Menu>
           <Button Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
-        </WrapPanel>
-        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
-          <TextBox x:Name="LotSearchBox" Width="240" Margin="0,0,6,0" ToolTip="Product, lot or batch"/>
-          <Button Click="LotSearch_OnClick" Content="Search"/>
         </WrapPanel>
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
           <Button x:Name="BulkBlockLotsButton" IsEnabled="False" Visibility="Collapsed" Margin="0,0,8,0" Click="BulkBlockLots_OnClick" Content="{l:Tr Stock_BlockSelected}"/>

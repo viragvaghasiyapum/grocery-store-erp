@@ -8,7 +8,7 @@
   <Grid Margin="{StaticResource PagePadding}">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
     <DockPanel Margin="0,0,0,16">
       <WrapPanel DockPanel.Dock="Right" HorizontalAlignment="Right">
@@ -46,14 +46,14 @@
     </Border>
     <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,10">
       <Button x:Name="EditButton" IsEnabled="False" Margin="0,0,8,0" Click="Edit_OnClick" Content="{l:Tr Catalog_Edit}"/>
-      <Button x:Name="LotsButton" IsEnabled="False" Margin="0,0,8,0" Click="Lots_OnClick" Content="{l:Tr Stock_Lots}"/>
-      <Button x:Name="LedgerButton" IsEnabled="False" Margin="0,0,8,0" Click="Ledger_OnClick" Content="{l:Tr Stock_Ledger}"/>
-      <Button x:Name="LabelsButton" IsEnabled="False" Margin="0,0,8,0" Click="Labels_OnClick" Content="{l:Tr Catalog_PrintLabels}"/>
-      <Button x:Name="BarcodeButton" IsEnabled="False" Margin="0,0,8,0" Click="GenerateBarcode_OnClick" Content="{l:Tr Catalog_GenerateBarcode}"/>
-      <Button x:Name="RestoreButton" IsEnabled="False" Margin="0,0,8,0" Click="Restore_OnClick" Content="{l:Tr Catalog_Restore}"/>
-    </StackPanel>
-    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,10">
-      <Menu x:Name="BulkActionsMenu" IsEnabled="False" Visibility="Collapsed" VerticalAlignment="Center">
+      <Menu VerticalAlignment="Center" Margin="0,0,8,0" MinHeight="36" Padding="2" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"><MenuItem Header="{l:Tr Common_Actions}">
+        <MenuItem x:Name="LotsButton" IsEnabled="False" Click="Lots_OnClick" Header="{l:Tr Stock_Lots}"/>
+        <MenuItem x:Name="LedgerButton" IsEnabled="False" Click="Ledger_OnClick" Header="{l:Tr Stock_Ledger}"/>
+        <MenuItem x:Name="LabelsButton" IsEnabled="False" Click="Labels_OnClick" Header="{l:Tr Catalog_PrintLabels}"/>
+        <MenuItem x:Name="BarcodeButton" IsEnabled="False" Click="GenerateBarcode_OnClick" Header="{l:Tr Catalog_GenerateBarcode}"/>
+        <MenuItem x:Name="RestoreButton" IsEnabled="False" Click="Restore_OnClick" Header="{l:Tr Catalog_Restore}"/>
+      </MenuItem></Menu>
+      <Menu x:Name="BulkActionsMenu" IsEnabled="False" Visibility="Collapsed" VerticalAlignment="Center" Margin="0,0,8,0" MinHeight="36" Padding="2" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
         <MenuItem Header="{l:Tr Catalog_BulkActions}">
           <MenuItem x:Name="BulkRestoreButton" IsEnabled="False" Click="BulkRestore_OnClick" Header="{l:Tr Catalog_RestoreSelected}"/>
           <MenuItem x:Name="BulkRemoveButton" IsEnabled="False" Click="BulkRemove_OnClick" Header="{l:Tr Catalog_RemoveSelected}"/>
@@ -62,9 +62,9 @@
           <MenuItem x:Name="BulkBarcodeButton" IsEnabled="False" Click="BulkBarcode_OnClick" Header="{l:Tr Catalog_GenerateBarcodeSelected}"/>
         </MenuItem>
       </Menu>
-      <TextBlock x:Name="SelectedCountText" VerticalAlignment="Center" Margin="12,0,0,0" Text="0 selected"/>
+      <TextBlock x:Name="SelectedCountText" VerticalAlignment="Center" Text="0 selected"/>
     </StackPanel>
-    <Grid Grid.Row="4">
+    <Grid Grid.Row="3">
       <DataGrid x:Name="ProductsGrid" Style="{StaticResource CatalogGrid}" SelectionMode="Single" SelectionChanged="ProductsGrid_OnSelectionChanged" MouseDoubleClick="ProductsGrid_OnDoubleClick">
         <DataGrid.Columns>
           <DataGridTemplateColumn Width="42">
@@ -100,7 +100,7 @@
       </DataGrid>
       <TextBlock x:Name="EmptyText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" Text="{l:Tr Catalog_Empty}"/>
     </Grid>
-    <DockPanel Grid.Row="5">
+    <DockPanel Grid.Row="4">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
         <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
         <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" SelectedIndex="2" SelectionChanged="PageSize_OnChanged">

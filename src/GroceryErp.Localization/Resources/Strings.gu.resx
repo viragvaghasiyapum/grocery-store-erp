@@ -1134,6 +1134,19 @@
   <data name="Sales_ViewBillItems" xml:space="preserve"><value>બિલની વસ્તુઓ જુઓ</value></data>
   <data name="Assets_ViewTimeline" xml:space="preserve"><value>સમયરેખા જુઓ</value></data>
   <data name="Catalog_Filters" xml:space="preserve"><value>ફિલ્ટર ▾</value></data>
+  <data name="Common_Actions" xml:space="preserve"><value>ક્રિયાઓ ▾</value></data>
+  <data name="Catalog_BasicDetails" xml:space="preserve"><value>ઉત્પાદનની વિગતો</value></data>
+  <data name="Catalog_PricingStock" xml:space="preserve"><value>કિંમત અને સ્ટોક</value></data>
+  <data name="Purchasing_Filters" xml:space="preserve"><value>ખરીદી ફિલ્ટર</value></data>
+  <data name="Purchasing_AdditionalDetails" xml:space="preserve"><value>નોંધ અને વધારાના ખર્ચ</value></data>
+  <data name="Stock_OverviewSearch" xml:space="preserve"><value>ઉત્પાદન અથવા SKU</value></data>
+  <data name="Stock_LotSearch" xml:space="preserve"><value>ઉત્પાદન, લોટ અથવા બેચ</value></data>
+  <data name="Assets_DisposalDetails" xml:space="preserve"><value>પસંદ કરેલી મિલકતનો નિકાલ</value></data>
+  <data name="MoneyOut_ExpenseEntry" xml:space="preserve"><value>ખર્ચની નોંધ</value></data>
+  <data name="MoneyOut_DamageEntry" xml:space="preserve"><value>નુકસાન નોંધો</value></data>
+  <data name="MoneyOut_CategoryDetails" xml:space="preserve"><value>ખર્ચના વર્ગો</value></data>
+  <data name="MoneyOut_EmployeeDetails" xml:space="preserve"><value>કર્મચારીની વિગતો</value></data>
+  <data name="MoneyOut_AdvanceDetails" xml:space="preserve"><value>પેશગી નોંધો</value></data>
   <data name="Catalog_BulkActions" xml:space="preserve"><value>સમૂહ ક્રિયાઓ ▾</value></data>
   <data name="Catalog_PrintLabelsSelected" xml:space="preserve"><value>પસંદ કરેલાં માટે લેબલ છાપો</value></data>
   <data name="Catalog_GenerateBarcodeSelected" xml:space="preserve"><value>પસંદ કરેલાં માટે બારકોડ બનાવો</value></data>

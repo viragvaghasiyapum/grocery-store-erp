@@ -47,10 +47,14 @@
       </DataGrid.Columns>
     </DataGrid>
     <Grid Grid.Row="4" Margin="0,14,0,0">
-      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="160"/><ColumnDefinition Width="160"/></Grid.ColumnDefinitions>
-      <StackPanel><TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="NotesBox"/></StackPanel>
-      <StackPanel Grid.Column="1" Margin="12,0,0,0"><TextBlock Text="{l:Tr Purchasing_OtherCharges}"/><TextBox x:Name="ChargesBox" Text="0" TextChanged="TotalsInput_OnTextChanged"/></StackPanel>
-      <StackPanel Grid.Column="2" Margin="12,0,0,0"><TextBlock Text="{l:Tr Purchasing_BillTotal}"/><TextBox x:Name="BillTotalBox" TextChanged="TotalsInput_OnTextChanged"/></StackPanel>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="180"/></Grid.ColumnDefinitions>
+      <Expander Header="{l:Tr Purchasing_AdditionalDetails}" IsExpanded="False" VerticalAlignment="Bottom">
+        <Grid Margin="0,8,12,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="160"/></Grid.ColumnDefinitions>
+          <StackPanel><TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="NotesBox"/></StackPanel>
+          <StackPanel Grid.Column="1" Margin="12,0,0,0"><TextBlock Text="{l:Tr Purchasing_OtherCharges}"/><TextBox x:Name="ChargesBox" Text="0" TextChanged="TotalsInput_OnTextChanged"/></StackPanel>
+        </Grid>
+      </Expander>
+      <StackPanel Grid.Column="1" Margin="12,0,0,0"><TextBlock Text="{l:Tr Purchasing_BillTotal}"/><TextBox x:Name="BillTotalBox" TextChanged="TotalsInput_OnTextChanged"/></StackPanel>
     </Grid>
     <Border Grid.Row="5" Style="{StaticResource CatalogCard}" Margin="0,14,0,0" Padding="14,10">
       <Grid>

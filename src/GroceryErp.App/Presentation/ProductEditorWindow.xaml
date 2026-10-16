@@ -7,13 +7,18 @@
     WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
   <Grid Margin="22">
     <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-      <StackPanel Margin="0,0,18,0">
+    <StackPanel Margin="0,0,0,12">
         <TextBlock FontSize="26" FontWeight="SemiBold" Text="{l:Tr Catalog_EditorTitle}" />
         <TextBlock x:Name="ErrorText" Margin="0,8,0,0" Foreground="Crimson" TextWrapping="Wrap" />
+    </StackPanel>
+    <TabControl Grid.Row="1">
+      <TabItem Header="{l:Tr Catalog_BasicDetails}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="8,8,18,8">
 
         <Grid Margin="0,16,0,0">
           <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
@@ -47,6 +52,16 @@
             <ComboBox x:Name="UnitBox" DisplayMemberPath="Code" SelectedValuePath="Id" />
           </StackPanel>
         </Grid>
+
+        <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_Barcodes}" />
+        <TextBox x:Name="BarcodesBox" Height="70" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
+                 ToolTip="{l:Tr Catalog_BarcodesHint}" />
+      </StackPanel>
+      </ScrollViewer>
+      </TabItem>
+      <TabItem Header="{l:Tr Catalog_PricingStock}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="8,8,18,8">
 
         <Grid Margin="0,12,0,0">
           <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
@@ -89,13 +104,11 @@
         </WrapPanel>
         <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_Plu}" />
         <TextBox x:Name="PluBox" IsEnabled="False" MaxLength="30" />
-
-        <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_Barcodes}" />
-        <TextBox x:Name="BarcodesBox" Height="70" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
-                 ToolTip="{l:Tr Catalog_BarcodesHint}" />
       </StackPanel>
-    </ScrollViewer>
-    <StackPanel Grid.Row="1" Margin="0,18,0,0" HorizontalAlignment="Right" Orientation="Horizontal">
+      </ScrollViewer>
+      </TabItem>
+    </TabControl>
+    <StackPanel Grid.Row="2" Margin="0,18,0,0" HorizontalAlignment="Right" Orientation="Horizontal">
       <Button Width="95" Margin="0,0,8,0" IsCancel="True" Content="{l:Tr Common_Cancel}" />
       <Button x:Name="SaveButton" Width="110" IsDefault="True" Click="Save_OnClick" Content="{l:Tr Common_Save}" />
     </StackPanel>

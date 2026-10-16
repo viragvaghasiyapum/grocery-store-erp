@@ -37,15 +37,17 @@
       <CheckBox x:Name="IncludeDisposedBox" IsChecked="True" VerticalAlignment="Bottom" Margin="0,0,12,4" Content="{l:Tr Assets_IncludeDisposed}"/>
       <Button Margin="0,18,8,0" Click="AssetSearch_OnClick" Content="{l:Tr Assets_Search}"/>
       <Button Margin="0,18,8,0" Click="ClearAssetFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
-      <Button Margin="0,18,0,0" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
+      <Button Margin="0,18,8,0" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
+      <Button x:Name="EditAssetButton" IsEnabled="False" Margin="0,18,0,0" Click="EditAsset_OnClick" Content="{l:Tr Assets_EditSelected}"/>
     </WrapPanel>
-    <WrapPanel Grid.Row="3" Margin="0,0,0,12">
-      <TextBlock x:Name="SelectedAssetText" Width="220" VerticalAlignment="Bottom" Margin="0,0,12,4" Text="{l:Tr Assets_SelectToDispose}" TextTrimming="CharacterEllipsis"/>
-      <Button x:Name="EditAssetButton" IsEnabled="False" Margin="0,18,12,0" Click="EditAsset_OnClick" Content="{l:Tr Assets_EditSelected}"/>
+    <Expander Grid.Row="3" Header="{l:Tr Assets_DisposalDetails}" Margin="0,0,0,10" IsExpanded="False">
+    <WrapPanel Margin="0,8,0,0">
+      <TextBlock x:Name="SelectedAssetText" Width="220" VerticalAlignment="Center" Margin="0,0,12,0" Text="{l:Tr Assets_SelectToDispose}" TextTrimming="CharacterEllipsis"/>
       <StackPanel Width="140" Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Assets_DisposalDate}"/><DatePicker x:Name="DisposalDate" IsEnabled="False" SelectedDateFormat="Short"/></StackPanel>
       <StackPanel Width="130" Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Assets_Proceeds}"/><TextBox x:Name="DisposalValue" IsEnabled="False" Text="0"/></StackPanel>
       <Button x:Name="DisposeButton" IsEnabled="False" Margin="0,18,0,0" Click="Dispose_OnClick" Content="{l:Tr Assets_Dispose}"/>
     </WrapPanel>
+    </Expander>
     <Grid Grid.Row="4">
       <DataGrid x:Name="AssetGrid" Style="{StaticResource CatalogGrid}" SelectionChanged="AssetGrid_OnSelectionChanged">
         <DataGrid.Columns>

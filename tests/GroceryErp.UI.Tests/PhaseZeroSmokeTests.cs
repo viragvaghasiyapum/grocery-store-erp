@@ -342,8 +342,8 @@ public sealed class PhaseZeroSmokeTests
                 productsWindow.Show();
                 ((DataGrid)products.FindName("ProductsGrid")).SelectedIndex = 0;
                 ((Button)products.FindName("EditButton")).IsEnabled.ShouldBeTrue();
-                ((Button)products.FindName("LabelsButton")).IsEnabled.ShouldBeTrue();
-                ((Button)products.FindName("RestoreButton")).IsEnabled.ShouldBeFalse();
+                ((MenuItem)products.FindName("LabelsButton")).IsEnabled.ShouldBeTrue();
+                ((MenuItem)products.FindName("RestoreButton")).IsEnabled.ShouldBeFalse();
                 ((TextBlock)products.FindName("StatusText")).Text = translations.Format("Catalog_Count", 1);
                 Capture(productsWindow, "products.en.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
@@ -370,8 +370,8 @@ public sealed class PhaseZeroSmokeTests
                 checkProduct.Invoke(products, [new CheckBox { DataContext = secondProduct, IsChecked = true }, new RoutedEventArgs()]);
                 ((Menu)products.FindName("BulkActionsMenu")).Visibility.ShouldBe(Visibility.Visible);
                 ((Button)products.FindName("EditButton")).IsEnabled.ShouldBeFalse();
-                ((Button)products.FindName("LabelsButton")).IsEnabled.ShouldBeFalse();
-                ((Button)products.FindName("BarcodeButton")).IsEnabled.ShouldBeFalse();
+                ((MenuItem)products.FindName("LabelsButton")).IsEnabled.ShouldBeFalse();
+                ((MenuItem)products.FindName("BarcodeButton")).IsEnabled.ShouldBeFalse();
                 var pageSelection = new CheckBox();
                 typeof(ProductsPage).GetMethod("PageSelectionCheck_OnLoaded", BindingFlags.Instance | BindingFlags.NonPublic)!
                     .Invoke(products, [pageSelection, new RoutedEventArgs()]);
@@ -398,8 +398,8 @@ public sealed class PhaseZeroSmokeTests
                     new ProductListItem { Id = 3, Sku = "OLD001", Name = "Archived salt", IsActive = false },
                 };
                 productGrid.SelectedIndex = 0;
-                ((Button)products.FindName("RestoreButton")).IsEnabled.ShouldBeTrue();
-                ((Button)products.FindName("BarcodeButton")).IsEnabled.ShouldBeFalse();
+                ((MenuItem)products.FindName("RestoreButton")).IsEnabled.ShouldBeTrue();
+                ((MenuItem)products.FindName("BarcodeButton")).IsEnabled.ShouldBeFalse();
                 productsWindow.Close();
                 var savedLayouts = (Dictionary<string, double[]>)layouts.GetField("Saved",
                     BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
@@ -589,6 +589,9 @@ public sealed class PhaseZeroSmokeTests
                 var editor = new ProductEditorWindow(catalog) { Width = 760, Height = 720 };
                 editor.Show();
                 Capture(editor, "product-editor.en.png");
+                ((TabControl)((Grid)editor.Content).Children[1]).SelectedIndex = 1;
+                editor.UpdateLayout();
+                ((TextBox)editor.FindName("PriceBox")).IsVisible.ShouldBeTrue();
                 editor.Close();
 
                 var bulkEdit = new CatalogBulkEditWindow(catalog, new long[] { 1 });
@@ -860,6 +863,8 @@ public sealed class PhaseZeroSmokeTests
                 Capture(moneyOutHost, "damages.en.png");
                 ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 2;
                 Capture(moneyOutHost, "expenses.en.png");
+                ((DataGrid)moneyOutPage.FindName("ExpenseGrid")).SelectedIndex = 0;
+                ((Expander)moneyOutPage.FindName("ExpenseEntryExpander")).IsExpanded.ShouldBeTrue();
                 ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 3;
                 Capture(moneyOutHost, "payroll.en.png");
                 ((DataGrid)moneyOutPage.FindName("SalaryGrid")).ItemsSource = null;

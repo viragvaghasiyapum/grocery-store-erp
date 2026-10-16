@@ -230,6 +230,7 @@ public partial class MoneyOutPage : Page
     private void ExpenseGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ExpenseGrid.SelectedItem is not ExpenseItem item) return;
+        ExpenseEntryExpander.IsExpanded = true;
         _editingExpense = item;
         ExpenseDate.SelectedDate = item.Date.ToDateTime(TimeOnly.MinValue);
         ExpenseCategory.SelectedValue = item.CategoryId;
@@ -241,7 +242,12 @@ public partial class MoneyOutPage : Page
         ExpenseCorrectionPanel.Visibility = Visibility.Visible;
     }
 
-    private void NewExpense_OnClick(object sender, RoutedEventArgs e) => ClearExpenseCorrection();
+    private void NewExpense_OnClick(object sender, RoutedEventArgs e)
+    {
+        ClearExpenseCorrection();
+        ExpenseEntryExpander.IsExpanded = true;
+        ExpenseAmount.Focus();
+    }
 
     private void ClearExpenseCorrection()
     {
@@ -270,6 +276,7 @@ public partial class MoneyOutPage : Page
             if (drafts.Count == 0) return;
             RepeatDraftGrid.ItemsSource = drafts;
             RepeatDraftGrid.Visibility = Visibility.Visible;
+            ExpenseEntryExpander.IsExpanded = true;
             ExpenseDate.SelectedDate = drafts[0].Date.ToDateTime(TimeOnly.MinValue);
             ExpenseAmount.Text = drafts[0].Amount.Value.ToString("0.000", TranslationSource.FormatCulture);
             ExpensePaidTo.Text = drafts[0].PaidTo;
@@ -347,6 +354,7 @@ public partial class MoneyOutPage : Page
     private void EmployeeGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (EmployeeGrid.SelectedItem is not EmployeeItem employee) return;
+        EmployeeDetailsExpander.IsExpanded = true;
         _editingEmployeeId = employee.Id;
         EmployeeName.Text = employee.Name;
         EmployeePhone.Text = employee.Phone ?? "";
@@ -360,6 +368,7 @@ public partial class MoneyOutPage : Page
 
     private void NewEmployee_OnClick(object sender, RoutedEventArgs e)
     {
+        EmployeeDetailsExpander.IsExpanded = true;
         EmployeeGrid.SelectedItem = null;
         _editingEmployeeId = null;
         EmployeeName.Clear(); EmployeePhone.Clear(); EmployeeRole.Clear(); EmployeeSalary.Clear();
