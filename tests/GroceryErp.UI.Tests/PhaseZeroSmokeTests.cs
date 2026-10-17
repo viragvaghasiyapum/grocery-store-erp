@@ -937,7 +937,25 @@ public sealed class PhaseZeroSmokeTests
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 Capture(assetsHost, "assets.gu.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                var assetGrid = (DataGrid)assetsPage.FindName("AssetGrid");
+                assetGrid.AutoGenerateColumns.ShouldBeFalse();
+                assetGrid.CanUserResizeColumns.ShouldBeTrue();
+                assetGrid.CanUserReorderColumns.ShouldBeTrue();
+                assetGrid.Columns.Count.ShouldBe(8);
+                assetGrid.Columns[1].Width = new DataGridLength(260, DataGridLengthUnitType.Pixel);
+                assetGrid.Columns[2].DisplayIndex = 1;
                 assetsHost.Close();
+                savedLayouts.Clear();
+                foreach (System.Collections.DictionaryEntry entry in (System.Collections.IDictionary)layouts.GetMethod("Load",
+                    BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, null)!)
+                    savedLayouts.Add(entry.Key, entry.Value);
+                var reopenedAssets = new AssetsPage(assetService, phase5Clock, purchasing, loadOnShow: false);
+                var reopenedAssetsHost = new Window { Content = reopenedAssets, Width = 1120, Height = 700 };
+                reopenedAssetsHost.Show();
+                var reopenedAssetGrid = (DataGrid)reopenedAssets.FindName("AssetGrid");
+                Math.Abs(reopenedAssetGrid.Columns[1].ActualWidth - 260).ShouldBeLessThan(1);
+                reopenedAssetGrid.Columns[2].DisplayIndex.ShouldBe(1);
+                reopenedAssetsHost.Close();
 
                 IClock posClock = new SystemClock(settings);
                 var sales = new SalesService(database, new StockLedger(settings), new DocNumberService(settings),

@@ -31,7 +31,7 @@
     <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}"/>
     <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}"/>
   </Style>
-  <Style x:Key="CatalogGrid" TargetType="DataGrid">
+  <Style x:Key="CatalogGridBase" TargetType="DataGrid">
     <Setter Property="AutoGenerateColumns" Value="False"/>
     <Setter Property="IsReadOnly" Value="True"/>
     <Setter Property="CanUserAddRows" Value="False"/>
@@ -71,6 +71,7 @@
       </Setter.Value>
     </Setter>
   </Style>
+  <Style x:Key="CatalogGrid" TargetType="DataGrid" BasedOn="{StaticResource CatalogGridBase}"/>
   <Style TargetType="TabItem">
     <Setter Property="Margin" Value="0"/>
     <Setter Property="Padding" Value="14,9"/>

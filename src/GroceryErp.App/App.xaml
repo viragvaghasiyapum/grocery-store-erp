@@ -12,6 +12,9 @@
         <ui:ControlsDictionary />
         <ResourceDictionary Source="pack://application:,,,/GroceryErp.UI.Common;component/Themes/Tokens.xaml" />
       </ResourceDictionary.MergedDictionaries>
+      <Style x:Key="CatalogGrid" TargetType="DataGrid" BasedOn="{StaticResource CatalogGridBase}">
+        <EventSetter Event="Loaded" Handler="TableGrid_OnLoaded"/>
+      </Style>
       <p:ExpiryBucketConverter x:Key="ExpiryBucketConverter"/>
       <Style TargetType="{x:Type p:AnimatedSection}">
         <Setter Property="Template">

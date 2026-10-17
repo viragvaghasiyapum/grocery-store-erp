@@ -41,6 +41,11 @@ public partial class App : Application
     private Mutex? _instanceMutex;
     private bool _ownsInstanceMutex;
 
+    private void TableGrid_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is DataGrid grid) TableColumnLayouts.Attach(grid);
+    }
+
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);

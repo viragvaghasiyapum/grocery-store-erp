@@ -25,8 +25,6 @@ internal static class TableColumnLayouts
     {
         if (_registered) return;
         _registered = true;
-        EventManager.RegisterClassHandler(typeof(DataGrid), FrameworkElement.LoadedEvent,
-            new RoutedEventHandler(OnLoaded), true);
         EventManager.RegisterClassHandler(typeof(DataGrid), Thumb.DragCompletedEvent,
             new DragCompletedEventHandler(OnColumnResizeCompleted), true);
     }
@@ -42,17 +40,17 @@ internal static class TableColumnLayouts
             "Hare Krushna", "Grocery ERP", "table-columns.json");
     }
 
-    private static void OnLoaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is DataGrid grid) Attach(grid);
-    }
-
     private static void OnColumnResizeCompleted(object sender, DragCompletedEventArgs e)
     {
-        if (sender is DataGrid grid) Attach(grid, restore: false)?.SaveNow();
+        if (sender is DataGrid grid) AttachGrid(grid, restore: false)?.SaveNow();
     }
 
-    private static GridState? Attach(DataGrid grid, bool restore = true)
+    internal static void Attach(DataGrid grid)
+    {
+        AttachGrid(grid);
+    }
+
+    private static GridState? AttachGrid(DataGrid grid, bool restore = true)
     {
         if (string.IsNullOrWhiteSpace(grid.Name)) return null;
         if (States.TryGetValue(grid, out GridState? existing)) return existing;
