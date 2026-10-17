@@ -32,7 +32,7 @@ public partial class MoneyOutPage : Page
     private ExpensePage? _expensePage;
     private ExpenseItem? _editingExpense;
     private readonly Dictionary<long, ExpiryLot> _selectedExpiryLots = new();
-    private int _expirySelectionVersion;
+    private readonly Dictionary<DataGrid, CheckBox> _expiryHeaderChecks = new();
     private bool _changingExpenseSection;
     private CheckBox? _salaryPageCheck;
 
@@ -564,6 +564,7 @@ public partial class MoneyOutPage : Page
             case "CRITICAL": UiRefreshProbe.RecordBinding("money-out", () => CriticalList.ItemsSource = page.Items); break;
             case "SOON": UiRefreshProbe.RecordBinding("money-out", () => SoonList.ItemsSource = page.Items); break;
         }
+        UpdateExpiryHeaderChecks();
         UpdateExpiryButtons();
     }
 
@@ -586,46 +587,50 @@ public partial class MoneyOutPage : Page
         UpdateExpirySelection();
     }
 
-    private void SelectExpiryPage_OnClick(object sender, RoutedEventArgs e)
+    private void ExpiryHeaderCheck_OnLoaded(object sender, RoutedEventArgs e)
     {
-        foreach (ExpiryLot lot in ActiveExpiryList().Items.Cast<ExpiryLot>())
-            _selectedExpiryLots[lot.LotId] = lot;
+        if (sender is not CheckBox { Tag: DataGrid grid } box) return;
+        _expiryHeaderChecks[grid] = box;
+        UpdateExpiryHeaderCheck(grid);
+    }
+
+    private void ExpiryHeaderCheck_OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox { Tag: DataGrid grid } box &&
+            _expiryHeaderChecks.TryGetValue(grid, out CheckBox? current) && ReferenceEquals(current, box))
+            _expiryHeaderChecks.Remove(grid);
+    }
+
+    private void ExpiryHeaderCheck_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox { Tag: DataGrid grid } box) return;
+        bool select = box.IsChecked == true;
+        foreach (ExpiryLot lot in grid.Items.OfType<ExpiryLot>())
+        {
+            if (select) _selectedExpiryLots[lot.LotId] = lot;
+            else _selectedExpiryLots.Remove(lot.LotId);
+        }
         RefreshExpiryChecks();
     }
-
-    private async void SelectAllExpiry_OnClick(object sender, RoutedEventArgs e)
-    {
-        string bucket = ActiveExpiryBucket();
-        int selectionVersion = _expirySelectionVersion;
-        var selected = new Dictionary<long, ExpiryLot>();
-        DateOnly? date = null;
-        long? id = null;
-        SelectAllExpiryButton.IsEnabled = false;
-        try
-        {
-            while (true)
-            {
-                ExpiryPage page = await _service.GetExpiryPageAsync(bucket, date, id, 100);
-                if (selectionVersion != _expirySelectionVersion) return;
-                foreach (ExpiryLot lot in page.Items) selected[lot.LotId] = lot;
-                if (!page.HasMore || page.NextDate is null || page.NextId is null) break;
-                date = page.NextDate;
-                id = page.NextId;
-            }
-            foreach ((long lotId, ExpiryLot lot) in selected) _selectedExpiryLots[lotId] = lot;
-            RefreshExpiryChecks();
-        }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
-        finally { SelectAllExpiryButton.IsEnabled = true; }
-    }
-
-    private void ClearExpirySelection_OnClick(object sender, RoutedEventArgs e) => ClearExpirySelection();
 
     private void ClearExpirySelection()
     {
-        ++_expirySelectionVersion;
         _selectedExpiryLots.Clear();
         RefreshExpiryChecks();
+    }
+
+    private void UpdateExpiryHeaderChecks()
+    {
+        foreach (DataGrid grid in _expiryHeaderChecks.Keys.ToArray()) UpdateExpiryHeaderCheck(grid);
+    }
+
+    private void UpdateExpiryHeaderCheck(DataGrid grid)
+    {
+        if (!_expiryHeaderChecks.TryGetValue(grid, out CheckBox? box)) return;
+        ExpiryLot[] rows = grid.Items.OfType<ExpiryLot>().ToArray();
+        int selected = rows.Count(lot => _selectedExpiryLots.ContainsKey(lot.LotId));
+        box.IsEnabled = rows.Length > 0;
+        box.IsChecked = selected == 0 ? false : selected == rows.Length ? true : null;
     }
 
     private void RefreshExpiryChecks()
@@ -639,9 +644,9 @@ public partial class MoneyOutPage : Page
     {
         if (ExpirySelectedCount is null) return;
         ExpirySelectedCount.Text = TranslationSource.Instance.Format("Selection_Count", _selectedExpiryLots.Count);
-        ClearExpirySelectionButton.IsEnabled = _selectedExpiryLots.Count > 0;
         BulkWriteOffButton.IsEnabled = _selectedExpiryLots.Count > 0 &&
             _selectedExpiryLots.Values.All(static lot => lot.Bucket == "EXPIRED");
+        UpdateExpiryHeaderChecks();
     }
 
     private async void PageSize_OnChanged(object sender, SelectionChangedEventArgs e)

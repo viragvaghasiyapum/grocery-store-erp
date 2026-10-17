@@ -876,6 +876,7 @@ public sealed class PhaseZeroSmokeTests
                 };
                 moneyOutHost.Show();
                 Capture(moneyOutHost, "expiry.en.png");
+                VerifyExpiryHeaderSelection(moneyOutHost, moneyOutPage, translations);
                 VerifyStickyMoneyOutTable(moneyOutHost, moneyOutPage);
                 var expiryTabs = (TabControl)moneyOutPage.FindName("ExpiryTabs");
                 expiryTabs.SelectedIndex = 1;
@@ -1354,7 +1355,7 @@ public sealed class PhaseZeroSmokeTests
         var rows = Enumerable.Range(1, 120).Select(index => lot with { LotId = index }).ToArray();
         grid.ItemsSource = rows;
         window.UpdateLayout();
-        var toolbar = (Button)page.FindName("SelectAllExpiryButton");
+        var toolbar = (Button)page.FindName("BulkWriteOffButton");
         var pageSize = (ComboBox)page.FindName("PageSizeBox");
         var nextPage = (Button)page.FindName("NextExpiryButton");
         var header = FindVisualChild<DataGridColumnHeadersPresenter>(grid)!;
@@ -1373,6 +1374,37 @@ public sealed class PhaseZeroSmokeTests
         Math.Abs(header.TranslatePoint(new Point(), window).Y - headerY).ShouldBeLessThan(1);
         grid.ItemsSource = originalItems;
         window.UpdateLayout();
+    }
+
+    private static void VerifyExpiryHeaderSelection(Window window, MoneyOutPage page,
+        TranslationSource translations)
+    {
+        var grid = (DataGrid)page.FindName("ExpiredList");
+        var lot = (ExpiryLot)grid.Items[0];
+        grid.ItemsSource = new[] { lot, lot with { LotId = lot.LotId + 1 } };
+        window.UpdateLayout();
+        var header = FindVisualChild<CheckBox>(FindVisualChild<DataGridColumnHeadersPresenter>(grid)!)!;
+        header.IsEnabled.ShouldBeTrue();
+        header.IsChecked = true;
+        header.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        ((TextBlock)page.FindName("ExpirySelectedCount")).Text.ShouldBe(translations.Format("Selection_Count", 2));
+        ((Button)page.FindName("BulkWriteOffButton")).IsEnabled.ShouldBeTrue();
+
+        grid.ScrollIntoView(lot);
+        grid.UpdateLayout();
+        var rowCheck = FindVisualChild<CheckBox>(FindVisualChild<DataGridRow>(grid)!)!;
+        rowCheck.IsChecked = false;
+        rowCheck.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        header.IsChecked.ShouldBeNull();
+
+        header.IsChecked = true;
+        header.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        ((TextBlock)page.FindName("ExpirySelectedCount")).Text.ShouldBe(translations.Format("Selection_Count", 2));
+
+        header.IsChecked = false;
+        header.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        ((TextBlock)page.FindName("ExpirySelectedCount")).Text.ShouldBe(translations.Format("Selection_Count", 0));
+        ((Button)page.FindName("BulkWriteOffButton")).IsEnabled.ShouldBeFalse();
     }
 
     private static void Capture(Window window, string fileName)

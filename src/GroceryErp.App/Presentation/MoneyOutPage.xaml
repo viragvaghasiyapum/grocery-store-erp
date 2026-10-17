@@ -10,6 +10,12 @@
       <CheckBox Loaded="ExpiryCheck_OnLoaded" Click="ExpiryCheck_OnClick"
                 HorizontalAlignment="Center" AutomationProperties.Name="Select lot"/>
     </DataTemplate>
+    <DataTemplate x:Key="ExpiryHeaderCheckTemplate">
+      <CheckBox Loaded="ExpiryHeaderCheck_OnLoaded" Unloaded="ExpiryHeaderCheck_OnUnloaded"
+                Click="ExpiryHeaderCheck_OnClick" HorizontalAlignment="Center"
+                Tag="{Binding RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                AutomationProperties.Name="{l:Tr Selection_ThisPage}"/>
+    </DataTemplate>
     <DataTemplate x:Key="ExpiryNameTemplate">
       <StackPanel VerticalAlignment="Center">
         <TextBlock Text="{Binding ProductName}" TextTrimming="CharacterEllipsis"/>
@@ -38,9 +44,6 @@
           </WrapPanel>
           </p:AnimatedSection>
           <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-            <Button Margin="0,0,8,0" Click="SelectExpiryPage_OnClick" Content="{l:Tr Selection_ThisPage}"/>
-            <Button x:Name="SelectAllExpiryButton" Margin="0,0,8,0" Click="SelectAllExpiry_OnClick" Content="{l:Tr Selection_AllMatching}"/>
-            <Button x:Name="ClearExpirySelectionButton" IsEnabled="False" Margin="0,0,8,0" Click="ClearExpirySelection_OnClick" Content="{l:Tr Selection_Clear}"/>
             <TextBlock x:Name="ExpirySelectedCount" VerticalAlignment="Center" Text="0 selected"/>
             <Button x:Name="BulkWriteOffButton" IsEnabled="False" Margin="12,0,8,0" Click="BulkWriteOff_OnClick" Content="{l:Tr MoneyOut_WriteOff}" />
             <Button Click="PrintExpiry_OnClick" Content="{l:Tr MoneyOut_PrintVendorList}" />
@@ -49,7 +52,7 @@
             <TabItem Header="{l:Tr MoneyOut_Expired}">
               <DataGrid x:Name="ExpiredList" Margin="0,10,0,0" Style="{StaticResource CatalogGrid}" AutoGenerateColumns="False" SelectionChanged="ExpiryList_OnSelectionChanged">
                 <DataGrid.Columns>
-                  <DataGridTemplateColumn Width="48" CellTemplate="{StaticResource ExpiryCheckTemplate}"/>
+                  <DataGridTemplateColumn Width="48" HeaderTemplate="{StaticResource ExpiryHeaderCheckTemplate}" CellTemplate="{StaticResource ExpiryCheckTemplate}"/>
                   <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}"/>
                   <DataGridTemplateColumn Width="240" Header="{l:Tr Catalog_Name}" CellTemplate="{StaticResource ExpiryNameTemplate}"/>
                   <DataGridTextColumn Width="120" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
@@ -64,7 +67,7 @@
             <TabItem Header="{l:Tr MoneyOut_Critical}">
               <DataGrid x:Name="CriticalList" Margin="0,10,0,0" Style="{StaticResource CatalogGrid}" AutoGenerateColumns="False" SelectionChanged="ExpiryList_OnSelectionChanged">
                 <DataGrid.Columns>
-                  <DataGridTemplateColumn Width="48" CellTemplate="{StaticResource ExpiryCheckTemplate}"/>
+                  <DataGridTemplateColumn Width="48" HeaderTemplate="{StaticResource ExpiryHeaderCheckTemplate}" CellTemplate="{StaticResource ExpiryCheckTemplate}"/>
                   <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}"/>
                   <DataGridTemplateColumn Width="240" Header="{l:Tr Catalog_Name}" CellTemplate="{StaticResource ExpiryNameTemplate}"/>
                   <DataGridTextColumn Width="120" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
@@ -79,7 +82,7 @@
             <TabItem Header="{l:Tr MoneyOut_Soon}">
               <DataGrid x:Name="SoonList" Margin="0,10,0,0" Style="{StaticResource CatalogGrid}" AutoGenerateColumns="False" SelectionChanged="ExpiryList_OnSelectionChanged">
                 <DataGrid.Columns>
-                  <DataGridTemplateColumn Width="48" CellTemplate="{StaticResource ExpiryCheckTemplate}"/>
+                  <DataGridTemplateColumn Width="48" HeaderTemplate="{StaticResource ExpiryHeaderCheckTemplate}" CellTemplate="{StaticResource ExpiryCheckTemplate}"/>
                   <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}"/>
                   <DataGridTemplateColumn Width="240" Header="{l:Tr Catalog_Name}" CellTemplate="{StaticResource ExpiryNameTemplate}"/>
                   <DataGridTextColumn Width="120" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
