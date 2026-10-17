@@ -876,6 +876,7 @@ public sealed class PhaseZeroSmokeTests
                 };
                 moneyOutHost.Show();
                 Capture(moneyOutHost, "expiry.en.png");
+                VerifyExpiryActionsShareTabRow(moneyOutHost, moneyOutPage);
                 VerifyExpiryHeaderSelection(moneyOutHost, moneyOutPage, translations);
                 VerifyStickyMoneyOutTable(moneyOutHost, moneyOutPage);
                 var expiryTabs = (TabControl)moneyOutPage.FindName("ExpiryTabs");
@@ -1374,6 +1375,42 @@ public sealed class PhaseZeroSmokeTests
         Math.Abs(header.TranslatePoint(new Point(), window).Y - headerY).ShouldBeLessThan(1);
         grid.ItemsSource = originalItems;
         window.UpdateLayout();
+    }
+
+    private static void VerifyExpiryActionsShareTabRow(Window window, MoneyOutPage page)
+    {
+        var tabs = (TabControl)page.FindName("ExpiryTabs");
+        var soon = (TabItem)tabs.Items[2];
+        var count = (TextBlock)page.FindName("ExpirySelectedCount");
+        var record = (Button)page.FindName("ExpiryRecordDamageButton");
+        var writeOff = (Button)page.FindName("BulkWriteOffButton");
+        var print = (Button)page.FindName("PrintExpiryButton");
+        var popup = (Popup)page.FindName("ExpiryDamagePopup");
+        window.UpdateLayout();
+
+        double tabTop = soon.TranslatePoint(new Point(), window).Y;
+        foreach (FrameworkElement action in new FrameworkElement[] { count, record, writeOff, print })
+            Math.Abs(action.TranslatePoint(new Point(), window).Y - tabTop).ShouldBeLessThan(12);
+        double nextLeft = soon.TranslatePoint(new Point(), window).X + soon.ActualWidth;
+        foreach (FrameworkElement action in new FrameworkElement[] { count, record, writeOff, print })
+        {
+            double left = action.TranslatePoint(new Point(), window).X;
+            left.ShouldBeGreaterThanOrEqualTo(nextLeft);
+            nextLeft = left + action.ActualWidth;
+        }
+        DependencyObject presenter = count;
+        while (presenter is not ContentPresenter)
+            presenter = VisualTreeHelper.GetParent(presenter)!;
+        count.TranslatePoint(new Point(), window).X.ShouldBeGreaterThanOrEqualTo(
+            ((ContentPresenter)presenter).TranslatePoint(new Point(), window).X);
+        double rightGap = tabs.TranslatePoint(new Point(), window).X + tabs.ActualWidth - nextLeft;
+        rightGap.ShouldBeLessThan(20);
+
+        ((DataGrid)page.FindName("ExpiredList")).SelectedIndex = 0;
+        record.IsEnabled.ShouldBeTrue();
+        record.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        popup.IsOpen.ShouldBeTrue();
+        popup.IsOpen = false;
     }
 
     private static void VerifyExpiryHeaderSelection(Window window, MoneyOutPage page,

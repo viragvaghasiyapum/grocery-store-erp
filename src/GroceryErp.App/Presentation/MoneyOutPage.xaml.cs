@@ -67,6 +67,8 @@ public partial class MoneyOutPage : Page
     private async void Tabs_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!ReferenceEquals(e.OriginalSource, MoneyOutTabs)) return;
+        if (MoneyOutTabs.SelectedIndex != 0 && ExpiryDamagePopup is not null)
+            ExpiryDamagePopup.IsOpen = false;
         UpdatePagerVisibility();
         if (IsLoaded && _loadOnShow) await RefreshAsync();
     }
@@ -83,6 +85,7 @@ public partial class MoneyOutPage : Page
     private void ExpiryTabs_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!ReferenceEquals(e.OriginalSource, ExpiryTabs)) return;
+        if (ExpiryDamagePopup is not null) ExpiryDamagePopup.IsOpen = false;
         if (IsLoaded) ClearExpirySelection();
         UpdateExpiryButtons();
         UpdateExpiryActionVisibility();
@@ -98,7 +101,11 @@ public partial class MoneyOutPage : Page
         ExpiryRecordDamageButton.IsEnabled = hasLot;
         ExpiryBlockLotButton.IsEnabled = hasLot;
         ExpiryMarkDownButton.IsEnabled = hasLot;
+        if (!hasLot && ExpiryDamagePopup is not null) ExpiryDamagePopup.IsOpen = false;
     }
+
+    private void OpenExpiryDamage_OnClick(object sender, RoutedEventArgs e) =>
+        ExpiryDamagePopup.IsOpen = !ExpiryDamagePopup.IsOpen;
 
     private async void RecordDamage_OnClick(object sender, RoutedEventArgs e)
     {
@@ -111,6 +118,7 @@ public partial class MoneyOutPage : Page
             if (!ConfirmDamage(lot.LotCode, quantity)) return;
             await _service.RecordDamageAsync(new(lot.LotId, _clock.BusinessDate, quantity, reason, recovered, null), OperationGuard.NewId());
             DamageQuantity.Clear();
+            ExpiryDamagePopup.IsOpen = false;
             ClearExpirySelection();
             await RefreshAsync();
         }
@@ -162,7 +170,7 @@ public partial class MoneyOutPage : Page
         if (ActiveExpiryList().SelectedItem is not ExpiryLot lot) return;
         if (MessageBox.Show(TranslationSource.Instance.Format("MoneyOut_BlockConfirm", lot.LotCode),
             TranslationSource.Instance["MoneyOut_BlockLot"], MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-        try { await _inventory.SetLotActiveAsync(lot.LotId, false); ClearExpirySelection(); await RefreshAsync(); StatusText.Text = TranslationSource.Instance["MoneyOut_Saved"]; }
+        try { await _inventory.SetLotActiveAsync(lot.LotId, false); ExpiryDamagePopup.IsOpen = false; ClearExpirySelection(); await RefreshAsync(); StatusText.Text = TranslationSource.Instance["MoneyOut_Saved"]; }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
@@ -173,7 +181,7 @@ public partial class MoneyOutPage : Page
         if (lots.Count == 0) return;
         LotItem lot = lots[0];
         var window = new LotPriceWindow(_inventory, lot) { Owner = Window.GetWindow(this) };
-        if (window.ShowDialog() == true) { ClearExpirySelection(); await RefreshAsync(); }
+        if (window.ShowDialog() == true) { ExpiryDamagePopup.IsOpen = false; ClearExpirySelection(); await RefreshAsync(); }
     }
 
     private void PrintExpiry_OnClick(object sender, RoutedEventArgs e)

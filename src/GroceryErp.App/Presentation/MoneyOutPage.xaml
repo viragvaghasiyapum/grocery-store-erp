@@ -6,6 +6,17 @@
     xmlns:p="clr-namespace:GroceryErp.App.Presentation"
     Title="{l:Tr MoneyOut_Title}" ScrollViewer.CanContentScroll="False">
   <Page.Resources>
+    <ControlTemplate x:Key="ExpiryTabsTemplate" TargetType="TabControl">
+      <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <Grid Grid.Row="0">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+          <TabPanel x:Name="HeaderPanel" Grid.Column="0" IsItemsHost="True" KeyboardNavigation.TabIndex="1"/>
+          <ContentPresenter Grid.Column="1" Content="{TemplateBinding Tag}" HorizontalAlignment="Right"/>
+        </Grid>
+        <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Row="1" ContentSource="SelectedContent"/>
+      </Grid>
+    </ControlTemplate>
     <DataTemplate x:Key="ExpiryCheckTemplate">
       <CheckBox Loaded="ExpiryCheck_OnLoaded" Click="ExpiryCheck_OnClick"
                 HorizontalAlignment="Center" AutomationProperties.Name="Select lot"/>
@@ -30,25 +41,37 @@
     <TabControl x:Name="MoneyOutTabs" Grid.Row="1" Margin="0,18,0,0" SelectionChanged="Tabs_OnSelectionChanged">
       <TabItem Header="{l:Tr MoneyOut_Expiry}">
         <DockPanel>
-          <p:AnimatedSection DockPanel.Dock="Top" Header="{l:Tr MoneyOut_DamageEntry}" Margin="0,0,0,8" IsExpanded="False">
-          <WrapPanel Margin="0,8,0,0" HorizontalAlignment="Left">
-            <StackPanel Width="150" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_Reason}"/><ComboBox x:Name="DamageReason" SelectedIndex="0">
-              <ComboBoxItem Tag="EXPIRED" Content="{l:Tr MoneyOut_ReasonExpired}"/><ComboBoxItem Tag="BROKEN" Content="{l:Tr MoneyOut_ReasonBroken}"/><ComboBoxItem Tag="SPOILED" Content="{l:Tr MoneyOut_ReasonSpoiled}"/>
-              <ComboBoxItem Tag="PEST" Content="{l:Tr MoneyOut_ReasonPest}"/><ComboBoxItem Tag="LOST" Content="{l:Tr MoneyOut_ReasonLost}"/><ComboBoxItem Tag="OTHER" Content="{l:Tr MoneyOut_ReasonOther}"/>
-            </ComboBox></StackPanel>
-            <StackPanel Width="100" Margin="0,0,8,0"><TextBlock Text="{l:Tr Stock_Quantity}"/><TextBox x:Name="DamageQuantity"/></StackPanel>
-            <StackPanel Width="110" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_Recovered}"/><TextBox x:Name="DamageRecovered" Text="0"/></StackPanel>
-            <Button x:Name="ExpiryRecordDamageButton" IsEnabled="False" Margin="0,18,8,0" Click="RecordDamage_OnClick" Content="{l:Tr MoneyOut_RecordDamage}" />
-            <Button x:Name="ExpiryBlockLotButton" IsEnabled="False" Margin="0,18,8,0" Click="BlockLot_OnClick" Content="{l:Tr MoneyOut_BlockLot}" />
-            <Button x:Name="ExpiryMarkDownButton" IsEnabled="False" Margin="0,18,0,0" Click="MarkDown_OnClick" Content="{l:Tr MoneyOut_MarkDown}" />
-          </WrapPanel>
-          </p:AnimatedSection>
-          <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-            <TextBlock x:Name="ExpirySelectedCount" VerticalAlignment="Center" Text="0 selected"/>
-            <Button x:Name="BulkWriteOffButton" IsEnabled="False" Margin="12,0,8,0" Click="BulkWriteOff_OnClick" Content="{l:Tr MoneyOut_WriteOff}" />
-            <Button Click="PrintExpiry_OnClick" Content="{l:Tr MoneyOut_PrintVendorList}" />
-          </WrapPanel>
-          <TabControl x:Name="ExpiryTabs" Margin="0,12,0,0" SelectionChanged="ExpiryTabs_OnSelectionChanged">
+          <TabControl x:Name="ExpiryTabs" Margin="0,12,0,0" Template="{StaticResource ExpiryTabsTemplate}" SelectionChanged="ExpiryTabs_OnSelectionChanged">
+            <TabControl.Tag>
+              <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,0,0,8">
+                <TextBlock x:Name="ExpirySelectedCount" VerticalAlignment="Center" Margin="0,0,12,0" Text="0 selected"/>
+                <Button x:Name="ExpiryRecordDamageButton" IsEnabled="False" Margin="0,0,8,0" Click="OpenExpiryDamage_OnClick" Content="{l:Tr MoneyOut_RecordDamage}" />
+                <Button x:Name="BulkWriteOffButton" IsEnabled="False" Margin="0,0,8,0" Click="BulkWriteOff_OnClick" Content="{l:Tr MoneyOut_WriteOff}" />
+                <Button x:Name="PrintExpiryButton" Click="PrintExpiry_OnClick" Content="{l:Tr MoneyOut_PrintVendorList}" />
+                <Popup x:Name="ExpiryDamagePopup" PlacementTarget="{Binding ElementName=ExpiryRecordDamageButton}" Placement="Bottom"
+                       StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                  <Border Background="White" BorderBrush="{StaticResource TableRuleBrush}" BorderThickness="1" Padding="12"
+                          MinWidth="420" Margin="0,4,0,0">
+                    <StackPanel>
+                      <TextBlock FontWeight="SemiBold" Margin="0,0,0,8" Text="{l:Tr MoneyOut_DamageEntry}"/>
+                      <WrapPanel>
+                        <StackPanel Width="150" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_Reason}"/><ComboBox x:Name="DamageReason" SelectedIndex="0">
+                          <ComboBoxItem Tag="EXPIRED" Content="{l:Tr MoneyOut_ReasonExpired}"/><ComboBoxItem Tag="BROKEN" Content="{l:Tr MoneyOut_ReasonBroken}"/><ComboBoxItem Tag="SPOILED" Content="{l:Tr MoneyOut_ReasonSpoiled}"/>
+                          <ComboBoxItem Tag="PEST" Content="{l:Tr MoneyOut_ReasonPest}"/><ComboBoxItem Tag="LOST" Content="{l:Tr MoneyOut_ReasonLost}"/><ComboBoxItem Tag="OTHER" Content="{l:Tr MoneyOut_ReasonOther}"/>
+                        </ComboBox></StackPanel>
+                        <StackPanel Width="100" Margin="0,0,8,0"><TextBlock Text="{l:Tr Stock_Quantity}"/><TextBox x:Name="DamageQuantity"/></StackPanel>
+                        <StackPanel Width="110"><TextBlock Text="{l:Tr MoneyOut_Recovered}"/><TextBox x:Name="DamageRecovered" Text="0"/></StackPanel>
+                      </WrapPanel>
+                      <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <Button Click="RecordDamage_OnClick" Content="{l:Tr Common_Save}" Margin="0,0,8,0" />
+                        <Button x:Name="ExpiryBlockLotButton" IsEnabled="False" Margin="0,0,8,0" Click="BlockLot_OnClick" Content="{l:Tr MoneyOut_BlockLot}" />
+                        <Button x:Name="ExpiryMarkDownButton" IsEnabled="False" Click="MarkDown_OnClick" Content="{l:Tr MoneyOut_MarkDown}" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
+                </Popup>
+              </StackPanel>
+            </TabControl.Tag>
             <TabItem Header="{l:Tr MoneyOut_Expired}">
               <DataGrid x:Name="ExpiredList" Margin="0,10,0,0" Style="{StaticResource CatalogGrid}" AutoGenerateColumns="False" SelectionChanged="ExpiryList_OnSelectionChanged">
                 <DataGrid.Columns>
