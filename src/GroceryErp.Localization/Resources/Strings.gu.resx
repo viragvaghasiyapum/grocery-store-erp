@@ -382,6 +382,7 @@
   <data name="Stock_Counted" xml:space="preserve"><value>ગણેલ</value><comment>MT - needs review</comment></data>
   <data name="Stock_Difference" xml:space="preserve"><value>તફાવત</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_CancelPurchase" xml:space="preserve"><value>ખરીદી રદ કરો</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_ViewInvoice" xml:space="preserve"><value>ઇન્વૉઇસ જુઓ</value></data>
   <data name="Purchasing_CancelConfirm" xml:space="preserve"><value>આ ખરીદી રદ કરીને બાકી રહેલો અસ્પર્શિત સ્ટોક પાછો ફેરવવો છે?</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_CancelBlocked" xml:space="preserve"><value>આ ખરીદી પછી સ્ટોકમાં હિલચાલ થઈ છે, તેથી તેને રદ કરી શકાતી નથી. સુધારા માટે સ્ટોક એડજસ્ટમેન્ટ વાપરો; વિક્રેતાને પરત કરવાની સુવિધા હજુ ઉપલબ્ધ નથી.</value><comment>MT - needs review</comment></data>
   <data name="Stock_Ledger" xml:space="preserve"><value>સ્ટોક ખાતાવહી</value><comment>MT - needs review</comment></data>

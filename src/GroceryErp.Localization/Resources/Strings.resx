@@ -382,6 +382,7 @@
   <data name="Stock_Counted" xml:space="preserve"><value>Counted</value></data>
   <data name="Stock_Difference" xml:space="preserve"><value>Difference</value></data>
   <data name="Purchasing_CancelPurchase" xml:space="preserve"><value>Cancel purchase</value></data>
+  <data name="Purchasing_ViewInvoice" xml:space="preserve"><value>View invoice</value></data>
   <data name="Purchasing_CancelConfirm" xml:space="preserve"><value>Cancel this purchase and reverse its untouched stock?</value></data>
   <data name="Purchasing_CancelBlocked" xml:space="preserve"><value>This purchase has stock movements after receipt, so it cannot be cancelled. Use a stock adjustment for a correction; vendor returns are not yet available.</value></data>
   <data name="Stock_Ledger" xml:space="preserve"><value>Stock ledger</value></data>

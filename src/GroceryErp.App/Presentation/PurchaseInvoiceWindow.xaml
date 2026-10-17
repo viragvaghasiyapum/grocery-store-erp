@@ -1,0 +1,52 @@
+<Window x:Class="GroceryErp.App.Presentation.PurchaseInvoiceWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+        Title="{l:Tr Purchasing_ViewInvoice}" Width="1240" Height="720" MinWidth="900" MinHeight="530"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
+        NumberSubstitution.Substitution="European">
+  <Grid Margin="20">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <TextBlock x:Name="TitleText" FontSize="24" FontWeight="SemiBold"/>
+    <Grid Grid.Row="1" Margin="0,14,0,12">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <StackPanel><TextBlock Text="{l:Tr Purchasing_Vendor}" Opacity="0.7"/><TextBlock x:Name="VendorText" FontWeight="SemiBold"/></StackPanel>
+      <StackPanel Grid.Column="1"><TextBlock Text="{l:Tr Purchasing_Invoice}" Opacity="0.7"/><TextBlock x:Name="InvoiceNumberText"/></StackPanel>
+      <StackPanel Grid.Column="2"><TextBlock Text="{l:Tr Purchasing_InvoiceDate}" Opacity="0.7"/><TextBlock x:Name="InvoiceDateText"/></StackPanel>
+      <StackPanel Grid.Column="3"><TextBlock Text="{l:Tr Purchasing_Received}" Opacity="0.7"/><TextBlock x:Name="ReceivedDateText"/></StackPanel>
+    </Grid>
+    <DataGrid x:Name="LinesGrid" Grid.Row="2" Style="{StaticResource CatalogGrid}" AutoGenerateColumns="False"
+              IsReadOnly="True" CanUserAddRows="False" RowHeight="38" GridLinesVisibility="All">
+      <DataGrid.Columns>
+        <DataGridTextColumn Width="65" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}"/>
+        <DataGridTextColumn Width="190" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
+        <DataGridTextColumn Width="90" Header="{l:Tr Stock_Batch}" Binding="{Binding BatchNumber}"/>
+        <DataGridTextColumn Width="95" Header="{l:Tr Purchasing_MfgDate}" Binding="{Binding ManufacturingDate}"/>
+        <DataGridTextColumn Width="95" Header="{l:Tr Stock_Expiry}" Binding="{Binding ExpiryDate}"/>
+        <DataGridTextColumn Width="75" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
+        <DataGridTextColumn Width="75" Header="{l:Tr Purchasing_FreeQty}" Binding="{Binding FreeQuantity}"/>
+        <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_Rate}" Binding="{Binding Rate}"/>
+        <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_Discount}" Binding="{Binding Discount}"/>
+        <DataGridTextColumn Width="70" Header="{l:Tr Purchasing_Gst}" Binding="{Binding TaxRate}"/>
+        <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_TaxTotal}" Binding="{Binding TaxAmount}"/>
+        <DataGridTextColumn Width="90" Header="{l:Tr Purchasing_ComputedTotal}" Binding="{Binding LineTotal}"/>
+        <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_Landed}" Binding="{Binding LandedUnitCost}"/>
+        <DataGridTextColumn Width="75" Header="MRP" Binding="{Binding Mrp}"/>
+        <DataGridTextColumn Width="85" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}"/>
+      </DataGrid.Columns>
+    </DataGrid>
+    <Grid Grid.Row="3" Margin="0,14,0,0">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <StackPanel><TextBlock Text="{l:Tr Purchasing_Subtotal}" Opacity="0.7"/><TextBlock x:Name="SubtotalText" FontWeight="SemiBold"/></StackPanel>
+      <StackPanel Grid.Column="1"><TextBlock Text="{l:Tr Purchasing_Discount}" Opacity="0.7"/><TextBlock x:Name="DiscountText" FontWeight="SemiBold"/></StackPanel>
+      <StackPanel Grid.Column="2"><TextBlock Text="{l:Tr Purchasing_TaxTotal}" Opacity="0.7"/><TextBlock x:Name="TaxText" FontWeight="SemiBold"/></StackPanel>
+      <StackPanel Grid.Column="3"><TextBlock Text="{l:Tr Purchasing_OtherCharges}" Opacity="0.7"/><TextBlock x:Name="ChargesText" FontWeight="SemiBold"/></StackPanel>
+      <StackPanel Grid.Column="4"><TextBlock Text="{l:Tr Purchasing_RoundOff}" Opacity="0.7"/><TextBlock x:Name="RoundOffText" FontWeight="SemiBold"/></StackPanel>
+      <StackPanel Grid.Column="5"><TextBlock Text="{l:Tr Purchasing_ComputedTotal}" Opacity="0.7"/><TextBlock x:Name="TotalText" FontWeight="SemiBold"/></StackPanel>
+    </Grid>
+    <Grid Grid.Row="4" Margin="0,12,0,0">
+      <StackPanel><TextBlock x:Name="BillTotalText"/><TextBlock x:Name="DifferenceText"/><TextBlock x:Name="NotesText" TextWrapping="Wrap"/></StackPanel>
+      <Button HorizontalAlignment="Right" VerticalAlignment="Bottom" IsCancel="True" Content="{l:Tr Common_Close}"/>
+    </Grid>
+  </Grid>
+</Window>

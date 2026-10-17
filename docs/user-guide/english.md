@@ -55,7 +55,7 @@ The **search** box finds products; **Category** and **Brand** restrict the list.
 
 ![Purchases](screenshots/purchases-page.en.png)
 
-The **Purchases** tab lists GRN, vendor, invoice number, received date, status, and total. Select a draft to **Edit draft**; a posted purchase can be cancelled or used for a vendor return when allowed. The [expanded Filters panel](screenshots/purchase-filters.en.png) applies From/To dates, vendor, and product search; **Clear filters** restores the full list. Checkbox selection enables eligible bulk cancellation.
+The **Purchases** tab lists GRN, vendor, invoice number, received date, status, and total. Select a draft to **Edit draft**; select a posted or cancelled purchase and choose **View invoice** to see its saved items and totals. A posted purchase can be cancelled or used for a vendor return when allowed. The [expanded Filters panel](screenshots/purchase-filters.en.png) applies From/To dates, vendor, and product search; **Clear filters** restores the full list. Checkbox selection enables eligible bulk cancellation.
 
 The [Vendors tab](screenshots/purchases-vendors.en.png) lists name, phone, GSTIN, balance due, and active status. **New/Edit vendor**, **Vendor ledger**, and **Payment** open these workflows. Selection also exposes activate/deactivate actions.
 

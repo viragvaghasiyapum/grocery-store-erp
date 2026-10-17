@@ -88,6 +88,17 @@ public partial class PurchasesPage : Page
         await RefreshAsync();
     }
 
+    private async void ViewInvoice_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (SelectedSinglePurchase() is not { Status: "POSTED" or "CANCELLED" } purchase) return;
+        try
+        {
+            PurchaseInvoice invoice = await _purchasing.GetInvoiceAsync(purchase.Id);
+            new PurchaseInvoiceWindow(invoice) { Owner = Window.GetWindow(this) }.ShowDialog();
+        }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
     private void PurchasesGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_selectedPurchases.Count == 0 && e.AddedItems.Count > 0) _checkboxSelectionUsed = false;
@@ -151,6 +162,7 @@ public partial class PurchasesPage : Page
         if (OpenDraftButton is null) return;
         PurchaseListItem? purchase = SelectedSinglePurchase();
         OpenDraftButton.IsEnabled = purchase is { Status: "DRAFT" };
+        ViewInvoiceButton.IsEnabled = purchase is { Status: "POSTED" or "CANCELLED" };
         CancelPurchaseButton.IsEnabled = purchase is { Status: "POSTED" };
         VendorReturnButton.IsEnabled = purchase is { Status: "POSTED" };
         bool multiple = _selectedPurchases.Count > 1;

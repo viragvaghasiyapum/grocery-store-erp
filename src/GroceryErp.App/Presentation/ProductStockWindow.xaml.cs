@@ -72,6 +72,10 @@ public partial class ProductStockWindow : Window
     {
         if (PreviousLotButton is null) return;
         bool lots = StockTabs.SelectedIndex == 0;
+        PrintLotButton.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
+        CorrectLotButton.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
+        WriteOffButton.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
+        OpenSourceButton.Visibility = lots ? Visibility.Collapsed : Visibility.Visible;
         PreviousLotButton.Visibility = NextLotButton.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
         PreviousLedgerButton.Visibility = NextLedgerButton.Visibility = lots ? Visibility.Collapsed : Visibility.Visible;
         PreviousLotButton.IsEnabled = _lotPrevious.Count > 0;

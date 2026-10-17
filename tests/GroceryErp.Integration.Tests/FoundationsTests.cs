@@ -77,6 +77,50 @@ public sealed class FoundationsTests
     }
 
     [Fact]
+    public void PurchaseInvoiceSnapshotMigration_BackfillsPostedLinesAndRestoresEditLock()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"grocery-erp-invoice-upgrade-{Guid.NewGuid():N}");
+        try
+        {
+            var factory = new SqliteConnectionFactory(new AppPaths(new SettingsBootstrap(root)));
+            using (var connection = factory.Open())
+            {
+                connection.Execute("""
+                    CREATE TABLE vendor(id INTEGER PRIMARY KEY,name TEXT NOT NULL);
+                    CREATE TABLE product(id INTEGER PRIMARY KEY,sku TEXT NOT NULL,name TEXT NOT NULL);
+                    CREATE TABLE purchase(id INTEGER PRIMARY KEY,vendor_id INTEGER NOT NULL,status TEXT NOT NULL);
+                    CREATE TABLE purchase_line(id INTEGER PRIMARY KEY,purchase_id INTEGER NOT NULL,product_id INTEGER NOT NULL);
+                    CREATE TRIGGER trg_purchase_line_lock_upd BEFORE UPDATE ON purchase_line
+                    WHEN (SELECT status FROM purchase WHERE id=OLD.purchase_id) <> 'DRAFT'
+                    BEGIN SELECT RAISE(ABORT,'purchase is posted/cancelled; lines are read-only'); END;
+                    INSERT INTO vendor(id,name) VALUES(1,'Original Vendor');
+                    INSERT INTO product(id,sku,name) VALUES(1,'OLD-SKU','Original Product');
+                    INSERT INTO purchase(id,vendor_id,status) VALUES(1,1,'POSTED');
+                    INSERT INTO purchase_line(id,purchase_id,product_id) VALUES(1,1,1);
+                    PRAGMA user_version=27;
+                    """);
+            }
+
+            new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
+
+            using var upgraded = factory.Open();
+            upgraded.ExecuteScalar<string>("SELECT vendor_name_snapshot FROM purchase WHERE id=1")
+                .ShouldBe("Original Vendor");
+            upgraded.ExecuteScalar<string>("SELECT product_name_snapshot FROM purchase_line WHERE id=1")
+                .ShouldBe("Original Product");
+            upgraded.ExecuteScalar<string>("SELECT product_sku_snapshot FROM purchase_line WHERE id=1")
+                .ShouldBe("OLD-SKU");
+            Should.Throw<SqliteException>(() => upgraded.Execute(
+                "UPDATE purchase_line SET product_name_snapshot='Changed' WHERE id=1"));
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearPoolForDataRoot(root);
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void InterruptedPnlBackfill_RebuildsOnNextMigrationRun()
     {
         using var fixture = new FoundationFixture();

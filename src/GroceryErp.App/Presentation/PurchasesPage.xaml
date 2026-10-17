@@ -14,6 +14,7 @@
           <WrapPanel Margin="0,0,0,8">
             <Button Margin="0,0,8,0" Click="NewPurchase_OnClick" Content="{l:Tr Purchasing_NewPurchase}" />
             <Button x:Name="OpenDraftButton" IsEnabled="False" Margin="0,0,8,0" Click="OpenDraft_OnClick" Content="{l:Tr Purchasing_EditDraft}" />
+            <Button x:Name="ViewInvoiceButton" IsEnabled="False" Margin="0,0,8,0" Click="ViewInvoice_OnClick" Content="{l:Tr Purchasing_ViewInvoice}" />
             <Button x:Name="CancelPurchaseButton" IsEnabled="False" Margin="0,0,8,0" Click="CancelPurchase_OnClick" Content="{l:Tr Purchasing_CancelPurchase}" />
             <Button x:Name="VendorReturnButton" IsEnabled="False" Margin="0,0,8,0" Click="VendorReturn_OnClick" Content="{l:Tr Purchasing_VendorReturn}" />
             <Button Margin="0,0,12,0" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />

@@ -15,6 +15,34 @@ namespace GroceryErp.Integration.Tests;
 public sealed class StockInTests
 {
     [Fact]
+    public async Task PostedPurchaseInvoice_ShowsSavedLinesAndOriginalNamesAfterRename()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long draft = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("INV-VIEW"), ct);
+        PostedPurchase posted = await fixture.Purchasing.PostAsync(draft, OperationGuard.NewId(), ct);
+        using (var connection = fixture.Factory.Open())
+        {
+            connection.Execute("UPDATE vendor SET name='Renamed Supplier' WHERE id=@id", new { id = fixture.VendorId });
+            connection.Execute("UPDATE product SET name='Renamed Product',sku='RENAMED' WHERE id=@id",
+                new { id = fixture.ProductId });
+        }
+
+        PurchaseInvoice invoice = await fixture.Purchasing.GetInvoiceAsync(posted.Id, ct);
+        invoice.DocumentNumber.ShouldBe(posted.DocumentNumber);
+        invoice.VendorName.ShouldBe("Supplier");
+        invoice.VendorInvoiceNumber.ShouldBe("INV-VIEW");
+        invoice.Totals.GrandTotal.ShouldBe(posted.Totals.GrandTotal);
+        PurchaseInvoiceLine line = invoice.Lines.Single();
+        line.ProductName.ShouldBe("Phase Three Product");
+        line.Sku.ShouldBe("PH3-001");
+        line.BatchNumber.ShouldBe("BATCH");
+        line.Quantity.ShouldBe(new Quantity(10));
+        line.FreeQuantity.ShouldBe(Quantity.One);
+        line.Rate.ShouldBe(new Money(250));
+    }
+
+    [Fact]
     public async Task LedgerPages_MatchMovementPrefixBalancesAcrossCursorsAndTypeFilters()
     {
         using var fixture = new StockInFixture();

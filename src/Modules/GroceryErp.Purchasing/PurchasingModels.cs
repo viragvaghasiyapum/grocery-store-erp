@@ -64,6 +64,16 @@ public sealed record PurchaseTotals(
 
 public sealed record PostedPurchase(long Id, string DocumentNumber, PurchaseTotals Totals, IReadOnlyList<long> LotIds, bool WasReplay = false);
 
+public sealed record PurchaseInvoiceLine(int LineNumber, string Sku, string ProductName,
+    string? BatchNumber, DateOnly? ManufacturingDate, DateOnly? ExpiryDate,
+    Quantity Quantity, Quantity FreeQuantity, Money Rate, Money Discount,
+    Percent TaxRate, Money TaxAmount, Money LineTotal, Money LandedUnitCost,
+    Money? Mrp, Money SellingPrice);
+
+public sealed record PurchaseInvoice(long Id, string? DocumentNumber, string VendorName,
+    string? VendorInvoiceNumber, DateOnly? VendorInvoiceDate, DateOnly ReceivedDate,
+    string Status, string? Notes, PurchaseTotals Totals, IReadOnlyList<PurchaseInvoiceLine> Lines);
+
 public sealed record VendorLedgerItem(DateOnly Date, string Kind, string? Reference, Money Debit, Money Credit, Money Balance);
 public sealed record VendorLedgerPage(IReadOnlyList<VendorLedgerItem> Items, bool HasMore,
     DateOnly? NextDate, string? NextKind, long? NextId);

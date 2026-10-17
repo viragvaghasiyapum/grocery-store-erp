@@ -91,6 +91,45 @@ public sealed class PurchasingService(
         }, cancellationToken);
     }
 
+    public Task<PurchaseInvoice> GetInvoiceAsync(long purchaseId, CancellationToken cancellationToken = default) =>
+        database.ReadAsync(connection =>
+        {
+            PurchaseInvoiceHeaderRow? header = connection.QuerySingleOrDefault<PurchaseInvoiceHeaderRow>("""
+                SELECT p.id AS Id,p.doc_no AS DocumentNumber,
+                       COALESCE(p.vendor_name_snapshot,v.name) AS VendorName,
+                       p.vendor_invoice_no AS VendorInvoiceNumber,
+                       p.vendor_invoice_date AS VendorInvoiceDate,p.received_date AS ReceivedDate,
+                       p.status AS Status,p.notes AS Notes,p.subtotal AS Subtotal,
+                       p.discount_total AS Discount,p.tax_total AS Tax,
+                       p.other_charges AS OtherCharges,p.round_off AS RoundOff,
+                       p.grand_total AS GrandTotal,p.vendor_bill_total AS VendorBillTotal
+                FROM purchase p JOIN vendor v ON v.id=p.vendor_id WHERE p.id=@purchaseId
+                """, new { purchaseId });
+            if (header is null) throw new DomainException(ErrorCode.NotFound, "purchase", purchaseId);
+            IReadOnlyList<PurchaseInvoiceLine> lines = connection.Query<PurchaseInvoiceLineRow>("""
+                SELECT pl.line_no AS LineNumber,
+                       COALESCE(pl.product_sku_snapshot,item.sku) AS Sku,
+                       COALESCE(pl.product_name_snapshot,item.name) AS ProductName,
+                       pl.batch_no AS BatchNumber,pl.mfg_date AS ManufacturingDate,
+                       pl.expiry_date AS ExpiryDate,pl.qty AS Quantity,
+                       pl.free_qty AS FreeQuantity,pl.unit_cost AS Rate,
+                       pl.discount AS Discount,pl.tax_rate_pct AS TaxRate,
+                       pl.tax_amount AS TaxAmount,pl.line_total AS LineTotal,
+                       pl.landed_unit_cost AS LandedUnitCost,pl.mrp AS Mrp,
+                       pl.selling_price AS SellingPrice
+                FROM purchase_line pl JOIN product item ON item.id=pl.product_id
+                WHERE pl.purchase_id=@purchaseId ORDER BY pl.line_no
+                """, new { purchaseId }).Select(static row => row.ToModel()).ToList();
+            return new PurchaseInvoice(header.Id, header.DocumentNumber, header.VendorName,
+                header.VendorInvoiceNumber, header.VendorInvoiceDate, header.ReceivedDate,
+                header.Status, header.Notes,
+                new PurchaseTotals(Money.FromScaled(header.Subtotal), Money.FromScaled(header.Discount),
+                    Money.FromScaled(header.Tax), Money.FromScaled(header.OtherCharges),
+                    Money.FromScaled(header.RoundOff), Money.FromScaled(header.GrandTotal),
+                    header.VendorBillTotal is null ? null : Money.FromScaled(header.VendorBillTotal.Value)),
+                lines);
+        }, cancellationToken);
+
     public Task<long> CreateVendorAsync(VendorInput input, CancellationToken cancellationToken = default)
     {
         ValidVendor vendor = ValidateVendor(input);
@@ -311,10 +350,14 @@ public sealed class PurchasingService(
             {
                 PurchaseLineRow row = rows[index];
                 transaction.Connection.Execute("""
-                    UPDATE purchase_line SET tax_amount=@tax,line_total=@lineTotal,landed_unit_cost=@landed WHERE id=@id
+                    UPDATE purchase_line SET tax_amount=@tax,line_total=@lineTotal,landed_unit_cost=@landed,
+                        product_name_snapshot=(SELECT name FROM product WHERE id=@productId),
+                        product_sku_snapshot=(SELECT sku FROM product WHERE id=@productId)
+                    WHERE id=@id
                     """, new
                 {
                     id = row.Id,
+                    productId = row.ProductId,
                     tax = taxAmounts[index].Scaled,
                     lineTotal = (Money.FromScaled(row.Rate) * Quantity.FromScaled(row.Quantity) - Money.FromScaled(row.Discount) + taxAmounts[index]).Scaled,
                     landed = landed[index].Scaled,
@@ -347,7 +390,9 @@ public sealed class PurchasingService(
                 changedProducts.Add(row.ProductId);
             }
             transaction.Connection.Execute("""
-                UPDATE purchase SET status='POSTED',doc_no=@docNo,subtotal=@subtotal,discount_total=@discounts,
+                UPDATE purchase SET status='POSTED',doc_no=@docNo,
+                    vendor_name_snapshot=(SELECT name FROM vendor WHERE id=vendor_id),
+                    subtotal=@subtotal,discount_total=@discounts,
                     tax_total=@taxTotal,round_off=@roundOff,grand_total=@grandTotal,tax_mode=@taxMode,
                     posted_at=datetime('now','localtime')
                 WHERE id=@purchaseId
@@ -944,4 +989,47 @@ public sealed class PurchasingService(
     }
     private sealed class VendorReturnPostedRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public long CreditTotal { get; init; } public long CostTotal { get; init; } }
     private sealed class PurchaseListRow { public long Id { get; init; } public string? DocumentNumber { get; init; } public string VendorName { get; init; } = ""; public string? VendorInvoiceNumber { get; init; } public DateOnly ReceivedDate { get; init; } public string Status { get; init; } = ""; public long GrandTotal { get; init; } public long? VendorBillTotal { get; init; } public PurchaseListItem ToModel() => new(Id, DocumentNumber, VendorName, VendorInvoiceNumber, ReceivedDate, Status, Money.FromScaled(GrandTotal), VendorBillTotal is null ? null : Money.FromScaled(VendorBillTotal.Value)); }
+    private sealed class PurchaseInvoiceHeaderRow
+    {
+        public long Id { get; init; }
+        public string? DocumentNumber { get; init; }
+        public string VendorName { get; init; } = "";
+        public string? VendorInvoiceNumber { get; init; }
+        public DateOnly? VendorInvoiceDate { get; init; }
+        public DateOnly ReceivedDate { get; init; }
+        public string Status { get; init; } = "";
+        public string? Notes { get; init; }
+        public long Subtotal { get; init; }
+        public long Discount { get; init; }
+        public long Tax { get; init; }
+        public long OtherCharges { get; init; }
+        public long RoundOff { get; init; }
+        public long GrandTotal { get; init; }
+        public long? VendorBillTotal { get; init; }
+    }
+    private sealed class PurchaseInvoiceLineRow
+    {
+        public int LineNumber { get; init; }
+        public string Sku { get; init; } = "";
+        public string ProductName { get; init; } = "";
+        public string? BatchNumber { get; init; }
+        public DateOnly? ManufacturingDate { get; init; }
+        public DateOnly? ExpiryDate { get; init; }
+        public long Quantity { get; init; }
+        public long FreeQuantity { get; init; }
+        public long Rate { get; init; }
+        public long Discount { get; init; }
+        public long TaxRate { get; init; }
+        public long TaxAmount { get; init; }
+        public long LineTotal { get; init; }
+        public long LandedUnitCost { get; init; }
+        public long? Mrp { get; init; }
+        public long SellingPrice { get; init; }
+        public PurchaseInvoiceLine ToModel() => new(LineNumber, Sku, ProductName, BatchNumber,
+            ManufacturingDate, ExpiryDate, GroceryErp.Core.Numerics.Quantity.FromScaled(Quantity),
+            GroceryErp.Core.Numerics.Quantity.FromScaled(FreeQuantity),
+            Money.FromScaled(Rate), Money.FromScaled(Discount), Percent.FromScaled(TaxRate),
+            Money.FromScaled(TaxAmount), Money.FromScaled(LineTotal), Money.FromScaled(LandedUnitCost),
+            Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(SellingPrice));
+    }
 }
