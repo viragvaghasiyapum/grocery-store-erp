@@ -1,0 +1,247 @@
+# Revised Grocery ERP implementation plan
+
+Status: proposed implementation sequence, 18 October 2026. This plan combines revised plan.md with the decisions made in the discussion. It describes work to do; it does not assert that the new behavior is implemented.
+
+## 1. Product contract and precedence
+
+The decisions below supersede older statements in revised plan.md, implementation.md, and PLANS.md where they disagree. Phase 0 updates those documents before behavior changes. Preserve the offline, single-user Windows application, three-decimal fixed-point values, bilingual UI, durable transactions, backups, and existing payment, tax, and printing guarantees.
+
+| Area | Final rule |
+|---|---|
+| Stock source | A lot's current quantity is authoritative. Stop creating generic stock-movement records and remove the stock ledger. Business documents still record their own quantities and costs so stock can be checked and recovered. |
+| Product types | Saleable products can be sold. Internal-use products remain outside automatic P/L; the operator decides the cost of any later custom saleable product. |
+| Purchase line type | Each line selects Product (default), Internal use, or Expense. A Product line creates a new saleable lot; an Internal-use line creates its own lot; an Expense line creates an expense entry and no saleable lot. Never merge receipts into an existing lot. |
+| Direct entry | A product and its lot, or a later new lot, may be added without a purchase at any time. Its cost is saved on the lot and subsequently captured on a sale. Creating the lot itself does not count its cost twice in P/L. |
+| Lots | One purchase line creates one distinct lot. FEFO is the default sale allocation. Staff may edit a lot's selling price and expiry. Quantity changes happen through sale, return, damage, purchase return, direct origin, internal use, or a reviewed stock correction workflow. A lot may be deleted only at zero quantity. |
+| Products | A product with positive saleable stock cannot be deleted. Deleting an otherwise eligible product also deletes its zero-quantity lots. Historical documents carry their own snapshots and remain readable. |
+| Completed sales | Sale lines, quantities, prices, tax, discounts, cost, and totals are final. Only allowed status transitions occur. Returns are separate documents. P/L uses sale snapshots and return documents, never current product or lot values. |
+| Customer returns | Restock the original usable lot only if its version still matches the version saved on the sale. If it was edited or deleted, create a new return lot from saved sale details; recreate a deleted product when possible or prompt for missing legacy fields. A non-resellable return becomes damage, never saleable stock. Lot details appear in saved history but not on the printed customer receipt. |
+| Purchases | A posted purchase and its lines are final. An untouched purchase may be voided or partially returned. After any of its stock is used, void is blocked and only an eligible partial return is allowed. A purchase return is a separate document and may be cancelled with an atomic reversal. |
+| P/L sources | Posted sale, return, expense, damage, payroll, asset, and applicable purchase-return records are not hard-deleted. Corrections and voids remain represented. Internal-use purchases do not automatically enter P/L. |
+| Periods | Calendar year: 1 January–31 December, editable through 7 January, locked from 8 January. Fiscal year: 1 April–31 March, editable through 7 April, locked from 8 April. Apply both independently. Save final totals and head/category/month breakdowns for each locked year. |
+| Corrections | Remove the “recalculate year” choice from assets, damages, expenses, and payroll. While both annual periods containing an original date are open, an edit can correct that original date and refresh open reports. Once either annual period is locked, retain the original and post a correction dated in an open current period. Asset and employee terms use effective dates for future calculations. |
+| Reports | Keep monthly, calendar-year, and fiscal-year P/L; current unsold stock with include/exclude expired toggle; and a purchased/direct-origin versus sold, returned, damaged, internally used, vendor-returned, and available quantity reconciliation. |
+
+Definitions: “untouched purchase” means no effective quantity-consuming or other dependent document has ever used any lot from the purchase; current quantity equaling received quantity is insufficient. “Locked” is derived from business date, not from whether a scheduled close job happened to run. Seven-day buffer means the seven dates immediately after year end are included.
+
+## 2. Invariants to preserve in every phase
+
+1. A single user action that changes a business document, lot quantity, projections, audit record, and operation ID commits in one SQLite transaction or changes none of them. Use conditional updates to prevent negative stock and idempotency keys to prevent double posting after retries.
+2. Store all business values as scaled integers, using the existing three-decimal model. A sale line owns immutable snapshots of product identity, unit, lot ID and version, batch/expiry, MRP, selling price, discounts, taxable amount, GST rate/amount, gross amount, unit cost, and extended cost. Reprinting uses the saved receipt snapshot.
+3. A posted purchase line owns its vendor, product, tax, landed-cost, quantity, and lot-origin snapshots. No later product deletion or lot edit rewrites that document. A purchase line and its created lot have a one-to-one origin while the lot exists.
+4. A deleted product or lot ID is never reused for a different item. Historical references may be nullable live links, but their snapshot IDs and descriptions remain stable. Any new product/lot created for a return receives new IDs and an explicit link to its source return.
+5. Every lot has a recorded origin: posted purchase line, direct entry, or customer-return recreation. A current quantity must never arise from an unrecorded change. Dedicated source documents are allowed; a generic stock-movement table is not.
+6. P/L sales and COGS use completed, partially returned, and fully returned sale snapshots, less linked return snapshots. A void sale contributes zero. A refund status alone never subtracts money or stock.
+7. A closed annual report reads its saved snapshot. Open reports read current source records or bounded daily summaries. A later correction is dated in an open period; it cannot mutate a frozen annual snapshot.
+8. Product and lot deletion, purchase void, and purchase-return cancellation check dependent documents, not only current lot balance. Full reconciliation checks source-document arithmetic; interactive writes update only affected lots and projections.
+9. Keep existing backup, restore, print-job, period, and operation-ID safety. No UI write path may bypass the service transaction and database constraints.
+
+## 3. Scale baseline and acceptance method
+
+The current recorded full-size fixture has roughly 47,000 products, 222,500 lots, 870,000 sales, 5.19 million sale lines, and 5.41 million stock movements in a roughly 2.31 GB main database. A sustained local run measured sale-commit p95 at 27.4 ms, sampled WAL peak at 38.7 MB, and process working-set peak at 167.5 MB. A separate WPF journey peaked at about 327 MiB. These runs used uncontrolled OS cache and are baselines, not predictions of the revision. See docs/perf/phase6-results.md.
+
+Use a preserved pre-migration fixture plus a migrated disposable copy. Add adversarial fixtures: many lots per hot product, identical batch/expiry across separate receipts, partially returned purchases, refunded sales, deleted products followed by returns, expired lots, direct lots, internal-use lines, and year-boundary corrections. Record machine, database size, free disk, row counts, WAL size, working set, GC allocations, write duration, UI first-frame callback, and query plans. Compare before/after on the same hardware and workload; repeat fresh-process and warm measurements. A target-shop-PC pilot remains a separate gate.
+
+Candidate gates, subject to Phase 0 confirmation on target hardware:
+
+| Workload | Gate |
+|---|---|
+| Scan to bill line / product search to visible result / bill commit | Retain existing functional targets: under 50 ms / under 100 ms / under 100 ms, respectively, using p95 for the measured workload. Distinguish app callback from physical screen paint. |
+| Search SQL | p95 under 30 ms for an eight-result search page on the full fixture. Empty, broad, no-match, Gujarati, SKU, and barcode shapes must all be measured. |
+| Normal WPF navigation | No unbounded page-load queries or retained page collections; repeated full navigation must not show rising steady memory. Candidate full-size peak at or below 350 MiB on the reference PC, with no regression on the target PC. |
+| Sustained writes plus reads and backup | Zero errors or quantity/report mismatches; commit p95 under 100 ms, sampled WAL below 64 MiB, and process working set no higher than the same-machine baseline without an explained reason. |
+| Full-history CSV | Streaming and cancellation with memory proportional to the page size, not the number of rows; target a peak below 512 MiB for the five-million-row run, improving the recorded 705 MiB pass. |
+| Storage and backup | Measure table/index bytes with SQLite dbstat before and after compaction; report actual savings. Keep the existing approximately 1 GB verified-backup-under-60-second target on the target PC. |
+
+Do not treat a faster isolated SQL query as acceptance if it shifts work to sale commits, startup, backup, WPF layout, or memory. Preserve p50/p95/p99 and row/result parity for every changed hot path.
+
+## 4. Phase 0 — Freeze rules, map dependencies, and baseline
+
+**Work**
+
+- Update revised plan.md, PLANS.md, implementation.md, schema documentation, user guides, release checklist, and tests to reflect direct lot quantities, immutable sale/purchase snapshots, independent annual locks, and removed screens. Resolve their current append-only-ledger requirement explicitly. Keep old migrations unchanged; new scripts start after schema 28.
+- Inventory every reader, writer, trigger, view, report, export, startup check, recovery path, and test that references stock_movement, product_lot.qty_on_hand, product_stock_total, sale status, purchase status, expiry UI, or year locks. Include ScaleAudit and data generators, not just the desktop app.
+- Record the exact behavior of existing vendor returns, stock counts, product removal, damage corrections, expense edits, salary corrections, asset depreciation, and P/L summaries. Write a before/after behavior matrix and a feature-removal register with replacement paths.
+- Capture a verified backup and immutable baseline fixture. Re-run baseline tests and scale probes; isolate failures before migration work. Estimate migration time and peak disk space using a full-size disposable copy.
+
+**Exit:** reviewed behavior matrix, executable baseline, migration rollback procedure, and measurable budgets. No old app version is allowed to open a migrated database.
+
+## 5. Phase 1 — Historical snapshots and schema foundation
+
+**Work**
+
+- Add forward-complete snapshots to sale lines and return lines: stable product/SKU/name/local name, unit, saleable/internal classification, original product/lot identifiers, batch, expiry, tax mode/rate, MRP, price, discounts, taxable/GST/gross totals, unit and extended cost. Keep lot details in history, not printed receipts.
+- Complete purchase-line, vendor-return, damage, direct-entry, and internal-use snapshots needed after product/lot deletion. Give each lot an origin kind and immutable origin reference. Add created/updated timestamps only where they can be maintained reliably by all write paths.
+- Rebuild foreign-key relationships that currently prevent deletion of referenced products or zero lots: source documents retain immutable snapshot fields and optional live links; live catalog/lot links may be cleared on deletion. Use a monotonic ID strategy so a historical ID never points to a different future item.
+- Backfill legacy snapshots from the best available original document or receipt snapshot. Where exact historical batch, expiry, or name cannot be reconstructed, mark the field as legacy-unknown and preserve the source provenance; do not silently claim a current master value was true at sale time.
+- Add indexes only for proven hot lookups: active FEFO lots by product/expiry/date/ID, source references by lot and purchase line, sale lines by lot, returns by source line, annual snapshot keys, and bounded search/filter combinations. Inspect actual query plans and write amplification.
+- Build migration verification: row counts, foreign keys, completed invoice parity, sale/return totals, purchase invoice parity, lot-source links, receipt reprints, and a durable migration marker. Rehearse interrupted migration and restored-backup rollback on a large copy.
+
+**Exit:** all historical documents can be read without joining mutable product/lot fields, old receipts match, legacy gaps are disclosed, and migration is recoverable. Existing stock behavior still runs at this stage.
+
+## 6. Phase 2 — Direct lot stock engine and reconciliation
+
+**Work**
+
+- Introduce one stock service operation per business action: receive new purchase lot, create direct lot, complete/void sale, customer return, damage, internal consumption, vendor return/cancel, and reviewed stock correction. Each performs a conditional lot update in the document transaction; reject insufficient stock, stale quantity/version, duplicate operation ID, and invalid expiry/FEFO state.
+- Preserve product_stock_total or a smaller equivalent because catalog and current-stock views need bounded reads. Update only the affected product/lot; never scan the full lot or history table in a sale trigger. Keep current quantity and cost valuation coherent when price/expiry changes or a lot is deleted.
+- Replace the ledger-cache mismatch check with a source-document reconciliation. For each lot, compute expected stock from its origin and effective sale, sale-void, resellable-return, damage, purchase-return/cancellation, internal-use, and correction records. Compare to qty_on_hand. Run cheap checks on affected lots at write time; schedule full verification for maintenance/backup, not interactive startup.
+- Retain the ability to resolve physical count differences through a simple Products bulk-reconcile workflow. Record deficits as categorized damage and surpluses as reviewed direct stock origins, with a reason and old/new quantity. Do not introduce a generic movement table under a new name.
+- Implement the replacement stock interface and validate it against a disposable copy of the legacy ledger. Migrate all callers in Phases 3–5 before a live cutover; do not mix direct quantity updates and ledger-trigger updates in one live store. At cutover, switch every write path together, stop new movement writes, and keep a verified pre-migration backup for rollback.
+- Check power loss, disk full, stale screens, duplicate clicks, concurrent reads and backup, partial bulk failure, and crash recovery. SQLite remains one writer; do not loosen durable-write settings merely to improve benchmark numbers.
+
+**Exit:** the replacement operations are atomic and idempotent on the isolated new-schema fixture, affected-lot and full-source reconciliation pass, and sale-commit/resource gates show no unexplained regression. Live cutover waits for all Phase 3–5 callers and tests.
+
+## 7. Phase 3 — Purchases, vendor returns, and direct entry
+
+**Work**
+
+- Put the Product / Internal use / Expense choice on every purchase line, with Product preselected and a concise explanation beneath each choice. Require a product for each line. Stock lines collect lot inputs; Expense lines retain the selected product's descriptive snapshot and require an expense category but create no lot. Keep tax, freight, discount, invoice, and vendor balance calculations consistent with the existing purchase behavior.
+- Post each Product or Internal-use purchase line into a new lot, even when an older lot has identical batch, expiry, cost, or selling price. Expense lines create a linked, nondeletable expense source entry and no lot. The purchased quantity, free quantity, cost, and tax mode remain on the immutable purchase line.
+- Keep drafts editable, but make posted purchase content immutable. A posted purchase with no dependent stock use can change status to VOID through one transaction that removes its available quantities and reverses its vendor/expense effects. Test every lot of a multi-line purchase before changing any line. A touched purchase cannot be voided even if its quantity later returns to the original number.
+- Reuse and adapt the existing vendor-return workflow for partial returns. Limit return quantity to the current eligible units on that purchase's own lot. Derive quantity and cost from the original purchase line, save vendor credit/tax separately, update vendor balance and lot stock atomically, and represent any credit-versus-cost variance in the appropriate report head. A cancelled return retains its record and atomically restores quantity and vendor balance; repeated cancellation is idempotent.
+- Record direct product/lot additions in a dedicated origin document with quantity, saved unit cost, reason, and timestamp. Direct-origin stock is available for sale and its cost enters COGS through the sale snapshot. It is not an immediate expense on creation.
+- Make internal-use consumption a dedicated, non-P/L quantity record. Do not automatically transfer raw-material cost to a new saleable product. The operator enters that custom product's purchase cost and selling price, as decided. Keep internal-use items out of POS sale search unless deliberately converted to a saleable product.
+- Supply historical invoice and vendor views entirely from posted snapshots. Keep document number continuity, original tax-mode snapshot, and vendor payment references after product deletion.
+
+**UI**
+
+- Purchase entry: compact line grid with type, product/expense category search, quantity, unit, rate, GST, batch, expiry, MRP, selling price, and calculated totals. Show only fields relevant to the selected type. Keep draft save, validation summary, and a fixed Post action visible at 1366×768.
+- Purchase history: server-filtered date/vendor/status/type search; separate Void and Partial return actions with eligibility explanation; return form shows original, previously returned, available, and proposed quantities plus expected credit.
+- Direct entry: one product form can optionally create its first lot in the same transaction; the Product Lots tab can add another direct-origin lot later.
+
+**Exit:** one purchase line maps to at most one current lot, untouched/touched void rules hold through sale-and-return cycles, partial return/cancellation and vendor balances reconcile, and no purchase page materializes unbounded history.
+
+## 8. Phase 4 — Catalog, lots, deletion, damage, and expiry
+
+**Work**
+
+- Add an explicit Saleable or Internal-use product classification while preserving current product fields, barcodes, tax, units, English/Gujarati names, and search terms. Show lot-specific cost, MRP, selling price, batch, expiry, received date, current quantity, and source in the Product Lots tab. Add created/updated timestamps and update them in every write path.
+- Provide lot price/MRP and expiry edits with optimistic version checks. An edit changes future allocations and current-stock reporting only; old sale and purchase snapshots stay final. Reject invalid MRP/price relationships and invalid expiry; mark currently expired lots clearly.
+- Permit hard deletion only for a zero-quantity lot. Before product deletion, check all its lots, including hidden/blocked/internal-use ones, and reject any positive quantity. Delete zero lots and the product atomically; retain historical sale, purchase, return, damage, and direct-origin snapshots. Maintain FTS, barcode, product-total, and low-stock projections.
+- Put Mark damaged on each lot, with reason (including expired, broken, spoiled, and other), quantity, cost-value preview, and confirmation. It creates a nondeletable damage source record and reduces lot quantity in one transaction. No “remove lot or add to damage” ambiguity: a damaged quantity always leaves available stock and appears in damages. A zero lot can then be deleted.
+- Replace the separate expiry tab with an Expired / Expiring filter in Products > Lots and the current-unsold-stock report toggle. Preserve a small actionable count where useful, but remove forced navigation to the old Money out expiry tab. Bulk expiry write-off is a reviewed damage action.
+- Provide bounded, purpose-specific bulk actions: set product category/tax/classification where valid, archive or restore eligible products, print selected labels, mark selected lot quantities damaged, delete selected zero lots, and reconcile a physical count. Each action previews eligible/skipped rows and its effect on quantity and value.
+- Prepare product/lot recreation for a later sale return, but enable hard deletion of historically referenced masters only after Phase 5's return tests pass. Recreate from the sale snapshot in the return transaction, using a new internal ID and conflict-safe SKU. Where a legacy snapshot lacks required product fields, present a prefilled form and require completion before finalizing the resellable return; do not silently guess tax or unit values.
+
+**Exit:** no positive quantity disappears through deletion or a lot edit, product and lot history survives hard deletion, all expiry/damage actions are discoverable from Product Lots, and large product/lot pages stay within fixed UI page limits.
+
+## 9. Phase 5 — Immutable sales, statuses, and customer returns
+
+**Work**
+
+- At sale completion, save every P/L and historical value on the sale line and receipt snapshot before deducting from the selected lot. FEFO sorts eligible lots by expiry, receipt date, then ID, with a clear picker override and no expired allocation when blocking is enabled. One requested quantity may produce several immutable lot lines.
+- Use distinct sale display states: Completed, Partially refunded, Refunded, and Void. A status transition cannot alter sale amounts. Full or partial refund requires linked return records with refund amount and returned cost; it cannot be expressed by a status flag alone. Void reverses stock only when allowed and remains prohibited after a return. Report logic includes non-void original sales and subtracts returns.
+- Customer return checks original sold-minus-already-returned quantity per line. Preserve original taxable/GST/refund and cost proportions, with final-return rounding that sums exactly to the sale snapshot. Restore resellable stock to the original active lot only when its current version matches the version saved at sale; if it was edited or deleted, create a return-origin lot from the historical snapshot. Non-resellable units create linked damage and do not increase saleable stock.
+- Keep lot/batch/expiry visible in Sales History detail and the return picker but omit them from the printed customer bill as requested. Reprint the original bill from its saved receipt snapshot. Show a clear activity sequence: completion, each partial return, full refund, or void.
+- Update sale-day, product-day, hour, and dashboard projections incrementally for new statuses and returns. Verify every projection against source documents on a full-size fixture, including repeated partial returns and sale lines whose original product/lot was deleted. Once the purchase, catalog, expense, sales, and return callers are migrated, cut over all live stock writes together and assert that no new stock_movement row appears.
+
+**UI**
+
+- Billing retains scan focus, keyboard shortcuts, fast lot choice, visible price differences between lots, and a compact validation summary. Do not load historical detail or all lots for an entire catalog on the scan path.
+- Sales History offers indexed invoice number, date, product snapshot, status, payment mode, and customer filters; a bounded list with a detail panel; and a return flow that shows sold, already returned, remaining, refund, and restock disposition.
+
+**Exit:** sale values never change after completion, the sum of all return quantities and amounts cannot exceed the original sale, P/L and reprints survive product/lot deletion, and scan-to-line and bill-commit targets are met under mixed load.
+
+## 10. Phase 6 — P/L, financial corrections, annual close, and stock reports
+
+**Work**
+
+- Define one P/L source contract per retained head: saved sale revenue excluding GST, saved COGS, returns reversing both, direct expense purchases and ordinary expenses, damage loss net of recovery, payroll by its effective period, depreciation, and relevant disposal/vendor-return variance. Internal-use products and consumption have no automatic P/L head. Direct-origin saleable lot cost enters through sale COGS only.
+- Keep source records after posting. For expense, damage, and payroll corrections while both annual periods containing the original date remain open, update the effective original-period amount with a retained before/after audit record and refresh only affected day/month summaries. Once either period is closed, preserve the original and create a current-dated delta or reversal. Expense void is a zeroing correction, not a hard delete.
+- For employee master salary or asset depreciation terms, store effective-dated versions. While both relevant years are open, an asset edit automatically recalculates affected open depreciation months from its effective date, with no recalculate-year choice; the same rule applies to corrected open payroll periods. Once either period closes, a new version affects only future payroll/depreciation and preserves posted amounts and book values from closed periods. Asset disposal records proceeds and book value as of disposal. Make current-year revaluation effects explicit where an asset's financial parameters change.
+- A damage quantity correction also changes today's physical lot balance atomically. Its P/L difference belongs to the original date only when both annual periods are open; otherwise the difference is dated today. If the original lot was deleted at zero, recreate an eligible lot from the damage snapshot before restoring quantity.
+- Implement independent calendar and fiscal close eligibility from business date: 8 January and 8 April. On first launch or maintenance after eligibility, generate missing annual snapshots idempotently. Save total, head, category, and monthly breakdown with source cutoff, generation time, version, and checksum. A locked year's UI and export read the saved snapshot, not mutable live aggregation.
+- An edit on a date belonging to one open and one closed annual period becomes a current-dated correction. Example: in October 2026, a February 2026 error leaves frozen FY 2025–26 unchanged; its correction contributes in October 2026 to CY 2026 and FY 2026–27. Test both directions around January and April.
+- Maintain a bounded daily/monthly P/L projection for open periods only when measurement proves it is needed. Updating one transaction should touch its affected dates and heads, never rescan years. Keep a source reconciliation command for background maintenance and a way to regenerate an unfinalized projection.
+- Current-unsold-stock report uses current lot quantity and saved current lot cost, with include/exclude expired as-of-business-date toggle. Show quantity and value excluded, so the two totals are interpretable. Purchased/direct-origin reconciliation compares source quantities against sale, return, damage, internal use, vendor return, and current available quantities; show mismatches rather than hiding them.
+
+**UI**
+
+- Reports period selector clearly distinguishes Month, Calendar year, and Fiscal year. Show Open or Finalized plus cutoff date. Display compact P/L head totals first, expandable category/month detail, and a consistent export of exactly the displayed version.
+- Expense, Damage, Payroll, and Asset forms have Create, Edit, Void/Dispose where applicable. An edit preview states “updates open period” or “posts a correction today” based on period locks; there is no recalculate-year option. Show original entry and correction history in a narrow details panel.
+
+**Exit:** closed reports remain byte-for-byte stable across later edits, overlapping-year tests pass, open reports reconcile to source records, no P/L path reads current product/lot values to price old sales, and wide-year queries stay within measured resource budgets.
+
+## 11. Phase 7 — Clean screens, fast search, filters, and bulk work
+
+Build the UI on the new services after their correctness gates pass. Keep English and Gujarati resources complete, English digits in every numeric field, keyboard operation, accessibility names, and a usable 1366×768 layout.
+
+### 11.1 Navigation and forms
+
+- Main navigation: Dashboard, Billing, Products, Purchases, Vendors, Sales History, Money out, Assets, Reports, and Settings. Remove the dedicated Stock navigation after its remaining actions move into Products. A product opens a details area with Basics and Lots; do not instantiate large lot grids until Lots is selected.
+- Use one consistent form layout: title and context, grouped fields in reading order, required-field markers, inline errors next to inputs, concise error summary on failed submit, fixed Save/Post and Cancel actions, and a review dialog only for consequential actions. Preserve entered values and focus after validation errors. Avoid nested popups for multi-field damage and purchase-return forms.
+- Product form: existing basic, pricing default, tax, barcode, and bilingual fields; Saleable/Internal use selector; optional first lot; visible current quantity. Lot form: source, batch, received/expiry, cost, MRP, selling price, quantity on creation; after creation, ordinary Edit exposes only allowed price/expiry fields.
+- Damage form: selected product/lot, available quantity, selected damaged quantity, unit cost and loss preview, reason, recovered amount, effective date, and confirmation. Expense/payroll/asset forms show the period treatment before save. Empty, loading, no-results, and failure states have actionable messages.
+- Purchase grid uses keyboard entry and copy-down of safe defaults, but never silently carries a previous row's Product/Internal use/Expense classification. Totals update locally; posting revalidates server-side and shows the resulting document number.
+
+### 11.2 Search and filters
+
+- Keep search, sort, filter, and pagination in SQL, not in an in-memory WPF collection. Use stable keyset cursors with ID tie-breakers. Preserve filter state per page, cancel obsolete requests, and never let a stale response replace newer results.
+- Products: SKU/barcode exact search first; FTS/prefix for names and aliases; filters for Saleable/Internal use, active, category, low stock, has stock, expiry bucket, and vendor where data supports it. Search result pages remain small (eight for nonempty search; a measured bounded browse page). Show a compact total/FEFO-price summary, loading detailed lots only on selection.
+- Lots: filter within a product by active/zero-stock, batch, expiry bucket/date range, source, and price range. An all-products expiry filter is still available from Products, without an independent Expiry screen.
+- Purchases: date, vendor, status, line type, invoice/document number, and return eligibility. Sales History: date, invoice, snapshot product/SKU, status, payment mode, and customer. Money out: separate Damage, Expenses, and Employees tabs with date/status/category/person filters. Reports retain only filters meaningful for the selected report.
+- For every filter shape, test empty, broad, rare, no-match, Gujarati, and high-cardinality values. Record EXPLAIN QUERY PLAN for the actual SQL. Add or keep an index only when the same-fixture read benefit justifies its insert/update and storage cost.
+
+### 11.3 Bulk actions and large results
+
+- Selection distinguishes “this page” from “all matching filters.” Display the exact count and filter summary before committing. Resolve selected IDs on the server, recheck eligibility and current versions, and show eligible, skipped, and conflicted counts with a downloadable result list.
+- Support focused actions: product archive/restore and category/tax edits, lot zero-delete, block/unblock where retained, selected-lot damage/expiry write-off, label printing, and physical count reconciliation. Do not put a generic quantity-edit command on every row.
+- Keep small bulk actions atomic. For very large selections, use bounded resumable batches with a durable operation ID, progress, cancellation between batches, and an explicit partial-completion report. Every committed batch independently preserves stock and P/L invariants. Never hold a multi-minute write transaction or render thousands of selected WPF row objects.
+- Reports and history previews cap visible rows; full CSV streams from keyset pages with progress and cancellation. Excel output chunks or rejects beyond sheet limits with a clear CSV alternative. A4 preview remains capped. Exports include applied filters, period/snapshot version, and totals that reconcile to the full result.
+
+**Exit:** every frequent task is available without the old Stock/Expiry screens; keyboard and bilingual UI journeys pass; filtering and bulk work remain responsive at full fixture size; no list loads whole history into memory.
+
+## 12. Phase 8 — Remove obsolete features, code, and live schema
+
+Remove a feature only after its replacement path and regression tests pass. This is a deletion phase, not a plan to leave old and new stock engines permanently side by side.
+
+| Remove or replace | Replacement / disposition |
+|---|---|
+| StockPage navigation and its Overview, Stock Ledger, category Valuation, and broad Lots tabs | Products list and per-product Lots tab; current unsold-stock report; targeted product stock summary. |
+| ProductStockWindow ledger mode, StockSourceWindow, ledger filters and movement activity panels | Sales/Purchase/Damage/Return source-document detail where relevant. |
+| StockAdjustmentWindow and the stock-count scope/draft/count screens if no longer used | Reviewed Products bulk physical-count reconciliation, with durable result and reason. Retain old count history for reading or migrate its final effects before removing old UI. |
+| MoneyOutPage Expiry tab and its nested bucket grids/popups | Products expiry filters, lot damage action, and unsold-stock report expiry toggle. Retain only a lightweight, context-linked alert if it proves useful. |
+| ReportKind.StockLedger, its SQL/export, movement source labels, and category stock valuation view | Current-stock and purchased-versus-used reconciliation reports. Keep unrelated sales, tax, vendor, and operational reports unless separately removed by a recorded decision. |
+| IStockLedger/StockLedger, stock_movement, stock_movement_type, movement indexes/triggers, v_lot_cache_mismatch, ledger-opening-balance logic | Direct lot write service, source-document reconciliation, and current-stock projections. |
+| Dead expiry popup settings, navigation badge wiring, translation keys, icons, unused view models, code-behind, tests, generator paths, and documentation | Contextual Product Lots actions and new tests. Remove only after reference/search and packaged-app verification. |
+
+**Migration and compaction sequence**
+
+1. Verify the pre-upgrade backup, disk capacity, schema, lot cache, source counts, and annual reports. Estimate peak disk as the old store plus a verified backup plus a rebuilt compact store plus WAL and a safety margin. If there is insufficient space, stop before mutating the live store.
+2. Apply new snapshot and FK migrations on a copied full-size database first. Switch application writes to the direct stock engine and prove source-document reconciliation. Preserve a recovery point across the application upgrade; older binaries must refuse the newer schema.
+3. After all readers, writers, reports, startup checks, generators, and tests stop using stock_movement, drop its table, type table, indexes, views, and triggers in a new numbered migration. Do not edit shipped SQL migration files.
+4. Reclaim free pages through an exclusive, resumable compact-copy workflow using a verified temporary database, integrity/foreign-key/source checks, and the existing safe database-swap barrier. Do not VACUUM during normal cashier activity. Keep the verified old-store backup until the compacted store passes cold launch, sale, return, backup, and restore checks.
+5. Compare pre/post table and index bytes, migration duration, peak disk, WAL, backup time, startup time, write latency, and working set. Publish measured savings without attributing the whole 2.31 GB baseline to the ledger.
+
+**Exit:** no live stock-movement table or stock-ledger screen remains, packaging contains no orphaned stock/expiry UI, the compacted store and restore pass verification, and measured resource changes are documented.
+
+## 13. Phase 9 — Full-scale optimization, acceptance, and release
+
+### 13.1 Query and write review
+
+- Profile POS add/complete/void/return, Product search and lot opening, Purchase post/void/return/cancel, damage and bulk count, open and finalized P/L, current-stock report, backup, and full export under mixed readers and writers. Capture SQL plan, rows visited, duration, allocations, GC pauses, writer wait, and UI binding/render separately.
+- Favor product-scoped projections and bounded keyset pages. Review every trigger for whole-history scans. Avoid correlated lookups per visible row where one page-scoped join suffices. Keep the FEFO index small and verify that no-match searches do not fall into a broad scan.
+- Keep WPF DataGrid virtualization active, avoid ScrollViewer settings that disable it, release detail views/subscriptions on navigation, cancel obsolete searches, use lightweight DTOs, and avoid retaining full export or report results in memory. Measure repeated navigation for leaks.
+- Use WAL checkpoint and backup schedules that do not block the cashier path. Preserve safe busy handling and operation-ID behavior. Optimize indexes after read/write measurement; an index that saves a report second but adds large storage and commit cost is not automatically accepted.
+
+### 13.2 Correctness and fault matrix
+
+- Migration: old stores at supported schema versions, partially migrated/crash-interrupted copies, low disk, failed checksum, legacy missing snapshots, deleted references, and newer-schema refusal. Restore the old copy and retry without duplicate documents.
+- Inventory: FEFO across many lots; fractional/whole units; expired, blocked, and zero lots; direct entry; one-lot-per-purchase-line; untouched purchase void; sold-then-returned purchase remains touched; partial vendor return/cancellation; customer return to deleted product; duplicate damage; bulk count conflicts; zero-lot/product deletion; full reconciliation after every fault scenario.
+- Financial: GST/rounding/discount parity; final sale snapshots; partial/full returns; void; direct-stock COGS; expense purchase once only; internal use excluded; damage net recovery; payroll/asset effective dates; January/April lock boundaries and seven-day buffer; current-date correction after either lock; annual snapshot immutability; monthly/head/category sums.
+- Reliability: double-click/retry, kill before and after commit, print failure after a committed sale, backup during writes, restore exclusivity, power-loss rehearsal, full disk, and stalled printer. Check integrity, foreign keys, source/lot arithmetic, annual snapshots, and no duplicate operation IDs afterward.
+- UI: English/Gujarati parity, 1366×768, keyboard-only sale/purchase/damage, scanner and receipt/label printers, empty/busy/conflict states, filter cancellation, bulk preview and partial completion, accessible names, and no hidden commands after screen removal.
+
+### 13.3 Release gates and order
+
+1. Release build, architecture/unit/integration/UI suites, migration parity, and full-source reconciliation all pass with no unexplained failures.
+2. Same-machine before/after scale results meet the functional targets and show bounded RAM/WAL; any regression has a measured cause and disposition. Measure on the actual store PC before sign-off.
+3. Verified backup and second-PC restore pass for the compacted schema. Physical scanner, printers, cutter/drawer, power-cut recovery, native Gujarati review, and operator pilot pass on store hardware.
+4. Ship an upgrade package with space/time estimate, verified pre-upgrade backup, progress and recovery instructions, and schema compatibility guard. Observe a pilot period with lot reconciliation, report snapshots, backup success, and error logs before broad rollout.
+
+## 14. Work dependencies and completion checklist
+
+Implement in order: Phase 0 contract and baseline → Phase 1 independent snapshots → Phase 2 direct stock engine on an isolated fixture → Phases 3–5 business documents → one verified stock-write cutover → Phase 6 reports/locks → Phase 7 UI → Phase 8 code/schema removal → Phase 9 scale and release. Phase 7 design mockups and query profiling can start earlier, but old screens stay available until replacement workflows pass. Do not compact the live database before the last movement dependency is gone.
+
+The revision is complete only when a shop operator can create products/lots, buy, sell, refund, damage, return to vendor, correct money-out records, filter/search and perform reviewed bulk work through the simplified UI; annual reports obey both locks; historical documents survive master deletion; no stock-movement records are written or stored in the live schema; and the full-size target-PC performance, memory, backup, and recovery gates pass.
