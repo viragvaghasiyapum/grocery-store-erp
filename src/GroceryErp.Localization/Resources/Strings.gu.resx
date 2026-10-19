@@ -1189,4 +1189,25 @@
   <data name="Purchasing_StatusVoided" xml:space="preserve"><value>રદ કરેલ</value></data>
   <data name="Purchasing_TaxMode" xml:space="preserve"><value>કર પદ્ધતિ</value></data>
   <data name="Purchasing_LineTypeHint" xml:space="preserve"><value>ઉત્પાદન: વેચાણ લોટ · આંતરિક ઉપયોગ: નફા-નુકસાન બહાર · ખર્ચ: શ્રેણી, લોટ નહીં</value></data>
+  <data name="Stock_BulkDamage" xml:space="preserve"><value>પસંદ કરેલા લોટ નુકસાનમાં નોંધો</value></data>
+  <data name="Stock_DeleteZero" xml:space="preserve"><value>પસંદ કરેલા ખાલી લોટ કાઢી નાખો</value></data>
+  <data name="Stock_ExpiryFilterAll" xml:space="preserve"><value>બધા લોટ</value></data>
+  <data name="Stock_Expiring" xml:space="preserve"><value>30 દિવસમાં સમાપ્ત થતા</value></data>
+  <data name="Stock_Available" xml:space="preserve"><value>ઉપલબ્ધ</value></data>
+  <data name="Stock_DamagePreview" xml:space="preserve"><value>{0} લોટ · {1} એકમ · {2} કિંમત</value></data>
+  <data name="MoneyOut_DamageDate" xml:space="preserve"><value>નુકસાનની તારીખ</value></data>
+  <data name="Stock_EditDetails" xml:space="preserve"><value>કિંમત અને સમાપ્તિ તારીખ બદલો</value></data>
+  <data name="Stock_LotDamageContext" xml:space="preserve"><value>{0} — {1} · {2} ઉપલબ્ધ · {3} એકમ કિંમત</value></data>
+  <data name="Stock_DamageQuantityRange" xml:space="preserve"><value>નુકસાનનું પ્રમાણ લોટના ઉપલબ્ધ પ્રમાણની અંદર હોવું જોઈએ.</value></data>
+  <data name="Stock_BulkDamageQuantityRange" xml:space="preserve"><value>દરેક લોટનું નુકસાનનું પ્રમાણ તેના ઉપલબ્ધ પ્રમાણની અંદર હોવું જોઈએ.</value></data>
+  <data name="Stock_ChooseDate" xml:space="preserve"><value>તારીખ પસંદ કરો.</value></data>
+  <data name="Stock_DeleteZeroConfirm" xml:space="preserve"><value>ખાલી લોટ {0} કાઢી નાખવો?</value></data>
+  <data name="Stock_DeleteSelectedPreview" xml:space="preserve"><value>{0} પસંદ · {1} ખાલી લોટ યોગ્ય · {2} છોડ્યા. યોગ્ય લોટ કાઢી નાખવા?</value></data>
+  <data name="Stock_DeleteNoneEligible" xml:space="preserve"><value>પસંદ કરેલો કોઈ લોટ કાઢી શકાતો નથી. લોટ ખાલી હોવો જોઈએ અને ઐતિહાસિક સંદર્ભ ન હોવો જોઈએ.</value></data>
+  <data name="Stock_DeleteHasStock" xml:space="preserve"><value>આ લોટમાં હજી સ્ટોક છે.</value></data>
+  <data name="Stock_DeleteHistory" xml:space="preserve"><value>ઐતિહાસિક દસ્તાવેજોમાં આ લોટનો સંદર્ભ છે.</value></data>
+  <data name="Stock_NetLoss" xml:space="preserve"><value>ચોખ્ખું નુકસાન</value></data>
+  <data name="Catalog_BulkPreview" xml:space="preserve"><value>{0} પસંદ · {1} યોગ્ય · {2} છોડેલા · {3} સ્ટોક એકમ · {4} કિંમત. આગળ વધવું?</value></data>
+  <data name="Catalog_BulkNoneEligible" xml:space="preserve"><value>પસંદ કરેલા કોઈપણ ઉત્પાદનો આ ક્રિયા માટે યોગ્ય નથી.</value></data>
+  <data name="Reports_IncludeExpired" xml:space="preserve"><value>સમાપ્ત થયેલો સ્ટોક સામેલ કરો</value></data>
 </root>

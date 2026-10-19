@@ -246,7 +246,7 @@ switch (mode)
         if (!Path.GetFileName(root).Contains("phase2", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Crash rehearsal runs only in a disposable phase2 root.");
         using var connection = factory.Open();
-        if (connection.ExecuteScalar<long>("PRAGMA user_version") != 31)
+        if (connection.ExecuteScalar<long>("PRAGMA user_version") is not (31 or 32))
             throw new InvalidDataException("Activate the direct-stock sandbox first.");
         long product = connection.ExecuteScalar<long>("""
             SELECT id FROM product WHERE sku LIKE 'PH2-%' ORDER BY id DESC LIMIT 1
@@ -302,7 +302,7 @@ switch (mode)
         if (!Path.GetFileName(root).Contains("phase2", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Count profile runs only in a disposable phase2 data root.");
         using var check = factory.Open();
-        if (check.ExecuteScalar<long>("PRAGMA user_version") != 31)
+        if (check.ExecuteScalar<long>("PRAGMA user_version") is not (31 or 32))
             throw new InvalidDataException("Activate the direct-stock sandbox first.");
         long product = check.ExecuteScalar<long>("""
             SELECT product_id FROM product_lot WHERE id=(SELECT MAX(id) FROM product_lot)
@@ -332,7 +332,8 @@ switch (mode)
             throw new InvalidOperationException("Cashier rehearsal runs only in a disposable phase2 data root.");
         bool directMode = mode == "phase2-cashier-write";
         using (var check = factory.Open())
-            if (check.ExecuteScalar<long>("PRAGMA user_version") != (directMode ? 31 : 30) ||
+            if ((directMode ? check.ExecuteScalar<long>("PRAGMA user_version") is not (31 or 32) :
+                    check.ExecuteScalar<long>("PRAGMA user_version") is not (30 or 31)) ||
                 check.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE name='direct_stock_sandbox'") != (directMode ? 1 : 0))
                 throw new InvalidDataException("Cashier rehearsal has the wrong fixture schema.");
         var direct = new DirectStockEngine();
@@ -498,8 +499,8 @@ switch (mode)
         if (!Path.GetFileName(root).Contains("phase2", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Phase 2 conversion runs only in a data root named phase2.");
         using (var check = factory.Open())
-            if (check.ExecuteScalar<long>("PRAGMA user_version") is not (30 or 31))
-                throw new InvalidDataException("Phase 2 requires a schema-30 disposable copy or its schema-31 sandbox.");
+            if (check.ExecuteScalar<long>("PRAGMA user_version") is not (30 or 31 or 32))
+                throw new InvalidDataException("Phase 2 requires a disposable copy or its direct-stock sandbox.");
         await Measure("phase2-sandbox-activate", async () =>
         {
             using var check = factory.Open();
@@ -2416,6 +2417,66 @@ switch (mode)
             CapturePlan("catalog-low-stock", "SELECT p.id FROM product_stock_total t JOIN product p ON p.id=t.product_id WHERE t.is_low=1 AND p.is_active=1 ORDER BY p.name COLLATE NOCASE,p.id LIMIT 100");
             CapturePlan("catalog-low-stock-name-order", "SELECT p.id FROM product p INDEXED BY ix_product_name CROSS JOIN product_stock_total t ON t.product_id=p.id AND t.is_low=1 WHERE p.is_active=1 ORDER BY p.name COLLATE NOCASE,p.id LIMIT 100");
         }
+        break;
+    }
+    case "phase4-catalog-read":
+    {
+        DateOnly today = new(2026, 10, 19);
+        var stockReports = new ReportService(database, settings,
+            new AuditClock(new DateTime(2026, 10, 19, 12, 0, 0)));
+        long productId;
+        using (var connection = factory.Open())
+            productId = connection.ExecuteScalar<long>("""
+                SELECT product_id FROM product_lot GROUP BY product_id
+                ORDER BY COUNT(*) DESC LIMIT 1
+                """);
+        if (productId <= 0) throw new InvalidDataException("Catalog fixture has no lots.");
+        var shapes = new (string Name, Func<Task<int>> Read)[]
+        {
+            ("products-expired", async () => (await catalog.SearchPageAsync(
+                new ProductSearchFilter(Limit: 50, ExpiryFilter: "EXPIRED", ExpiryAsOf: today))).Items.Count),
+            ("products-expiring", async () => (await catalog.SearchPageAsync(
+                new ProductSearchFilter(Limit: 50, ExpiryFilter: "EXPIRING", ExpiryAsOf: today))).Items.Count),
+            ("lots-product-all", async () => (await inventory.GetLotPageAsync(productId,
+                limit: 50, asOfDate: today)).Items.Count),
+            ("lots-product-expired", async () => (await inventory.GetLotPageAsync(productId,
+                limit: 50, expiryFilter: "EXPIRED", asOfDate: today)).Items.Count),
+            ("lots-product-expiring", async () => (await inventory.GetLotPageAsync(productId,
+                limit: 50, expiryFilter: "EXPIRING", asOfDate: today)).Items.Count),
+            ("current-stock-exclude-expired", async () => (await stockReports.GetReportAsync(
+                ReportKind.StockValue, new ReportFilter(IncludeExpired: false, Limit: 50))).Rows.Count),
+        };
+        foreach (var shape in shapes)
+        {
+            await Measure(shape.Name + "-first", shape.Read, static count => count);
+            for (int index = 0; index < 30; index++)
+            {
+                long started = Stopwatch.GetTimestamp();
+                try
+                {
+                    int rows = await shape.Read();
+                    profileSamples.Add(new(shape.Name, Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                        rows, null));
+                }
+                catch (Exception exception)
+                {
+                    profileSamples.Add(new(shape.Name, Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                        0, exception.GetType().Name + ": " + exception.Message));
+                    throw;
+                }
+            }
+        }
+        CapturePlan("phase4-products-expired", """
+            SELECT p.id FROM product p INDEXED BY ix_product_name
+            WHERE p.is_active=1 AND EXISTS(SELECT 1 FROM product_lot l
+              WHERE l.product_id=p.id AND l.qty_on_hand>0 AND l.expiry_date<'2026-10-19')
+            ORDER BY p.name COLLATE NOCASE,p.id LIMIT 50
+            """);
+        CapturePlan("phase4-product-lots-expired", """
+            SELECT l.id FROM product_lot l WHERE l.product_id=@productId
+              AND l.qty_on_hand>0 AND l.expiry_date<'2026-10-19'
+            ORDER BY l.id DESC LIMIT 50
+            """, new { productId });
         break;
     }
     case "phase3-purchase-read":

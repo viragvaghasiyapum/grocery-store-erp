@@ -241,6 +241,34 @@ public sealed class SalesTests
     }
 
     [Fact]
+    public async Task CompletedSale_SavesFieldsNeededForReviewedReturnRecreation()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using (var db = fixture.Factory.Open())
+        {
+            db.Execute("UPDATE product_lot SET expiry_date='2026-12-31' WHERE id=@id",
+                new { id = fixture.LotId });
+            db.Execute("UPDATE product SET hsn_code='1001' WHERE id=@id", new { id = fixture.ProductId });
+        }
+        long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One,
+            cancellationToken: ct);
+        await fixture.Sales.CompleteAsync(new(saleId, [new(PaymentMode.Cash, new Money(118))],
+            OperationGuard.NewId()), ct);
+        long saleLineId;
+        using (var db = fixture.Factory.Open())
+            saleLineId = db.ExecuteScalar<long>("SELECT id FROM sale_line WHERE sale_id=@saleId",
+                new { saleId });
+        ReturnRecreationDraft draft = await fixture.Sales.GetReturnRecreationDraftAsync(saleLineId, ct);
+        draft.CategoryId.ShouldBe(fixture.CategoryId);
+        draft.UnitId.ShouldBe(fixture.UnitId);
+        draft.TaxRateId.ShouldBe(fixture.TaxId);
+        draft.ExpiryDate.ShouldBe(new DateOnly(2026, 12, 31));
+        draft.MissingFields.ShouldBeEmpty();
+        draft.SuggestedSku.ShouldNotBe("SALE-001");
+    }
+
+    [Fact]
     public async Task Void_AfterReturn_IsRejected()
     {
         using var fixture = new SalesFixture();

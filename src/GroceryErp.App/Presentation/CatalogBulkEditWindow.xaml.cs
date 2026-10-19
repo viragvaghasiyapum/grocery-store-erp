@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using GroceryErp.Catalog;
 using GroceryErp.Localization;
 
@@ -36,20 +37,41 @@ public partial class CatalogBulkEditWindow : Window
     private async void ApplyCategory_OnClick(object sender, RoutedEventArgs e)
     {
         if (CategoryBox.SelectedValue is not long categoryId) return;
-        await ApplyAsync(() => _catalog.BulkChangeCategoryAsync(_productIds, categoryId));
+        await ApplyAsync(CatalogBulkAction.Category,
+            ids => _catalog.BulkChangeCategoryAsync(ids, categoryId));
     }
 
     private async void ApplyTax_OnClick(object sender, RoutedEventArgs e)
     {
         if (TaxBox.SelectedValue is not long taxId) return;
-        await ApplyAsync(() => _catalog.BulkChangeTaxRateAsync(_productIds, taxId));
+        await ApplyAsync(CatalogBulkAction.Tax,
+            ids => _catalog.BulkChangeTaxRateAsync(ids, taxId));
     }
 
-    private async Task ApplyAsync(Func<Task<int>> operation)
+    private async void ApplyClass_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (ClassBox.SelectedItem is not ComboBoxItem item || item.Tag is not string productClass) return;
+        await ApplyAsync(CatalogBulkAction.Classification,
+            ids => _catalog.BulkChangeClassificationAsync(ids, productClass), productClass);
+    }
+
+    private async Task ApplyAsync(CatalogBulkAction action,
+        Func<IReadOnlyCollection<long>, Task<int>> operation, string? targetClass = null)
     {
         try
         {
-            int changed = await operation();
+            CatalogBulkPreview preview = await _catalog.PreviewBulkAsync(_productIds, action, targetClass);
+            if (preview.EligibleIds.Count == 0)
+            {
+                StatusText.Text = TranslationSource.Instance["Catalog_BulkNoneEligible"];
+                return;
+            }
+            if (MessageBox.Show(TranslationSource.Instance.Format("Catalog_BulkPreview",
+                    preview.Selected, preview.EligibleIds.Count, preview.Skipped,
+                    preview.AffectedQuantity, preview.AffectedCost),
+                TranslationSource.Instance["Catalog_BulkEdit"], MessageBoxButton.YesNo,
+                MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            int changed = await operation(preview.EligibleIds);
             MessageBox.Show(TranslationSource.Instance.Format("Catalog_BulkComplete", changed),
                 TranslationSource.Instance["Catalog_BulkEdit"], MessageBoxButton.OK, MessageBoxImage.Information);
             DialogResult = true;

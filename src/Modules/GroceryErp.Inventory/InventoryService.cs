@@ -11,7 +11,7 @@ namespace GroceryErp.Inventory;
 
 public sealed record StockCacheRebuildProgress(int ProcessedLots, int TotalLots, int CorrectedLots);
 
-public sealed class InventoryService(
+public sealed partial class InventoryService(
     DbExecutor database,
     IStockLedger ledger,
     DocNumberService numbers,
@@ -49,19 +49,32 @@ public sealed class InventoryService(
     }
 
     public Task<LotPage> GetLotPageAsync(long? productId = null, string? query = null, long? beforeId = null,
-        int limit = 100, bool availableOnly = false, CancellationToken cancellationToken = default)
+        int limit = 100, bool availableOnly = false, string expiryFilter = "ALL",
+        DateOnly? asOfDate = null, CancellationToken cancellationToken = default)
     {
         if (limit is < 1 or > 200 || beforeId <= 0)
             throw new DomainException(ErrorCode.Validation, "Invalid lot page.");
+        if (expiryFilter is not ("ALL" or "EXPIRED" or "EXPIRING"))
+            throw new DomainException(ErrorCode.Validation, "Invalid expiry filter.");
+        DateOnly today = asOfDate ?? DateOnly.FromDateTime(DateTime.Today);
+        string date = today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        string soon = today.AddDays(30).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        string expiryWhere = expiryFilter switch
+        {
+            "EXPIRED" => "AND l.qty_on_hand>0 AND l.expiry_date<@date",
+            "EXPIRING" => "AND l.qty_on_hand>0 AND l.expiry_date>=@date AND l.expiry_date<=@soon",
+            _ => string.Empty,
+        };
         string pattern = "%" + (query ?? string.Empty).Trim().Replace("%", "\\%", StringComparison.Ordinal)
             .Replace("_", "\\_", StringComparison.Ordinal) + "%";
         return database.ReadAsync(connection =>
         {
-            List<LotItem> rows = connection.Query<LotRow>("""
+            List<LotItem> rows = connection.Query<LotRow>($$"""
                 WITH visible AS MATERIALIZED (
                     SELECT l.id FROM product_lot l JOIN product p ON p.id=l.product_id
                     WHERE (@productId IS NULL OR l.product_id=@productId)
                       AND (@availableOnly=0 OR (l.is_active=1 AND l.qty_on_hand>0))
+                      {{expiryWhere}}
                       AND (@beforeId IS NULL OR l.id<@beforeId)
                       AND (p.name LIKE @pattern ESCAPE '\' OR l.lot_code LIKE @pattern ESCAPE '\'
                            OR l.batch_no LIKE @pattern ESCAPE '\')
@@ -71,7 +84,7 @@ public sealed class InventoryService(
                        l.batch_no AS BatchNumber,l.received_date AS ReceivedDate,l.expiry_date AS ExpiryDate,
                        l.unit_cost AS UnitCost,l.mrp AS Mrp,l.selling_price AS SellingPrice,
                        l.qty_received AS Received,l.qty_on_hand AS OnHand,l.is_active AS IsActive,
-                       l.origin_kind AS OriginKind,
+                       l.origin_kind AS OriginKind,l.detail_version AS DetailVersion,
                        CASE WHEN l.is_active=0 THEN 'BLOCKED' WHEN l.qty_on_hand<=0 THEN 'EMPTY'
                             WHEN l.expiry_date IS NULL THEN 'NONE'
                             WHEN l.expiry_date<date('now','localtime') THEN 'EXPIRED'
@@ -83,7 +96,8 @@ public sealed class InventoryService(
                 FROM visible page JOIN product_lot l ON l.id=page.id JOIN product p ON p.id=l.product_id
                 JOIN category c ON c.id=p.category_id LEFT JOIN category pc ON pc.id=c.parent_id
                 ORDER BY l.id DESC
-                """, new { productId, beforeId, availableOnly, pattern, take = limit + 1 })
+                """, new { productId, beforeId, availableOnly, pattern, take = limit + 1,
+                    date, soon })
                 .Select(static row => row.ToModel()).ToList();
             bool hasMore = rows.Count > limit;
             if (hasMore) rows.RemoveAt(limit);
@@ -103,6 +117,7 @@ public sealed class InventoryService(
                    l.batch_no AS BatchNumber,l.received_date AS ReceivedDate,l.expiry_date AS ExpiryDate,
                    l.unit_cost AS UnitCost,l.mrp AS Mrp,l.selling_price AS SellingPrice,
                    l.qty_received AS Received,l.qty_on_hand AS OnHand,l.is_active AS IsActive,
+                   l.detail_version AS DetailVersion,
                    CASE WHEN l.is_active=0 THEN 'BLOCKED' WHEN l.qty_on_hand<=0 THEN 'EMPTY'
                         WHEN l.expiry_date IS NULL THEN 'NONE'
                         WHEN l.expiry_date<date('now','localtime') THEN 'EXPIRED'
@@ -1073,7 +1088,7 @@ public sealed class InventoryService(
     private static string Format(DateOnly date) => date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
     private sealed class OverviewRow { public long ProductId { get; init; } public string Sku { get; init; } = ""; public string Name { get; init; } = ""; public long Quantity { get; init; } public long CostValue { get; init; } public long ReorderLevel { get; init; } public bool IsLow { get; init; } }
-    private sealed class LotRow { public long Id { get; init; } public long ProductId { get; init; } public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public string? BatchNumber { get; init; } public DateOnly ReceivedDate { get; init; } public DateOnly? ExpiryDate { get; init; } public long UnitCost { get; init; } public long? Mrp { get; init; } public long SellingPrice { get; init; } public long Received { get; init; } public long OnHand { get; init; } public bool IsActive { get; init; } public string ExpiryBucketCode { get; init; } = "NONE"; public string OriginKind { get; init; } = "DIRECT"; public LotItem ToModel() => new(Id, ProductId, ProductName, LotCode, BatchNumber, ReceivedDate, ExpiryDate, Money.FromScaled(UnitCost), Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(SellingPrice), Quantity.FromScaled(Received), Quantity.FromScaled(OnHand), IsActive, ExpiryBucketCode) { OriginKind = OriginKind }; }
+    private sealed class LotRow { public long Id { get; init; } public long ProductId { get; init; } public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public string? BatchNumber { get; init; } public DateOnly ReceivedDate { get; init; } public DateOnly? ExpiryDate { get; init; } public long UnitCost { get; init; } public long? Mrp { get; init; } public long SellingPrice { get; init; } public long Received { get; init; } public long OnHand { get; init; } public bool IsActive { get; init; } public string ExpiryBucketCode { get; init; } = "NONE"; public string OriginKind { get; init; } = "DIRECT"; public long DetailVersion { get; init; } public LotItem ToModel() => new(Id, ProductId, ProductName, LotCode, BatchNumber, ReceivedDate, ExpiryDate, Money.FromScaled(UnitCost), Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(SellingPrice), Quantity.FromScaled(Received), Quantity.FromScaled(OnHand), IsActive, ExpiryBucketCode) { OriginKind = OriginKind, DetailVersion = DetailVersion }; }
     private sealed class LedgerRow { public long Id { get; init; } public DateTime MovedAt { get; init; } public DateOnly MoveDate { get; init; } public string TypeCode { get; init; } = ""; public long Qty { get; init; } public long UnitCost { get; init; } public string? RefType { get; init; } public long? RefId { get; init; } public string LotCode { get; init; } = ""; public long LotBalance { get; init; } public string? Note { get; init; } public LedgerItem ToModel() => new(Id, MovedAt, MoveDate, TypeCode, Quantity.FromScaled(Qty), Money.FromScaled(UnitCost), RefType, RefId, LotCode, Quantity.FromScaled(LotBalance), Note); }
     private sealed class SourceHeaderRow { public string? Number { get; init; } public DateOnly Date { get; init; } public string? Party { get; init; } public string? Status { get; init; } public string? Notes { get; init; } }
     private sealed class SourceLineRow { public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public long Quantity { get; init; } public long Amount { get; init; } }

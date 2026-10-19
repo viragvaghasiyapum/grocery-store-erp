@@ -447,6 +447,7 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                 filter.PaymentMode,
                 filter.Entity,
                 filter.Action,
+                stockAsOf = Iso(clock.BusinessDate),
                 previousFrom = Iso(previousFrom),
                 previousTo = Iso(previousTo),
                 slowFrom = Iso(to.AddDays(-filter.SlowMoverDays)),
@@ -505,6 +506,7 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                     {
                         from = Iso(from), to = Iso(to), filter.ProductId, filter.LotId,
                         filter.VendorId, filter.Status, filter.PaymentMode, filter.Entity, filter.Action,
+                        stockAsOf = Iso(clock.BusinessDate),
                         previousFrom = Iso(previousFrom), previousTo = Iso(previousTo),
                         slowFrom = Iso(to.AddDays(-filter.SlowMoverDays)),
                         firstMonth = from.ToString("yyyy-MM", CultureInfo.InvariantCulture),
@@ -949,6 +951,7 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
     private static string SelectReportSql(ReportKind kind, ReportFilter filter, string defaultSql) =>
         (kind, filter.ProductId, filter.LotId) switch
         {
+            (ReportKind.StockValue, _, _) when !filter.IncludeExpired => ReportDefinitions.StockValueWithoutExpired,
             (ReportKind.ItemSales, not null, _) => ReportDefinitions.ItemSalesForProduct,
             (ReportKind.CategorySales, _, _) => ReportDefinitions.CategorySalesFromDay,
             (ReportKind.GstSummary, _, _) => ReportDefinitions.GstSummaryFromDay,

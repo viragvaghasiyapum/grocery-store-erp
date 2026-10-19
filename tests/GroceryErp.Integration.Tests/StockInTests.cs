@@ -797,6 +797,86 @@ public sealed class StockInTests
     }
 
     [Fact]
+    public async Task LotDetailEdit_IsVersionedAndExpiryFiltersStayBounded()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long lotId = await fixture.Inventory.ImportOpeningStockAsync(
+            [new(fixture.ProductId, new Quantity(4), new Money(20), new Money(30), new Money(35),
+                fixture.Date.AddDays(10), "DETAIL", fixture.Date)], OperationGuard.NewId(), ct);
+        LotItem original = (await fixture.Inventory.GetLotPageAsync(fixture.ProductId,
+            limit: 1, cancellationToken: ct)).Items.Single();
+        original.DetailVersion.ShouldBeGreaterThan(0);
+        await fixture.Inventory.EditLotDetailsAsync(new(lotId, original.DetailVersion,
+            new Money(32), new Money(35), fixture.Date.AddDays(20)), ct);
+        DomainException stale = await Should.ThrowAsync<DomainException>(() =>
+            fixture.Inventory.EditLotDetailsAsync(new(lotId, original.DetailVersion,
+                new Money(33), new Money(35), fixture.Date.AddDays(21)), ct));
+        stale.Code.ShouldBe(ErrorCode.Validation);
+        (await fixture.Inventory.GetLotPageAsync(fixture.ProductId, limit: 1,
+            expiryFilter: "EXPIRING", asOfDate: fixture.Date, cancellationToken: ct)).Items.Single().Id.ShouldBe(lotId);
+        (await fixture.Inventory.GetLotPageAsync(fixture.ProductId, limit: 1,
+            expiryFilter: "EXPIRED", asOfDate: fixture.Date, cancellationToken: ct)).Items.ShouldBeEmpty();
+        using var connection = fixture.Factory.Open();
+        connection.QuerySingle<(long Quantity, long Cost, long Price)>("""
+            SELECT qty_on_hand AS Quantity,unit_cost AS Cost,selling_price AS Price
+            FROM product_lot WHERE id=@lotId
+            """, new { lotId }).ShouldBe((4_000L, 20_000L, 32_000L));
+        connection.ExecuteScalar<string>("SELECT updated_at FROM product_lot WHERE id=@lotId",
+            new { lotId }).ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task ZeroLotDelete_RejectsHistoricalOriginAndPositiveStock()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long lotId = await fixture.Inventory.ImportOpeningStockAsync(
+            [new(fixture.ProductId, Quantity.One, new Money(20), new Money(30), new Money(35),
+                fixture.Date.AddMonths(2), "DELETE", fixture.Date)], OperationGuard.NewId(), ct);
+        LotItem lot = (await fixture.Inventory.GetLotPageAsync(fixture.ProductId,
+            cancellationToken: ct)).Items.Single();
+        (await fixture.Inventory.PreviewDeleteZeroLotAsync(lotId, ct)).CanDelete.ShouldBeFalse();
+        await Should.ThrowAsync<DomainException>(() => fixture.Inventory.DeleteZeroLotAsync(
+            lotId, lot.DetailVersion, ct));
+        await fixture.Inventory.AdjustAsync(lotId, fixture.Date, new Quantity(-1),
+            "Test zero", OperationGuard.NewId(), ct);
+        (await fixture.Inventory.PreviewDeleteZeroLotAsync(lotId, ct)).CanDelete.ShouldBeFalse();
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot WHERE id=@lotId",
+            new { lotId }).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task BulkZeroLotDelete_IsBoundedPreviewedAndAtomicOnStaleVersion()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using var connection = fixture.Factory.Open();
+        long firstId = InsertEmptyLot("EMPTY-A");
+        long secondId = InsertEmptyLot("EMPTY-B");
+        IReadOnlyList<LotDeletionPreview> preview = await fixture.Inventory.PreviewDeleteZeroLotsAsync(
+            [firstId, secondId], ct);
+        preview.Count.ShouldBe(2);
+        preview.All(static row => row.CanDelete).ShouldBeTrue();
+        await Should.ThrowAsync<DomainException>(() => fixture.Inventory.DeleteZeroLotsAsync(
+            [new(firstId, 1), new(secondId, 99)], ct));
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot WHERE id IN @ids",
+            new { ids = new[] { firstId, secondId } }).ShouldBe(2);
+        await fixture.Inventory.DeleteZeroLotsAsync([new(firstId, 1), new(secondId, 1)], ct);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot WHERE id IN @ids",
+            new { ids = new[] { firstId, secondId } }).ShouldBe(0);
+
+        long InsertEmptyLot(string code) => connection.ExecuteScalar<long>("""
+            INSERT INTO product_lot(product_id,lot_code,received_date,expiry_date,
+                unit_cost,mrp,selling_price,qty_received,qty_on_hand,origin_kind)
+            VALUES (@productId,@code,@date,@expiry,20000,35000,30000,0,0,'CUSTOMER_RETURN') RETURNING id
+            """, new { productId = fixture.ProductId, code,
+                date = fixture.Date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                expiry = fixture.Date.AddMonths(2).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) });
+    }
+
+    [Fact]
     public async Task LotBulkStatus_IsAtomicAndKeepsStockQuantities()
     {
         using var fixture = new StockInFixture();

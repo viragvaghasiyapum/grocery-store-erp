@@ -33,6 +33,44 @@ public sealed class CatalogTests
     }
 
     [Fact]
+    public async Task ProductExpiryFilterAndBulkClassification_RespectLiveStock()
+    {
+        using var fixture = new CatalogFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long expired = await fixture.Service.CreateAsync(fixture.Product("Expired", "expiry"), ct);
+        long fresh = await fixture.Service.CreateAsync(fixture.Product("Fresh", "expiry"), ct);
+        using (var connection = fixture.Factory.Open())
+        {
+            foreach (var row in new[] { (expired, "EXPIRED-LOT", "2026-09-01"),
+                         (fresh, "FRESH-LOT", "2026-12-01") })
+            {
+                long lot = connection.ExecuteScalar<long>("""
+                    INSERT INTO product_lot(product_id,lot_code,received_date,expiry_date,
+                        unit_cost,selling_price,qty_received)
+                    VALUES (@expired,@Item2,'2026-08-01',@Item3,1000,2000,1000) RETURNING id
+                    """, new { expired = row.Item1, row.Item2, row.Item3 });
+                connection.Execute("""
+                    INSERT INTO stock_movement(move_date,product_id,lot_id,type_code,qty,unit_cost)
+                    VALUES ('2026-08-01',@product,@lot,'OPENING',1000,1000)
+                    """, new { product = row.Item1, lot });
+            }
+        }
+        (await fixture.Service.SearchAsync(new ProductSearchFilter(ExpiryFilter: "EXPIRED",
+            ExpiryAsOf: new DateOnly(2026, 10, 19)), ct)).Select(static row => row.Id)
+            .ShouldBe([expired]);
+        long empty = await fixture.Service.CreateAsync(fixture.Product("Empty", "expiry"), ct);
+        CatalogBulkPreview preview = await fixture.Service.PreviewBulkAsync([expired, empty],
+            CatalogBulkAction.Classification, "INTERNAL", ct);
+        preview.Selected.ShouldBe(2);
+        preview.EligibleIds.ShouldBe([empty]);
+        preview.Skipped.ShouldBe(1);
+        await Should.ThrowAsync<DomainException>(() => fixture.Service.BulkChangeClassificationAsync(
+            [expired, fresh], "INTERNAL", ct));
+        using var check = fixture.Factory.Open();
+        check.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE product_class='INTERNAL'").ShouldBe(0);
+    }
+
+    [Fact]
     public async Task BulkRemoveAndRestore_ApplyOnlyToEligibleProductsAtomically()
     {
         using var fixture = new CatalogFixture();

@@ -83,4 +83,5 @@ public sealed record TabularReport(string Title, DateRange? Period, IReadOnlyLis
 
 public sealed record ReportFilter(DateOnly? From = null, DateOnly? To = null, long? ProductId = null,
     long? LotId = null, long? VendorId = null, long? AssetId = null, string? Status = null, string? PaymentMode = null,
-    string? Entity = null, string? Action = null, int SlowMoverDays = 90, int Limit = 5000);
+    string? Entity = null, string? Action = null, int SlowMoverDays = 90, int Limit = 5000,
+    bool IncludeExpired = true);

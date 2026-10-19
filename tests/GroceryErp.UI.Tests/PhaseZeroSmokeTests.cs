@@ -904,15 +904,8 @@ public sealed class PhaseZeroSmokeTests
                     new { EmployeeId = 1, BaseSalary = "12000.000", LeaveDeduction = "500.000", Overtime = "250.000", Bonus = "1000.000" },
                 };
                 moneyOutHost.Show();
-                Capture(moneyOutHost, "expiry.en.png");
-                VerifyExpiryActionsShareTabRow(moneyOutHost, moneyOutPage);
-                VerifyExpiryHeaderSelection(moneyOutHost, moneyOutPage, translations);
-                VerifyStickyMoneyOutTable(moneyOutHost, moneyOutPage);
-                var expiryTabs = (TabControl)moneyOutPage.FindName("ExpiryTabs");
-                expiryTabs.SelectedIndex = 1;
-                ((Button)moneyOutPage.FindName("BulkWriteOffButton")).Visibility.ShouldBe(Visibility.Collapsed);
-                expiryTabs.SelectedIndex = 0;
-                ((Button)moneyOutPage.FindName("BulkWriteOffButton")).Visibility.ShouldBe(Visibility.Visible);
+                ((TabItem)((TabControl)moneyOutPage.FindName("MoneyOutTabs")).Items[0])
+                    .Visibility.ShouldBe(Visibility.Collapsed);
                 ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 1;
                 Capture(moneyOutHost, "damages.en.png");
                 ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 2;

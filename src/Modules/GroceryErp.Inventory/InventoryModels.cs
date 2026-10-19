@@ -28,7 +28,15 @@ public sealed record LotItem(
     string ExpiryBucketCode = "NONE")
 {
     public string OriginKind { get; init; } = "DIRECT";
+    public long DetailVersion { get; init; }
 }
+
+public sealed record LotDetailsEdit(long LotId, long ExpectedVersion, Money SellingPrice,
+    Money? Mrp, DateOnly? ExpiryDate);
+
+public sealed record LotDeletionPreview(long LotId, string LotCode, Quantity OnHand,
+    bool CanDelete, string? BlockReason);
+public sealed record LotDeletionRequest(long LotId, long ExpectedVersion);
 
 public sealed record StockOverviewPage(IReadOnlyList<StockOverviewItem> Items, bool HasMore, string? NextName, long? NextId);
 public sealed record LotPage(IReadOnlyList<LotItem> Items, bool HasMore, long? NextId);

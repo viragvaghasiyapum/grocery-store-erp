@@ -1,0 +1,38 @@
+<Window x:Class="GroceryErp.App.Presentation.LotDamageWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    Title="{l:Tr MoneyOut_RecordDamage}" Width="480" Height="480" MinHeight="450"
+    WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+  <Grid Margin="20">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <StackPanel>
+      <TextBlock Text="{l:Tr MoneyOut_RecordDamage}" FontSize="22" FontWeight="SemiBold"/>
+      <TextBlock x:Name="LotText" Margin="0,6,0,12" TextWrapping="Wrap"/>
+    </StackPanel>
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,0,8,0">
+        <TextBlock Text="{l:Tr Stock_Quantity}"/><TextBox x:Name="QuantityBox" Margin="0,4,0,10" TextChanged="Preview_OnChanged"/>
+        <TextBlock Text="{l:Tr MoneyOut_Reason}"/>
+        <ComboBox x:Name="ReasonBox" Margin="0,4,0,10" SelectedIndex="0">
+          <ComboBoxItem Tag="EXPIRED" Content="{l:Tr MoneyOut_ReasonExpired}"/>
+          <ComboBoxItem Tag="BROKEN" Content="{l:Tr MoneyOut_ReasonBroken}"/>
+          <ComboBoxItem Tag="SPOILED" Content="{l:Tr MoneyOut_ReasonSpoiled}"/>
+          <ComboBoxItem Tag="PEST" Content="{l:Tr MoneyOut_ReasonPest}"/>
+          <ComboBoxItem Tag="LOST" Content="{l:Tr MoneyOut_ReasonLost}"/>
+          <ComboBoxItem Tag="OTHER" Content="{l:Tr MoneyOut_ReasonOther}"/>
+        </ComboBox>
+        <TextBlock Text="{l:Tr MoneyOut_Recovered}"/><TextBox x:Name="RecoveredBox" Margin="0,4,0,10" Text="0" TextChanged="Preview_OnChanged"/>
+        <TextBlock Text="{l:Tr MoneyOut_DamageDate}"/><DatePicker x:Name="DateBox" Margin="0,4,0,10"/>
+        <TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="NotesBox" Margin="0,4,0,10" MaxLength="500"/>
+        <TextBlock x:Name="PreviewText" FontWeight="SemiBold" Margin="0,4,0,8" TextWrapping="Wrap"/>
+        <TextBlock x:Name="ErrorText" Foreground="Crimson" TextWrapping="Wrap"/>
+      </StackPanel>
+    </ScrollViewer>
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+      <Button Margin="0,0,8,0" Click="Save_OnClick" Content="{l:Tr MoneyOut_RecordDamage}"/>
+      <Button IsCancel="True" Content="{l:Tr Common_Cancel}"/>
+    </StackPanel>
+  </Grid>
+</Window>

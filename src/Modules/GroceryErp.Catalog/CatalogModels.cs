@@ -67,7 +67,9 @@ public sealed record ProductSearchFilter(
     bool IncludeArchived = false,
     bool LooseOnly = false,
     int Limit = 200,
-    bool SaleableOnly = false);
+    bool SaleableOnly = false,
+    string ExpiryFilter = "ALL",
+    DateOnly? ExpiryAsOf = null);
 
 public sealed record ProductSearchPage(
     IReadOnlyList<ProductListItem> Items,
@@ -104,3 +106,8 @@ public sealed record BarcodeOwner(long ProductId, string ProductName);
 public sealed record CategoryInput(string Name, string? NameLocal, long? ParentId, int? ExpiryAlertDays);
 
 public enum ProductRemoval { Deleted, Archived }
+
+public enum CatalogBulkAction { Archive, Restore, Category, Tax, Classification, Labels }
+
+public sealed record CatalogBulkPreview(int Selected, IReadOnlyList<long> EligibleIds,
+    int Skipped, Quantity AffectedQuantity, Money AffectedCost);

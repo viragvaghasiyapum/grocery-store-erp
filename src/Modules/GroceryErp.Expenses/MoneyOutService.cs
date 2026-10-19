@@ -10,7 +10,7 @@ using GroceryErp.Inventory.Contracts;
 
 namespace GroceryErp.Expenses;
 
-public sealed class MoneyOutService(
+public sealed partial class MoneyOutService(
     DbExecutor database,
     IStockLedger stock,
     DocNumberService numbers,

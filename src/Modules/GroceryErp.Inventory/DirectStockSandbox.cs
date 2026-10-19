@@ -3,14 +3,14 @@ using GroceryErp.Data.Infrastructure;
 
 namespace GroceryErp.Inventory;
 
-// An explicit opt-in conversion for disposable schema-30 copies. The production
+// An explicit opt-in conversion for disposable schema-31 copies. The production
 // migration runner must not install this until every document writer is ported.
 public static class DirectStockSandbox
 {
     public static void Activate(DbTx tx)
     {
-        if (tx.Connection.ExecuteScalar<long>("PRAGMA user_version", transaction: tx.Transaction) != 30)
-            throw new InvalidOperationException("Direct stock requires a schema-30 disposable copy.");
+        if (tx.Connection.ExecuteScalar<long>("PRAGMA user_version", transaction: tx.Transaction) != 31)
+            throw new InvalidOperationException("Direct stock requires a schema-31 disposable copy.");
         if (tx.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='direct_stock_sandbox'", transaction: tx.Transaction) != 0)
             throw new InvalidOperationException("Direct stock is already active.");
         tx.Connection.Execute("""
@@ -57,7 +57,7 @@ public static class DirectStockSandbox
             CREATE TRIGGER trg_direct_qty_version AFTER UPDATE OF qty_on_hand ON product_lot
               WHEN NEW.qty_on_hand<>OLD.qty_on_hand AND NEW.quantity_version=OLD.quantity_version
               BEGIN UPDATE product_lot SET quantity_version=OLD.quantity_version+1 WHERE id=NEW.id; END;
-            PRAGMA user_version=31;
+            PRAGMA user_version=32;
             """, transaction: tx.Transaction);
     }
 }

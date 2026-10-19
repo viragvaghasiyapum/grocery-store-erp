@@ -1,0 +1,48 @@
+<Window x:Class="GroceryErp.App.Presentation.LotBulkDamageWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    Title="{l:Tr Stock_BulkDamage}" Width="780" Height="520" MinWidth="640" MinHeight="420"
+    WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+  <Grid Margin="16">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <StackPanel Margin="0,0,0,10">
+      <TextBlock Text="{l:Tr Stock_BulkDamage}" FontSize="21" FontWeight="SemiBold"/>
+      <WrapPanel Margin="0,8,0,0">
+        <StackPanel Width="200" Margin="0,0,12,0">
+          <TextBlock Text="{l:Tr MoneyOut_Reason}"/>
+          <ComboBox x:Name="ReasonBox" SelectedIndex="0">
+            <ComboBoxItem Tag="EXPIRED" Content="{l:Tr MoneyOut_ReasonExpired}"/>
+            <ComboBoxItem Tag="BROKEN" Content="{l:Tr MoneyOut_ReasonBroken}"/>
+            <ComboBoxItem Tag="SPOILED" Content="{l:Tr MoneyOut_ReasonSpoiled}"/>
+            <ComboBoxItem Tag="PEST" Content="{l:Tr MoneyOut_ReasonPest}"/>
+            <ComboBoxItem Tag="LOST" Content="{l:Tr MoneyOut_ReasonLost}"/>
+            <ComboBoxItem Tag="OTHER" Content="{l:Tr MoneyOut_ReasonOther}"/>
+          </ComboBox>
+        </StackPanel>
+        <StackPanel Width="180">
+          <TextBlock Text="{l:Tr MoneyOut_DamageDate}"/>
+          <DatePicker x:Name="DateBox"/>
+        </StackPanel>
+      </WrapPanel>
+    </StackPanel>
+    <DataGrid x:Name="LinesGrid" Grid.Row="1" Style="{StaticResource CompactTableGrid}"
+              AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="False">
+      <DataGrid.Columns>
+        <DataGridTextColumn Width="120" IsReadOnly="True" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
+        <DataGridTextColumn Width="*" IsReadOnly="True" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
+        <DataGridTextColumn Width="100" IsReadOnly="True" Header="{l:Tr Stock_Available}" Binding="{Binding Available}"/>
+        <DataGridTextColumn Width="100" IsReadOnly="True" Header="{l:Tr Stock_UnitCost}" Binding="{Binding UnitCost}"/>
+        <DataGridTextColumn Width="110" Header="{l:Tr Stock_Quantity}" Binding="{Binding QuantityText, UpdateSourceTrigger=PropertyChanged}"/>
+      </DataGrid.Columns>
+    </DataGrid>
+    <DockPanel Grid.Row="2" Margin="0,10,0,0">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <Button Margin="0,0,8,0" Click="Save_OnClick" Content="{l:Tr MoneyOut_RecordDamage}"/>
+        <Button IsCancel="True" Content="{l:Tr Common_Cancel}"/>
+      </StackPanel>
+      <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="Crimson" TextWrapping="Wrap"/>
+    </DockPanel>
+  </Grid>
+</Window>

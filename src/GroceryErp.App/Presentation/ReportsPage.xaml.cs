@@ -177,7 +177,8 @@ public partial class ReportsPage : Page
             TabularReport report = await _reports.GetReportAsync(kind, new(From: from, To: to,
                 ProductId: ParseId(ProductFilter.Text), LotId: ParseId(LotFilter.Text), VendorId: ParseId(VendorFilter.Text),
                 AssetId: ParseId(AssetFilter.Text), Status: status, PaymentMode: payment,
-                Entity: Clean(EntityFilter.Text), Action: Clean(ActionFilter.Text), SlowMoverDays: slowDays, Limit: 500),
+                Entity: Clean(EntityFilter.Text), Action: Clean(ActionFilter.Text), SlowMoverDays: slowDays,
+                Limit: 500, IncludeExpired: IncludeExpiredCheck.IsChecked == true),
                 cancellation.Token);
             if (version != _refreshVersion) return;
             _currentReport = report with { Title = ((ReportChoice)ReportPicker.SelectedItem).ToString() };
@@ -323,6 +324,12 @@ public partial class ReportsPage : Page
         ActionFilter.IsEnabled = kind == ReportKind.AuditLog;
         MatrixCheck.IsEnabled = kind is null;
         CompareCheck.IsEnabled = kind is null && MatrixCheck.IsChecked != true;
+        IncludeExpiredCheck.Visibility = kind == ReportKind.StockValue ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async void IncludeExpired_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_loadOnShow && IsLoaded) await RefreshAsync();
     }
 
     private static FilterChoice[] SalesStatusChoices() =>
@@ -482,7 +489,7 @@ public partial class ReportsPage : Page
                 Status: ((FilterChoice?)StatusPicker.SelectedItem)?.Code,
                 PaymentMode: ((FilterChoice?)PaymentPicker.SelectedItem)?.Code,
                 Entity: Clean(EntityFilter.Text), Action: Clean(ActionFilter.Text),
-                SlowMoverDays: slowDays);
+                SlowMoverDays: slowDays, IncludeExpired: IncludeExpiredCheck.IsChecked == true);
             var progress = new Progress<long>(count =>
                 StatusText.Text = TranslationSource.Instance.Format("Reports_ExportedRows", count));
             long rows = await _reports.ExportCsvAsync(kind, filter, dialog.FileName,

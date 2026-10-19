@@ -39,6 +39,9 @@
               <MenuItem x:Name="MissingLocalFilter" IsCheckable="True" Click="Filter_OnChanged" Header="{l:Tr Catalog_MissingLocal}"/>
               <MenuItem x:Name="LooseFilter" IsCheckable="True" Click="Filter_OnChanged" Header="{l:Tr Catalog_Loose}"/>
               <MenuItem x:Name="ArchivedFilter" IsCheckable="True" Click="Filter_OnChanged" Header="{l:Tr Catalog_IncludeArchived}"/>
+              <Separator/>
+              <MenuItem x:Name="ExpiredFilter" IsCheckable="True" Click="ExpiryFilter_OnChanged" Header="{l:Tr MoneyOut_Expired}"/>
+              <MenuItem x:Name="ExpiringFilter" IsCheckable="True" Click="ExpiryFilter_OnChanged" Header="{l:Tr Stock_Expiring}"/>
             </MenuItem>
           </Menu>
         </WrapPanel>

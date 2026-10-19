@@ -23,6 +23,8 @@ public partial class ProductStockWindow : Window
     private LotPage? _lotPage;
     private LedgerPage? _ledgerPage;
     private bool? _isInternal;
+    private int _lotLoadVersion;
+    private int _ledgerLoadVersion;
 
     public ProductStockWindow(InventoryService inventory, ProductListItem product, bool showLedger, bool loadOnShow = true)
     {
@@ -34,7 +36,16 @@ public partial class ProductStockWindow : Window
         ProductNameText.Text = product.Name;
         SkuText.Text = product.Sku;
         StockTabs.SelectedIndex = showLedger ? 1 : 0;
-        StockTabs.SelectionChanged += (_, _) => UpdatePageButtons();
+        StockTabs.SelectionChanged += (_, _) =>
+        {
+            UpdatePageButtons();
+            if (IsLoaded && StockTabs.SelectedIndex == 1 && _ledgerPage is null)
+                Dispatcher.BeginInvoke(new Action(async () =>
+                {
+                    try { await LoadLedgerAsync(null); }
+                    catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+                }));
+        };
         UpdatePageButtons();
         if (loadOnShow) Loaded += async (_, _) => await RefreshAsync();
     }
@@ -52,8 +63,10 @@ public partial class ProductStockWindow : Window
             }
             _lotPrevious.Clear();
             _ledgerPrevious.Clear();
-            await LoadLotsAsync(null);
-            await LoadLedgerAsync(null);
+            _lotPage = null;
+            _ledgerPage = null;
+            if (StockTabs.SelectedIndex == 0) await LoadLotsAsync(null);
+            else await LoadLedgerAsync(null);
             StatusText.Text = string.Empty;
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
@@ -61,20 +74,32 @@ public partial class ProductStockWindow : Window
 
     private async Task LoadLotsAsync(long? beforeId)
     {
-        LotPage page = await _inventory.GetLotPageAsync(_productId, beforeId: beforeId, limit: PageSize);
+        int version = ++_lotLoadVersion;
+        string filter = (ExpiryFilterBox.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Tag?.ToString() ?? "ALL";
+        LotPage page = await _inventory.GetLotPageAsync(_productId, beforeId: beforeId,
+            limit: PageSize, expiryFilter: filter);
+        if (version != _lotLoadVersion) return;
+        await Dispatcher.InvokeAsync(() =>
+        {
         _lotPage = page;
         _lotCursor = beforeId;
         LotsGrid.ItemsSource = page.Items;
         UpdatePageButtons();
+        });
     }
 
     private async Task LoadLedgerAsync(long? beforeId)
     {
+        int version = ++_ledgerLoadVersion;
         LedgerPage page = await _inventory.GetLedgerPageAsync(_productId, DateOnly.MinValue, DateOnly.MaxValue, beforeId, limit: PageSize);
+        if (version != _ledgerLoadVersion) return;
+        await Dispatcher.InvokeAsync(() =>
+        {
         _ledgerPage = page;
         _ledgerCursor = beforeId;
         LedgerGrid.ItemsSource = page.Items;
         UpdatePageButtons();
+        });
     }
 
     private void UpdatePageButtons()
@@ -85,7 +110,10 @@ public partial class ProductStockWindow : Window
         AddDirectLotButton.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
         ConsumeInternalButton.Visibility = lots && _isInternal == true ? Visibility.Visible : Visibility.Collapsed;
         CorrectLotButton.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
-        WriteOffButton.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
+        DamageLotButton.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
+        BulkDamageButton.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
+        DeleteZeroLotButton.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
+        ExpiryFilterBox.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
         OpenSourceButton.Visibility = lots ? Visibility.Collapsed : Visibility.Visible;
         PreviousLotButton.Visibility = NextLotButton.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
         PreviousLedgerButton.Visibility = NextLedgerButton.Visibility = lots ? Visibility.Collapsed : Visibility.Visible;
@@ -132,8 +160,13 @@ public partial class ProductStockWindow : Window
         if (CorrectLotButton is not null) CorrectLotButton.IsEnabled = LotsGrid.SelectedItem is LotItem;
         if (PrintLotButton is not null)
             PrintLotButton.IsEnabled = LotsGrid.SelectedItem is LotItem { IsActive: true } lot && lot.OnHand.Value > 0;
-        if (WriteOffButton is not null)
-            WriteOffButton.IsEnabled = LotsGrid.SelectedItem is LotItem { ExpiryBucketCode: "EXPIRED", IsActive: true } expired && expired.OnHand > Quantity.Zero;
+        if (DamageLotButton is not null)
+            DamageLotButton.IsEnabled = LotsGrid.SelectedItem is LotItem { OnHand: var amount } && amount > Quantity.Zero;
+        if (BulkDamageButton is not null)
+            BulkDamageButton.IsEnabled = LotsGrid.SelectedItems.OfType<LotItem>().Count() is > 1 and <= 50 &&
+                LotsGrid.SelectedItems.OfType<LotItem>().All(static lot => lot.OnHand > Quantity.Zero);
+        if (DeleteZeroLotButton is not null)
+            DeleteZeroLotButton.IsEnabled = LotsGrid.SelectedItems.OfType<LotItem>().Count() is > 0 and <= 50;
         if (ConsumeInternalButton is not null)
             ConsumeInternalButton.IsEnabled = _isInternal == true &&
                 LotsGrid.SelectedItem is LotItem { IsActive: true } chosen && chosen.OnHand > Quantity.Zero;
@@ -186,19 +219,58 @@ public partial class ProductStockWindow : Window
         if (IsLoaded) await RefreshAsync();
     }
 
-    private async void WriteOff_OnClick(object sender, RoutedEventArgs e)
+    private async void DamageLot_OnClick(object sender, RoutedEventArgs e)
     {
-        if (LotsGrid.SelectedItem is not LotItem { ExpiryBucketCode: "EXPIRED", IsActive: true } lot) return;
-        if (MessageBox.Show(TranslationSource.Instance.Format("Stock_WriteOffConfirm", lot.LotCode, lot.OnHand),
-            TranslationSource.Instance["Stock_WriteOffExpired"], MessageBoxButton.YesNo,
-            MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        if (LotsGrid.SelectedItem is not LotItem lot || lot.OnHand <= Quantity.Zero) return;
+        IServiceProvider services = ((App)Application.Current).Services;
+        if (new LotDamageWindow(services.GetRequiredService<MoneyOutService>(),
+            services.GetRequiredService<IClock>(), lot) { Owner = this }.ShowDialog() == true)
+            await RefreshAsync();
+    }
+
+    private async void BulkDamage_OnClick(object sender, RoutedEventArgs e)
+    {
+        LotItem[] lots = LotsGrid.SelectedItems.OfType<LotItem>().ToArray();
+        if (lots.Length is < 2 or > 50 || lots.Any(static lot => lot.OnHand <= Quantity.Zero)) return;
+        IServiceProvider services = ((App)Application.Current).Services;
+        if (new LotBulkDamageWindow(services.GetRequiredService<MoneyOutService>(),
+            services.GetRequiredService<IClock>(), lots) { Owner = this }.ShowDialog() == true)
+            await RefreshAsync();
+    }
+
+    private async void DeleteZeroLot_OnClick(object sender, RoutedEventArgs e)
+    {
+        LotItem[] selected = LotsGrid.SelectedItems.OfType<LotItem>().ToArray();
+        if (selected.Length is < 1 or > 50) return;
         try
         {
-            IServiceProvider services = ((App)Application.Current).Services;
-            await services.GetRequiredService<MoneyOutService>().WriteOffExpiredAsync([lot.Id],
-                services.GetRequiredService<IClock>().BusinessDate, OperationGuard.NewId());
+            IReadOnlyList<LotDeletionPreview> previews = await _inventory.PreviewDeleteZeroLotsAsync(
+                selected.Select(static lot => lot.Id).ToArray());
+            long[] eligible = previews.Where(static preview => preview.CanDelete)
+                .Select(static preview => preview.LotId).ToArray();
+            if (eligible.Length == 0)
+            {
+                StatusText.Text = previews.Count == 1
+                    ? TranslationSource.Instance[previews[0].BlockReason!]
+                    : TranslationSource.Instance["Stock_DeleteNoneEligible"];
+                return;
+            }
+            if (MessageBox.Show(TranslationSource.Instance.Format("Stock_DeleteSelectedPreview",
+                    selected.Length, eligible.Length, selected.Length - eligible.Length),
+                TranslationSource.Instance["Stock_DeleteZero"],
+                MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+            await _inventory.DeleteZeroLotsAsync(selected.Where(lot => eligible.Contains(lot.Id))
+                .Select(static lot => new LotDeletionRequest(lot.Id, lot.DetailVersion)).ToArray());
             await RefreshAsync();
         }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async void ExpiryFilter_OnChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        _lotPrevious.Clear();
+        try { await LoadLotsAsync(null); }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 

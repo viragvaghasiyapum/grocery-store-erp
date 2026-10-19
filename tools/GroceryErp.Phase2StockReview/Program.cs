@@ -41,8 +41,8 @@ internal static class Program
                 {
                     using var version = check.CreateCommand();
                     version.CommandText = "PRAGMA user_version";
-                    if (Convert.ToInt64(version.ExecuteScalar(), CultureInfo.InvariantCulture) != 31)
-                        throw new InvalidOperationException("This launcher requires the isolated schema-31 sandbox.");
+                    if (Convert.ToInt64(version.ExecuteScalar(), CultureInfo.InvariantCulture) is not (31 or 32))
+                        throw new InvalidOperationException("This launcher requires an isolated direct-stock sandbox.");
                     using var marker = check.CreateCommand();
                     marker.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='direct_stock_sandbox'";
                     if (Convert.ToInt64(marker.ExecuteScalar(), CultureInfo.InvariantCulture) != 1)

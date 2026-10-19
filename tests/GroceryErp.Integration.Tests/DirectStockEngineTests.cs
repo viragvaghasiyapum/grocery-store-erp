@@ -405,7 +405,7 @@ public sealed class DirectStockEngineTests
             Engine.ReviewCount(tx, fixture.Lot, 1, 10000, 9000,
                 new DateOnly(2026, 10, 18), "Concurrent backup count", OperationGuard.NewId()), ct);
         BackupInfo created = await backupTask;
-        BackupService.Verify(created.Path, ct).SchemaVersion.ShouldBe(31);
+        BackupService.Verify(created.Path, ct).SchemaVersion.ShouldBe(32);
         await fixture.Database.WriteAsync(tx => Engine.CheckAll(tx).ShouldBeEmpty(), ct);
     }
 

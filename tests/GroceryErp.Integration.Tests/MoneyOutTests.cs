@@ -86,6 +86,48 @@ public sealed class MoneyOutTests
     }
 
     [Fact]
+    public async Task SelectedLotDamage_RechecksEveryQuantityAndCommitsAtomically()
+    {
+        using var fixture = new Fixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using var connection = fixture.Factory.Open();
+        var first = connection.QuerySingle<(long Quantity, long Version)>("""
+            SELECT qty_on_hand AS Quantity,detail_version AS Version FROM product_lot WHERE id=@id
+            """, new { id = fixture.LotId });
+        long product = connection.ExecuteScalar<long>("SELECT product_id FROM product_lot WHERE id=@id",
+            new { id = fixture.LotId });
+        long secondId = connection.ExecuteScalar<long>("""
+            INSERT INTO product_lot(product_id,lot_code,received_date,expiry_date,unit_cost,selling_price,qty_received)
+            VALUES (@product,'L-MONEY-2','2026-04-01','2027-09-01',50000,150000,5000) RETURNING id
+            """, new { product });
+        connection.Execute("""
+            INSERT INTO stock_movement(move_date,product_id,lot_id,type_code,qty,unit_cost)
+            VALUES ('2026-04-01',@product,@secondId,'OPENING',5000,50000)
+            """, new { product, secondId });
+        long secondVersion = connection.ExecuteScalar<long>(
+            "SELECT detail_version FROM product_lot WHERE id=@secondId", new { secondId });
+        BulkDamageInput[] lines =
+        [
+            new(fixture.LotId, first.Quantity, first.Version, new Quantity(2)),
+            new(secondId, 5_000, secondVersion, new Quantity(1)),
+        ];
+        BulkDamageInput[] invalid = [lines[0], lines[1] with { ExpectedOnHandScaled = 4_000 }];
+        await Should.ThrowAsync<DomainException>(() => fixture.MoneyOut.RecordBulkDamageAsync(
+            invalid, fixture.Today, "BROKEN", OperationGuard.NewId(), ct));
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM damage").ShouldBe(0);
+        string operation = OperationGuard.NewId();
+        IReadOnlyList<long> posted = await fixture.MoneyOut.RecordBulkDamageAsync(
+            lines, fixture.Today, "BROKEN", operation, ct);
+        posted.Count.ShouldBe(2);
+        (await fixture.MoneyOut.RecordBulkDamageAsync(lines, fixture.Today, "BROKEN", operation, ct))
+            .ShouldBe(posted);
+        connection.ExecuteScalar<long>("SELECT SUM(qty_on_hand) FROM product_lot WHERE product_id=@product",
+            new { product }).ShouldBe(12_000);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM damage WHERE bulk_operation_id=@operation",
+            new { operation }).ShouldBe(2);
+    }
+
+    [Fact]
     public async Task ExpiryArea_IncludesLocalNameAndExcludesBlockedLots()
     {
         using var fixture = new Fixture(expiry: new DateOnly(2026, 8, 1));

@@ -38,8 +38,8 @@
   <Grid Margin="16,12,16,12">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TextBlock FontSize="22" FontWeight="SemiBold" Text="{l:Tr MoneyOut_Title}" />
-    <TabControl x:Name="MoneyOutTabs" Grid.Row="1" Margin="0,8,0,0" SelectionChanged="Tabs_OnSelectionChanged">
-      <TabItem Header="{l:Tr MoneyOut_Expiry}">
+    <TabControl x:Name="MoneyOutTabs" Grid.Row="1" Margin="0,8,0,0" SelectedIndex="1" SelectionChanged="Tabs_OnSelectionChanged">
+      <TabItem Header="{l:Tr MoneyOut_Expiry}" Visibility="Collapsed">
         <DockPanel>
           <TabControl x:Name="ExpiryTabs" Margin="0,6,0,0" Template="{StaticResource ExpiryTabsTemplate}" SelectionChanged="ExpiryTabs_OnSelectionChanged">
             <TabControl.Tag>

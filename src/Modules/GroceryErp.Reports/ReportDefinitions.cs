@@ -2,6 +2,24 @@ namespace GroceryErp.Reports;
 
 internal static class ReportDefinitions
 {
+    public const string StockValueWithoutExpired = """
+        WITH available AS MATERIALIZED (
+          SELECT l.product_id,SUM(l.qty_on_hand) AS quantity,
+                 SUM(CAST(ROUND(l.qty_on_hand*l.unit_cost/1000.0) AS INTEGER)) AS cost_value,
+                 SUM(CAST(ROUND(l.qty_on_hand*l.selling_price/1000.0) AS INTEGER)) AS selling_value,
+                 SUM(CAST(ROUND(l.qty_on_hand*COALESCE(l.mrp,l.selling_price)/1000.0) AS INTEGER)) AS mrp_value
+          FROM product_lot l
+          WHERE l.qty_on_hand>0 AND (l.expiry_date IS NULL OR l.expiry_date>=@stockAsOf)
+          GROUP BY l.product_id
+        )
+        SELECT c.name AS Category,p.sku AS Sku,p.name AS Product,p.name_local AS LocalName,
+               t.quantity AS Quantity,t.cost_value AS CostValue,
+               t.selling_value AS SellingValue,t.mrp_value AS MrpValue
+        FROM available t JOIN product p ON p.id=t.product_id
+        JOIN category c ON c.id=p.category_id
+        ORDER BY c.name,p.name LIMIT @Limit
+        """;
+
     public const string CategorySalesFromDay = """
         WITH totals AS (
           SELECT category_id,

@@ -15,6 +15,9 @@ public sealed record DamageInput(
     long LotId, DateOnly Date, Quantity Quantity, string Reason,
     Money RecoveredAmount, string? Notes);
 
+public sealed record BulkDamageInput(long LotId, long ExpectedOnHandScaled,
+    long ExpectedDetailVersion, Quantity Quantity);
+
 public sealed record DamageItem(
     long Id, string DocumentNumber, DateOnly Date, string ProductName, string LotCode,
     Quantity Quantity, Money UnitCost, Money CostValue, Money RecoveredAmount, string Reason, string? Notes);

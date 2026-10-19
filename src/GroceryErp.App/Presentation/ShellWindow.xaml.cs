@@ -108,7 +108,7 @@ public partial class ShellWindow : FluentWindow
                     var alert = new ExpiryAlertWindow(count) { Owner = this };
                     alert.ShowDialog();
                     await settingsService.SaveAsync(new Dictionary<string, string> { ["expiry.last_popup_date"] = today });
-                    if (alert.ViewRequested) RootNavigation.Navigate(typeof(MoneyOutPage));
+                    if (alert.ViewRequested) RootNavigation.Navigate(typeof(ProductsPage));
                 }
             }
         };

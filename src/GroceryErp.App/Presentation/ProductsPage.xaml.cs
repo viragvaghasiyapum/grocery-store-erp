@@ -100,6 +100,13 @@ public partial class ProductsPage : Page
         if (IsLoaded) { ClearSelection(); await RefreshAsync(); }
     }
 
+    private async void ExpiryFilter_OnChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender == ExpiredFilter && ExpiredFilter.IsChecked) ExpiringFilter.IsChecked = false;
+        if (sender == ExpiringFilter && ExpiringFilter.IsChecked) ExpiredFilter.IsChecked = false;
+        if (IsLoaded) { ClearSelection(); await RefreshAsync(); }
+    }
+
     private async void MasterFilter_OnChanged(object sender, SelectionChangedEventArgs e)
     {
         if (IsLoaded && !_loadingMasters) { ClearSelection(); await RefreshAsync(); }
@@ -179,7 +186,12 @@ public partial class ProductsPage : Page
                 MissingLocalNameOnly: MissingLocalFilter.IsChecked == true,
                 IncludeArchived: ArchivedFilter.IsChecked == true,
                 LooseOnly: LooseFilter.IsChecked == true,
-                Limit: limit);
+                Limit: limit,
+                ExpiryFilter: ExpiredFilter.IsChecked ? "EXPIRED" :
+                    ExpiringFilter.IsChecked ? "EXPIRING" : "ALL",
+                ExpiryAsOf: Application.Current is App app
+                    ? app.Services.GetRequiredService<IClock>().BusinessDate
+                    : DateOnly.FromDateTime(DateTime.Today));
 
     private async void NextPage_OnClick(object sender, RoutedEventArgs e)
     {
@@ -333,11 +345,12 @@ public partial class ProductsPage : Page
     private async void BulkRemove_OnClick(object sender, RoutedEventArgs e)
     {
         if (_selectedProducts.Count == 0 || _selectedProducts.Values.Any(static active => !active)) return;
-        if (MessageBox.Show(TranslationSource.Instance.Format("Catalog_BulkRemoveConfirm", _selectedProducts.Count),
-            TranslationSource.Instance["Catalog_Title"], MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         try
         {
-            int changed = await _catalog.BulkRemoveAsync(_selectedProducts.Keys.ToArray());
+            CatalogBulkPreview preview = await _catalog.PreviewBulkAsync(_selectedProducts.Keys.ToArray(),
+                CatalogBulkAction.Archive);
+            if (!ConfirmBulkPreview(preview)) return;
+            int changed = await _catalog.BulkRemoveAsync(preview.EligibleIds);
             ClearSelection();
             await RefreshAsync();
             StatusText.Text = TranslationSource.Instance.Format("Catalog_BulkRemoved", changed);
@@ -350,12 +363,29 @@ public partial class ProductsPage : Page
         if (_selectedProducts.Count == 0 || _selectedProducts.Values.Any(static active => active)) return;
         try
         {
-            int changed = await _catalog.BulkRestoreAsync(_selectedProducts.Keys.ToArray());
+            CatalogBulkPreview preview = await _catalog.PreviewBulkAsync(_selectedProducts.Keys.ToArray(),
+                CatalogBulkAction.Restore);
+            if (!ConfirmBulkPreview(preview)) return;
+            int changed = await _catalog.BulkRestoreAsync(preview.EligibleIds);
             ClearSelection();
             await RefreshAsync();
             StatusText.Text = TranslationSource.Instance.Format("Catalog_BulkRestored", changed);
         }
         catch (Exception exception) { ShowError(exception); }
+    }
+
+    private bool ConfirmBulkPreview(CatalogBulkPreview preview)
+    {
+        if (preview.EligibleIds.Count == 0)
+        {
+            StatusText.Text = TranslationSource.Instance["Catalog_BulkNoneEligible"];
+            return false;
+        }
+        return MessageBox.Show(TranslationSource.Instance.Format("Catalog_BulkPreview",
+                preview.Selected, preview.EligibleIds.Count, preview.Skipped,
+                preview.AffectedQuantity, preview.AffectedCost),
+            TranslationSource.Instance["Catalog_BulkActions"], MessageBoxButton.YesNo,
+            MessageBoxImage.Question) == MessageBoxResult.Yes;
     }
 
     private void ProductsGrid_OnDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -456,11 +486,16 @@ public partial class ProductsPage : Page
         OpenLabels(ids);
     }
 
-    private void BulkLabels_OnClick(object sender, RoutedEventArgs e)
+    private async void BulkLabels_OnClick(object sender, RoutedEventArgs e)
     {
         long[] ids = SelectedProductIds();
         if (ids.Length < 2) return;
-        OpenLabels(ids);
+        try
+        {
+            CatalogBulkPreview preview = await _catalog.PreviewBulkAsync(ids, CatalogBulkAction.Labels);
+            if (ConfirmBulkPreview(preview)) OpenLabels(preview.EligibleIds.ToArray());
+        }
+        catch (Exception exception) { ShowError(exception); }
     }
 
     private void OpenLabels(long[] ids)

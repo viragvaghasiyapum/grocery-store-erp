@@ -10,6 +10,8 @@
    <StackPanel>
     <WrapPanel>
      <StackPanel Margin="0,0,16,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_Report}"/><ComboBox x:Name="ReportPicker" Width="220" SelectionChanged="ReportPicker_OnSelectionChanged"/></StackPanel>
+     <CheckBox x:Name="IncludeExpiredCheck" Visibility="Collapsed" IsChecked="True" Margin="0,18,12,8"
+               Click="IncludeExpired_OnClick" Content="{l:Tr Reports_IncludeExpired}"/>
      <StackPanel Margin="0,0,16,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_Period}"/><ComboBox x:Name="PeriodPicker" Width="140" SelectionChanged="PeriodPicker_OnSelectionChanged"/></StackPanel>
      <StackPanel Margin="0,0,16,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_From}"/><DatePicker x:Name="FromPicker" Width="140" Language="en-IN" SelectedDateFormat="Short" SelectedDateChanged="DatePicker_OnSelectedDateChanged"/></StackPanel>
      <StackPanel Margin="0,0,16,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_To}"/><DatePicker x:Name="ToPicker" Width="140" Language="en-IN" SelectedDateFormat="Short" SelectedDateChanged="DatePicker_OnSelectedDateChanged"/></StackPanel>

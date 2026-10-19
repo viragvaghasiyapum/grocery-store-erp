@@ -7,7 +7,7 @@ namespace GroceryErp.Data.Services;
 public enum OpType
 {
     SaleComplete, SaleVoid, SaleReturn, PurchasePost, PurchaseCancel, VendorPayment, VendorReturn,
-    Damage, DamageBulk, DamageCorrection, Expense, SalaryRun, SalaryCorrection, StockCountPost, StockAdjustment, PriceChange,
+    Damage, DamageBulk, DamageSelection, DamageCorrection, Expense, SalaryRun, SalaryCorrection, StockCountPost, StockAdjustment, PriceChange,
     AssetDispose, OpeningStockImport, ProductImport,
     DirectPurchaseLot, DirectOriginLot, DirectSaleComplete, DirectSaleVoid,
     DirectCustomerReturn, DirectDamage, DirectInternalUse, DirectVendorReturn,

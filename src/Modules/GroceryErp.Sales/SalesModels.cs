@@ -127,6 +127,14 @@ public sealed record SaleHistoryActivity(IReadOnlyList<SaleReturnHistoryItem> Re
     IReadOnlyList<SaleMovementHistoryItem> Movements);
 
 public sealed record ReturnLineInput(long SaleLineId, Quantity Quantity, bool Resellable);
+
+public sealed record ReturnRecreationDraft(
+    long SaleLineId, string SuggestedSku, string ProductName, string? ProductNameLocal,
+    long? CategoryId, string? CategoryName, long? UnitId, string? UnitCode,
+    long? TaxRateId, Percent TaxRate, string? HsnCode, bool PriceIncludesTax,
+    bool? TrackExpiry, bool? IsLoose, string? ProductClass,
+    string? BatchNumber, DateOnly? ExpiryDate, Money UnitCost, Money SellingPrice,
+    Money? Mrp, IReadOnlyList<string> MissingFields);
 public sealed record CreateReturnCommand(
     long SaleId,
     DateOnly ReturnDate,

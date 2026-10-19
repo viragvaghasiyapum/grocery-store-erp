@@ -39,5 +39,6 @@
     <EmbeddedResource Include="../../028_purchase_invoice_snapshots.sql" Link="db/028_purchase_invoice_snapshots.sql" />
     <EmbeddedResource Include="../../029_historical_snapshots.sql" Link="db/029_historical_snapshots.sql" />
     <EmbeddedResource Include="../../030_purchase_workflows.sql" Link="db/030_purchase_workflows.sql" />
+    <EmbeddedResource Include="../../031_catalog_lot_workflows.sql" Link="db/031_catalog_lot_workflows.sql" />
   </ItemGroup>
 </Project>

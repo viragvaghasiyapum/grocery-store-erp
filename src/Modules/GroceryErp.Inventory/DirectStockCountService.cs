@@ -16,7 +16,7 @@ public sealed record DirectCountLotPage(IReadOnlyList<DirectCountLot> Items, boo
 public sealed class DirectStockCountService(DbExecutor database, IDirectStockEngine engine, PeriodGuard periods)
 {
     public Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default) =>
-        database.ReadAsync(connection => connection.ExecuteScalar<long>("PRAGMA user_version") == 31 &&
+        database.ReadAsync(connection => connection.ExecuteScalar<long>("PRAGMA user_version") is 31 or 32 &&
             connection.ExecuteScalar<long>("""
                 SELECT COUNT(*) FROM sqlite_master
                 WHERE type='table' AND name='direct_stock_sandbox'
@@ -33,7 +33,7 @@ public sealed class DirectStockCountService(DbExecutor database, IDirectStockEng
         long[] ids = productIds.Distinct().ToArray();
         return database.ReadAsync(connection =>
         {
-            if (connection.ExecuteScalar<long>("PRAGMA user_version") != 31)
+            if (connection.ExecuteScalar<long>("PRAGMA user_version") is not (31 or 32))
                 throw new InvalidOperationException("Direct stock is inactive on this database.");
             long ceiling = maxLotId ?? connection.ExecuteScalar<long>("SELECT COALESCE(MAX(id),0) FROM product_lot");
             List<DirectCountLot> rows = connection.Query<DirectCountLot>("""

@@ -231,6 +231,64 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
     public Task<int> BulkChangeTaxRateAsync(IReadOnlyCollection<long> productIds, long taxRateId, CancellationToken cancellationToken = default) =>
         BulkChangeAsync(productIds, "tax_rate_id", taxRateId, "BULK_TAX_RATE", cancellationToken);
 
+    public Task<CatalogBulkPreview> PreviewBulkAsync(IReadOnlyCollection<long> productIds,
+        CatalogBulkAction action, string? targetClass = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(productIds);
+        long[] ids = productIds.Where(static id => id > 0).Distinct().ToArray();
+        if (ids.Length is < 1 or > 200)
+            throw new DomainException(ErrorCode.Validation, "Select 1 to 200 products per bulk action.");
+        if (action == CatalogBulkAction.Classification && targetClass is not ("SALEABLE" or "INTERNAL"))
+            throw new DomainException(ErrorCode.Validation, "Invalid product classification.");
+        return database.ReadAsync(connection =>
+        {
+            List<BulkPreviewRow> rows = connection.Query<BulkPreviewRow>("""
+                SELECT p.id AS Id,p.is_active AS IsActive,p.product_class AS ProductClass,
+                       COALESCE(t.quantity,0) AS Quantity,COALESCE(t.cost_value,0) AS CostValue
+                FROM product p LEFT JOIN product_stock_total t ON t.product_id=p.id
+                WHERE p.id IN @ids
+                """, new { ids }).AsList();
+            BulkPreviewRow[] eligible = rows.Where(row => action switch
+            {
+                CatalogBulkAction.Archive or CatalogBulkAction.Labels => row.IsActive,
+                CatalogBulkAction.Restore => !row.IsActive,
+                CatalogBulkAction.Classification => row.ProductClass == targetClass || row.Quantity == 0,
+                _ => true,
+            }).ToArray();
+            return new CatalogBulkPreview(ids.Length, eligible.Select(static row => row.Id).ToArray(),
+                ids.Length - eligible.Length,
+                Quantity.FromScaled(eligible.Sum(static row => row.Quantity)),
+                Money.FromScaled(eligible.Sum(static row => row.CostValue)));
+        }, cancellationToken);
+    }
+
+    public Task<int> BulkChangeClassificationAsync(IReadOnlyCollection<long> productIds, string productClass,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(productIds);
+        if (productClass is not ("SALEABLE" or "INTERNAL"))
+            throw new DomainException(ErrorCode.Validation, "Invalid product classification.");
+        long[] ids = productIds.Where(static id => id > 0).Distinct().ToArray();
+        if (ids.Length is < 1 or > 200)
+            throw new DomainException(ErrorCode.Validation, "Select 1 to 200 products per bulk action.");
+        return database.WriteAsync(tx =>
+        {
+            long invalid = tx.Connection.ExecuteScalar<long>("""
+                SELECT COUNT(*) FROM product p WHERE p.id IN @ids AND p.product_class<>@productClass
+                  AND EXISTS(SELECT 1 FROM product_lot l WHERE l.product_id=p.id AND l.qty_on_hand<>0)
+                """, new { ids, productClass }, tx.Transaction);
+            if (invalid != 0)
+                throw new DomainException(ErrorCode.Validation,
+                    "Products with stock cannot change classification. Consume or return stock first.");
+            int changed = tx.Connection.Execute("""
+                UPDATE product SET product_class=@productClass,updated_at=datetime('now','localtime')
+                WHERE id IN @ids AND product_class<>@productClass
+                """, new { ids, productClass }, tx.Transaction);
+            audit.Write(tx, "product", 0, "BULK_CLASSIFICATION", new { ids, productClass, changed });
+            return changed;
+        }, cancellationToken);
+    }
+
     public Task<long> CreateAsync(ProductInput input, CancellationToken cancellationToken = default)
     {
         ValidatedProduct product = Validate(input);
@@ -353,6 +411,12 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             long? currentUom = transaction.Connection.QuerySingleOrDefault<long?>(
                 "SELECT uom_id FROM product WHERE id = @id", new { id }, transaction.Transaction);
             if (currentUom is null) throw new DomainException(ErrorCode.NotFound, "product", id);
+            if (transaction.Connection.ExecuteScalar<long>("""
+                SELECT EXISTS(SELECT 1 FROM product p WHERE p.id=@id AND p.product_class<>@productClass
+                    AND EXISTS(SELECT 1 FROM product_lot l WHERE l.product_id=p.id AND l.qty_on_hand<>0))
+                """, new { id, productClass = product.ProductClass }, transaction.Transaction) != 0)
+                throw new DomainException(ErrorCode.Validation,
+                    "Products with stock cannot change classification. Consume or return stock first.");
 
             transaction.Connection.Execute("""
                 UPDATE product SET
@@ -453,7 +517,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
     {
         ArgumentNullException.ThrowIfNull(productIds);
         long[] ids = productIds.Where(static id => id > 0).Distinct().ToArray();
-        if (ids.Length == 0) throw new DomainException(ErrorCode.Validation, "Select at least one product.");
+        if (ids.Length is < 1 or > 200) throw new DomainException(ErrorCode.Validation, "Select 1 to 200 products per bulk action.");
         return database.WriteAsync(transaction =>
         {
             int count = 0;
@@ -491,7 +555,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
     {
         ArgumentNullException.ThrowIfNull(productIds);
         long[] ids = productIds.Where(static id => id > 0).Distinct().ToArray();
-        if (ids.Length == 0) throw new DomainException(ErrorCode.Validation, "Select at least one product.");
+        if (ids.Length is < 1 or > 200) throw new DomainException(ErrorCode.Validation, "Select 1 to 200 products per bulk action.");
         return database.WriteAsync(transaction =>
         {
             foreach (long id in ids)
@@ -556,6 +620,8 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
         if (afterName is null != (afterId is null))
             throw new ArgumentException("Both product cursor fields are required.");
         int limit = Math.Clamp(filter.Limit, 1, 200);
+        if (filter.ExpiryFilter is not ("ALL" or "EXPIRED" or "EXPIRING"))
+            throw new DomainException(ErrorCode.Validation, "Invalid expiry filter.");
         string query = CatalogText.Optional(filter.Query, 120) ?? string.Empty;
         return database.ReadAsync(connection =>
         {
@@ -573,6 +639,9 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             parameters.Add("afterName", afterName);
             parameters.Add("afterId", afterId);
             parameters.Add("limit", limit + 1);
+            DateOnly asOf = filter.ExpiryAsOf ?? DateOnly.FromDateTime(DateTime.Today);
+            parameters.Add("expiryToday", asOf.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+            parameters.Add("expirySoon", asOf.AddDays(30).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
             if (query.Length >= 3 && query.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(static term => term.Length >= 3))
             {
                 string match = string.Join(' ', query.Split(' ', StringSplitOptions.RemoveEmptyEntries)
@@ -580,7 +649,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                 parameters.Add("match", match);
                 bool broadFts = filter.CategoryId is null && filter.BrandId is null &&
                     !filter.LowStockOnly && !filter.NoBarcodeOnly &&
-                    !filter.MissingLocalNameOnly && !filter.LooseOnly;
+                    !filter.MissingLocalNameOnly && !filter.LooseOnly && filter.ExpiryFilter == "ALL";
                 long[]? pageIds = null;
                 if (broadFts)
                 {
@@ -652,7 +721,8 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
 
             bool broadLowStock = filter.LowStockOnly && query.Length == 0 &&
                 filter.CategoryId is null && filter.BrandId is null &&
-                !filter.NoBarcodeOnly && !filter.MissingLocalNameOnly && !filter.LooseOnly;
+                !filter.NoBarcodeOnly && !filter.MissingLocalNameOnly && !filter.LooseOnly &&
+                filter.ExpiryFilter == "ALL";
             bool nameOrderedLowStock = broadLowStock && connection.ExecuteScalar<long>(
                 "SELECT COUNT(*) FROM product_stock_total WHERE is_low=1") > 500;
             string productIndex = nameOrderedLowStock ? "INDEXED BY ix_product_name" : string.Empty;
@@ -661,6 +731,12 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                   " product_stock_total stock ON stock.product_id=p.id AND stock.is_low=1"
                 : string.Empty;
             string lowStockFilter = string.Empty;
+            string expiryCondition = filter.ExpiryFilter switch
+            {
+                "EXPIRED" => "AND EXISTS(SELECT 1 FROM product_lot el WHERE el.product_id=p.id AND el.qty_on_hand>0 AND el.expiry_date<@expiryToday)",
+                "EXPIRING" => "AND EXISTS(SELECT 1 FROM product_lot el WHERE el.product_id=p.id AND el.qty_on_hand>0 AND el.expiry_date>=@expiryToday AND el.expiry_date<=@expirySoon)",
+                _ => string.Empty,
+            };
 
             string sql = $$"""
                 WITH visible AS MATERIALIZED (
@@ -669,6 +745,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                       AND (@SaleableOnly=0 OR p.product_class='SALEABLE')
                       AND (@CategoryId IS NULL OR p.category_id=@CategoryId)
                       AND (@BrandId IS NULL OR p.brand_id=@BrandId)
+                      {{expiryCondition}}
                       {{lowStockFilter}}
                       AND (@NoBarcodeOnly=0 OR NOT EXISTS(SELECT 1 FROM product_barcode pb WHERE pb.product_id=p.id AND pb.lot_id IS NULL))
                       AND (@MissingLocalNameOnly=0 OR p.name_local IS NULL OR trim(p.name_local)='')
@@ -770,7 +847,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
     {
         ArgumentNullException.ThrowIfNull(productIds);
         long[] ids = productIds.Where(static id => id > 0).Distinct().ToArray();
-        if (ids.Length == 0) throw new DomainException(ErrorCode.Validation, "Select at least one product.");
+        if (ids.Length is < 1 or > 200) throw new DomainException(ErrorCode.Validation, "Select 1 to 200 products per bulk action.");
         if (column is not ("category_id" or "tax_rate_id")) throw new ArgumentOutOfRangeException(nameof(column));
         return database.WriteAsync(transaction =>
         {
@@ -883,5 +960,14 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
         public long? DefaultMrp { get; init; }
         public bool IsActive { get; init; }
         public string ProductClass { get; init; } = "SALEABLE";
+    }
+
+    private sealed class BulkPreviewRow
+    {
+        public long Id { get; init; }
+        public bool IsActive { get; init; }
+        public string ProductClass { get; init; } = "SALEABLE";
+        public long Quantity { get; init; }
+        public long CostValue { get; init; }
     }
 }

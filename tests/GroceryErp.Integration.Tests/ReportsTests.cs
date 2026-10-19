@@ -15,6 +15,31 @@ namespace GroceryErp.Integration.Tests;
 public sealed class ReportsTests
 {
     [Fact]
+    public async Task CurrentStockReport_CanExcludeExpiredLotsWithoutChangingStoredTotals()
+    {
+        using var fixture = new ReportFixture();
+        fixture.SeedGoldenScenario();
+        using (var connection = fixture.Factory.Open())
+            connection.Execute("""
+                INSERT INTO product_lot(product_id,lot_code,received_date,expiry_date,
+                    unit_cost,selling_price,qty_received,qty_on_hand)
+                VALUES (1,'L-EXPIRED','2026-08-01','2026-09-01',100000,120000,2000,2000),
+                       (1,'L-FRESH','2026-09-01','2026-12-01',100000,120000,3000,3000)
+                """);
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        TabularReport all = await fixture.Reports.GetReportAsync(ReportKind.StockValue,
+            new ReportFilter(IncludeExpired: true), ct);
+        TabularReport current = await fixture.Reports.GetReportAsync(ReportKind.StockValue,
+            new ReportFilter(IncludeExpired: false), ct);
+        ((long)all.Rows.Single().Values["Quantity"]!).ShouldBe(6000);
+        ((long)current.Rows.Single().Values["Quantity"]!).ShouldBe(4000);
+        string csv = Path.Combine(fixture.Root, "current-stock.csv");
+        (await fixture.Reports.ExportCsvAsync(ReportKind.StockValue,
+            new ReportFilter(IncludeExpired: false), csv, cancellationToken: ct)).ShouldBe(1);
+        File.ReadLines(csv).Last().ShouldContain(",4,");
+    }
+
+    [Fact]
     public async Task LowStockDailyQuantity_TracksCompletedSalesAndVoids()
     {
         using var fixture = new ReportFixture();

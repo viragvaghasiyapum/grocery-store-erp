@@ -16,7 +16,7 @@ using GroceryErp.Inventory.Contracts;
 
 namespace GroceryErp.Sales;
 
-public sealed class SalesService(
+public sealed partial class SalesService(
     DbExecutor database,
     IStockLedger stockLedger,
     DocNumberService documentNumbers,
@@ -531,12 +531,16 @@ public sealed class SalesService(
                 UPDATE sale_line SET
                     product_sku_snapshot=p.sku,uom_snapshot=u.code,
                     product_class_snapshot=p.product_class,lot_code_snapshot=l.lot_code,
+                    category_id_snapshot=p.category_id,category_name_snapshot=c.name,
+                    uom_id_snapshot=p.uom_id,tax_rate_id_snapshot=p.tax_rate_id,
+                    track_expiry_snapshot=p.track_expiry,is_loose_snapshot=p.is_loose,
                     batch_no_snapshot=l.batch_no,expiry_date_snapshot=l.expiry_date,
                     lot_version_snapshot=l.detail_version,
                     tax_mode_snapshot=@taxMode,snapshot_provenance='AT_COMPLETION',
                     legacy_unknown_fields=NULL
                 FROM product_lot l JOIN product p ON p.id=l.product_id
                 JOIN uom u ON u.id=p.uom_id
+                JOIN category c ON c.id=p.category_id
                 WHERE sale_line.sale_id=@saleId AND l.id=sale_line.lot_id
                 """, new { saleId = command.SaleId, taxMode = settings.Current.TaxMode }, transaction.Transaction);
             Dictionary<long, long>? directVersions = directStock is null ? null : transaction.Connection
@@ -669,6 +673,8 @@ public sealed class SalesService(
                     refund_amount,cost_amount,resellable,product_id_snapshot,lot_id_snapshot,
                     product_sku_snapshot,product_name_snapshot,product_name_local_snapshot,uom_snapshot,
                     product_class_snapshot,lot_code_snapshot,batch_no_snapshot,expiry_date_snapshot,
+                    category_id_snapshot,category_name_snapshot,uom_id_snapshot,
+                    tax_rate_id_snapshot,track_expiry_snapshot,is_loose_snapshot,
                     lot_version_snapshot,tax_mode_snapshot,price_includes_tax_snapshot,tax_rate_pct_snapshot,
                     mrp_snapshot,unit_price_snapshot,unit_cost_snapshot,discount_snapshot,
                     snapshot_provenance,legacy_unknown_fields)
@@ -676,6 +682,8 @@ public sealed class SalesService(
                     sl.product_id,sl.lot_id,sl.product_sku_snapshot,sl.product_name,
                     sl.product_name_local,sl.uom_snapshot,sl.product_class_snapshot,
                     sl.lot_code_snapshot,sl.batch_no_snapshot,sl.expiry_date_snapshot,
+                    sl.category_id_snapshot,sl.category_name_snapshot,sl.uom_id_snapshot,
+                    sl.tax_rate_id_snapshot,sl.track_expiry_snapshot,sl.is_loose_snapshot,
                     sl.lot_version_snapshot,sl.tax_mode_snapshot,sl.price_includes_tax,
                     sl.tax_rate_pct,sl.mrp,sl.unit_price,sl.unit_cost,
                     @discount,
