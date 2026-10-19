@@ -1,5 +1,7 @@
 # Grocery ERP v1 release checklist
 
+> **Revised release gate (18 October 2026):** [revised-implementation-plan.md](../revised-implementation-plan.md) is authoritative for the revised migration sequence and acceptance gates; the [Phase 0 baseline and rollback](phase0/baseline-and-rollback.md) supplies evidence and a rehearsal procedure. Before schema-29+ rollout, verify a pre-upgrade backup, free disk for backup plus rebuilt store plus WAL and margin, newer-schema refusal by old binaries, full source/lot and annual-snapshot parity, cold launch, sale/return, verified backup and restore. The checklist below describes the existing schema-28 release and must be updated to the implemented feature set before a later release. Stock Ledger and the separate Expiry screen are scheduled for removal only after their replacement workflows pass. Hardware, native Gujarati and operator pilot gates still need human sign-off.
+
 Record the operator, date, machine and evidence beside every item. Do not release with an unchecked
 software item. Hardware, language and pilot items require a named human sign-off.
 
@@ -25,6 +27,11 @@ release run and evidence before sign-off.
 - [ ] Backup created before update; post-update migrations, integrity checks and rollback verified
 
 ## Localization and UI
+
+- [ ] Revised table pages at 1366×768 and 100/125/150% scaling: compact title/actions, search and primary filters, grid fills remaining height, pagination/status fixed below; no nested page scroll disabling row recycling
+- [ ] Forms and purchase line type tabs: only relevant fields shown, readable inline errors, primary action always visible; keyboard order and Gujarati text fit without clipping
+- [ ] Search/filter: bounded server page, cancellation of stale requests, empty/busy/error state; bulk action shows selected count, preview, conflict and partial-result handling
+- [ ] Paired full-size WPF navigation establishes stable working set and meets the agreed target-PC memory gate; Phase 0's current-build journeys peaked at 529–548 MiB versus 517–520 MiB on the pre-change build, so this gate remains open
 
 - [ ] Operator walkthrough on the target PC: create a product and vendor, post a purchase,
       scan and complete a sale, view the dashboard, use Gujarati, lock/unlock, and close with a backup

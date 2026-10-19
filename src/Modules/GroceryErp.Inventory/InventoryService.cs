@@ -215,9 +215,11 @@ public sealed class InventoryService(
               SELECT m.id AS Id,m.moved_at AS MovedAt,m.move_date AS MoveDate,
                      m.type_code AS TypeCode,m.qty AS Qty,m.unit_cost AS UnitCost,
                      m.ref_type AS RefType,m.ref_id AS RefId,m.note AS Note,
-                     l.lot_code AS LotCode,
+                     COALESCE(l.lot_code,o.lot_code_snapshot,pl.lot_code_snapshot,'Legacy unknown') AS LotCode,
                      SUM(m.qty) OVER (PARTITION BY m.lot_id ORDER BY m.id) AS LotBalance
-              FROM stock_movement m JOIN product_lot l ON l.id=m.lot_id
+              FROM stock_movement m LEFT JOIN product_lot l ON l.id=m.lot_id
+              LEFT JOIN direct_stock_origin o ON o.lot_id=m.lot_id
+              LEFT JOIN purchase_line pl ON pl.lot_id_snapshot=m.lot_id
               WHERE m.product_id=@productId
             )
             SELECT Id,MovedAt,MoveDate,TypeCode,Qty,UnitCost,RefType,RefId,Note,
@@ -247,10 +249,16 @@ public sealed class InventoryService(
                 SELECT m.id AS Id,m.moved_at AS MovedAt,m.move_date AS MoveDate,
                        m.type_code AS TypeCode,m.qty AS Qty,m.unit_cost AS UnitCost,
                        m.ref_type AS RefType,m.ref_id AS RefId,m.note AS Note,
-                       l.lot_code AS LotCode,
-                       l.qty_on_hand-COALESCE((SELECT SUM(b.qty) FROM stock_movement b
-                                 WHERE b.lot_id=m.lot_id AND b.id>m.id),0) AS LotBalance
-                FROM page m JOIN product_lot l ON l.id=m.lot_id ORDER BY m.id DESC
+                       COALESCE(l.lot_code,o.lot_code_snapshot,pl.lot_code_snapshot,'Legacy unknown') AS LotCode,
+                       COALESCE(
+                         l.qty_on_hand-COALESCE((SELECT SUM(b.qty) FROM stock_movement b
+                                   WHERE b.lot_id=m.lot_id AND b.id>m.id),0),
+                         (SELECT COALESCE(SUM(b.qty),0) FROM stock_movement b
+                          WHERE b.lot_id=m.lot_id AND b.id<=m.id)) AS LotBalance
+                FROM page m LEFT JOIN product_lot l ON l.id=m.lot_id
+                LEFT JOIN direct_stock_origin o ON o.lot_id=m.lot_id
+                LEFT JOIN purchase_line pl ON pl.lot_id_snapshot=m.lot_id
+                ORDER BY m.id DESC
                 """, new { productId, from, to, beforeId, type, take = limit + 1 })
                 .Select(static row => row.ToModel()).ToList();
             bool hasMore = rows.Count > limit;
@@ -275,17 +283,17 @@ public sealed class InventoryService(
             case "purchase_line" when movement.RefId is { } purchaseLineId:
                 type = "Purchase";
                 header = connection.QuerySingleOrDefault<SourceHeaderRow>("""
-                    SELECT po.doc_no AS Number,po.received_date AS Date,v.name AS Party,
+                    SELECT po.doc_no AS Number,po.received_date AS Date,
+                           COALESCE(po.vendor_name_snapshot,'Legacy unknown') AS Party,
                            po.status AS Status,po.notes AS Notes
                     FROM purchase_line pl JOIN purchase po ON po.id=pl.purchase_id
-                    JOIN vendor v ON v.id=po.vendor_id WHERE pl.id=@purchaseLineId
+                    WHERE pl.id=@purchaseLineId
                     """, new { purchaseLineId });
                 lines = connection.Query<SourceLineRow>("""
-                    SELECT p.name AS ProductName,COALESCE(l.lot_code,'') AS LotCode,
+                    SELECT COALESCE(pl.product_name_snapshot,'Legacy unknown') AS ProductName,
+                           COALESCE(pl.lot_code_snapshot,'Legacy unknown') AS LotCode,
                            pl.qty+pl.free_qty AS Quantity,pl.line_total AS Amount
                     FROM purchase_line source JOIN purchase_line pl ON pl.purchase_id=source.purchase_id
-                    JOIN product p ON p.id=pl.product_id
-                    LEFT JOIN product_lot l ON l.purchase_line_id=pl.id
                     WHERE source.id=@purchaseLineId ORDER BY pl.line_no
                     """, new { purchaseLineId }).ToArray();
                 break;
@@ -298,10 +306,11 @@ public sealed class InventoryService(
                     LEFT JOIN customer c ON c.id=s.customer_id WHERE sl.id=@saleLineId
                     """, new { saleLineId });
                 lines = connection.Query<SourceLineRow>("""
-                    SELECT sl.product_name AS ProductName,l.lot_code AS LotCode,
+                    SELECT sl.product_name AS ProductName,
+                           COALESCE(sl.lot_code_snapshot,'Legacy unknown') AS LotCode,
                            sl.qty AS Quantity,sl.line_total AS Amount
                     FROM sale_line source JOIN sale_line sl ON sl.sale_id=source.sale_id
-                    JOIN product_lot l ON l.id=sl.lot_id WHERE source.id=@saleLineId
+                    WHERE source.id=@saleLineId
                     ORDER BY sl.line_no
                     """, new { saleLineId }).ToArray();
                 break;
@@ -313,25 +322,28 @@ public sealed class InventoryService(
                     FROM sale_return r JOIN sale s ON s.id=r.sale_id WHERE r.id=@returnId
                     """, new { returnId });
                 lines = connection.Query<SourceLineRow>("""
-                    SELECT sl.product_name AS ProductName,l.lot_code AS LotCode,
+                    SELECT COALESCE(rl.product_name_snapshot,'Legacy unknown') AS ProductName,
+                           COALESCE(rl.lot_code_snapshot,'Legacy unknown') AS LotCode,
                            rl.qty AS Quantity,rl.refund_amount AS Amount
-                    FROM sale_return_line rl JOIN sale_line sl ON sl.id=rl.sale_line_id
-                    JOIN product_lot l ON l.id=sl.lot_id
+                    FROM sale_return_line rl
                     WHERE rl.sale_return_id=@returnId ORDER BY rl.id
                     """, new { returnId }).ToArray();
                 break;
             case "vendor_return" when movement.RefId is { } vendorReturnId:
                 type = "VendorReturn";
                 header = connection.QuerySingleOrDefault<SourceHeaderRow>("""
-                    SELECT vr.doc_no AS Number,vr.return_date AS Date,v.name AS Party,
+                    SELECT vr.doc_no AS Number,vr.return_date AS Date,
+                           COALESCE(po.vendor_name_snapshot,'Legacy unknown') AS Party,
                            vr.vendor_credit_no AS Status,vr.reason AS Notes
-                    FROM vendor_return vr JOIN vendor v ON v.id=vr.vendor_id WHERE vr.id=@vendorReturnId
+                    FROM vendor_return vr JOIN purchase po ON po.id=vr.purchase_id
+                    WHERE vr.id=@vendorReturnId
                     """, new { vendorReturnId });
                 lines = connection.Query<SourceLineRow>("""
-                    SELECT p.name AS ProductName,l.lot_code AS LotCode,vrl.qty AS Quantity,
+                    SELECT COALESCE(vrl.product_name_snapshot,'Legacy unknown') AS ProductName,
+                           COALESCE(vrl.lot_code_snapshot,'Legacy unknown') AS LotCode,
+                           vrl.qty AS Quantity,
                            vrl.credit_before_tax+vrl.tax_credit AS Amount
-                    FROM vendor_return_line vrl JOIN product p ON p.id=vrl.product_id
-                    JOIN product_lot l ON l.id=vrl.lot_id
+                    FROM vendor_return_line vrl
                     WHERE vrl.vendor_return_id=@vendorReturnId ORDER BY vrl.id
                     """, new { vendorReturnId }).ToArray();
                 break;
@@ -342,10 +354,10 @@ public sealed class InventoryService(
                     FROM damage WHERE id=@damageId
                     """, new { damageId });
                 lines = connection.Query<SourceLineRow>("""
-                    SELECT p.name AS ProductName,l.lot_code AS LotCode,
+                    SELECT COALESCE(d.product_name_snapshot,'Legacy unknown') AS ProductName,
+                           COALESCE(d.lot_code_snapshot,'Legacy unknown') AS LotCode,
                            d.qty AS Quantity,d.cost_value AS Amount
-                    FROM damage d JOIN product p ON p.id=d.product_id
-                    JOIN product_lot l ON l.id=d.lot_id WHERE d.id=@damageId
+                    FROM damage d WHERE d.id=@damageId
                     """, new { damageId }).ToArray();
                 break;
             case "stock_count" when movement.RefId is { } countId:
@@ -355,10 +367,13 @@ public sealed class InventoryService(
                     FROM stock_count WHERE id=@countId
                     """, new { countId });
                 lines = connection.Query<SourceLineRow>("""
-                    SELECT p.name AS ProductName,l.lot_code AS LotCode,m.qty AS Quantity,
+                    SELECT COALESCE(o.product_name_snapshot,pl.product_name_snapshot,'Legacy unknown') AS ProductName,
+                           COALESCE(o.lot_code_snapshot,pl.lot_code_snapshot,'Legacy unknown') AS LotCode,
+                           m.qty AS Quantity,
                            CAST(ROUND(m.qty*m.unit_cost/1000.0) AS INTEGER) AS Amount
-                    FROM stock_movement m JOIN product p ON p.id=m.product_id
-                    JOIN product_lot l ON l.id=m.lot_id
+                    FROM stock_movement m
+                    LEFT JOIN direct_stock_origin o ON o.lot_id=m.lot_id
+                    LEFT JOIN purchase_line pl ON pl.lot_id_snapshot=m.lot_id
                     WHERE m.ref_type='stock_count' AND m.ref_id=@countId ORDER BY m.id
                     """, new { countId }).ToArray();
                 break;
@@ -372,10 +387,14 @@ public sealed class InventoryService(
                     Notes = movement.Note,
                 };
                 lines = connection.Query<SourceLineRow>("""
-                    SELECT p.name AS ProductName,l.lot_code AS LotCode,m.qty AS Quantity,
+                    SELECT COALESCE(o.product_name_snapshot,pl.product_name_snapshot,'Legacy unknown') AS ProductName,
+                           COALESCE(o.lot_code_snapshot,pl.lot_code_snapshot,'Legacy unknown') AS LotCode,
+                           m.qty AS Quantity,
                            CAST(ROUND(m.qty*m.unit_cost/1000.0) AS INTEGER) AS Amount
-                    FROM stock_movement m JOIN product p ON p.id=m.product_id
-                    JOIN product_lot l ON l.id=m.lot_id WHERE m.id=@id
+                    FROM stock_movement m
+                    LEFT JOIN direct_stock_origin o ON o.lot_id=m.lot_id
+                    LEFT JOIN purchase_line pl ON pl.lot_id_snapshot=m.lot_id
+                    WHERE m.id=@id
                     """, new { movement.Id }).ToArray();
                 break;
         }
@@ -641,8 +660,9 @@ public sealed class InventoryService(
                 """, categoryIds.Distinct().Select(categoryId => new { id, categoryId }), transaction.Transaction);
         string filter = categoryIds is { Count: > 0 } ? "AND p.category_id IN @categoryIds" : string.Empty;
         int rows = transaction.Connection.Execute($"""
-            INSERT INTO stock_count_line(stock_count_id,product_id,lot_id,expected_qty,unit_cost)
-            SELECT @id,l.product_id,l.id,l.qty_on_hand,l.unit_cost
+            INSERT INTO stock_count_line(stock_count_id,product_id,lot_id,expected_qty,unit_cost,
+                                         product_name_snapshot,lot_code_snapshot,snapshot_provenance)
+            SELECT @id,l.product_id,l.id,l.qty_on_hand,l.unit_cost,p.name,l.lot_code,'AT_COUNT'
             FROM product_lot l JOIN product p ON p.id=l.product_id
             WHERE p.is_active=1 {filter}
             """, new { id, categoryIds }, transaction.Transaction);
@@ -658,10 +678,12 @@ public sealed class InventoryService(
                 "SELECT status FROM stock_count WHERE id=@countId", new { countId }, transaction.Transaction);
             if (status != "DRAFT") throw new DomainException(ErrorCode.Validation, "Stock count is not an active draft.");
             int added = transaction.Connection.Execute("""
-                INSERT INTO stock_count_line(stock_count_id,product_id,lot_id,expected_qty,unit_cost)
+                INSERT INTO stock_count_line(stock_count_id,product_id,lot_id,expected_qty,unit_cost,
+                                             product_name_snapshot,lot_code_snapshot,snapshot_provenance)
                 SELECT @countId,l.product_id,l.id,
                        l.qty_on_hand-COALESCE((SELECT SUM(m.qty) FROM stock_movement m
-                           WHERE m.lot_id=l.id AND m.id>sc.snapshot_movement_id),0),l.unit_cost
+                           WHERE m.lot_id=l.id AND m.id>sc.snapshot_movement_id),0),l.unit_cost,
+                       p.name,l.lot_code,'AT_COUNT'
                 FROM stock_count sc CROSS JOIN product_lot l JOIN product p ON p.id=l.product_id
                 WHERE sc.id=@countId AND p.is_active=1
                   AND (NOT EXISTS (SELECT 1 FROM stock_count_scope s WHERE s.stock_count_id=sc.id)
@@ -751,13 +773,15 @@ public sealed class InventoryService(
                 """, new { countId });
             if (header is null) throw new DomainException(ErrorCode.NotFound, "stock count", countId);
             IReadOnlyList<StockCountLine> lines = connection.Query<CountLineRow>("""
-                SELECT scl.id AS Id,scl.product_id AS ProductId,p.name AS ProductName,scl.lot_id AS LotId,
-                       l.lot_code AS LotCode,scl.expected_qty AS Expected,scl.counted_qty AS Counted,
+                SELECT scl.id AS Id,scl.product_id AS ProductId,
+                       scl.product_name_snapshot AS ProductName,scl.lot_id AS LotId,
+                       scl.lot_code_snapshot AS LotCode,scl.expected_qty AS Expected,scl.counted_qty AS Counted,
                        scl.unit_cost AS UnitCost,
                        COALESCE((SELECT SUM(m.qty) FROM stock_movement m
                                  WHERE m.lot_id=scl.lot_id AND m.id>@snapshot),0) AS Movement
-                FROM stock_count_line scl JOIN product p ON p.id=scl.product_id JOIN product_lot l ON l.id=scl.lot_id
-                WHERE scl.stock_count_id=@countId ORDER BY p.name COLLATE NOCASE,l.lot_code
+                FROM stock_count_line scl
+                WHERE scl.stock_count_id=@countId
+                ORDER BY scl.product_name_snapshot COLLATE NOCASE,scl.lot_code_snapshot
                 """, new { countId, snapshot = header.Snapshot }).Select(static row => row.ToModel()).ToList();
             return new StockCountDetails(header.Id, header.Date, header.Status, header.Notes, lines);
         }, cancellationToken);
@@ -775,13 +799,13 @@ public sealed class InventoryService(
             SELECT COUNT(*) AS Total,COUNT(counted_qty) AS Counted FROM stock_count_line WHERE stock_count_id=@countId
             """, new { countId });
         List<CountLineRow> rows = connection.Query<CountLineRow>("""
-            SELECT scl.id AS Id,scl.product_id AS ProductId,p.name AS ProductName,scl.lot_id AS LotId,
-                   l.lot_code AS LotCode,scl.expected_qty AS Expected,scl.counted_qty AS Counted,
+            SELECT scl.id AS Id,scl.product_id AS ProductId,
+                   scl.product_name_snapshot AS ProductName,scl.lot_id AS LotId,
+                   scl.lot_code_snapshot AS LotCode,scl.expected_qty AS Expected,scl.counted_qty AS Counted,
                    scl.unit_cost AS UnitCost,
                    COALESCE((SELECT SUM(m.qty) FROM stock_movement m
                              WHERE m.lot_id=scl.lot_id AND m.id>@snapshot),0) AS Movement
-            FROM stock_count_line scl JOIN product p ON p.id=scl.product_id
-                 JOIN product_lot l ON l.id=scl.lot_id
+            FROM stock_count_line scl
             WHERE scl.stock_count_id=@countId AND (@afterLineId IS NULL OR scl.id>@afterLineId)
             ORDER BY scl.id LIMIT @limit
             """, new { countId, afterLineId, snapshot = header.Snapshot, limit = take + 1 }).ToList();

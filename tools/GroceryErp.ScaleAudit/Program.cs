@@ -21,7 +21,7 @@ using GroceryErp.Reports;
 using GroceryErp.Sales;
 
 if (args.Length < 1)
-    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|phase6-reports|phase6-matrix|phase6-category-index|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|phase5-label-failure|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
+    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase2-direct-audit|phase1-schema-audit|phase1-rollback|refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|phase6-reports|phase6-matrix|phase6-category-index|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|phase5-label-failure|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
 
 string root = Path.GetFullPath(args[0]);
 string mode = args.Length > 1 ? args[1] : "read";
@@ -183,6 +183,9 @@ var auditElapsed = Stopwatch.StartNew();
 long databaseBytes = new FileInfo(paths.DatabaseFile).Length;
 long walBytesBefore = File.Exists(paths.DatabaseFile + "-wal") ? new FileInfo(paths.DatabaseFile + "-wal").Length : 0;
 var rowCounts = new Dictionary<string, long>();
+List<PhaseOneStorageRow>? phaseOneStorage = null;
+Dictionary<string, long>? phaseOneChecks = null;
+Dictionary<string, long>? phaseTwoChecks = null;
 
 using (var connection = factory.Open())
 {
@@ -238,6 +241,375 @@ DateOnly monthStart = new(2026, 9, 1);
 DateOnly fiscalStart = new(2026, 4, 1);
 switch (mode)
 {
+    case "phase2-direct-crash":
+    {
+        if (!Path.GetFileName(root).Contains("phase2", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Crash rehearsal runs only in a disposable phase2 root.");
+        using var connection = factory.Open();
+        if (connection.ExecuteScalar<long>("PRAGMA user_version") != 30)
+            throw new InvalidDataException("Activate the direct-stock sandbox first.");
+        long product = connection.ExecuteScalar<long>("""
+            SELECT id FROM product WHERE sku LIKE 'PH2-%' ORDER BY id DESC LIMIT 1
+            """);
+        using var transaction = connection.BeginTransaction(deferred: false);
+        long lotId = connection.ExecuteScalar<long>("""
+            SELECT id FROM product_lot WHERE product_id=@product AND qty_on_hand>0
+            ORDER BY expiry_date IS NULL,expiry_date,received_date,id LIMIT 1
+            """, new { product }, transaction);
+        long version = connection.ExecuteScalar<long>(
+            "SELECT quantity_version FROM product_lot WHERE id=@lotId", new { lotId }, transaction);
+        long sale = connection.ExecuteScalar<long>("""
+            INSERT INTO sale(invoice_no,sale_date,line_count,gross_total,taxable_total,
+              grand_total,cost_total)
+            VALUES ('PH2-CRASH-ROLLBACK','2026-10-18',1,2000,2000,2000,1000) RETURNING id
+            """, transaction: transaction);
+        connection.Execute("""
+            INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,
+              qty,unit_price,taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+            VALUES (@sale,1,@product,@lotId,'Phase 2 hot product',1000,2000,2000,0,2000,1000,1000)
+            """, new { sale, product, lotId }, transaction);
+        connection.Execute("UPDATE sale SET status='COMPLETED' WHERE id=@sale",
+            new { sale }, transaction);
+        new DirectStockEngine().CompleteSale(new(connection, transaction), sale,
+            new Dictionary<long, long> { [lotId] = version }, OperationGuard.NewId());
+        Console.WriteLine($"INTENTIONAL_CRASH_BEFORE_COMMIT lot={lotId} sale={sale}");
+        Console.Out.Flush();
+        Environment.Exit(137);
+        break;
+    }
+    case "phase2-direct-crash-check":
+    {
+        using var connection = factory.Open();
+        phaseTwoChecks = new Dictionary<string, long>
+        {
+            ["uncommittedSaleRows"] = connection.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM sale WHERE invoice_no='PH2-CRASH-ROLLBACK'"),
+            ["foreignKeyViolations"] = connection.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM pragma_foreign_key_check"),
+            ["quickCheckOk"] = connection.ExecuteScalar<string>("PRAGMA quick_check") == "ok" ? 1 : 0,
+        };
+        using var transaction = connection.BeginTransaction(deferred: true);
+        int mismatches = new DirectStockEngine().CheckAll(new(connection, transaction)).Count();
+        phaseTwoChecks["directStockMismatches"] = mismatches;
+        transaction.Commit();
+        if (phaseTwoChecks["uncommittedSaleRows"] != 0 || phaseTwoChecks["foreignKeyViolations"] != 0 ||
+            phaseTwoChecks["quickCheckOk"] != 1 || mismatches != 0)
+            throw new InvalidDataException("Crash recovery left a document, balance or integrity mismatch.");
+        break;
+    }
+    case "phase2-count-read":
+    {
+        if (!Path.GetFileName(root).Contains("phase2", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Count profile runs only in a disposable phase2 data root.");
+        using var check = factory.Open();
+        if (check.ExecuteScalar<long>("PRAGMA user_version") != 30)
+            throw new InvalidDataException("Activate the direct-stock sandbox first.");
+        long product = check.ExecuteScalar<long>("""
+            SELECT product_id FROM product_lot WHERE id=(SELECT MAX(id) FROM product_lot)
+            """);
+        var counts = new DirectStockCountService(database, new DirectStockEngine(), periods);
+        DirectCountLotPage? page = null;
+        for (int index = 0; index < 100; index++)
+        {
+            long started = Stopwatch.GetTimestamp();
+            page = await counts.GetPageAsync([product]);
+            profileSamples.Add(new("phase2-selected-product-count-page",
+                Stopwatch.GetElapsedTime(started).TotalMilliseconds, page.Items.Count, null));
+        }
+        phaseTwoChecks = new Dictionary<string, long>
+        {
+            ["productId"] = product,
+            ["firstPageRows"] = page!.Items.Count,
+            ["hasMore"] = page.HasMore ? 1 : 0,
+        };
+        if (page.Items.Count == 0) throw new InvalidDataException("Count page is empty.");
+        break;
+    }
+    case "phase2-cashier-ledger":
+    case "phase2-cashier-write":
+    {
+        if (!Path.GetFileName(root).Contains("phase2", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Cashier rehearsal runs only in a disposable phase2 data root.");
+        bool directMode = mode == "phase2-cashier-write";
+        using (var check = factory.Open())
+            if (check.ExecuteScalar<long>("PRAGMA user_version") != (directMode ? 30 : 29) ||
+                check.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE name='direct_stock_sandbox'") != (directMode ? 1 : 0))
+                throw new InvalidDataException("Cashier rehearsal has the wrong fixture schema.");
+        var direct = new DirectStockEngine();
+        var cashierClock = new AuditClock(new DateTime(2026, 10, 18, 12, 0, 0));
+        var directSales = new SalesService(database, ledger, numbers, periods, settings, audit, cashierClock,
+            directMode ? direct : null);
+        string suffix = Guid.NewGuid().ToString("N");
+        long product = await database.WriteAsync(tx =>
+        {
+            long category = tx.Connection.ExecuteScalar<long>("SELECT id FROM category LIMIT 1", transaction: tx.Transaction);
+            long uom = tx.Connection.ExecuteScalar<long>("SELECT id FROM uom WHERE code='PCS'", transaction: tx.Transaction);
+            long id = tx.Connection.ExecuteScalar<long>("""
+                INSERT INTO product(sku,name,category_id,uom_id)
+                VALUES (@sku,'Phase 2 cashier product',@category,@uom) RETURNING id
+                """, new { sku = "PH2-C-" + suffix, category, uom }, tx.Transaction);
+            for (int index = 0; index < 128; index++)
+            {
+                long lotId = tx.Connection.ExecuteScalar<long>("""
+                    INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,
+                      unit_cost,selling_price,qty_received)
+                    VALUES (@id,@code,'CASHIER-BATCH','2026-10-18','2027-10-18',1000,2000,1000)
+                    RETURNING id
+                    """, new { id, code = "PH2-C-L-" + suffix + "-" + index.ToString("D3", System.Globalization.CultureInfo.InvariantCulture) },
+                    tx.Transaction);
+                if (directMode) direct.CreateDirectLot(tx, lotId, 1, OperationGuard.NewId());
+                else ledger.Post(tx, new(cashierClock.BusinessDate, id, lotId, "OPENING",
+                    Quantity.One, new Money(1), "phase2_cashier_seed", lotId));
+            }
+            return id;
+        });
+        for (int index = 0; index < 100; index++)
+        {
+            long saleId = await directSales.AddProductAsync(null, product, Quantity.One);
+            long started = Stopwatch.GetTimestamp();
+            try
+            {
+                await directSales.CompleteAsync(new(saleId,
+                    [new(PaymentMode.Cash, new Money(2))], OperationGuard.NewId()));
+                profileSamples.Add(new("phase2-cashier-complete",
+                    Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1, null));
+            }
+            catch (Exception exception)
+            {
+                profileSamples.Add(new("phase2-cashier-complete",
+                    Stopwatch.GetElapsedTime(started).TotalMilliseconds, 0, exception.GetType().Name));
+                throw;
+            }
+            if (index % 10 == 0)
+            {
+                process.Refresh();
+                long wal = File.Exists(paths.DatabaseFile + "-wal") ? new FileInfo(paths.DatabaseFile + "-wal").Length : 0;
+                resourceSamples.Enqueue(new(auditElapsed.Elapsed.TotalSeconds, wal, process.WorkingSet64, 0, factory.ActiveConnections));
+            }
+        }
+        using (var check = factory.Open())
+            phaseTwoChecks = new Dictionary<string, long>
+            {
+                ["cashierSales"] = check.ExecuteScalar<long>(
+                    "SELECT COUNT(*) FROM sale_line WHERE product_id=@product", new { product }),
+                ["cashierRemaining"] = check.ExecuteScalar<long>(
+                    "SELECT quantity FROM product_stock_total WHERE product_id=@product", new { product }),
+                ["cashierMovements"] = check.ExecuteScalar<long>(
+                    "SELECT COUNT(*) FROM stock_movement WHERE product_id=@product", new { product }),
+            };
+        if (phaseTwoChecks["cashierSales"] != 100 || phaseTwoChecks["cashierRemaining"] != 28000 ||
+            phaseTwoChecks["cashierMovements"] != (directMode ? 0 : 228))
+            throw new InvalidDataException("Cashier-path stock or movement parity failed.");
+        break;
+    }
+    case "phase2-direct-write":
+    {
+        if (!Path.GetFileName(root).Contains("phase2", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Phase 2 writes run only in a disposable phase2 data root.");
+        long directVersion;
+        using (var check = factory.Open())
+        {
+            directVersion = check.ExecuteScalar<long>("PRAGMA user_version");
+            if (directVersion is not (29 or 30) ||
+                check.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE name='direct_stock_sandbox'") != 1)
+                throw new InvalidDataException("Activate the phase-2 direct-stock sandbox first.");
+        }
+        if (directVersion == 29)
+            await database.WriteAsync(tx => tx.Connection.Execute("PRAGMA user_version=30", transaction: tx.Transaction));
+        var direct = new DirectStockEngine();
+        string suffix = Guid.NewGuid().ToString("N");
+        long product = await database.WriteAsync(tx =>
+        {
+            long category = tx.Connection.ExecuteScalar<long>("SELECT id FROM category LIMIT 1", transaction: tx.Transaction);
+            long uom = tx.Connection.ExecuteScalar<long>("SELECT id FROM uom WHERE code='PCS'", transaction: tx.Transaction);
+            long id = tx.Connection.ExecuteScalar<long>("""
+                INSERT INTO product(sku,name,category_id,uom_id)
+                VALUES (@sku,'Phase 2 hot product',@category,@uom) RETURNING id
+                """, new { sku = "PH2-" + suffix, category, uom }, tx.Transaction);
+            for (int index = 0; index < 128; index++)
+            {
+                long lotId = tx.Connection.ExecuteScalar<long>("""
+                    INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,
+                      unit_cost,selling_price,qty_received)
+                    VALUES (@id,@code,'SAME-BATCH','2026-10-18','2027-10-18',1000,2000,1000)
+                    RETURNING id
+                    """, new { id, code = "PH2-L-" + suffix + "-" + index.ToString("D3", System.Globalization.CultureInfo.InvariantCulture) },
+                    tx.Transaction);
+                direct.CreateDirectLot(tx, lotId, 1, OperationGuard.NewId());
+            }
+            return id;
+        });
+        for (int index = 0; index < 100; index++)
+        {
+            long started = Stopwatch.GetTimestamp();
+            int sequence = index;
+            try
+            {
+                await database.WriteAsync(tx =>
+                {
+                    long lotId = tx.Connection.ExecuteScalar<long>("""
+                        SELECT id FROM product_lot
+                        WHERE product_id=@product AND qty_on_hand>0 AND is_active=1
+                        ORDER BY expiry_date IS NULL,expiry_date,received_date,id LIMIT 1
+                        """, new { product }, tx.Transaction);
+                    long version = tx.Connection.ExecuteScalar<long>(
+                        "SELECT quantity_version FROM product_lot WHERE id=@lotId", new { lotId }, tx.Transaction);
+                    long sale = tx.Connection.ExecuteScalar<long>("""
+                        INSERT INTO sale(invoice_no,sale_date,line_count,gross_total,taxable_total,
+                          grand_total,cost_total)
+                        VALUES (@invoice,'2026-10-18',1,2000,2000,2000,1000) RETURNING id
+                        """, new { invoice = "PH2-S-" + suffix + "-" + sequence.ToString("D3", System.Globalization.CultureInfo.InvariantCulture) },
+                        tx.Transaction);
+                    tx.Connection.Execute("""
+                        INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,
+                          qty,unit_price,taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+                        VALUES (@sale,1,@product,@lotId,'Phase 2 hot product',1000,2000,2000,0,2000,1000,1000)
+                        """, new { sale, product, lotId }, tx.Transaction);
+                    tx.Connection.Execute("UPDATE sale SET status='COMPLETED' WHERE id=@sale",
+                        new { sale }, tx.Transaction);
+                    direct.CompleteSale(tx, sale, new Dictionary<long, long> { [lotId] = version }, OperationGuard.NewId());
+                });
+                profileSamples.Add(new("phase2-direct-sale-transaction",
+                    Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1, null));
+            }
+            catch (Exception exception)
+            {
+                profileSamples.Add(new("phase2-direct-sale-transaction",
+                    Stopwatch.GetElapsedTime(started).TotalMilliseconds, 0, exception.GetType().Name));
+                throw;
+            }
+            if (index % 10 == 0)
+            {
+                process.Refresh();
+                long wal = File.Exists(paths.DatabaseFile + "-wal") ? new FileInfo(paths.DatabaseFile + "-wal").Length : 0;
+                resourceSamples.Enqueue(new(auditElapsed.Elapsed.TotalSeconds, wal, process.WorkingSet64, 0, factory.ActiveConnections));
+            }
+        }
+        using (var check = factory.Open())
+            phaseTwoChecks = new Dictionary<string, long>
+            {
+                ["phase2HotProductRemaining"] = check.ExecuteScalar<long>(
+                    "SELECT quantity FROM product_stock_total WHERE product_id=@product", new { product }),
+                ["phase2HotProductSales"] = check.ExecuteScalar<long>(
+                    "SELECT COUNT(*) FROM sale_line WHERE product_id=@product", new { product }),
+            };
+        break;
+    }
+    case "phase2-direct-audit":
+    {
+        if (!Path.GetFileName(root).Contains("phase2", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Phase 2 conversion runs only in a data root named phase2.");
+        using (var check = factory.Open())
+            if (check.ExecuteScalar<long>("PRAGMA user_version") is not (29 or 30))
+                throw new InvalidDataException("Phase 2 requires a schema-29 disposable copy or its schema-30 sandbox.");
+        await Measure("phase2-sandbox-activate", async () =>
+        {
+            using var check = factory.Open();
+            bool active = check.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='direct_stock_sandbox'") != 0;
+            if (!active) await database.WriteAsync(tx => DirectStockSandbox.Activate(tx));
+            else if (check.ExecuteScalar<long>("PRAGMA user_version") == 29)
+                await database.WriteAsync(tx => tx.Connection.Execute("PRAGMA user_version=30", transaction: tx.Transaction));
+            if (active) await database.WriteAsync(tx => tx.Connection.Execute(
+                "DROP INDEX IF EXISTS ix_direct_count_product_lot", transaction: tx.Transaction));
+            return active ? 0 : 1;
+        }, static value => value);
+        await Measure("phase2-source-reconciliation", () => Task.Run(() =>
+        {
+            using var connection = factory.Open();
+            using var transaction = connection.BeginTransaction(deferred: true);
+            var engine = new DirectStockEngine();
+            int mismatches = 0;
+            foreach (DirectStockMismatch mismatch in engine.CheckAll(new(connection, transaction)))
+            {
+                if (mismatches < 10)
+                    Console.WriteLine($"MISMATCH lot={mismatch.LotId} actual={mismatch.Actual} expected={mismatch.Expected}");
+                mismatches++;
+            }
+            transaction.Commit();
+            phaseTwoChecks = new Dictionary<string, long> { ["directStockMismatches"] = mismatches };
+            return mismatches;
+        }), static value => value);
+        break;
+    }
+    case "phase1-rollback":
+    {
+        if (args.Length < 4) throw new ArgumentException("Pass the verified pre-migration backup zip as the fourth argument.");
+        using (var check = factory.Open())
+            if (check.ExecuteScalar<long>("PRAGMA user_version") != 29)
+                throw new InvalidDataException("The rollback rehearsal must start from schema 29.");
+        RestoreCandidate candidate = backups.InspectRestore(Path.GetFullPath(args[3]));
+        if (candidate.Manifest.SchemaVersion != 28)
+            throw new InvalidDataException("The rollback archive must contain schema 28.");
+        await Measure("phase1-restored-backup-rollback", () => Task.Run(() =>
+        {
+            backups.ApplyRestore(candidate);
+            backups.FinishPendingRestore();
+            using var check = factory.Open();
+            if (check.ExecuteScalar<long>("PRAGMA user_version") != 28 ||
+                check.ExecuteScalar<string>("PRAGMA quick_check") != "ok" ||
+                check.QueryFirstOrDefault("PRAGMA foreign_key_check") is not null)
+                throw new InvalidDataException("Restored schema-28 database failed validation.");
+            foreach ((string table, long expected) in rowCounts)
+            {
+                long actual = check.ExecuteScalar<long>($"SELECT COUNT(*) FROM {table}");
+                // Creating the verified source archive records one backup audit event.
+                if (actual != expected && (table != "audit_log" || actual != expected + 1))
+                    throw new InvalidDataException($"Rollback changed the {table} row count.");
+            }
+            return 28;
+        }), static version => version);
+        break;
+    }
+    case "phase1-schema-audit":
+        using (var connection = factory.Open())
+        {
+            bool dbstatAvailable = connection.ExecuteScalar<long>("""
+                SELECT COUNT(*) FROM pragma_compile_options WHERE compile_options='ENABLE_DBSTAT_VTAB'
+                """) != 0;
+            phaseOneStorage = dbstatAvailable
+                ? connection.Query<PhaseOneStorageRow>("""
+                    SELECT name AS Name,SUM(pgsize) AS Bytes FROM dbstat
+                    GROUP BY name ORDER BY Bytes DESC
+                    """).ToList()
+                : new List<PhaseOneStorageRow>
+                {
+                    new()
+                    {
+                        Name = "database-total (dbstat unavailable)",
+                        Bytes = connection.ExecuteScalar<long>("PRAGMA page_count") *
+                            connection.ExecuteScalar<long>("PRAGMA page_size")
+                    }
+                };
+            if (connection.ExecuteScalar<long>("PRAGMA user_version") >= 29)
+            {
+                phaseOneChecks = new Dictionary<string, long>
+                {
+                    ["marker"] = connection.ExecuteScalar<long>(
+                        "SELECT COUNT(*) FROM schema_migration_marker WHERE version=29"),
+                    ["missingLotOrigins"] = connection.ExecuteScalar<long>(
+                        "SELECT COUNT(*) FROM product_lot WHERE origin_ref_id IS NULL"),
+                    ["saleLegacy"] = connection.ExecuteScalar<long>(
+                        "SELECT COUNT(*) FROM sale_line WHERE snapshot_provenance='LEGACY_SALE_LINE'"),
+                    ["saleNew"] = connection.ExecuteScalar<long>(
+                        "SELECT COUNT(*) FROM sale_line WHERE snapshot_provenance='AT_COMPLETION'"),
+                    ["returnSnapshotMissing"] = connection.ExecuteScalar<long>(
+                        "SELECT COUNT(*) FROM sale_return_line WHERE product_name_snapshot IS NULL"),
+                };
+                CapturePlan("phase1-source-purchase-lot", """
+                    SELECT id FROM purchase_line WHERE lot_id_snapshot=@lotId LIMIT 1
+                    """, new { lotId = 1 });
+            }
+        }
+        CapturePlan("phase1-fefo", """
+            SELECT id FROM product_lot WHERE product_id=@productId AND qty_on_hand>0 AND is_active=1
+            ORDER BY expiry_date IS NULL,expiry_date,received_date,id LIMIT 8
+            """, new { productId = 1 });
+        CapturePlan("phase1-sale-by-lot", "SELECT id FROM sale_line WHERE lot_id=@lotId LIMIT 8",
+            new { lotId = 1 });
+        CapturePlan("phase1-return-by-line", "SELECT id FROM sale_return_line WHERE sale_line_id=@lineId LIMIT 8",
+            new { lineId = 1 });
+        break;
     case "phase6-ledger-trial":
     {
         const string page = """
@@ -3381,6 +3753,9 @@ File.WriteAllText(output, JsonSerializer.Serialize(new
     databaseBytesAfter = new FileInfo(paths.DatabaseFile).Length,
     walBytesBefore,
     rowCounts,
+    phaseOneStorage,
+    phaseOneChecks,
+    phaseTwoChecks,
     machine = Environment.MachineName,
     logicalProcessors = Environment.ProcessorCount,
     dotnet = Environment.Version.ToString(),
@@ -3415,7 +3790,7 @@ File.WriteAllText(output, JsonSerializer.Serialize(new
         }),
 }, new JsonSerializerOptions { WriteIndented = true }));
 Console.WriteLine($"RESULTS {output}");
-if ((mode is "verify" or "restore-race" or "sustained-profile" or "phase4-combined" or "refresh-storm" or "phase3-resource" or "phase6-reports") &&
+if ((mode is "verify" or "phase1-rollback" or "restore-race" or "sustained-profile" or "phase4-combined" or "refresh-storm" or "phase3-resource" or "phase6-reports") &&
     (results.Any(static result => result.Error is not null) ||
      (mode is "sustained-profile" or "phase4-combined" && (profileSamples.Any(static sample => sample.Error is not null) ||
         sustainedSalesCheck is null || sustainedSalesCheck.Failed != 0 ||
@@ -3477,6 +3852,11 @@ internal sealed record Measurement(string Name, double Milliseconds, int Rows, l
     long WorkingSetAfter, long PeakWorkingSet, string? Error);
 
 internal sealed record QueryPlan(string Name, IReadOnlyList<string> Details, string Sql, string? Error = null);
+internal sealed class PhaseOneStorageRow
+{
+    public string Name { get; init; } = "";
+    public long Bytes { get; init; }
+}
 internal sealed record ProfileSample(string Name, double Milliseconds, int Rows, string? Error);
 internal sealed record ResourceSample(double ElapsedSeconds, long WalBytes, long WorkingSetBytes,
     double CpuPercent, int ActiveConnections);

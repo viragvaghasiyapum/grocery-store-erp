@@ -170,13 +170,13 @@ public sealed class ScaleUiTests
                 ("Products", "SearchBox"),
                 ("Purchases", "OpenDraftButton"),
                 ("Stock", "StockTabs"),
-                ("Assets", "AssetName"),
+                ("Assets", "AssetSearchBox"),
                 ("Reports", "ReportPicker"),
                 ("Sales history", "HistoryGrid"),
                 ("Billing (POS)", "ScanBox"),
                 ("Dashboard", "TodaySales"),
                 ("Money out", "MoneyOutTabs"),
-                ("Assets", "AssetName"),
+                ("Assets", "AssetSearchBox"),
             })
             {
                 var timer = Stopwatch.StartNew();

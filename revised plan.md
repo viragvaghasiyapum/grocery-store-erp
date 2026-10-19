@@ -1,3 +1,7 @@
+# Revised product decisions — superseded where inconsistent
+
+The single source of truth for revised decisions and acceptance gates is [revised-implementation-plan.md](revised-implementation-plan.md). The [Phase 0 behavior matrix](docs/phase0/behavior-matrix.md) is supporting analysis and still awaits operator/project-owner review. The notes below are preserved as design history. In particular, lots cannot be freely quantity-edited, purchases cannot merge receipts into an existing lot, sales cannot be edited after completion, and old-year reports cannot be recalculated after either annual lock. The target removes `stock_movement` only after a verified, whole-app stock-write cutover; schema-28 remains ledger-backed until then.
+
 ## Product:
 - Products can be selling and for internal use (such as raw materials).
 - add product (fields as we have currently)

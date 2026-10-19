@@ -5,34 +5,34 @@
     Title="{l:Tr Catalog_Title}" FontFamily="{StaticResource AppFont}"
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European"
     ScrollViewer.CanContentScroll="False">
-  <Grid Margin="{StaticResource PagePadding}">
+  <Grid Margin="16,12,16,12">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
-    <DockPanel Margin="0,0,0,16">
-      <WrapPanel DockPanel.Dock="Right" HorizontalAlignment="Right">
-        <Button Margin="0,0,8,0" Click="Masters_OnClick" Content="{l:Tr Catalog_Masters}"/>
-        <Button Margin="0,0,8,0" Click="Import_OnClick" Content="{l:Tr Catalog_Import}"/>
-        <Button Click="New_OnClick" Content="{l:Tr Catalog_New}" FontWeight="SemiBold"/>
-      </WrapPanel>
+    <WrapPanel Margin="0,0,0,8">
+      <TextBlock Style="{StaticResource SectionTitle}" VerticalAlignment="Center" Margin="0,0,20,0"
+                 Text="{l:Tr Catalog_Title}"/>
+      <Button Margin="0,0,8,0" Click="Masters_OnClick" Content="{l:Tr Catalog_Masters}"/>
+      <Button Margin="0,0,8,0" Click="Import_OnClick" Content="{l:Tr Catalog_Import}"/>
+      <Button Click="New_OnClick" Content="{l:Tr Catalog_New}" FontWeight="SemiBold"/>
+    </WrapPanel>
+    <Border Grid.Row="1" Style="{StaticResource CatalogCard}" Padding="10" Margin="0,0,0,8">
       <StackPanel>
-        <TextBlock Style="{StaticResource SectionTitle}" Text="{l:Tr Catalog_Title}"/>
-        <TextBlock Margin="0,4,12,0" Opacity="0.7" TextWrapping="Wrap" Text="{l:Tr Catalog_Subtitle}"/>
-      </StackPanel>
-    </DockPanel>
-    <Border Grid.Row="1" Style="{StaticResource CatalogCard}" Margin="0,0,0,16">
-      <StackPanel>
-        <Grid>
-          <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-          <TextBlock Margin="0,0,0,6" Text="{l:Tr Catalog_SearchHint}"/>
-          <TextBlock Grid.Column="1" Margin="12,0,0,6" Text="{l:Tr Catalog_Category}"/>
-          <TextBlock Grid.Column="2" Margin="12,0,0,6" Text="{l:Tr Catalog_Brand}"/>
-          <TextBox x:Name="SearchBox" Grid.Row="1" MinHeight="36" VerticalContentAlignment="Center" TextChanged="SearchBox_OnTextChanged" AutomationProperties.Name="{l:Tr Catalog_SearchHint}"/>
-          <ComboBox x:Name="CategoryFilter" Grid.Row="1" Grid.Column="1" Margin="12,0,0,0" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="MasterFilter_OnChanged" ToolTip="{l:Tr Catalog_Category}"/>
-          <ComboBox x:Name="BrandFilter" Grid.Row="1" Grid.Column="2" Margin="12,0,0,0" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="MasterFilter_OnChanged" ToolTip="{l:Tr Catalog_Brand}"/>
-          <Menu Grid.Row="1" Grid.Column="3" Margin="12,0,0,0" VerticalAlignment="Center">
+        <WrapPanel>
+          <StackPanel Width="420" Margin="0,0,12,0">
+            <TextBlock Margin="0,0,0,6" Text="{l:Tr Catalog_SearchHint}"/>
+            <TextBox x:Name="SearchBox" MinHeight="36" VerticalContentAlignment="Center" TextChanged="SearchBox_OnTextChanged" AutomationProperties.Name="{l:Tr Catalog_SearchHint}"/>
+          </StackPanel>
+          <StackPanel Width="190" Margin="0,0,12,0">
+            <TextBlock Margin="0,0,0,6" Text="{l:Tr Catalog_Category}"/>
+            <ComboBox x:Name="CategoryFilter" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="MasterFilter_OnChanged" ToolTip="{l:Tr Catalog_Category}"/>
+          </StackPanel>
+          <StackPanel Width="170" Margin="0,0,12,0">
+            <TextBlock Margin="0,0,0,6" Text="{l:Tr Catalog_Brand}"/>
+            <ComboBox x:Name="BrandFilter" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="MasterFilter_OnChanged" ToolTip="{l:Tr Catalog_Brand}"/>
+          </StackPanel>
+          <Menu Margin="0,18,0,0" VerticalAlignment="Center">
             <MenuItem Header="{l:Tr Catalog_Filters}">
               <MenuItem x:Name="LowStockFilter" IsCheckable="True" Click="Filter_OnChanged" Header="{l:Tr Catalog_LowStock}"/>
               <MenuItem x:Name="NoBarcodeFilter" IsCheckable="True" Click="Filter_OnChanged" Header="{l:Tr Catalog_NoBarcode}"/>
@@ -41,13 +41,14 @@
               <MenuItem x:Name="ArchivedFilter" IsCheckable="True" Click="Filter_OnChanged" Header="{l:Tr Catalog_IncludeArchived}"/>
             </MenuItem>
           </Menu>
-        </Grid>
+        </WrapPanel>
       </StackPanel>
     </Border>
-    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,10">
+    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,6">
       <Button x:Name="EditButton" IsEnabled="False" Margin="0,0,8,0" Click="Edit_OnClick" Content="{l:Tr Catalog_Edit}"/>
       <Menu VerticalAlignment="Center" Margin="0,0,8,0" MinHeight="36" Padding="2" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"><MenuItem Header="{l:Tr Common_Actions}">
         <MenuItem x:Name="LotsButton" IsEnabled="False" Click="Lots_OnClick" Header="{l:Tr Stock_Lots}"/>
+        <MenuItem x:Name="ReconcileButton" IsEnabled="False" Visibility="Collapsed" Click="Reconcile_OnClick" Header="{l:Tr Stock_ReconcileSelected}"/>
         <MenuItem x:Name="LedgerButton" IsEnabled="False" Click="Ledger_OnClick" Header="{l:Tr Stock_Ledger}"/>
         <MenuItem x:Name="LabelsButton" IsEnabled="False" Click="Labels_OnClick" Header="{l:Tr Catalog_PrintLabels}"/>
         <MenuItem x:Name="BarcodeButton" IsEnabled="False" Click="GenerateBarcode_OnClick" Header="{l:Tr Catalog_GenerateBarcode}"/>
@@ -58,6 +59,7 @@
           <MenuItem x:Name="BulkRestoreButton" IsEnabled="False" Click="BulkRestore_OnClick" Header="{l:Tr Catalog_RestoreSelected}"/>
           <MenuItem x:Name="BulkRemoveButton" IsEnabled="False" Click="BulkRemove_OnClick" Header="{l:Tr Catalog_RemoveSelected}"/>
           <MenuItem x:Name="BulkButton" Click="Bulk_OnClick" Header="{l:Tr Catalog_BulkEdit}"/>
+          <MenuItem x:Name="BulkReconcileButton" Visibility="Collapsed" Click="Reconcile_OnClick" Header="{l:Tr Stock_ReconcileSelected}"/>
           <MenuItem Click="BulkLabels_OnClick" Header="{l:Tr Catalog_PrintLabelsSelected}"/>
           <MenuItem x:Name="BulkBarcodeButton" IsEnabled="False" Click="BulkBarcode_OnClick" Header="{l:Tr Catalog_GenerateBarcodeSelected}"/>
         </MenuItem>
@@ -65,7 +67,7 @@
       <TextBlock x:Name="SelectedCountText" VerticalAlignment="Center" Text="0 selected"/>
     </StackPanel>
     <Grid Grid.Row="3">
-      <DataGrid x:Name="ProductsGrid" Style="{StaticResource CatalogGrid}" SelectionMode="Single" SelectionChanged="ProductsGrid_OnSelectionChanged" MouseDoubleClick="ProductsGrid_OnDoubleClick">
+      <DataGrid x:Name="ProductsGrid" Style="{StaticResource CompactTableGrid}" SelectionMode="Single" SelectionChanged="ProductsGrid_OnSelectionChanged" MouseDoubleClick="ProductsGrid_OnDoubleClick">
         <DataGrid.Columns>
           <DataGridTemplateColumn Width="42">
             <DataGridTemplateColumn.HeaderTemplate><DataTemplate>

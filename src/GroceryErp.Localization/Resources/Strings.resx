@@ -1153,4 +1153,12 @@
   <data name="Catalog_PrintLabelsSelected" xml:space="preserve"><value>Print labels for selected</value></data>
   <data name="Catalog_GenerateBarcodeSelected" xml:space="preserve"><value>Generate barcodes for selected</value></data>
   <data name="Catalog_BarcodesGenerated" xml:space="preserve"><value>Barcodes generated for {0} products.</value></data>
+  <data name="History_LegacyPurchaseSnapshot" xml:space="preserve"><value>Legacy invoice: product name and SKU were copied from the catalog during migration; older values could not be verified.</value></data>
+  <data name="History_LegacyUnknown" xml:space="preserve"><value>Legacy unknown</value></data>
+  <data name="Stock_ReconcileSelected" xml:space="preserve"><value>Reconcile selected stock</value></data>
+  <data name="Stock_DirectUnavailable" xml:space="preserve"><value>Direct stock counts are available after the stock-write cutover.</value></data>
+  <data name="Stock_CountPage" xml:space="preserve"><value>Page {0}: {1} lots</value></data>
+  <data name="Stock_CountNoLots" xml:space="preserve"><value>No lots are available for these products.</value></data>
+  <data name="Stock_ReasonRequired" xml:space="preserve"><value>Enter a reason before review.</value></data>
+  <data name="Stock_CountPagePosted" xml:space="preserve"><value>Reviewed count page posted. Continue with the next page or close.</value></data>
 </root>

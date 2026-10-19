@@ -4,14 +4,14 @@
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     xmlns:p="clr-namespace:GroceryErp.App.Presentation"
     Title="{l:Tr Purchasing_Title}" ScrollViewer.CanContentScroll="False">
-  <Grid Margin="24">
+  <Grid Margin="16,12,16,12">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Purchasing_Title}" />
-    <TabControl x:Name="PurchasingTabs" Grid.Row="1" Margin="0,16,0,0">
+    <TextBlock FontSize="22" FontWeight="SemiBold" Text="{l:Tr Purchasing_Title}" />
+    <TabControl x:Name="PurchasingTabs" Grid.Row="1" Margin="0,8,0,0">
       <TabItem Header="{l:Tr Purchasing_Purchases}">
-        <Grid Margin="0,12,0,0">
+        <Grid Margin="0,6,0,0">
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-          <WrapPanel Margin="0,0,0,8">
+          <WrapPanel Margin="0,0,0,6">
             <Button Margin="0,0,8,0" Click="NewPurchase_OnClick" Content="{l:Tr Purchasing_NewPurchase}" />
             <Button x:Name="OpenDraftButton" IsEnabled="False" Margin="0,0,8,0" Click="OpenDraft_OnClick" Content="{l:Tr Purchasing_EditDraft}" />
             <Button x:Name="ViewInvoiceButton" IsEnabled="False" Margin="0,0,8,0" Click="ViewInvoice_OnClick" Content="{l:Tr Purchasing_ViewInvoice}" />
@@ -31,7 +31,7 @@
             <Button Margin="0,18,0,0" Click="ClearPurchaseFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
           </WrapPanel>
           </p:AnimatedSection>
-          <DataGrid x:Name="PurchasesGrid" Grid.Row="2" Style="{StaticResource CatalogGrid}" SelectionMode="Single" SelectionChanged="PurchasesGrid_OnSelectionChanged">
+          <DataGrid x:Name="PurchasesGrid" Grid.Row="2" Style="{StaticResource CompactTableGrid}" SelectionMode="Single" SelectionChanged="PurchasesGrid_OnSelectionChanged">
             <DataGrid.Columns>
               <DataGridTemplateColumn Width="42">
                 <DataGridTemplateColumn.HeaderTemplate><DataTemplate>
@@ -58,7 +58,7 @@
         </Grid>
       </TabItem>
       <TabItem Header="{l:Tr Purchasing_Vendors}">
-        <Grid Margin="0,12,0,0">
+        <Grid Margin="0,6,0,0">
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
           <WrapPanel Margin="0,0,0,8">
             <Button Margin="0,0,8,0" Click="NewVendor_OnClick" Content="{l:Tr Purchasing_NewVendor}" />
@@ -70,7 +70,7 @@
             <Button x:Name="DeactivateVendorsButton" IsEnabled="False" Visibility="Collapsed" Margin="0,0,8,0" Click="DeactivateVendors_OnClick" Content="{l:Tr Purchasing_DeactivateSelectedVendors}"/>
             <TextBlock x:Name="VendorSelectedCountText" VerticalAlignment="Center" Text="0 selected"/>
           </WrapPanel>
-          <DataGrid x:Name="VendorsGrid" Grid.Row="1" Style="{StaticResource CatalogGrid}" SelectionMode="Single" SelectionChanged="VendorsGrid_OnSelectionChanged">
+          <DataGrid x:Name="VendorsGrid" Grid.Row="1" Style="{StaticResource CompactTableGrid}" SelectionMode="Single" SelectionChanged="VendorsGrid_OnSelectionChanged">
             <DataGrid.Columns>
               <DataGridTemplateColumn Width="42">
                 <DataGridTemplateColumn.HeaderTemplate><DataTemplate>

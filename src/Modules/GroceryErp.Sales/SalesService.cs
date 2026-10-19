@@ -11,6 +11,7 @@ using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
+using GroceryErp.Inventory;
 using GroceryErp.Inventory.Contracts;
 
 namespace GroceryErp.Sales;
@@ -22,7 +23,8 @@ public sealed class SalesService(
     PeriodGuard periodGuard,
     ISettings settings,
     IAuditLog auditLog,
-    IClock clock)
+    IClock clock,
+    IDirectStockEngine? directStock = null)
 {
     private static readonly JsonSerializerOptions ReceiptJsonOptions = new()
     {
@@ -519,9 +521,29 @@ public sealed class SalesService(
             if (change > Money.Zero && command.Payments.All(static item => item.Mode != PaymentMode.Cash))
                 throw new DomainException(ErrorCode.OverpaymentNonCash, change);
             string invoice = documentNumbers.Next(transaction, DocType.Sale, date);
-            foreach (DbLineRow line in LoadLines(transaction, command.SaleId))
-                stockLedger.Post(transaction, new(date, line.ProductId, line.LotId, "SALE",
-                    Quantity.FromScaled(-line.Quantity), Money.FromScaled(line.UnitCost), "sale_line", line.Id));
+            transaction.Connection.Execute("""
+                UPDATE sale_line SET
+                    product_sku_snapshot=p.sku,uom_snapshot=u.code,
+                    product_class_snapshot=p.product_class,lot_code_snapshot=l.lot_code,
+                    batch_no_snapshot=l.batch_no,expiry_date_snapshot=l.expiry_date,
+                    lot_version_snapshot=l.detail_version,
+                    tax_mode_snapshot=@taxMode,snapshot_provenance='AT_COMPLETION',
+                    legacy_unknown_fields=NULL
+                FROM product_lot l JOIN product p ON p.id=l.product_id
+                JOIN uom u ON u.id=p.uom_id
+                WHERE sale_line.sale_id=@saleId AND l.id=sale_line.lot_id
+                """, new { saleId = command.SaleId, taxMode = settings.Current.TaxMode }, transaction.Transaction);
+            Dictionary<long, long>? directVersions = directStock is null ? null : transaction.Connection
+                .Query<(long LotId, long Version)>("""
+                    SELECT l.id AS LotId,l.quantity_version AS Version
+                    FROM product_lot l JOIN sale_line sl ON sl.lot_id=l.id
+                    WHERE sl.sale_id=@saleId GROUP BY l.id
+                    """, new { saleId = command.SaleId }, transaction.Transaction)
+                .ToDictionary(static row => row.LotId, static row => row.Version);
+            if (directStock is null)
+                foreach (DbLineRow line in LoadLines(transaction, command.SaleId))
+                    stockLedger.Post(transaction, new(date, line.ProductId, line.LotId, "SALE",
+                        Quantity.FromScaled(-line.Quantity), Money.FromScaled(line.UnitCost), "sale_line", line.Id));
             foreach (PaymentInput payment in command.Payments)
                 transaction.Connection.Execute("""
                     INSERT INTO sale_payment(sale_id,mode,amount,reference,paid_at)
@@ -545,6 +567,8 @@ public sealed class SalesService(
                 completedAt = Timestamp(clock.Now),
                 saleId = command.SaleId,
             }, transaction.Transaction);
+            if (directStock is not null)
+                directStock.CompleteSale(transaction, command.SaleId, directVersions!, OperationGuard.NewId());
             ReceiptData receipt = BuildSaleReceipt(transaction.Connection, command.SaleId, settings.Current, false);
             transaction.Connection.Execute("UPDATE sale SET receipt_snapshot=@snapshot WHERE id=@saleId",
                 new { snapshot = JsonSerializer.Serialize(receipt, ReceiptJsonOptions), saleId = command.SaleId }, transaction.Transaction);
@@ -613,12 +637,13 @@ public sealed class SalesService(
             ReturnableRow original = transaction.Connection.QuerySingleOrDefault<ReturnableRow>("""
                 SELECT sl.id AS Id,sl.product_id AS ProductId,sl.lot_id AS LotId,sl.qty AS Quantity,
                        sl.taxable_amount AS Taxable,sl.tax_amount AS Tax,sl.line_total AS Total,
-                       sl.cost_amount AS Cost,sl.unit_cost AS UnitCost,
+                       sl.cost_amount AS Cost,sl.unit_cost AS UnitCost,sl.discount AS Discount,
                        COALESCE(SUM(rl.qty),0) AS ReturnedQuantity,
                        COALESCE(SUM(rl.taxable_amount),0) AS ReturnedTaxable,
                        COALESCE(SUM(rl.tax_amount),0) AS ReturnedTax,
                        COALESCE(SUM(rl.refund_amount),0) AS ReturnedTotal,
                        COALESCE(SUM(rl.cost_amount),0) AS ReturnedCost
+                       ,COALESCE(SUM(rl.discount_snapshot),0) AS ReturnedDiscount
                 FROM sale_line sl LEFT JOIN sale_return_line rl ON rl.sale_line_id=sl.id
                 WHERE sl.id=@lineId AND sl.sale_id=@saleId GROUP BY sl.id
                 """, new { lineId = requested.SaleLineId, saleId = command.SaleId }, transaction.Transaction)
@@ -631,10 +656,25 @@ public sealed class SalesService(
             Money tax = Prorate(original.Tax, original.ReturnedTax, original.Quantity, requested.Quantity, final);
             Money refund = Prorate(original.Total, original.ReturnedTotal, original.Quantity, requested.Quantity, final);
             Money cost = Prorate(original.Cost, original.ReturnedCost, original.Quantity, requested.Quantity, final);
+            Money discount = Prorate(original.Discount, original.ReturnedDiscount,
+                original.Quantity, requested.Quantity, final);
             transaction.Connection.Execute("""
                 INSERT INTO sale_return_line(sale_return_id,sale_line_id,qty,taxable_amount,tax_amount,
-                    refund_amount,cost_amount,resellable)
-                VALUES (@returnId,@lineId,@qty,@taxable,@tax,@refund,@cost,@resellable)
+                    refund_amount,cost_amount,resellable,product_id_snapshot,lot_id_snapshot,
+                    product_sku_snapshot,product_name_snapshot,product_name_local_snapshot,uom_snapshot,
+                    product_class_snapshot,lot_code_snapshot,batch_no_snapshot,expiry_date_snapshot,
+                    lot_version_snapshot,tax_mode_snapshot,price_includes_tax_snapshot,tax_rate_pct_snapshot,
+                    mrp_snapshot,unit_price_snapshot,unit_cost_snapshot,discount_snapshot,
+                    snapshot_provenance,legacy_unknown_fields)
+                SELECT @returnId,sl.id,@qty,@taxable,@tax,@refund,@cost,@resellable,
+                    sl.product_id,sl.lot_id,sl.product_sku_snapshot,sl.product_name,
+                    sl.product_name_local,sl.uom_snapshot,sl.product_class_snapshot,
+                    sl.lot_code_snapshot,sl.batch_no_snapshot,sl.expiry_date_snapshot,
+                    sl.lot_version_snapshot,sl.tax_mode_snapshot,sl.price_includes_tax,
+                    sl.tax_rate_pct,sl.mrp,sl.unit_price,sl.unit_cost,
+                    @discount,
+                    'SALE_LINE_COPY',sl.legacy_unknown_fields
+                FROM sale_line sl WHERE sl.id=@lineId
                 """, new
             {
                 returnId,
@@ -645,6 +685,7 @@ public sealed class SalesService(
                 refund = refund.Scaled,
                 cost = cost.Scaled,
                 resellable = requested.Resellable ? 1 : 0,
+                discount = discount.Scaled,
             }, transaction.Transaction);
             stockLedger.Post(transaction, new(command.ReturnDate, original.ProductId, original.LotId,
                 "SALE_RETURN", requested.Quantity, Money.FromScaled(original.UnitCost),
@@ -654,8 +695,15 @@ public sealed class SalesService(
                 string damageNumber = documentNumbers.Next(transaction, DocType.Damage, command.ReturnDate);
                 long damageId = transaction.Connection.ExecuteScalar<long>("""
                     INSERT INTO damage(doc_no,damage_date,product_id,lot_id,qty,unit_cost,cost_value,
-                        reason,notes) VALUES (@number,@date,@productId,@lotId,@qty,@unitCost,
-                        @cost,'CUSTOMER_RETURN',@notes) RETURNING id
+                        reason,notes,product_name_snapshot,product_sku_snapshot,
+                        product_name_local_snapshot,uom_snapshot,product_class_snapshot,
+                        lot_code_snapshot,batch_no_snapshot,expiry_date_snapshot,snapshot_provenance,
+                        legacy_unknown_fields)
+                    SELECT @number,@date,@productId,@lotId,@qty,@unitCost,@cost,'CUSTOMER_RETURN',@notes,
+                        sl.product_name,sl.product_sku_snapshot,sl.product_name_local,
+                        sl.uom_snapshot,sl.product_class_snapshot,sl.lot_code_snapshot,
+                        sl.batch_no_snapshot,sl.expiry_date_snapshot,'SALE_LINE_COPY',sl.legacy_unknown_fields
+                    FROM sale_line sl WHERE sl.id=@saleLineId RETURNING id
                     """, new
                 {
                     number = damageNumber,
@@ -666,6 +714,7 @@ public sealed class SalesService(
                     unitCost = original.UnitCost,
                     cost = cost.Scaled,
                     notes = command.Reason.Trim(),
+                    saleLineId = original.Id,
                 }, transaction.Transaction);
                 stockLedger.Post(transaction, new(command.ReturnDate, original.ProductId, original.LotId,
                     "DAMAGE", Quantity.FromScaled(-requested.Quantity.Scaled), Money.FromScaled(original.UnitCost),
@@ -806,19 +855,31 @@ public sealed class SalesService(
     {
         SaleReturnHistoryItem[] returns = connection.Query<ReturnActivityRow>("""
             SELECT r.return_no AS ReturnNumber,r.return_date AS Date,
-                   sl.product_name AS ProductName,rl.qty AS Quantity,
+                   COALESCE(rl.product_name_snapshot,'Legacy unknown') AS ProductName,rl.qty AS Quantity,
                    rl.refund_amount AS Refund,rl.resellable AS Resellable,r.reason AS Reason
             FROM sale_return r JOIN sale_return_line rl ON rl.sale_return_id=r.id
-            JOIN sale_line sl ON sl.id=rl.sale_line_id
             WHERE r.sale_id=@saleId ORDER BY r.id,rl.id
             """, new { saleId }).Select(static row => new SaleReturnHistoryItem(row.ReturnNumber,
                 row.Date, row.ProductName, Quantity.FromScaled(row.Quantity),
                 Money.FromScaled(row.Refund), row.Resellable, row.Reason)).ToArray();
         SaleMovementHistoryItem[] movements = connection.Query<MovementActivityRow>("""
-            SELECT m.move_date AS Date,p.name AS ProductName,l.lot_code AS LotCode,
+            SELECT m.move_date AS Date,
+                   COALESCE(
+                     (SELECT sl.product_name FROM sale_line sl
+                      WHERE m.ref_type='sale_line' AND sl.id=m.ref_id),
+                     (SELECT rl.product_name_snapshot FROM sale_return_line rl
+                      WHERE m.ref_type='sale_return' AND rl.sale_return_id=m.ref_id
+                        AND rl.lot_id_snapshot=m.lot_id LIMIT 1),
+                     'Legacy unknown') AS ProductName,
+                   COALESCE(
+                     (SELECT sl.lot_code_snapshot FROM sale_line sl
+                      WHERE m.ref_type='sale_line' AND sl.id=m.ref_id),
+                     (SELECT rl.lot_code_snapshot FROM sale_return_line rl
+                      WHERE m.ref_type='sale_return' AND rl.sale_return_id=m.ref_id
+                        AND rl.lot_id_snapshot=m.lot_id LIMIT 1),
+                     'Legacy unknown') AS LotCode,
                    m.type_code AS Type,m.qty AS Quantity
-            FROM stock_movement m JOIN product p ON p.id=m.product_id
-            JOIN product_lot l ON l.id=m.lot_id
+            FROM stock_movement m
             WHERE (m.ref_type='sale_line' AND m.ref_id IN
                 (SELECT id FROM sale_line WHERE sale_id=@saleId))
                OR (m.ref_type='sale_return' AND m.ref_id IN
@@ -925,10 +986,12 @@ public sealed class SalesService(
             LEFT JOIN customer c ON c.id=s.customer_id WHERE r.id=@returnId
             """, new { returnId }) ?? throw new DomainException(ErrorCode.NotFound, returnId);
         ReceiptLine[] lines = connection.Query<ReturnReceiptLineRow>("""
-            SELECT sl.product_name AS Name,sl.product_name_local AS LocalName,rl.qty AS Quantity,
-                   sl.unit_price AS UnitPrice,sl.mrp AS Mrp,rl.taxable_amount AS Taxable,
-                   rl.tax_amount AS Tax,rl.refund_amount AS Total,sl.tax_rate_pct AS TaxRate
-            FROM sale_return_line rl JOIN sale_line sl ON sl.id=rl.sale_line_id
+            SELECT rl.product_name_snapshot AS Name,rl.product_name_local_snapshot AS LocalName,
+                   rl.qty AS Quantity,rl.unit_price_snapshot AS UnitPrice,
+                   rl.mrp_snapshot AS Mrp,rl.taxable_amount AS Taxable,
+                   rl.tax_amount AS Tax,rl.refund_amount AS Total,
+                   rl.tax_rate_pct_snapshot AS TaxRate
+            FROM sale_return_line rl
             WHERE rl.sale_return_id=@returnId ORDER BY rl.id
             """, new { returnId }).Select(static row => new ReceiptLine(row.Name, row.LocalName,
                 Quantity.FromScaled(row.Quantity), Money.FromScaled(row.UnitPrice),
@@ -1043,13 +1106,19 @@ public sealed class SalesService(
         SaleLine[] lines = connection.Query<DetailLineRow>("""
             SELECT sl.id AS Id,sl.line_no AS LineNo,sl.product_id AS ProductId,sl.lot_id AS LotId,
                    sl.product_name AS ProductName,sl.product_name_local AS ProductNameLocal,
-                   l.batch_no AS BatchNumber,l.expiry_date AS ExpiryDate,l.qty_on_hand AS StockOnHand,sl.qty AS Qty,
+                   sl.product_sku_snapshot AS Sku,sl.uom_snapshot AS Unit,
+                   sl.product_class_snapshot AS ProductClass,
+                   sl.lot_code_snapshot AS LotCode,
+                   sl.snapshot_provenance AS SnapshotProvenance,
+                   sl.legacy_unknown_fields AS LegacyUnknownFields,
+                   sl.batch_no_snapshot AS BatchNumber,sl.expiry_date_snapshot AS ExpiryDate,
+                   COALESCE(l.qty_on_hand,0) AS StockOnHand,sl.qty AS Qty,
                    sl.unit_price AS UnitPrice,sl.mrp AS Mrp,sl.discount AS Discount,
                    sl.line_discount AS LineDiscount,
                    sl.tax_rate_pct AS TaxRatePct,sl.taxable_amount AS TaxableAmount,
                    sl.tax_amount AS TaxAmount,sl.line_total AS LineTotal,sl.unit_cost AS UnitCost,
                    sl.cost_amount AS CostAmount,sl.scanned_barcode AS ScannedBarcode
-            FROM sale_line sl JOIN product_lot l ON l.id=sl.lot_id
+            FROM sale_line sl LEFT JOIN product_lot l ON l.id=sl.lot_id
             WHERE sl.sale_id=@saleId ORDER BY sl.line_no
             """, new { saleId }).Select(static row => row.ToModel()).ToArray();
         Money grand = Money.FromScaled(header.GrandTotal);
@@ -1203,7 +1272,7 @@ public sealed class SalesService(
     private sealed class HistoryRow { public long Id { get; init; } public string? InvoiceNumber { get; init; } public string SaleDate { get; init; } = ""; public string Status { get; init; } = ""; public int LineCount { get; init; } public long GrandTotal { get; init; } public string PaymentModes { get; init; } = ""; public DateTime? CompletedAt { get; init; } public string? VoidReason { get; init; } }
     private sealed class ReturnActivityRow { public string ReturnNumber { get; init; } = ""; public DateOnly Date { get; init; } public string ProductName { get; init; } = ""; public long Quantity { get; init; } public long Refund { get; init; } public bool Resellable { get; init; } public string Reason { get; init; } = ""; }
     private sealed class MovementActivityRow { public DateOnly Date { get; init; } public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public string Type { get; init; } = ""; public long Quantity { get; init; } }
-    private sealed class ReturnableRow { public long Id { get; init; } public long ProductId { get; init; } public long LotId { get; init; } public long Quantity { get; init; } public long Taxable { get; init; } public long Tax { get; init; } public long Total { get; init; } public long Cost { get; init; } public long UnitCost { get; init; } public long ReturnedQuantity { get; init; } public long ReturnedTaxable { get; init; } public long ReturnedTax { get; init; } public long ReturnedTotal { get; init; } public long ReturnedCost { get; init; } }
+    private sealed class ReturnableRow { public long Id { get; init; } public long ProductId { get; init; } public long LotId { get; init; } public long Quantity { get; init; } public long Taxable { get; init; } public long Tax { get; init; } public long Total { get; init; } public long Cost { get; init; } public long UnitCost { get; init; } public long Discount { get; init; } public long ReturnedQuantity { get; init; } public long ReturnedTaxable { get; init; } public long ReturnedTax { get; init; } public long ReturnedTotal { get; init; } public long ReturnedCost { get; init; } public long ReturnedDiscount { get; init; } }
     private sealed class ReturnSummaryRow { public long Id { get; init; } public string ReturnNo { get; init; } = ""; public long Taxable { get; init; } public long Tax { get; init; } public long Refund { get; init; } public long Cost { get; init; } }
     private sealed class ReturnReceiptRow { public string ReturnNumber { get; init; } = ""; public DateTime CreatedAt { get; init; } public string? Reason { get; init; } public string RefundMode { get; init; } = ""; public long Taxable { get; init; } public long Tax { get; init; } public long Refund { get; init; } public string? OriginalInvoice { get; init; } public string? CustomerName { get; init; } }
     private sealed class ReturnReceiptLineRow { public string Name { get; init; } = ""; public string? LocalName { get; init; } public long Quantity { get; init; } public long UnitPrice { get; init; } public long? Mrp { get; init; } public long Taxable { get; init; } public long Tax { get; init; } public long Total { get; init; } public long TaxRate { get; init; } }
@@ -1219,6 +1288,12 @@ public sealed class SalesService(
         public long LotId { get; init; }
         public string ProductName { get; init; } = "";
         public string? ProductNameLocal { get; init; }
+        public string? Sku { get; init; }
+        public string? Unit { get; init; }
+        public string? ProductClass { get; init; }
+        public string? LotCode { get; init; }
+        public string? SnapshotProvenance { get; init; }
+        public string? LegacyUnknownFields { get; init; }
         public string? BatchNumber { get; init; }
         public DateOnly? ExpiryDate { get; init; }
         public long Qty { get; init; }
@@ -1239,6 +1314,10 @@ public sealed class SalesService(
             Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(Discount),
             Percent.FromScaled(TaxRatePct), Money.FromScaled(TaxableAmount), Money.FromScaled(TaxAmount),
             Money.FromScaled(LineTotal), Money.FromScaled(UnitCost), Money.FromScaled(CostAmount), ScannedBarcode,
-            Money.FromScaled(LineDiscount), Quantity.FromScaled(StockOnHand));
+            Money.FromScaled(LineDiscount), Quantity.FromScaled(StockOnHand))
+        {
+            Sku = Sku, Unit = Unit, ProductClass = ProductClass, LotCode = LotCode,
+            SnapshotProvenance = SnapshotProvenance, LegacyUnknownFields = LegacyUnknownFields,
+        };
     }
 }

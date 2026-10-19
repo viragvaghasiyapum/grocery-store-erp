@@ -715,6 +715,29 @@ public sealed class PhaseZeroSmokeTests
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 countWindow.Close();
 
+                var directCount = new DirectCountReviewWindow(
+                    new DirectStockCountService(database, new DirectStockEngine(), new PeriodGuard(settings)),
+                    [1], new SystemClock(settings), loadOnShow: false);
+                ((DataGrid)directCount.FindName("CountGrid")).ItemsSource = new object[]
+                {
+                    new { ProductName = "Tata Salt 1 kg", LotCode = "L2627-000014",
+                        Expected = 11m, Counted = "10", Difference = -1m, DifferenceValue = -250m },
+                    new { ProductName = "Wheat flour 5 kg", LotCode = "L2627-000015",
+                        Expected = 8m, Counted = "8", Difference = 0m, DifferenceValue = 0m },
+                };
+                ((TextBox)directCount.FindName("ReasonBox")).Text = "Shelf count";
+                ((TextBlock)directCount.FindName("PageText")).Text = translations.Format("Stock_CountPage", 1, 2);
+                ((TextBlock)directCount.FindName("StatusText")).Text = translations.Format("Stock_ReviewSummary", 1, "-250.000");
+                ((Button)directCount.FindName("PostButton")).IsEnabled = true;
+                directCount.Show();
+                Capture(directCount, "direct-count-review.en.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                ((TextBlock)directCount.FindName("PageText")).Text = translations.Format("Stock_CountPage", 1, 2);
+                ((TextBlock)directCount.FindName("StatusText")).Text = translations.Format("Stock_ReviewSummary", 1, "-250.000");
+                Capture(directCount, "direct-count-review.gu.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                directCount.Close();
+
                 var countScope = new StockCountScopeWindow(catalog, loadOnShow: false);
                 ((ListBox)countScope.FindName("CategoriesBox")).ItemsSource = new[]
                 {

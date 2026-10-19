@@ -21,7 +21,7 @@ public sealed class NullMigrationBackup : IMigrationBackup
 
 public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMigrationBackup backup)
 {
-    public const int LatestVersion = 28;
+    public const int LatestVersion = 29;
 
     public void Run()
     {
@@ -37,28 +37,42 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
 
         foreach (Script script in scripts.Where(item => item.Version > current))
         {
-            using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
-            string sql = script.Sql;
-            if (script.Version == 18 && connection.ExecuteScalar<long>(
-                    "SELECT COUNT(*) FROM pragma_table_info('pnl_day') WHERE name='sales'",
-                    transaction: transaction) != 0)
-                sql = sql.Replace("ALTER TABLE pnl_day ADD COLUMN sales INTEGER NOT NULL DEFAULT 0;",
-                    string.Empty, StringComparison.Ordinal);
-            if (script.Version == 24)
-                foreach (string column in new[] { "selling_value", "mrp_value" })
-                    if (connection.ExecuteScalar<long>(
-                            "SELECT COUNT(*) FROM pragma_table_info('product_stock_total') WHERE name=@column",
-                            new { column }, transaction) != 0)
-                        sql = sql.Replace($"ALTER TABLE product_stock_total ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0;",
-                            string.Empty, StringComparison.Ordinal);
-            connection.Execute(sql, transaction: transaction);
-            if (script.Version == 19)
-                DashboardTopProjection.Rebuild(connection, transaction, DateOnly.FromDateTime(DateTime.Now));
-            if (script.Version != 16)
-                connection.Execute(
-                    $"PRAGMA user_version = {script.Version.ToString(CultureInfo.InvariantCulture)};",
-                    transaction: transaction);
-            transaction.Commit();
+            if (script.Version == 29)
+                connection.Execute("PRAGMA foreign_keys=OFF; PRAGMA temp_store=FILE;");
+            try
+            {
+                using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+                string sql = script.Sql;
+                if (script.Version == 18 && connection.ExecuteScalar<long>(
+                        "SELECT COUNT(*) FROM pragma_table_info('pnl_day') WHERE name='sales'",
+                        transaction: transaction) != 0)
+                    sql = sql.Replace("ALTER TABLE pnl_day ADD COLUMN sales INTEGER NOT NULL DEFAULT 0;",
+                        string.Empty, StringComparison.Ordinal);
+                if (script.Version == 24)
+                    foreach (string column in new[] { "selling_value", "mrp_value" })
+                        if (connection.ExecuteScalar<long>(
+                                "SELECT COUNT(*) FROM pragma_table_info('product_stock_total') WHERE name=@column",
+                                new { column }, transaction) != 0)
+                            sql = sql.Replace($"ALTER TABLE product_stock_total ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0;",
+                                string.Empty, StringComparison.Ordinal);
+                PhaseOneMigration? phaseOne = script.Version == 29
+                    ? PhaseOneMigration.Prepare(connection, transaction) : null;
+                connection.Execute(sql, transaction: transaction);
+                if (phaseOne is not null)
+                    phaseOne.Finish(connection, transaction);
+                if (script.Version == 19)
+                    DashboardTopProjection.Rebuild(connection, transaction, DateOnly.FromDateTime(DateTime.Now));
+                if (script.Version != 16)
+                    connection.Execute(
+                        $"PRAGMA user_version = {script.Version.ToString(CultureInfo.InvariantCulture)};",
+                        transaction: transaction);
+                transaction.Commit();
+            }
+            finally
+            {
+                if (script.Version == 29)
+                    connection.Execute("PRAGMA foreign_keys=ON; PRAGMA temp_store=MEMORY;");
+            }
             if (script.Version == 16)
             {
                 // Each month commits independently. If interrupted, user_version stays

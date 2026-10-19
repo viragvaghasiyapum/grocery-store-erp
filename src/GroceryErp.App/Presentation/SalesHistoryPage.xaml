@@ -7,14 +7,15 @@
  ScrollViewer.CanContentScroll="False">
  <Page.Resources>
   <local:SaleStatusConverter x:Key="SaleStatusConverter"/>
+  <local:LegacySnapshotTextConverter x:Key="LegacySnapshotTextConverter"/>
   <local:PaymentModesConverter x:Key="PaymentModesConverter"/>
  </Page.Resources>
- <Grid Margin="20">
+ <Grid Margin="16,12,16,12">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
    <RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <Grid Grid.Row="0">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-   <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Sales_History_Title}"/>
+   <TextBlock FontSize="22" FontWeight="SemiBold" Text="{l:Tr Sales_History_Title}"/>
    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
     <TextBlock x:Name="StatusText" MaxWidth="220" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
     <Button x:Name="ExportButton" Margin="8,0,0,0" Click="Export_OnClick" Content="{l:Tr Sales_Export}"/>
@@ -22,7 +23,8 @@
     <ProgressBar x:Name="ExportProgress" Width="64" Height="5" Margin="10,0,0,0" VerticalAlignment="Center" IsIndeterminate="True" Visibility="Collapsed"/>
    </StackPanel>
   </Grid>
-  <WrapPanel Grid.Row="1" Margin="0,12,0,8">
+  <StackPanel Grid.Row="1" Margin="0,6,0,4">
+  <WrapPanel>
    <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Sales_From}"/><DatePicker x:Name="FromPicker" Width="135" SelectedDateFormat="Short"/></StackPanel>
    <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Sales_To}"/><DatePicker x:Name="ToPicker" Width="135" SelectedDateFormat="Short"/></StackPanel>
    <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Sales_Invoice}"/><TextBox x:Name="InvoiceBox" Width="145" Height="32"/></StackPanel>
@@ -32,6 +34,11 @@
      <ComboBoxItem Content="{l:Tr Sales_Void}" Tag="Void"/>
     </ComboBox>
    </StackPanel>
+   <Button Margin="0,15,8,8" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
+   <Button Margin="0,15,0,8" Click="DayEnd_OnClick" Content="{l:Tr Sales_DayEnd}"/>
+  </WrapPanel>
+  <local:AnimatedSection Header="{l:Tr Purchasing_Filters}" IsExpanded="False" Margin="0,0,0,4">
+   <WrapPanel Margin="0,6,0,0">
    <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Purchasing_Mode}"/>
     <ComboBox x:Name="PaymentBox" Width="115" Height="32" SelectedIndex="0">
      <ComboBoxItem Content="{l:Tr Sales_All}"/><ComboBoxItem Content="{l:Tr Sales_CashLabel}" Tag="Cash"/>
@@ -40,10 +47,10 @@
    </StackPanel>
    <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Sales_Minimum}"/><TextBox x:Name="MinimumBox" Width="100" Height="32"/></StackPanel>
    <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Sales_Maximum}"/><TextBox x:Name="MaximumBox" Width="100" Height="32"/></StackPanel>
-   <Button Margin="0,15,8,8" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
-   <Button Margin="0,15,0,8" Click="DayEnd_OnClick" Content="{l:Tr Sales_DayEnd}"/>
-  </WrapPanel>
-  <DataGrid x:Name="HistoryGrid" Grid.Row="2" Margin="0,0,0,10" Style="{StaticResource CatalogGrid}"
+   </WrapPanel>
+  </local:AnimatedSection>
+  </StackPanel>
+  <DataGrid x:Name="HistoryGrid" Grid.Row="2" Margin="0,0,0,6" Style="{StaticResource CompactTableGrid}"
             SelectionChanged="HistoryGrid_OnSelectionChanged">
    <DataGrid.Columns>
     <DataGridTemplateColumn Width="125" Header="{l:Tr Sales_ViewBillItems}">
@@ -74,9 +81,13 @@
     </Grid>
     <TabControl x:Name="DetailTabs" Grid.Row="1" Margin="0,12,0,0" SelectionChanged="DetailTabs_OnSelectionChanged">
      <TabItem Header="{l:Tr Sales_Items}">
-    <DataGrid x:Name="DetailGrid" Style="{StaticResource CatalogGrid}" RowHeight="40">
+    <DataGrid x:Name="DetailGrid" Style="{StaticResource CompactTableGrid}" RowHeight="38">
      <DataGrid.Columns>
-      <DataGridTextColumn Width="320" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
+      <DataGridTextColumn Width="240" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
+      <DataGridTextColumn Width="105" Header="{l:Tr Catalog_Sku}" Binding="{Binding SkuDisplay,Converter={StaticResource LegacySnapshotTextConverter}}"/>
+      <DataGridTextColumn Width="105" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
+      <DataGridTextColumn Width="115" Header="{l:Tr Stock_Batch}" Binding="{Binding BatchDisplay,Converter={StaticResource LegacySnapshotTextConverter}}"/>
+      <DataGridTextColumn Width="115" Header="{l:Tr Stock_Expiry}" Binding="{Binding ExpiryDisplay,Converter={StaticResource LegacySnapshotTextConverter}}"/>
       <DataGridTextColumn Width="85" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
       <DataGridTextColumn Width="110" Header="{l:Tr Catalog_Price}" Binding="{Binding UnitPrice}"/>
       <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Total}" Binding="{Binding Total}"/>

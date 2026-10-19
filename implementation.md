@@ -1,5 +1,7 @@
 # Implementation Guide — Grocery ERP
 
+> **Revision contract (18 October 2026).** This guide documents the running schema-28 ledger implementation. [revised-implementation-plan.md](revised-implementation-plan.md) §1–2 governs the next implementation where it conflicts with this guide. [Phase 0 behavior matrix](docs/phase0/behavior-matrix.md) and [dependency inventory](docs/phase0/dependency-inventory.md) map the change. In the target design, authoritative lot quantities replace generic `stock_movement` after a whole-app cutover, sale and purchase documents own immutable snapshots, calendar and fiscal years lock independently, and Stock Ledger/standalone Expiry screens are removed after replacement workflows pass. Historical migration scripts 002–028 remain unchanged; migration 029 is the first available number. Do not interpret the legacy ledger requirements below as target rules.
+
 > How to build the Grocery ERP described in `techstack.md` on top of `grocery_erp_schema.sql`
 > (migration 001), `002_i18n_pricing_reporting.sql` (migration 002), `003_operations.sql`
 > (migration 003) and `004_stock_in.sql` (migration 004).

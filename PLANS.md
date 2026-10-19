@@ -1,16 +1,19 @@
 # Development Plan and Coding Practices — Grocery ERP
 
+> **Revision contract (18 October 2026).** For the planned schema-29+ implementation, [revised-implementation-plan.md](revised-implementation-plan.md) §1–2 supersedes the ledger, lot edit/delete, purchase merge/cancel, sale return, and period-lock instructions below. Existing schema-28 code still follows the legacy ledger rules until the single verified cutover. New stock writes must then change authoritative `product_lot.qty_on_hand` through conditional service transactions, update bounded projections and source documents atomically, and never create generic movements. Completed sale and posted purchase snapshots are immutable. Calendar and fiscal annual locks apply independently. [Phase 0 behavior matrix](docs/phase0/behavior-matrix.md) and [dependency inventory](docs/phase0/dependency-inventory.md) specify the migration scope. No shipped migration 002–028 may be edited; new scripts begin at 029.
+
 These rules apply to every change in this repository, whether written by a person or by an AI
 coding agent. They describe **how** to write code. **What** to build is defined by:
 
 | Document | Owns |
 |---|---|
 | `techstack.md` | Technology decisions, packages, versions, rejected alternatives |
-| `implementation.md` | Architecture, module specs, algorithms, phase plan (§21), error codes (App. B), settings keys (App. C) |
-| `db/NNN_*.sql` | The database schema — the only source of truth for tables, columns, triggers and views |
+| `revised-implementation-plan.md` | Single source of truth for the revised product behavior, phase scope, ordering and acceptance gates |
+| `implementation.md` | Legacy architecture, module specs, algorithms, error codes (App. B), settings keys (App. C); revised decisions take precedence |
+| Shipped SQL migrations | The implemented database schema at each version; new scripts start at 029 |
 | `PLANS.md` (this file) | Coding practices, workflow, definition of done |
 
-If this file and `implementation.md` disagree, **stop and raise it** — do not silently pick one.
+For revised product behavior, phase scope, ordering or acceptance gates, follow `revised-implementation-plan.md` and correct conflicting older text. Raise unresolved disagreements about coding practices or currently implemented schema rather than silently guessing.
 Section references like "impl §5.6" point into `implementation.md`.
 
 ---
@@ -28,7 +31,7 @@ Section references like "impl §5.6" point into `implementation.md`.
 - **All numbers are always English digits `0–9`**, whichever language is chosen — on screen, in
   input fields, on receipts and labels, in reports and exports.
 - **Modular:** one project per business module; modules talk only through each other's `Contracts`.
-- **The stock ledger is append-only; finalized documents are immutable.**
+- **Current schema-28 compatibility:** the stock ledger is append-only. **Target schema-29+ contract:** direct lot quantity with source-document reconciliation; finalized sale and purchase snapshots remain immutable.
 
 ---
 
@@ -327,6 +330,8 @@ Module `Domain`/`Application` namespaces can't be covered by a per-project ban (
 
 ## 12. Inventory Practices
 
+**Target rule after the coordinated stock cutover:** replace `IStockLedger.Post` with one transactional service operation per business action. A lot's quantity is authoritative. Every increment or decrement has an immutable source document and operation ID; conditional updates prevent negative stock. Preserve a bounded product total projection. Full source arithmetic runs in maintenance, not on every UI write. Until cutover, the compatibility rules below describe only the existing schema-28 implementation.
+
 - Stock changes **only** through `IStockLedger.Post`. No code outside the Inventory module writes
   `stock_movement`; nothing anywhere writes `product_lot.qty_on_hand` directly.
 - Every movement references its origin (`ref_type`, `ref_id`) and uses the correct movement type.
@@ -344,6 +349,8 @@ Module `Domain`/`Application` namespaces can't be covered by a per-project ban (
 ---
 
 ## 13. Accounting, P&L, Depreciation and Salary Practices
+
+**Target rule:** calendar years close from 8 January and fiscal years from 8 April, with the seven dates after each year end editable. Apply both locks independently to dated writes and corrections. Open reports use source records or bounded summaries; a closed annual report uses saved head/category/month snapshots. Post later corrections in an open current period. Do not offer a recalculate-year choice. The legacy `books.locked_until` rule below describes schema 28 only.
 
 **One accounting path**
 

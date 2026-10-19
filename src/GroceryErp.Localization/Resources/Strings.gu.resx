@@ -1153,4 +1153,12 @@
   <data name="Catalog_PrintLabelsSelected" xml:space="preserve"><value>પસંદ કરેલાં માટે લેબલ છાપો</value></data>
   <data name="Catalog_GenerateBarcodeSelected" xml:space="preserve"><value>પસંદ કરેલાં માટે બારકોડ બનાવો</value></data>
   <data name="Catalog_BarcodesGenerated" xml:space="preserve"><value>{0} ઉત્પાદનો માટે બારકોડ બનાવાયા.</value></data>
+  <data name="History_LegacyPurchaseSnapshot" xml:space="preserve"><value>જૂનું બિલ: ઉત્પાદનનું નામ અને SKU સ્થાનાંતરણ સમયે યાદીમાંથી લેવામાં આવ્યા છે; જૂના મૂલ્યોની ખાતરી કરી શકાઈ નથી.</value></data>
+  <data name="History_LegacyUnknown" xml:space="preserve"><value>જૂની માહિતી ઉપલબ્ધ નથી</value></data>
+  <data name="Stock_ReconcileSelected" xml:space="preserve"><value>પસંદ કરેલા સ્ટોકનું મિલાન કરો</value><comment>MT - needs review</comment></data>
+  <data name="Stock_DirectUnavailable" xml:space="preserve"><value>સીધા સ્ટોકની ગણતરી સ્ટોક લેખન બદલાયા પછી ઉપલબ્ધ થશે.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_CountPage" xml:space="preserve"><value>પાનું {0}: {1} લોટ</value><comment>MT - needs review</comment></data>
+  <data name="Stock_CountNoLots" xml:space="preserve"><value>આ ઉત્પાદનો માટે કોઈ લોટ ઉપલબ્ધ નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_ReasonRequired" xml:space="preserve"><value>સમીક્ષા પહેલાં કારણ દાખલ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_CountPagePosted" xml:space="preserve"><value>ચકાસેલું ગણતરી પાનું નોંધાયું. આગળના પાને જાઓ અથવા બંધ કરો.</value><comment>MT - needs review</comment></data>
 </root>

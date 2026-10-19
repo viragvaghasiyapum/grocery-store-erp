@@ -199,10 +199,22 @@ public sealed class SalesTests
     {
         using var fixture = new SalesFixture();
         CancellationToken ct = TestContext.Current.CancellationToken;
+        using (var db = fixture.Factory.Open())
+            db.Execute("UPDATE product_lot SET batch_no='B-OLD',expiry_date='2026-12-31' WHERE id=@id",
+                new { id = fixture.LotId });
         long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, new Quantity(2), cancellationToken: ct);
         await fixture.Sales.CompleteAsync(new(saleId, [new(PaymentMode.Cash, new Money(236))],
             OperationGuard.NewId()), ct);
         SaleDetails sale = await fixture.Sales.GetAsync(saleId, ct);
+        sale.Lines[0].Sku.ShouldNotBeNullOrWhiteSpace();
+        sale.Lines[0].Unit.ShouldNotBeNullOrWhiteSpace();
+        sale.Lines[0].ProductClass.ShouldBe("SALEABLE");
+        sale.Lines[0].BatchNumber.ShouldBe("B-OLD");
+        sale.Lines[0].SnapshotProvenance.ShouldBe("AT_COMPLETION");
+        using (var db = fixture.Factory.Open())
+            db.Execute("UPDATE product_lot SET batch_no='B-NEW',expiry_date='2027-01-31' WHERE id=@id",
+                new { id = fixture.LotId });
+        (await fixture.Sales.GetAsync(saleId, ct)).Lines[0].BatchNumber.ShouldBe("B-OLD");
 
         CompletedReturn returned = await fixture.Sales.ReturnAsync(new(saleId, fixture.Clock.BusinessDate,
             "Opened package", RefundMode.Cash, [new(sale.Lines[0].Id, Quantity.One, false)],
@@ -220,6 +232,10 @@ public sealed class SalesTests
         connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = fixture.LotId })
             .ShouldBe(8000L);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM damage WHERE reason='CUSTOMER_RETURN'").ShouldBe(1L);
+        connection.ExecuteScalar<string>("SELECT batch_no_snapshot FROM sale_return_line WHERE sale_return_id=@id",
+            new { id = returned.ReturnId }).ShouldBe("B-OLD");
+        connection.ExecuteScalar<string>("SELECT batch_no_snapshot FROM damage WHERE reason='CUSTOMER_RETURN'")
+            .ShouldBe("B-OLD");
         DayEndSummary summary = await fixture.Sales.GetDayEndAsync(fixture.Clock.BusinessDate, ct);
         summary.CashExpected.ShouldBe(new Money(118));
     }

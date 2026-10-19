@@ -430,6 +430,7 @@ public partial class ReportsPage : Page
         using var cancellation = new CancellationTokenSource();
         _exportCancellation = cancellation;
         CancelExportButton.IsEnabled = true;
+        CancelExportButton.Visibility = Visibility.Visible;
         ExportProgress.Visibility = Visibility.Visible;
         PnlStatement? pnl = _currentPnl;
         TabularReport? report = _currentReport;
@@ -450,6 +451,7 @@ public partial class ReportsPage : Page
         {
             _exportCancellation = null;
             CancelExportButton.IsEnabled = false;
+            CancelExportButton.Visibility = Visibility.Collapsed;
             ExportProgress.Visibility = Visibility.Collapsed;
         }
     }
@@ -464,6 +466,7 @@ public partial class ReportsPage : Page
         _exportCancellation = cancellation;
         FullCsvButton.IsEnabled = false;
         CancelExportButton.IsEnabled = true;
+        CancelExportButton.Visibility = Visibility.Visible;
         ExportProgress.Visibility = Visibility.Visible;
         try
         {
@@ -496,6 +499,7 @@ public partial class ReportsPage : Page
             _exportCancellation = null;
             FullCsvButton.IsEnabled = true;
             CancelExportButton.IsEnabled = false;
+            CancelExportButton.Visibility = Visibility.Collapsed;
             ExportProgress.Visibility = Visibility.Collapsed;
         }
     }

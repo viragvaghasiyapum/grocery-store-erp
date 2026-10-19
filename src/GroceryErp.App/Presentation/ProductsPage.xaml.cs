@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using GroceryErp.Catalog;
 using GroceryErp.Core.Errors;
+using GroceryErp.Core.Time;
 using GroceryErp.Data.Services;
 using GroceryErp.Inventory;
 using GroceryErp.Localization;
@@ -49,6 +50,10 @@ public partial class ProductsPage : Page
             if (!loadOnShow) return;
             try
             {
+                bool directCountsAvailable = await ((App)Application.Current).Services
+                    .GetRequiredService<DirectStockCountService>().IsAvailableAsync();
+                ReconcileButton.Visibility = directCountsAvailable ? Visibility.Visible : Visibility.Collapsed;
+                BulkReconcileButton.Visibility = ReconcileButton.Visibility;
                 await LoadMastersAsync();
                 await RefreshAsync();
             }
@@ -298,6 +303,7 @@ public partial class ProductsPage : Page
         bool multiple = ids.Length > 1;
         EditButton.IsEnabled = single;
         LotsButton.IsEnabled = single;
+        ReconcileButton.IsEnabled = single;
         LedgerButton.IsEnabled = single;
         LabelsButton.IsEnabled = single && active;
         BarcodeButton.IsEnabled = active;
@@ -307,6 +313,7 @@ public partial class ProductsPage : Page
         BulkRemoveButton.IsEnabled = multiple && _selectedProducts.Values.All(static value => value);
         BulkRestoreButton.IsEnabled = multiple && _selectedProducts.Values.All(static value => !value);
         BulkBarcodeButton.IsEnabled = multiple && _selectedProducts.Values.All(static value => value);
+        BulkReconcileButton.IsEnabled = multiple && ids.Length <= 100;
         SelectedCountText.Text = TranslationSource.Instance.Format("Selection_Count", ids.Length);
         UpdatePageSelectionCheck();
     }
@@ -385,6 +392,27 @@ public partial class ProductsPage : Page
     }
 
     private void Lots_OnClick(object sender, RoutedEventArgs e) => OpenStock(showLedger: false);
+
+    private async void Reconcile_OnClick(object sender, RoutedEventArgs e)
+    {
+        long[] ids = SelectedProductIds();
+        if (ids.Length is < 1 or > 100) return;
+        try
+        {
+            IServiceProvider services = ((App)Application.Current).Services;
+            var counts = services.GetRequiredService<DirectStockCountService>();
+            if (!await counts.IsAvailableAsync())
+            {
+                StatusText.Text = TranslationSource.Instance["Stock_DirectUnavailable"];
+                return;
+            }
+            var window = new DirectCountReviewWindow(counts, ids, services.GetRequiredService<IClock>())
+            { Owner = Window.GetWindow(this) };
+            window.ShowDialog();
+            if (window.HasPosted) await RefreshAsync();
+        }
+        catch (Exception exception) { ShowError(exception); }
+    }
 
     private void Ledger_OnClick(object sender, RoutedEventArgs e) => OpenStock(showLedger: true);
 

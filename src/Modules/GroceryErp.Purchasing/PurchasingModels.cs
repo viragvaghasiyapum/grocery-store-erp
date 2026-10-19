@@ -68,7 +68,11 @@ public sealed record PurchaseInvoiceLine(int LineNumber, string Sku, string Prod
     string? BatchNumber, DateOnly? ManufacturingDate, DateOnly? ExpiryDate,
     Quantity Quantity, Quantity FreeQuantity, Money Rate, Money Discount,
     Percent TaxRate, Money TaxAmount, Money LineTotal, Money LandedUnitCost,
-    Money? Mrp, Money SellingPrice);
+    Money? Mrp, Money SellingPrice)
+{
+    public string? SnapshotProvenance { get; init; }
+    public string? LegacyUnknownFields { get; init; }
+}
 
 public sealed record PurchaseInvoice(long Id, string? DocumentNumber, string VendorName,
     string? VendorInvoiceNumber, DateOnly? VendorInvoiceDate, DateOnly ReceivedDate,

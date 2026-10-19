@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dapper;
+using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Backup;
 using GroceryErp.Data.Infrastructure;
@@ -30,6 +31,21 @@ public sealed class FoundationsTests
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM setting").ShouldBeGreaterThan(0);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM operation").ShouldBe(0L);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM uom").ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    public void OlderBinary_RefusesNewerSchemaBeforeAnyMigration()
+    {
+        using var fixture = new FoundationFixture();
+        using (var connection = fixture.Factory.Open())
+            connection.Execute($"PRAGMA user_version={MigrationRunner.LatestVersion + 1}");
+
+        DomainException failure = Should.Throw<DomainException>(() =>
+            new MigrationRunner(fixture.Factory, NullMigrationBackup.Instance).Run());
+        failure.Code.ShouldBe(ErrorCode.DatabaseNewerThanApp);
+        using var unchanged = fixture.Factory.Open();
+        unchanged.ExecuteScalar<long>("PRAGMA user_version")
+            .ShouldBe(MigrationRunner.LatestVersion + 1L);
     }
 
     [Fact]
@@ -101,9 +117,16 @@ public sealed class FoundationsTests
                     """);
             }
 
-            new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
-
+            // This fixture deliberately contains only the four tables needed by
+            // migration 28, so apply that isolated script rather than the full
+            // schema-29 migration (which requires the complete schema).
             using var upgraded = factory.Open();
+            string resource = typeof(MigrationRunner).Assembly.GetManifestResourceNames()
+                .Single(static name => name.EndsWith(".028_purchase_invoice_snapshots.sql", StringComparison.Ordinal));
+            using (Stream stream = typeof(MigrationRunner).Assembly.GetManifestResourceStream(resource)
+                ?? throw new InvalidOperationException(resource))
+            using (var reader = new StreamReader(stream))
+                upgraded.Execute(reader.ReadToEnd());
             upgraded.ExecuteScalar<string>("SELECT vendor_name_snapshot FROM purchase WHERE id=1")
                 .ShouldBe("Original Vendor");
             upgraded.ExecuteScalar<string>("SELECT product_name_snapshot FROM purchase_line WHERE id=1")
@@ -123,23 +146,43 @@ public sealed class FoundationsTests
     [Fact]
     public void InterruptedPnlBackfill_RebuildsOnNextMigrationRun()
     {
-        using var fixture = new FoundationFixture();
-        using (var connection = fixture.Factory.Open())
+        string root = Path.Combine(Path.GetTempPath(), $"grocery-erp-interrupted-pnl-{Guid.NewGuid():N}");
+        try
         {
-            connection.Execute("""
+            var factory = new SqliteConnectionFactory(new AppPaths(new SettingsBootstrap(root)));
+            string[] resources = typeof(MigrationRunner).Assembly.GetManifestResourceNames()
+                .Where(static name => name.Contains(".db.", StringComparison.Ordinal))
+                .Order(StringComparer.Ordinal).Take(16).ToArray();
+            resources.Length.ShouldBe(16);
+            using (var connection = factory.Open())
+            {
+                foreach (string resource in resources)
+                {
+                    using Stream stream = typeof(MigrationRunner).Assembly.GetManifestResourceStream(resource)
+                        ?? throw new InvalidOperationException(resource);
+                    using var reader = new StreamReader(stream);
+                    connection.Execute(reader.ReadToEnd());
+                }
+                connection.Execute("""
                 INSERT INTO sale(invoice_no,sale_date,status,taxable_total,grand_total,cost_total)
                 VALUES('REBUILD-1','2026-08-31','COMPLETED',100000,100000,60000),
                       ('REBUILD-2','2026-09-01','COMPLETED',200000,200000,120000);
                 DELETE FROM pnl_day;
                 PRAGMA user_version=15;
                 """);
+            }
+            new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
+            using var rebuilt = factory.Open();
+            rebuilt.ExecuteScalar<long>("PRAGMA user_version").ShouldBe((long)MigrationRunner.LatestVersion);
+            rebuilt.ExecuteScalar<long>("SELECT SUM(taxable) FROM pnl_day").ShouldBe(300000);
+            rebuilt.ExecuteScalar<long>("SELECT SUM(bills) FROM pnl_day").ShouldBe(2);
+            rebuilt.ExecuteScalar<long>("SELECT SUM(sales) FROM pnl_day").ShouldBe(300000);
         }
-        new MigrationRunner(fixture.Factory, NullMigrationBackup.Instance).Run();
-        using var rebuilt = fixture.Factory.Open();
-        rebuilt.ExecuteScalar<long>("PRAGMA user_version").ShouldBe((long)MigrationRunner.LatestVersion);
-        rebuilt.ExecuteScalar<long>("SELECT SUM(taxable) FROM pnl_day").ShouldBe(300000);
-        rebuilt.ExecuteScalar<long>("SELECT SUM(bills) FROM pnl_day").ShouldBe(2);
-        rebuilt.ExecuteScalar<long>("SELECT SUM(sales) FROM pnl_day").ShouldBe(300000);
+        finally
+        {
+            SqliteConnectionFactory.ClearPoolForDataRoot(root);
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]

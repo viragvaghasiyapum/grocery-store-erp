@@ -29,10 +29,12 @@
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
 
-    <Border Padding="20,10" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+    <Border Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+            HorizontalAlignment="Left" Padding="20,10"
+            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
       <Grid>
         <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
@@ -48,26 +50,27 @@
             </StackPanel>
           </Grid>
         </StackPanel>
-        <StackPanel Grid.Column="1" HorizontalAlignment="Right" Orientation="Horizontal">
-          <Border x:Name="PrinterStatusBadge" Margin="0,0,8,0" Padding="8,4" CornerRadius="5"
+        <StackPanel Grid.Column="1" Margin="24,0,0,0" HorizontalAlignment="Left" Orientation="Horizontal">
+          <Border x:Name="PrinterStatusBadge" MaxWidth="140" Margin="0,0,8,0" Padding="8,4" CornerRadius="5"
                   Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                   BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
                   VerticalAlignment="Center">
-            <TextBlock x:Name="PrinterStatusText" FontSize="12" VerticalAlignment="Center"
+            <TextBlock x:Name="PrinterStatusText" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                        AutomationProperties.LiveSetting="Polite" />
           </Border>
-          <Border x:Name="ScannerStatusBadge" Margin="0,0,8,0" Padding="8,4" CornerRadius="5"
+          <Border x:Name="ScannerStatusBadge" MaxWidth="140" Margin="0,0,8,0" Padding="8,4" CornerRadius="5"
                   Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                   BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
                   VerticalAlignment="Center">
-            <TextBlock x:Name="ScannerStatusText" FontSize="12" VerticalAlignment="Center"
+            <TextBlock x:Name="ScannerStatusText" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                        AutomationProperties.LiveSetting="Polite" />
           </Border>
-          <Button x:Name="BackupStatusButton" Margin="0,0,8,0" Click="BackupStatus_OnClick" Content="{l:Tr Settings_NoBackup}"/>
-          <Button x:Name="UpdateButton" Margin="0,0,8,0" Click="Update_OnClick" Content="{l:Tr Settings_Update_CheckFolder}" />
-          <Button x:Name="LockButton" Margin="0,0,8,0" Click="Lock_OnClick" Content="{l:Tr Lock_Command}" />
-          <Button Margin="0,0,6,0" Command="{Binding UseEnglishCommand}" Content="EN" ToolTip="{l:Tr Shell_English}" />
-          <Button Command="{Binding UseGujaratiCommand}" Content="ગુ" ToolTip="{l:Tr Shell_Gujarati}" />
+          <Button x:Name="BackupStatusButton" MaxWidth="150" Margin="0,0,8,0" Click="BackupStatus_OnClick" Content="{l:Tr Settings_NoBackup}"/>
+          <Button x:Name="UpdateButton" Width="62" MinWidth="0" Margin="0,0,8,0" Click="Update_OnClick" Content="USB"
+                  ToolTip="{l:Tr Settings_Update_CheckFolder}" AutomationProperties.Name="{l:Tr Settings_Update_CheckFolder}" />
+          <Button x:Name="LockButton" Width="62" MinWidth="0" Margin="0,0,8,0" Click="Lock_OnClick" Content="{l:Tr Lock_Command}" />
+          <Button Width="42" MinWidth="0" Margin="0,0,6,0" Command="{Binding UseEnglishCommand}" Content="EN" ToolTip="{l:Tr Shell_English}" />
+          <Button Width="42" MinWidth="0" Command="{Binding UseGujaratiCommand}" Content="ગુ" ToolTip="{l:Tr Shell_Gujarati}" />
         </StackPanel>
       </Grid>
     </Border>

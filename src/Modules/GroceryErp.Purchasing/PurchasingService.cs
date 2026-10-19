@@ -68,17 +68,19 @@ public sealed class PurchasingService(
         {
             string? productPattern = string.IsNullOrWhiteSpace(productQuery) ? null : $"%{productQuery.Trim()}%";
             List<PurchaseListItem> rows = connection.Query<PurchaseListRow>("""
-                SELECT p.id AS Id,p.doc_no AS DocumentNumber,v.name AS VendorName,
+                SELECT p.id AS Id,p.doc_no AS DocumentNumber,
+                       COALESCE(p.vendor_name_snapshot,v.name,'Legacy unknown') AS VendorName,
                        p.vendor_invoice_no AS VendorInvoiceNumber,p.received_date AS ReceivedDate,
                        p.status AS Status,p.grand_total AS GrandTotal,p.vendor_bill_total AS VendorBillTotal
-                FROM purchase p JOIN vendor v ON v.id=p.vendor_id
+                FROM purchase p LEFT JOIN vendor v ON v.id=p.vendor_id
                 WHERE (@from IS NULL OR p.received_date>=@from)
                   AND (@to IS NULL OR p.received_date<=@to)
                   AND (@vendorId IS NULL OR p.vendor_id=@vendorId)
                   AND (@productPattern IS NULL OR EXISTS (
-                      SELECT 1 FROM purchase_line pl JOIN product item ON item.id=pl.product_id
-                      WHERE pl.purchase_id=p.id AND (item.name LIKE @productPattern COLLATE NOCASE
-                          OR item.sku LIKE @productPattern COLLATE NOCASE)))
+                      SELECT 1 FROM purchase_line pl
+                      WHERE pl.purchase_id=p.id AND
+                        (pl.product_name_snapshot LIKE @productPattern COLLATE NOCASE
+                         OR pl.product_sku_snapshot LIKE @productPattern COLLATE NOCASE)))
                   AND (@beforeDate IS NULL OR p.received_date<@beforeDate
                        OR (p.received_date=@beforeDate AND p.id<@beforeId))
                 ORDER BY p.received_date DESC,p.id DESC LIMIT @take
@@ -96,28 +98,30 @@ public sealed class PurchasingService(
         {
             PurchaseInvoiceHeaderRow? header = connection.QuerySingleOrDefault<PurchaseInvoiceHeaderRow>("""
                 SELECT p.id AS Id,p.doc_no AS DocumentNumber,
-                       COALESCE(p.vendor_name_snapshot,v.name) AS VendorName,
+                       COALESCE(p.vendor_name_snapshot,v.name,'Legacy unknown') AS VendorName,
                        p.vendor_invoice_no AS VendorInvoiceNumber,
                        p.vendor_invoice_date AS VendorInvoiceDate,p.received_date AS ReceivedDate,
                        p.status AS Status,p.notes AS Notes,p.subtotal AS Subtotal,
                        p.discount_total AS Discount,p.tax_total AS Tax,
                        p.other_charges AS OtherCharges,p.round_off AS RoundOff,
                        p.grand_total AS GrandTotal,p.vendor_bill_total AS VendorBillTotal
-                FROM purchase p JOIN vendor v ON v.id=p.vendor_id WHERE p.id=@purchaseId
+                FROM purchase p LEFT JOIN vendor v ON v.id=p.vendor_id WHERE p.id=@purchaseId
                 """, new { purchaseId });
             if (header is null) throw new DomainException(ErrorCode.NotFound, "purchase", purchaseId);
             IReadOnlyList<PurchaseInvoiceLine> lines = connection.Query<PurchaseInvoiceLineRow>("""
                 SELECT pl.line_no AS LineNumber,
-                       COALESCE(pl.product_sku_snapshot,item.sku) AS Sku,
-                       COALESCE(pl.product_name_snapshot,item.name) AS ProductName,
+                       COALESCE(pl.product_sku_snapshot,'Legacy unknown') AS Sku,
+                       COALESCE(pl.product_name_snapshot,'Legacy unknown') AS ProductName,
                        pl.batch_no AS BatchNumber,pl.mfg_date AS ManufacturingDate,
                        pl.expiry_date AS ExpiryDate,pl.qty AS Quantity,
                        pl.free_qty AS FreeQuantity,pl.unit_cost AS Rate,
                        pl.discount AS Discount,pl.tax_rate_pct AS TaxRate,
                        pl.tax_amount AS TaxAmount,pl.line_total AS LineTotal,
                        pl.landed_unit_cost AS LandedUnitCost,pl.mrp AS Mrp,
-                       pl.selling_price AS SellingPrice
-                FROM purchase_line pl JOIN product item ON item.id=pl.product_id
+                       pl.selling_price AS SellingPrice,
+                       pl.snapshot_provenance AS SnapshotProvenance,
+                       pl.legacy_unknown_fields AS LegacyUnknownFields
+                FROM purchase_line pl
                 WHERE pl.purchase_id=@purchaseId ORDER BY pl.line_no
                 """, new { purchaseId }).Select(static row => row.ToModel()).ToList();
             return new PurchaseInvoice(header.Id, header.DocumentNumber, header.VendorName,
@@ -351,9 +355,13 @@ public sealed class PurchasingService(
                 PurchaseLineRow row = rows[index];
                 transaction.Connection.Execute("""
                     UPDATE purchase_line SET tax_amount=@tax,line_total=@lineTotal,landed_unit_cost=@landed,
-                        product_name_snapshot=(SELECT name FROM product WHERE id=@productId),
-                        product_sku_snapshot=(SELECT sku FROM product WHERE id=@productId)
-                    WHERE id=@id
+                        product_name_snapshot=p.name,product_sku_snapshot=p.sku,
+                        product_name_local_snapshot=p.name_local,uom_snapshot=u.code,
+                        product_class_snapshot=p.product_class,
+                        tax_mode_snapshot=@taxMode,snapshot_provenance='AT_POST',
+                        legacy_unknown_fields=NULL
+                    FROM product p JOIN uom u ON u.id=p.uom_id
+                    WHERE purchase_line.id=@id AND p.id=@productId
                     """, new
                 {
                     id = row.Id,
@@ -361,6 +369,7 @@ public sealed class PurchasingService(
                     tax = taxAmounts[index].Scaled,
                     lineTotal = (Money.FromScaled(row.Rate) * Quantity.FromScaled(row.Quantity) - Money.FromScaled(row.Discount) + taxAmounts[index]).Scaled,
                     landed = landed[index].Scaled,
+                    taxMode = settings.Current.TaxMode,
                 }, transaction.Transaction);
                 string lotCode = numbers.Next(transaction, DocType.Lot, header.ReceivedDate);
                 Quantity received = Quantity.FromScaled(row.Quantity) + Quantity.FromScaled(row.FreeQuantity);
@@ -384,6 +393,9 @@ public sealed class PurchasingService(
                     row.SellingPrice,
                     received = received.Scaled,
                 }, transaction.Transaction);
+                transaction.Connection.Execute("""
+                    UPDATE purchase_line SET lot_code_snapshot=@lotCode,lot_id_snapshot=@lotId WHERE id=@id
+                    """, new { lotCode, lotId, id = row.Id }, transaction.Transaction);
                 ledger.Post(transaction, new(header.ReceivedDate, row.ProductId, lotId, "PURCHASE", received,
                     landed[index], "purchase_line", row.Id));
                 lotIds.Add(lotId);
@@ -671,8 +683,18 @@ public sealed class PurchasingService(
                 Money lineCost = Money.FromScaled(lot.UnitCost) * line.Quantity;
                 transaction.Connection.Execute("""
                     INSERT INTO vendor_return_line(vendor_return_id,product_id,lot_id,qty,
-                        credit_before_tax,tax_credit,cost_value)
-                    VALUES (@returnId,@productId,@lotId,@qty,@beforeTax,@tax,@cost)
+                        credit_before_tax,tax_credit,cost_value,purchase_line_id_snapshot,
+                        product_name_snapshot,product_sku_snapshot,product_name_local_snapshot,
+                        uom_snapshot,product_class_snapshot,lot_code_snapshot,batch_no_snapshot,
+                        expiry_date_snapshot,unit_cost_snapshot,tax_mode_snapshot,
+                        snapshot_provenance,legacy_unknown_fields)
+                    SELECT @returnId,l.product_id,l.id,@qty,@beforeTax,@tax,@cost,
+                        l.purchase_line_id,pl.product_name_snapshot,pl.product_sku_snapshot,
+                        pl.product_name_local_snapshot,pl.uom_snapshot,pl.product_class_snapshot,
+                        l.lot_code,l.batch_no,l.expiry_date,l.unit_cost,@taxMode,
+                        'AT_POST',NULL
+                    FROM product_lot l JOIN purchase_line pl ON pl.id=l.purchase_line_id
+                    WHERE l.id=@lotId
                     """, new DynamicParameters(new
                 {
                     returnId,
@@ -682,6 +704,7 @@ public sealed class PurchasingService(
                     beforeTax = line.CreditBeforeTax.Scaled,
                     tax = line.TaxCredit.Scaled,
                     cost = lineCost.Scaled,
+                    taxMode = purchase.TaxMode ?? settings.Current.TaxMode,
                 }), transaction.Transaction);
                 ledger.Post(transaction, new(input.Date, lot.ProductId, lot.LotId, "VENDOR_RETURN",
                     Quantity.FromScaled(-line.Quantity.Scaled), Money.FromScaled(lot.UnitCost),
@@ -1025,11 +1048,17 @@ public sealed class PurchasingService(
         public long LandedUnitCost { get; init; }
         public long? Mrp { get; init; }
         public long SellingPrice { get; init; }
+        public string? SnapshotProvenance { get; init; }
+        public string? LegacyUnknownFields { get; init; }
         public PurchaseInvoiceLine ToModel() => new(LineNumber, Sku, ProductName, BatchNumber,
             ManufacturingDate, ExpiryDate, GroceryErp.Core.Numerics.Quantity.FromScaled(Quantity),
             GroceryErp.Core.Numerics.Quantity.FromScaled(FreeQuantity),
             Money.FromScaled(Rate), Money.FromScaled(Discount), Percent.FromScaled(TaxRate),
             Money.FromScaled(TaxAmount), Money.FromScaled(LineTotal), Money.FromScaled(LandedUnitCost),
-            Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(SellingPrice));
+            Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(SellingPrice))
+        {
+            SnapshotProvenance = SnapshotProvenance,
+            LegacyUnknownFields = LegacyUnknownFields,
+        };
     }
 }

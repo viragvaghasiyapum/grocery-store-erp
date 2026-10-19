@@ -35,13 +35,13 @@
       </StackPanel>
     </DataTemplate>
   </Page.Resources>
-  <Grid Margin="{StaticResource PagePadding}">
+  <Grid Margin="16,12,16,12">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr MoneyOut_Title}" />
-    <TabControl x:Name="MoneyOutTabs" Grid.Row="1" Margin="0,18,0,0" SelectionChanged="Tabs_OnSelectionChanged">
+    <TextBlock FontSize="22" FontWeight="SemiBold" Text="{l:Tr MoneyOut_Title}" />
+    <TabControl x:Name="MoneyOutTabs" Grid.Row="1" Margin="0,8,0,0" SelectionChanged="Tabs_OnSelectionChanged">
       <TabItem Header="{l:Tr MoneyOut_Expiry}">
         <DockPanel>
-          <TabControl x:Name="ExpiryTabs" Margin="0,12,0,0" Template="{StaticResource ExpiryTabsTemplate}" SelectionChanged="ExpiryTabs_OnSelectionChanged">
+          <TabControl x:Name="ExpiryTabs" Margin="0,6,0,0" Template="{StaticResource ExpiryTabsTemplate}" SelectionChanged="ExpiryTabs_OnSelectionChanged">
             <TabControl.Tag>
               <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,0,0,8">
                 <TextBlock x:Name="ExpirySelectedCount" VerticalAlignment="Center" Margin="0,0,12,0" Text="0 selected"/>
@@ -73,7 +73,7 @@
               </StackPanel>
             </TabControl.Tag>
             <TabItem Header="{l:Tr MoneyOut_Expired}">
-              <DataGrid x:Name="ExpiredList" Margin="0,10,0,0" Style="{StaticResource CatalogGrid}" AutoGenerateColumns="False" SelectionChanged="ExpiryList_OnSelectionChanged">
+              <DataGrid x:Name="ExpiredList" Margin="0,10,0,0" Style="{StaticResource CompactTableGrid}" AutoGenerateColumns="False" SelectionChanged="ExpiryList_OnSelectionChanged">
                 <DataGrid.Columns>
                   <DataGridTemplateColumn Width="48" HeaderTemplate="{StaticResource ExpiryHeaderCheckTemplate}" CellTemplate="{StaticResource ExpiryCheckTemplate}"/>
                   <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}"/>
@@ -88,7 +88,7 @@
               </DataGrid>
             </TabItem>
             <TabItem Header="{l:Tr MoneyOut_Critical}">
-              <DataGrid x:Name="CriticalList" Margin="0,10,0,0" Style="{StaticResource CatalogGrid}" AutoGenerateColumns="False" SelectionChanged="ExpiryList_OnSelectionChanged">
+              <DataGrid x:Name="CriticalList" Margin="0,10,0,0" Style="{StaticResource CompactTableGrid}" AutoGenerateColumns="False" SelectionChanged="ExpiryList_OnSelectionChanged">
                 <DataGrid.Columns>
                   <DataGridTemplateColumn Width="48" HeaderTemplate="{StaticResource ExpiryHeaderCheckTemplate}" CellTemplate="{StaticResource ExpiryCheckTemplate}"/>
                   <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}"/>
@@ -103,7 +103,7 @@
               </DataGrid>
             </TabItem>
             <TabItem Header="{l:Tr MoneyOut_Soon}">
-              <DataGrid x:Name="SoonList" Margin="0,10,0,0" Style="{StaticResource CatalogGrid}" AutoGenerateColumns="False" SelectionChanged="ExpiryList_OnSelectionChanged">
+              <DataGrid x:Name="SoonList" Margin="0,10,0,0" Style="{StaticResource CompactTableGrid}" AutoGenerateColumns="False" SelectionChanged="ExpiryList_OnSelectionChanged">
                 <DataGrid.Columns>
                   <DataGridTemplateColumn Width="48" HeaderTemplate="{StaticResource ExpiryHeaderCheckTemplate}" CellTemplate="{StaticResource ExpiryCheckTemplate}"/>
                   <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}"/>
@@ -149,7 +149,7 @@
           <Button Height="36" VerticalAlignment="Top" Margin="0,18,0,0" Click="RecordAnyDamage_OnClick" Content="{l:Tr MoneyOut_RecordDamage}"/>
         </WrapPanel>
         </p:AnimatedSection>
-        <DataGrid Style="{StaticResource CatalogGrid}" x:Name="DamageGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="DamageGrid_OnSelectionChanged">
+        <DataGrid Style="{StaticResource CompactTableGrid}" x:Name="DamageGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="DamageGrid_OnSelectionChanged">
           <DataGrid.Columns>
             <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Document}" Binding="{Binding DocumentNumber}"/>
             <DataGridTextColumn Width="105" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date}"/>
@@ -208,7 +208,7 @@
               </ListBox>
             </DockPanel>
           </p:AnimatedSection>
-          <DataGrid Style="{StaticResource CatalogGrid}" x:Name="RepeatDraftGrid" DockPanel.Dock="Top" Height="110" Margin="0,0,0,10" AutoGenerateColumns="False" CanUserAddRows="False" Visibility="Collapsed" SelectionChanged="RepeatDraftGrid_OnSelectionChanged">
+          <DataGrid Style="{StaticResource CompactTableGrid}" x:Name="RepeatDraftGrid" DockPanel.Dock="Top" Height="110" Margin="0,0,0,10" AutoGenerateColumns="False" CanUserAddRows="False" Visibility="Collapsed" SelectionChanged="RepeatDraftGrid_OnSelectionChanged">
             <DataGrid.Columns>
               <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date}"/>
               <DataGridTextColumn Width="120" Header="{l:Tr Catalog_Category}" Binding="{Binding CategoryId}"/>
@@ -227,7 +227,7 @@
             <Button Margin="0,17,0,0" Click="AddCategory_OnClick" Content="{l:Tr Common_Save}"/>
           </WrapPanel>
           </Grid>
-          <DataGrid Style="{StaticResource CatalogGrid}" x:Name="ExpenseGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="ExpenseGrid_OnSelectionChanged">
+          <DataGrid Style="{StaticResource CompactTableGrid}" x:Name="ExpenseGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="ExpenseGrid_OnSelectionChanged">
             <DataGrid.Columns>
               <DataGridTextColumn Width="110" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date}"/>
               <DataGridTextColumn Width="220" Header="{l:Tr Catalog_Category}" Binding="{Binding CategoryName}"/>
@@ -256,7 +256,7 @@
               <Button Margin="0,16,0,0" Click="AddEmployee_OnClick" Content="{l:Tr Common_Save}"/>
             </WrapPanel>
             </p:AnimatedSection>
-            <DataGrid x:Name="EmployeeGrid" Style="{StaticResource CatalogGrid}" SelectionChanged="EmployeeGrid_OnSelectionChanged">
+            <DataGrid x:Name="EmployeeGrid" Style="{StaticResource CompactTableGrid}" SelectionChanged="EmployeeGrid_OnSelectionChanged">
             <DataGrid.Columns><DataGridTextColumn Width="260" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}"/><DataGridTextColumn Width="160" Header="{l:Tr MoneyOut_Role}" Binding="{Binding Role}"/><DataGridTextColumn Width="150" Header="{l:Tr MoneyOut_Salary}" Binding="{Binding MonthlySalary}"/></DataGrid.Columns>
             </DataGrid>
             </DockPanel>
@@ -303,7 +303,7 @@
                   <Button Margin="0,18,0,0" Click="RecordAdvance_OnClick" Content="{l:Tr MoneyOut_RecordAdvance}"/>
                 </WrapPanel>
                 </p:AnimatedSection>
-                <DataGrid Style="{StaticResource CatalogGrid}" x:Name="SalaryRegisterGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="SalaryRegisterGrid_OnSelectionChanged">
+                <DataGrid Style="{StaticResource CompactTableGrid}" x:Name="SalaryRegisterGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="SalaryRegisterGrid_OnSelectionChanged">
                   <DataGrid.Columns>
                     <DataGridTextColumn Width="180" Header="{l:Tr MoneyOut_EmployeeName}" Binding="{Binding EmployeeName}"/>
                     <DataGridTextColumn Width="110" Header="{l:Tr Assets_Period}" Binding="{Binding Period}"/>

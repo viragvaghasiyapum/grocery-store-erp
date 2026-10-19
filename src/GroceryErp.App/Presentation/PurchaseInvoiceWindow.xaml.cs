@@ -17,6 +17,9 @@ public partial class PurchaseInvoiceWindow : Window
         InvoiceDateText.Text = FormatDate(invoice.VendorInvoiceDate);
         ReceivedDateText.Text = FormatDate(invoice.ReceivedDate);
         LinesGrid.ItemsSource = invoice.Lines;
+        LegacySnapshotText.Text = invoice.Lines.Any(static line =>
+            line.SnapshotProvenance == "LEGACY_MASTER_AT_MIGRATION")
+            ? text["History_LegacyPurchaseSnapshot"] : "";
         SubtotalText.Text = invoice.Totals.Subtotal.ToString();
         DiscountText.Text = invoice.Totals.Discount.ToString();
         TaxText.Text = invoice.Totals.Tax.ToString();

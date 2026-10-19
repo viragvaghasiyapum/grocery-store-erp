@@ -40,6 +40,18 @@ public sealed class StockInTests
         line.Quantity.ShouldBe(new Quantity(10));
         line.FreeQuantity.ShouldBe(Quantity.One);
         line.Rate.ShouldBe(new Money(250));
+        using (var db = fixture.Factory.Open())
+        {
+            db.ExecuteScalar<string>("SELECT snapshot_provenance FROM purchase_line WHERE purchase_id=@id",
+                new { id = posted.Id }).ShouldBe("AT_POST");
+            db.ExecuteScalar<string>("SELECT product_class_snapshot FROM purchase_line WHERE purchase_id=@id",
+                new { id = posted.Id }).ShouldBe("SALEABLE");
+            db.ExecuteScalar<string>("SELECT origin_kind FROM product_lot WHERE id=@id",
+                new { id = posted.LotIds[0] }).ShouldBe("PURCHASE_LINE");
+            db.ExecuteScalar<long>("SELECT origin_ref_id FROM product_lot WHERE id=@id",
+                new { id = posted.LotIds[0] }).ShouldBe(db.ExecuteScalar<long>(
+                "SELECT id FROM purchase_line WHERE purchase_id=@id", new { id = posted.Id }));
+        }
     }
 
     [Fact]
@@ -379,6 +391,33 @@ public sealed class StockInTests
             fixture.Date, TestContext.Current.CancellationToken)).Single(item => item.RefType == "stock_count");
         (await fixture.Inventory.GetSourceDocumentAsync(countMove, TestContext.Current.CancellationToken))
             .Lines.Single().Quantity.ShouldBe(new Quantity(-2));
+    }
+
+    [Fact]
+    public async Task PostedCount_KeepsSavedLabelsAfterZeroLotAndProductDeletion()
+    {
+        using var fixture = new StockInFixture();
+        long lotId;
+        using (var db = fixture.Factory.Open())
+            lotId = db.ExecuteScalar<long>("""
+                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,selling_price)
+                VALUES (@productId,'COUNT-OLD',@date,1000,2000) RETURNING id
+                """, new { productId = fixture.ProductId,
+                    date = fixture.Date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) });
+        long countId = await fixture.Inventory.CreateStockCountAsync(fixture.Date, null, null,
+            TestContext.Current.CancellationToken);
+        using (var db = fixture.Factory.Open())
+        {
+            db.Execute("UPDATE stock_count SET status='POSTED' WHERE id=@countId", new { countId });
+            db.Execute("DELETE FROM product_lot WHERE id=@lotId", new { lotId });
+            db.Execute("DELETE FROM product WHERE id=@productId", new { productId = fixture.ProductId });
+        }
+        StockCountLine saved = (await fixture.Inventory.GetStockCountAsync(countId,
+            TestContext.Current.CancellationToken)).Lines.Single();
+        saved.ProductName.ShouldBe("Phase Three Product");
+        saved.LotCode.ShouldBe("COUNT-OLD");
+        (await fixture.Inventory.GetStockCountPageAsync(countId, cancellationToken:
+            TestContext.Current.CancellationToken)).Lines.Single().LotCode.ShouldBe("COUNT-OLD");
     }
 
     [Fact]

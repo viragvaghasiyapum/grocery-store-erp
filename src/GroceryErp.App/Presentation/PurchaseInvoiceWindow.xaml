@@ -45,7 +45,8 @@
       <StackPanel Grid.Column="5"><TextBlock Text="{l:Tr Purchasing_ComputedTotal}" Opacity="0.7"/><TextBlock x:Name="TotalText" FontWeight="SemiBold"/></StackPanel>
     </Grid>
     <Grid Grid.Row="4" Margin="0,12,0,0">
-      <StackPanel><TextBlock x:Name="BillTotalText"/><TextBlock x:Name="DifferenceText"/><TextBlock x:Name="NotesText" TextWrapping="Wrap"/></StackPanel>
+      <StackPanel><TextBlock x:Name="LegacySnapshotText" Foreground="#9A6700" TextWrapping="Wrap"/>
+       <TextBlock x:Name="BillTotalText"/><TextBlock x:Name="DifferenceText"/><TextBlock x:Name="NotesText" TextWrapping="Wrap"/></StackPanel>
       <Button HorizontalAlignment="Right" VerticalAlignment="Bottom" IsCancel="True" Content="{l:Tr Common_Close}"/>
     </Grid>
   </Grid>

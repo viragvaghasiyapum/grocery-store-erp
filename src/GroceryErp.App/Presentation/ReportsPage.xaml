@@ -3,25 +3,26 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
  Title="{l:Tr Reports_Title}" ScrollViewer.CanContentScroll="False">
- <Grid Margin="20,16,20,16">
+ <Grid Margin="16,12,16,12">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <TextBlock FontSize="26" FontWeight="SemiBold" Text="{l:Tr Reports_Title}"/>
-  <Border Grid.Row="1" Margin="0,14,0,12" Padding="16" CornerRadius="8" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+  <TextBlock FontSize="22" FontWeight="SemiBold" Text="{l:Tr Reports_Title}"/>
+  <Border Grid.Row="1" Margin="0,8,0,6" Padding="10" CornerRadius="8" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
    <StackPanel>
     <WrapPanel>
      <StackPanel Margin="0,0,16,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_Report}"/><ComboBox x:Name="ReportPicker" Width="220" SelectionChanged="ReportPicker_OnSelectionChanged"/></StackPanel>
      <StackPanel Margin="0,0,16,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_Period}"/><ComboBox x:Name="PeriodPicker" Width="140" SelectionChanged="PeriodPicker_OnSelectionChanged"/></StackPanel>
      <StackPanel Margin="0,0,16,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_From}"/><DatePicker x:Name="FromPicker" Width="140" Language="en-IN" SelectedDateFormat="Short" SelectedDateChanged="DatePicker_OnSelectedDateChanged"/></StackPanel>
-     <StackPanel Margin="0,0,0,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_To}"/><DatePicker x:Name="ToPicker" Width="140" Language="en-IN" SelectedDateFormat="Short" SelectedDateChanged="DatePicker_OnSelectedDateChanged"/></StackPanel>
-    </WrapPanel>
-    <Separator Margin="0,4,0,12"/>
-    <WrapPanel>
-     <Button Margin="0,0,8,6" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
-     <Button x:Name="ExportExcelButton" Margin="0,0,8,6" Click="Export_OnClick" Content="{l:Tr Reports_ExportExcel}"/>
-     <Button x:Name="FullCsvButton" Margin="0,0,8,6" Click="ExportFullCsv_OnClick" Content="{l:Tr Reports_ExportFullCsv}"/>
-     <Button x:Name="CancelExportButton" IsEnabled="False" Margin="0,0,8,6" Click="CancelExport_OnClick" Content="{l:Tr Reports_CancelExport}"/>
-     <Button x:Name="PreviewA4Button" Margin="0,0,12,6" Click="Preview_OnClick" Content="{l:Tr Reports_PrintA4}"/>
-     <ProgressBar x:Name="ExportProgress" Width="72" Height="5" Margin="0,0,0,6" VerticalAlignment="Center" IsIndeterminate="True" Visibility="Collapsed"/>
+     <StackPanel Margin="0,0,16,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_To}"/><DatePicker x:Name="ToPicker" Width="140" Language="en-IN" SelectedDateFormat="Short" SelectedDateChanged="DatePicker_OnSelectedDateChanged"/></StackPanel>
+     <Button Margin="0,18,8,8" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
+     <Menu Margin="0,18,8,8" VerticalAlignment="Center" MinHeight="36">
+      <MenuItem Header="{l:Tr Common_Actions}">
+       <MenuItem x:Name="ExportExcelButton" Click="Export_OnClick" Header="{l:Tr Reports_ExportExcel}"/>
+       <MenuItem x:Name="FullCsvButton" Click="ExportFullCsv_OnClick" Header="{l:Tr Reports_ExportFullCsv}"/>
+       <MenuItem x:Name="PreviewA4Button" Click="Preview_OnClick" Header="{l:Tr Reports_PrintA4}"/>
+      </MenuItem>
+     </Menu>
+     <Button x:Name="CancelExportButton" IsEnabled="False" Visibility="Collapsed" Margin="0,18,8,8" Click="CancelExport_OnClick" Content="{l:Tr Reports_CancelExport}"/>
+     <ProgressBar x:Name="ExportProgress" Width="72" Height="5" Margin="0,18,0,8" VerticalAlignment="Center" IsIndeterminate="True" Visibility="Collapsed"/>
     </WrapPanel>
    </StackPanel>
   </Border>
@@ -43,7 +44,7 @@
    </Border>
   </Expander>
   <Border Grid.Row="3" Padding="8" CornerRadius="8" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"><Grid>
-   <DataGrid x:Name="ReportGrid" Style="{StaticResource CatalogGrid}" RowHeight="38"/>
+   <DataGrid x:Name="ReportGrid" Style="{StaticResource CompactTableGrid}" RowHeight="38"/>
     <Grid x:Name="PnlPanel" Visibility="Collapsed">
      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
      <TextBlock Text="{l:Tr Reports_PnlExplanation}" TextWrapping="Wrap" Margin="0,0,0,12"/>

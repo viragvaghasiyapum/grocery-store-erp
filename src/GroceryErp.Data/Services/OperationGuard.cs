@@ -9,6 +9,10 @@ public enum OpType
     SaleComplete, SaleVoid, SaleReturn, PurchasePost, PurchaseCancel, VendorPayment, VendorReturn,
     Damage, DamageBulk, DamageCorrection, Expense, SalaryRun, SalaryCorrection, StockCountPost, StockAdjustment, PriceChange,
     AssetDispose, OpeningStockImport, ProductImport,
+    DirectPurchaseLot, DirectOriginLot, DirectSaleComplete, DirectSaleVoid,
+    DirectCustomerReturn, DirectDamage, DirectInternalUse, DirectVendorReturn,
+    DirectVendorReturnCancel, DirectCountReview,
+    DirectPurchaseVoid,
 }
 
 public sealed class OperationRef

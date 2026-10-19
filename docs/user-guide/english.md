@@ -1,5 +1,7 @@
 # Hare Krushna Grocery ERP — screen by screen
 
+> This guide and its screenshots describe the current schema-28 application. The approved next-version workflows are recorded in the [Phase 0 behavior matrix](../phase0/behavior-matrix.md): Product Lots will replace the standalone Stock Ledger and Expiry screens; purchases will create one distinct lot per stock line; posted sale and purchase details will be frozen snapshots; calendar and fiscal year locks will apply independently. Do not use the new workflow descriptions until that version is installed.
+
 [ગુજરાતી માર્ગદર્શિકા](gujarati.md) · [Guide index](README.md)
 
 Screenshots show example records. Fields marked **Save**, **Post**, **Confirm**, or **Restore** change stored data; a filter or **Refresh** changes only the view. A row must usually be selected before its action becomes available. Tables with checkboxes support actions on several selected records. **Rows per page**, **Previous**, and **Next** change the visible page, not the records.

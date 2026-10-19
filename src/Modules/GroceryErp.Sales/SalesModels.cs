@@ -41,7 +41,21 @@ public sealed record SaleLine(
     Money Cost,
     string? ScannedBarcode,
     Money LineDiscount = default,
-    Quantity StockOnHand = default);
+    Quantity StockOnHand = default)
+{
+    public string? Sku { get; init; }
+    public string? Unit { get; init; }
+    public string? ProductClass { get; init; }
+    public string? LotCode { get; init; }
+    public string? SnapshotProvenance { get; init; }
+    public string? LegacyUnknownFields { get; init; }
+    public string SkuDisplay => Sku ??
+        (SnapshotProvenance == "LEGACY_SALE_LINE" ? "Legacy unknown" : "—");
+    public string BatchDisplay => BatchNumber ??
+        (LegacyUnknownFields?.Contains('B') == true ? "Legacy unknown" : "—");
+    public string ExpiryDisplay => ExpiryDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) ??
+        (LegacyUnknownFields?.Contains('E') == true ? "Legacy unknown" : "—");
+}
 
 public sealed record SaleDetails(
     long Id,

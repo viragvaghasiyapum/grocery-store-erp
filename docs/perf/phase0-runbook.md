@@ -1,5 +1,7 @@
 # Phase 0 performance baseline
 
+> Historical schema-28 performance runbook. The 18 October 2026 revised Phase 0 execution, preserved fixture, backup, measured budgets and rollback procedure are in [docs/phase0/baseline-and-rollback.md](../phase0/baseline-and-rollback.md). Use that fixture for later same-machine before/after comparisons; this runbook remains useful for audit command syntax.
+
 Run from the repository root with .NET SDK 10.0.401. Keep the original `audit-full-valid` and `audit-strong-1.35` fixtures unchanged. All write profiles and realism seeding must use a disposable copy.
 
 ## Generate and check a fresh fixture

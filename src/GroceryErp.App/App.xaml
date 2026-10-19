@@ -15,6 +15,11 @@
       <Style x:Key="CatalogGrid" TargetType="DataGrid" BasedOn="{StaticResource CatalogGridBase}">
         <EventSetter Event="Loaded" Handler="TableGrid_OnLoaded"/>
       </Style>
+      <Style x:Key="CompactTableGrid" TargetType="DataGrid" BasedOn="{StaticResource CatalogGrid}">
+        <Setter Property="RowHeight" Value="40"/>
+        <Setter Property="ColumnHeaderHeight" Value="32"/>
+        <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
+      </Style>
       <p:ExpiryBucketConverter x:Key="ExpiryBucketConverter"/>
       <Style TargetType="{x:Type p:AnimatedSection}">
         <Setter Property="Template">

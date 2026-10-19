@@ -88,13 +88,15 @@ public sealed class MoneyOutService(
     {
         EnsureRange(from, to);
         return database.ReadAsync(connection => (IReadOnlyList<DamageItem>)connection.Query<DamageRow>("""
-            SELECT d.id AS Id,d.doc_no AS DocumentNumber,d.damage_date AS Date,p.name AS ProductName,
-                   l.lot_code AS LotCode,COALESCE(dc.new_qty,d.qty) AS Quantity,d.unit_cost AS UnitCost,
+            SELECT d.id AS Id,d.doc_no AS DocumentNumber,d.damage_date AS Date,
+                   COALESCE(d.product_name_snapshot,'Legacy unknown') AS ProductName,
+                   COALESCE(d.lot_code_snapshot,'Legacy unknown') AS LotCode,
+                   COALESCE(dc.new_qty,d.qty) AS Quantity,d.unit_cost AS UnitCost,
                    CAST(ROUND(COALESCE(dc.new_qty,d.qty)*d.unit_cost/1000.0) AS INTEGER) AS CostValue,
                    COALESCE(dc.new_recovered,d.recovered_amount) AS RecoveredAmount,
                    COALESCE(dc.new_reason,d.reason) AS Reason,
                    CASE WHEN dc.id IS NULL THEN d.notes ELSE dc.new_notes END AS Notes
-            FROM damage d JOIN product p ON p.id=d.product_id JOIN product_lot l ON l.id=d.lot_id
+            FROM damage d
             LEFT JOIN damage_correction dc ON dc.id=(SELECT MAX(id) FROM damage_correction WHERE damage_id=d.id)
             WHERE d.damage_date BETWEEN @from AND @to ORDER BY d.damage_date DESC,d.id DESC
             """, new { from, to }).Select(static row => row.ToModel()).ToList(), cancellationToken);
@@ -109,13 +111,15 @@ public sealed class MoneyOutService(
         return database.ReadAsync(connection =>
         {
             List<DamageItem> rows = connection.Query<DamageRow>("""
-                SELECT d.id AS Id,d.doc_no AS DocumentNumber,d.damage_date AS Date,p.name AS ProductName,
-                       l.lot_code AS LotCode,COALESCE(dc.new_qty,d.qty) AS Quantity,d.unit_cost AS UnitCost,
+                SELECT d.id AS Id,d.doc_no AS DocumentNumber,d.damage_date AS Date,
+                       COALESCE(d.product_name_snapshot,'Legacy unknown') AS ProductName,
+                       COALESCE(d.lot_code_snapshot,'Legacy unknown') AS LotCode,
+                       COALESCE(dc.new_qty,d.qty) AS Quantity,d.unit_cost AS UnitCost,
                        CAST(ROUND(COALESCE(dc.new_qty,d.qty)*d.unit_cost/1000.0) AS INTEGER) AS CostValue,
                        COALESCE(dc.new_recovered,d.recovered_amount) AS RecoveredAmount,
                        COALESCE(dc.new_reason,d.reason) AS Reason,
                        CASE WHEN dc.id IS NULL THEN d.notes ELSE dc.new_notes END AS Notes
-                FROM damage d JOIN product p ON p.id=d.product_id JOIN product_lot l ON l.id=d.lot_id
+                FROM damage d
                 LEFT JOIN damage_correction dc ON dc.id=(SELECT MAX(id) FROM damage_correction WHERE damage_id=d.id)
                 WHERE d.damage_date BETWEEN @from AND @to
                   AND (@beforeDate IS NULL OR d.damage_date<@beforeDate
@@ -208,8 +212,14 @@ public sealed class MoneyOutService(
             Money cost = unitCost * input.Quantity;
             string document = numbers.Next(transaction, DocType.Damage, input.Date);
             long id = transaction.Connection.ExecuteScalar<long>("""
-                INSERT INTO damage(doc_no,damage_date,product_id,lot_id,qty,unit_cost,cost_value,recovered_amount,reason,notes)
-                VALUES (@document,@date,@productId,@lotId,@qty,@unitCost,@cost,@recovered,@reason,@notes) RETURNING id
+                INSERT INTO damage(doc_no,damage_date,product_id,lot_id,qty,unit_cost,cost_value,recovered_amount,reason,notes,
+                    product_name_snapshot,product_sku_snapshot,product_name_local_snapshot,uom_snapshot,
+                    product_class_snapshot,lot_code_snapshot,batch_no_snapshot,expiry_date_snapshot,
+                    snapshot_provenance)
+                SELECT @document,@date,p.id,l.id,@qty,@unitCost,@cost,@recovered,@reason,@notes,
+                    p.name,p.sku,p.name_local,u.code,p.product_class,l.lot_code,l.batch_no,l.expiry_date,'AT_POST'
+                FROM product_lot l JOIN product p ON p.id=l.product_id JOIN uom u ON u.id=p.uom_id
+                WHERE l.id=@lotId RETURNING id
                 """, new
             {
                 document,
@@ -273,8 +283,14 @@ public sealed class MoneyOutService(
                 parameters.Add("operationId", operationId);
                 long id = transaction.Connection.ExecuteScalar<long>("""
                     INSERT INTO damage(doc_no,damage_date,product_id,lot_id,qty,unit_cost,cost_value,recovered_amount,
-                                       reason,notes,bulk_operation_id)
-                    VALUES (@document,@date,@productId,@lotId,@qty,@unitCost,@cost,0,'EXPIRED',@notes,@operationId)
+                                       reason,notes,bulk_operation_id,product_name_snapshot,product_sku_snapshot,
+                                       product_name_local_snapshot,uom_snapshot,product_class_snapshot,lot_code_snapshot,
+                                       batch_no_snapshot,expiry_date_snapshot,snapshot_provenance)
+                    SELECT @document,@date,p.id,l.id,@qty,@unitCost,@cost,0,'EXPIRED',@notes,@operationId,
+                           p.name,p.sku,p.name_local,u.code,p.product_class,l.lot_code,l.batch_no,
+                           l.expiry_date,'AT_POST'
+                    FROM product_lot l JOIN product p ON p.id=l.product_id JOIN uom u ON u.id=p.uom_id
+                    WHERE l.id=@lotId
                     RETURNING id
                     """, parameters, transaction.Transaction);
                 stock.Post(transaction, new(date, lot.ProductId, lot.LotId, "DAMAGE", new Quantity(-quantity.Value),
