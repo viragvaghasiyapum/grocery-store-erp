@@ -48,12 +48,15 @@ public sealed class SalesService(
         ProductRow product = transaction.Connection.QuerySingleOrDefault<ProductRow>("""
             SELECT p.name AS Name,p.name_local AS NameLocal,p.hsn_code AS HsnCode,
                    p.price_includes_tax AS PriceIncludesTax,p.is_active AS IsActive,
+                   p.product_class AS ProductClass,
                    u.allow_fraction AS AllowFraction,COALESCE(t.rate_pct,0) AS TaxRate
             FROM product p JOIN uom u ON u.id=p.uom_id
             LEFT JOIN tax_rate t ON t.id=p.tax_rate_id WHERE p.id=@productId
             """, new { productId }, transaction.Transaction)
             ?? throw new DomainException(ErrorCode.NotFound, productId);
         if (!product.IsActive) throw new DomainException(ErrorCode.Validation, "Archived products cannot be sold.");
+        if (product.ProductClass != "SALEABLE")
+            throw new DomainException(ErrorCode.Validation, "Internal-use products cannot be sold.");
         if (!product.AllowFraction && !quantity.IsWhole)
             throw new DomainException(ErrorCode.FractionalQtyNotAllowed, productId);
 
@@ -169,12 +172,15 @@ public sealed class SalesService(
         ProductRow product = transaction.Connection.QuerySingle<ProductRow>("""
             SELECT p.name AS Name,p.name_local AS NameLocal,p.hsn_code AS HsnCode,
                    p.price_includes_tax AS PriceIncludesTax,p.is_active AS IsActive,
+                   p.product_class AS ProductClass,
                    u.allow_fraction AS AllowFraction,COALESCE(t.rate_pct,0) AS TaxRate
             FROM product p JOIN uom u ON u.id=p.uom_id
             LEFT JOIN tax_rate t ON t.id=p.tax_rate_id WHERE p.id=@productId
             """, new { productId }, transaction.Transaction);
         if (!product.AllowFraction && !quantity.IsWhole)
             throw new DomainException(ErrorCode.FractionalQtyNotAllowed, productId);
+        if (product.ProductClass != "SALEABLE")
+            throw new DomainException(ErrorCode.Validation, "Internal-use products cannot be sold.");
         Dictionary<long, Quantity> reserved = transaction.Connection.Query<(long LotId, long Qty)>("""
             SELECT lot_id AS LotId,SUM(qty) AS Qty FROM sale_line
             WHERE sale_id=@saleId AND product_id<>@productId GROUP BY lot_id
@@ -1260,7 +1266,7 @@ public sealed class SalesService(
         _ => throw new InvalidOperationException($"Unknown sale status '{status}'."),
     };
 
-    private sealed class ProductRow { public string Name { get; init; } = ""; public string? NameLocal { get; init; } public string? HsnCode { get; init; } public bool PriceIncludesTax { get; init; } public bool IsActive { get; init; } public bool AllowFraction { get; init; } public long TaxRate { get; init; } }
+    private sealed class ProductRow { public string Name { get; init; } = ""; public string? NameLocal { get; init; } public string? HsnCode { get; init; } public bool PriceIncludesTax { get; init; } public bool IsActive { get; init; } public bool AllowFraction { get; init; } public long TaxRate { get; init; } public string ProductClass { get; init; } = "SALEABLE"; }
     private sealed class DbLineRow { public long Id { get; init; } public long ProductId { get; init; } public long LotId { get; init; } public long Quantity { get; init; } public long UnitPrice { get; init; } public long? Mrp { get; init; } public long LineDiscount { get; init; } public long TaxRate { get; init; } public bool PriceIncludesTax { get; init; } public long UnitCost { get; init; } }
     private sealed class HeaderRow { public long Id { get; init; } public string? InvoiceNo { get; init; } public string SaleDate { get; init; } = ""; public string Status { get; init; } = ""; public long BillDiscount { get; init; } public long GrossTotal { get; init; } public long DiscountTotal { get; init; } public long TaxableTotal { get; init; } public long TaxTotal { get; init; } public long RoundOff { get; init; } public long GrandTotal { get; init; } public long CostTotal { get; init; } public long ChangeReturned { get; init; } }
     private sealed class LotRow { public long LotId { get; init; } public long OnHand { get; init; } public DateOnly? Expiry { get; init; } public long Price { get; init; } public long? Mrp { get; init; } public long Cost { get; init; } public bool IsActive { get; init; } }

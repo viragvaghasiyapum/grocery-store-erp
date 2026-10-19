@@ -189,7 +189,10 @@ public sealed class DirectStockEngine : IDirectStockEngine
             FROM product_lot l JOIN purchase_line pl ON pl.id=l.purchase_line_id
             WHERE pl.purchase_id=@purchaseId
             """, new { purchaseId }, tx.Transaction).ToList();
-        if (lots.Count == 0) throw new DomainException(ErrorCode.NotFound, purchaseId);
+        if (lots.Count == 0 && tx.Connection.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM purchase_line WHERE purchase_id=@purchaseId AND line_kind='EXPENSE'",
+                new { purchaseId }, tx.Transaction) == 0)
+            throw new DomainException(ErrorCode.NotFound, purchaseId);
         foreach (SourceLine lot in lots)
         {
             long dependencies = tx.Connection.ExecuteScalar<long>("""
@@ -287,12 +290,12 @@ public sealed class DirectStockEngine : IDirectStockEngine
         {
             sourceId = tx.Connection.ExecuteScalar<long>("""
                 INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,
-                  unit_cost,mrp,selling_price,qty_received)
-                VALUES (@productId,@code,@batch,@date,@expiry,@cost,@mrp,@price,@delta)
+                  unit_cost,mrp,selling_price,qty_received,direct_reason)
+                VALUES (@productId,@code,@batch,@date,@expiry,@cost,@mrp,@price,@delta,@reason)
                 RETURNING id
                 """, new { productId = lot.ProductId, code = "RC-" + operationId, batch = lot.Batch,
                     date = businessDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), expiry = lot.Expiry, cost = lot.Cost,
-                    mrp = lot.Mrp, price = lot.Price, delta }, tx.Transaction);
+                    mrp = lot.Mrp, price = lot.Price, delta, reason }, tx.Transaction);
             Change(tx, sourceId.Value, delta, 1);
             CheckAffected(tx, [lotId, sourceId.Value]);
             kind = "DIRECT_ORIGIN";

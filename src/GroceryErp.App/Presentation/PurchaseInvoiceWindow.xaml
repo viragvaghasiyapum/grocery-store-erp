@@ -18,8 +18,10 @@
     <DataGrid x:Name="LinesGrid" Grid.Row="2" Style="{StaticResource CatalogGrid}" AutoGenerateColumns="False"
               IsReadOnly="True" CanUserAddRows="False" RowHeight="38" GridLinesVisibility="All">
       <DataGrid.Columns>
+        <DataGridTextColumn Width="100" Header="{l:Tr Purchasing_LineType}" Binding="{Binding LineKind, Converter={StaticResource PurchaseLineKindConverter}}"/>
         <DataGridTextColumn Width="65" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}"/>
         <DataGridTextColumn Width="190" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
+        <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_ExpenseCategory}" Binding="{Binding ExpenseCategoryName}"/>
         <DataGridTextColumn Width="90" Header="{l:Tr Stock_Batch}" Binding="{Binding BatchNumber}"/>
         <DataGridTextColumn Width="95" Header="{l:Tr Purchasing_MfgDate}" Binding="{Binding ManufacturingDate}"/>
         <DataGridTextColumn Width="95" Header="{l:Tr Stock_Expiry}" Binding="{Binding ExpiryDate}"/>
@@ -46,6 +48,7 @@
     </Grid>
     <Grid Grid.Row="4" Margin="0,12,0,0">
       <StackPanel><TextBlock x:Name="LegacySnapshotText" Foreground="#9A6700" TextWrapping="Wrap"/>
+       <TextBlock x:Name="TaxModeText"/>
        <TextBlock x:Name="BillTotalText"/><TextBlock x:Name="DifferenceText"/><TextBlock x:Name="NotesText" TextWrapping="Wrap"/></StackPanel>
       <Button HorizontalAlignment="Right" VerticalAlignment="Bottom" IsCancel="True" Content="{l:Tr Common_Close}"/>
     </Grid>

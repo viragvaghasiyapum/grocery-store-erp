@@ -60,13 +60,19 @@ public sealed class PurchasingService(
     public Task<PurchasePage> GetPurchasesPageAsync(DateOnly? beforeDate = null, long? beforeId = null,
         DateOnly? from = null, DateOnly? to = null, long? vendorId = null, int limit = 100,
         string? productQuery = null,
+        string? status = null, string? lineKind = null,
         CancellationToken cancellationToken = default)
     {
-        if (beforeDate is null != (beforeId is null) || limit is < 1 or > 200 || from > to)
+        if (beforeDate is null != (beforeId is null) || limit is < 1 or > 200 || from > to ||
+            status is not null and not ("DRAFT" or "POSTED" or "CANCELLED") ||
+            lineKind is not null and not ("PRODUCT" or "INTERNAL" or "EXPENSE"))
             throw new DomainException(ErrorCode.Validation, "Invalid purchase page filter.");
         return database.ReadAsync(connection =>
         {
-            string? productPattern = string.IsNullOrWhiteSpace(productQuery) ? null : $"%{productQuery.Trim()}%";
+            string? productPattern = string.IsNullOrWhiteSpace(productQuery) ? null :
+                "%" + productQuery.Trim().Replace("\\", "\\\\", StringComparison.Ordinal)
+                    .Replace("%", "\\%", StringComparison.Ordinal).Replace("_", "\\_", StringComparison.Ordinal) + "%";
+            if (productPattern?.Length > 246) throw new DomainException(ErrorCode.Validation, "Search term is too long.");
             List<PurchaseListItem> rows = connection.Query<PurchaseListRow>("""
                 SELECT p.id AS Id,p.doc_no AS DocumentNumber,
                        COALESCE(p.vendor_name_snapshot,v.name,'Legacy unknown') AS VendorName,
@@ -76,15 +82,19 @@ public sealed class PurchasingService(
                 WHERE (@from IS NULL OR p.received_date>=@from)
                   AND (@to IS NULL OR p.received_date<=@to)
                   AND (@vendorId IS NULL OR p.vendor_id=@vendorId)
+                  AND (@status IS NULL OR p.status=@status)
+                  AND (@lineKind IS NULL OR EXISTS (
+                      SELECT 1 FROM purchase_line typed WHERE typed.purchase_id=p.id AND typed.line_kind=@lineKind))
                   AND (@productPattern IS NULL OR EXISTS (
-                      SELECT 1 FROM purchase_line pl
+                      SELECT 1 FROM purchase_line pl LEFT JOIN product current ON current.id=pl.product_id
                       WHERE pl.purchase_id=p.id AND
-                        (pl.product_name_snapshot LIKE @productPattern COLLATE NOCASE
-                         OR pl.product_sku_snapshot LIKE @productPattern COLLATE NOCASE)))
+                        (COALESCE(pl.product_name_snapshot,current.name) LIKE @productPattern ESCAPE '\' COLLATE NOCASE
+                         OR COALESCE(pl.product_sku_snapshot,current.sku) LIKE @productPattern ESCAPE '\' COLLATE NOCASE)))
                   AND (@beforeDate IS NULL OR p.received_date<@beforeDate
                        OR (p.received_date=@beforeDate AND p.id<@beforeId))
                 ORDER BY p.received_date DESC,p.id DESC LIMIT @take
-                """, new { beforeDate, beforeId, from, to, vendorId, productPattern, take = limit + 1 })
+                """, new { beforeDate, beforeId, from, to, vendorId, productPattern, status, lineKind,
+                    take = limit + 1 })
                 .Select(static row => row.ToModel()).ToList();
             bool hasMore = rows.Count > limit;
             if (hasMore) rows.RemoveAt(limit);
@@ -101,7 +111,7 @@ public sealed class PurchasingService(
                        COALESCE(p.vendor_name_snapshot,v.name,'Legacy unknown') AS VendorName,
                        p.vendor_invoice_no AS VendorInvoiceNumber,
                        p.vendor_invoice_date AS VendorInvoiceDate,p.received_date AS ReceivedDate,
-                       p.status AS Status,p.notes AS Notes,p.subtotal AS Subtotal,
+                       p.status AS Status,p.tax_mode AS TaxMode,p.notes AS Notes,p.subtotal AS Subtotal,
                        p.discount_total AS Discount,p.tax_total AS Tax,
                        p.other_charges AS OtherCharges,p.round_off AS RoundOff,
                        p.grand_total AS GrandTotal,p.vendor_bill_total AS VendorBillTotal
@@ -109,7 +119,8 @@ public sealed class PurchasingService(
                 """, new { purchaseId });
             if (header is null) throw new DomainException(ErrorCode.NotFound, "purchase", purchaseId);
             IReadOnlyList<PurchaseInvoiceLine> lines = connection.Query<PurchaseInvoiceLineRow>("""
-                SELECT pl.line_no AS LineNumber,
+                SELECT pl.line_no AS LineNumber,pl.line_kind AS LineKind,
+                       pl.expense_category_name_snapshot AS ExpenseCategoryName,
                        COALESCE(pl.product_sku_snapshot,'Legacy unknown') AS Sku,
                        COALESCE(pl.product_name_snapshot,'Legacy unknown') AS ProductName,
                        pl.batch_no AS BatchNumber,pl.mfg_date AS ManufacturingDate,
@@ -131,7 +142,7 @@ public sealed class PurchasingService(
                     Money.FromScaled(header.Tax), Money.FromScaled(header.OtherCharges),
                     Money.FromScaled(header.RoundOff), Money.FromScaled(header.GrandTotal),
                     header.VendorBillTotal is null ? null : Money.FromScaled(header.VendorBillTotal.Value)),
-                lines);
+                lines) { TaxMode = header.TaxMode };
         }, cancellationToken);
 
     public Task<long> CreateVendorAsync(VendorInput input, CancellationToken cancellationToken = default)
@@ -256,7 +267,8 @@ public sealed class PurchasingService(
                 """, new { purchaseId });
             if (header is null) throw new DomainException(ErrorCode.NotFound, "purchase draft", purchaseId);
             IReadOnlyList<PurchaseLineInput> lines = connection.Query<PurchaseLineRow>("""
-                SELECT id AS Id,product_id AS ProductId,batch_no AS BatchNumber,mfg_date AS ManufacturingDate,
+                SELECT id AS Id,product_id AS ProductId,line_kind AS LineKind,
+                       expense_category_id AS ExpenseCategoryId,batch_no AS BatchNumber,mfg_date AS ManufacturingDate,
                        expiry_date AS ExpiryDate,qty AS Quantity,free_qty AS FreeQuantity,
                        unit_cost AS Rate,discount AS Discount,tax_rate_pct AS TaxRate,
                        mrp AS Mrp,selling_price AS SellingPrice
@@ -316,7 +328,9 @@ public sealed class PurchasingService(
             if (header.Status != "DRAFT") throw new DomainException(ErrorCode.PurchaseFinalized, purchaseId);
             periods.EnsureOpen(header.ReceivedDate);
             List<PurchaseLineRow> rows = transaction.Connection.Query<PurchaseLineRow>("""
-                SELECT pl.id AS Id,pl.product_id AS ProductId,pl.batch_no AS BatchNumber,pl.mfg_date AS ManufacturingDate,
+                SELECT pl.id AS Id,pl.product_id AS ProductId,pl.line_kind AS LineKind,
+                       pl.expense_category_id AS ExpenseCategoryId,p.product_class AS ProductClass,
+                       pl.batch_no AS BatchNumber,pl.mfg_date AS ManufacturingDate,
                        pl.expiry_date AS ExpiryDate,pl.qty AS Quantity,pl.free_qty AS FreeQuantity,
                        pl.unit_cost AS Rate,pl.discount AS Discount,pl.tax_rate_pct AS TaxRate,
                        pl.mrp AS Mrp,pl.selling_price AS SellingPrice,
@@ -331,6 +345,8 @@ public sealed class PurchasingService(
             foreach (PurchaseLineRow row in rows)
             {
                 ValidateLine(row.ToInput(), row.TrackExpiry, row.AllowFraction, header.ReceivedDate);
+                if ((row.LineKind == "INTERNAL") != (row.ProductClass == "INTERNAL") && row.LineKind != "EXPENSE")
+                    throw new DomainException(ErrorCode.Validation, "Purchase line type does not match product classification.");
                 Money taxable = Money.FromScaled(row.Rate) * Quantity.FromScaled(row.Quantity) - Money.FromScaled(row.Discount);
                 Money tax = Tax.FromExclusive(taxable, Percent.FromScaled(row.TaxRate)).Tax;
                 taxAmounts.Add(tax);
@@ -359,6 +375,8 @@ public sealed class PurchasingService(
                         product_name_local_snapshot=p.name_local,uom_snapshot=u.code,
                         product_class_snapshot=p.product_class,
                         tax_mode_snapshot=@taxMode,snapshot_provenance='AT_POST',
+                        expense_category_name_snapshot=(SELECT name FROM expense_category
+                            WHERE id=purchase_line.expense_category_id),
                         legacy_unknown_fields=NULL
                     FROM product p JOIN uom u ON u.id=p.uom_id
                     WHERE purchase_line.id=@id AND p.id=@productId
@@ -371,6 +389,22 @@ public sealed class PurchasingService(
                     landed = landed[index].Scaled,
                     taxMode = settings.Current.TaxMode,
                 }, transaction.Transaction);
+                if (row.LineKind == "EXPENSE")
+                {
+                    long amount = (landed[index] * (Quantity.FromScaled(row.Quantity) + Quantity.FromScaled(row.FreeQuantity))).Scaled;
+                    if (amount <= 0) throw new DomainException(ErrorCode.Validation, "Expense line amount must be positive.");
+                    int expenseInserted = transaction.Connection.Execute("""
+                        INSERT INTO expense(expense_date,category_id,amount,mode,paid_to,reference,notes,purchase_line_id)
+                        SELECT @date,@categoryId,@amount,'OTHER',
+                               (SELECT name FROM vendor WHERE id=@vendorId),@docNo,
+                               'Purchase expense line',@lineId
+                        WHERE EXISTS(SELECT 1 FROM expense_category WHERE id=@categoryId AND is_active=1)
+                        """, new { date = Format(header.ReceivedDate), categoryId = row.ExpenseCategoryId,
+                            amount, vendorId = header.VendorId, docNo, lineId = row.Id }, transaction.Transaction);
+                    if (expenseInserted != 1)
+                        throw new DomainException(ErrorCode.Validation, "Expense category is no longer active.");
+                    continue;
+                }
                 string lotCode = numbers.Next(transaction, DocType.Lot, header.ReceivedDate);
                 Quantity received = Quantity.FromScaled(row.Quantity) + Quantity.FromScaled(row.FreeQuantity);
                 long lotId = transaction.Connection.ExecuteScalar<long>("""
@@ -451,7 +485,13 @@ public sealed class PurchasingService(
                 FROM product_lot l JOIN purchase_line pl ON pl.id=l.purchase_line_id
                 WHERE pl.purchase_id=@purchaseId
                 """, new { purchaseId }, transaction.Transaction).ToList();
-            if (lots.Count == 0 || lots.Any(static lot => lot.OnHand != lot.Received || lot.MovementCount != 1))
+            CancelLineCountRow lineCounts = transaction.Connection.QuerySingle<CancelLineCountRow>("""
+                SELECT COUNT(*) AS AllLines,
+                       COALESCE(SUM(CASE WHEN line_kind<>'EXPENSE' THEN 1 ELSE 0 END),0) AS StockLines
+                FROM purchase_line WHERE purchase_id=@purchaseId
+                """, new { purchaseId }, transaction.Transaction);
+            if (lineCounts.AllLines == 0 || lineCounts.StockLines != lots.Count ||
+                lots.Any(static lot => lot.OnHand != lot.Received || lot.MovementCount != 1))
                 throw new DomainException(ErrorCode.CancelNotAllowed, purchaseId);
             foreach (CancelLotRow lot in lots)
             {
@@ -460,8 +500,14 @@ public sealed class PurchasingService(
                 transaction.Connection.Execute("UPDATE product_lot SET is_active=0 WHERE id=@LotId", lot, transaction.Transaction);
                 products.Add(lot.ProductId);
             }
-            transaction.Connection.Execute("UPDATE purchase SET status='CANCELLED' WHERE id=@purchaseId",
-                new { purchaseId }, transaction.Transaction);
+            transaction.Connection.Execute("""
+                INSERT INTO purchase_expense_reversal(expense_id,purchase_id,reversal_date,amount)
+                SELECT e.id,@purchaseId,@date,e.amount FROM expense e
+                JOIN purchase_line pl ON pl.id=e.purchase_line_id
+                WHERE pl.purchase_id=@purchaseId
+                """, new { purchaseId, date = Format(cancellationDate) }, transaction.Transaction);
+            transaction.Connection.Execute("UPDATE purchase SET status='CANCELLED',cancelled_date=@date WHERE id=@purchaseId",
+                new { purchaseId, date = Format(cancellationDate) }, transaction.Transaction);
             audit.Write(transaction, "purchase", purchaseId, "CANCEL", new { lots = lots.Count });
             OperationGuard.Complete(transaction, operationId, "purchase", purchaseId);
         }, cancellationToken);
@@ -506,8 +552,8 @@ public sealed class PurchasingService(
     {
         if (vendorId <= 0 || limit is < 1 or > 200 ||
             (beforeDate is null) != (beforeKind is null) || (beforeDate is null) != (beforeId is null) ||
-            beforeKind is not null and not ("PURCHASE" or "PAYMENT" or "VENDOR_RETURN") ||
-            filterKind is not null and not ("PURCHASE" or "PAYMENT" or "VENDOR_RETURN"))
+            beforeKind is not null and not ("PURCHASE" or "PURCHASE_VOID" or "PAYMENT" or "VENDOR_RETURN" or "VENDOR_RETURN_CANCEL") ||
+            filterKind is not null and not ("PURCHASE" or "PURCHASE_VOID" or "PAYMENT" or "VENDOR_RETURN" or "VENDOR_RETURN_CANCEL"))
             throw new DomainException(ErrorCode.Validation, "Invalid vendor ledger page.");
         return database.ReadAsync(connection =>
         {
@@ -518,8 +564,13 @@ public sealed class PurchasingService(
                 SELECT * FROM (
                     SELECT received_date AS Date,'PURCHASE' AS Kind,doc_no AS Reference,
                            grand_total AS Debit,0 AS Credit,id AS SortId
-                    FROM purchase WHERE vendor_id=@vendorId AND status='POSTED'
+                    FROM purchase WHERE vendor_id=@vendorId AND
+                        (status='POSTED' OR cancelled_date IS NOT NULL)
                         AND (@filterKind IS NULL OR @filterKind='PURCHASE')
+                    UNION ALL
+                    SELECT cancelled_date,'PURCHASE_VOID',doc_no,0,grand_total,id
+                    FROM purchase WHERE vendor_id=@vendorId AND cancelled_date IS NOT NULL
+                        AND (@filterKind IS NULL OR @filterKind='PURCHASE_VOID')
                     UNION ALL
                     SELECT pay_date,'PAYMENT',reference,0,amount,id
                     FROM vendor_payment WHERE vendor_id=@vendorId
@@ -528,6 +579,11 @@ public sealed class PurchasingService(
                     SELECT return_date,'VENDOR_RETURN',doc_no,0,credit_total,id
                     FROM vendor_return WHERE vendor_id=@vendorId
                         AND (@filterKind IS NULL OR @filterKind='VENDOR_RETURN')
+                    UNION ALL
+                    SELECT c.cancellation_date,'VENDOR_RETURN_CANCEL',vr.doc_no,vr.credit_total,0,vr.id
+                    FROM vendor_return_cancellation c JOIN vendor_return vr ON vr.id=c.vendor_return_id
+                    WHERE vr.vendor_id=@vendorId
+                        AND (@filterKind IS NULL OR @filterKind='VENDOR_RETURN_CANCEL')
                 )
                 WHERE @beforeDate IS NULL OR Date<@beforeDate
                    OR (Date=@beforeDate AND (Kind<@beforeKind OR (Kind=@beforeKind AND SortId<@beforeId)))
@@ -540,9 +596,13 @@ public sealed class PurchasingService(
             LedgerRow first = rows[0];
             long firstBalance = opening + connection.ExecuteScalar<long>("""
                 SELECT COALESCE((SELECT SUM(grand_total) FROM purchase
-                    WHERE vendor_id=@vendorId AND status='POSTED' AND
+                    WHERE vendor_id=@vendorId AND (status='POSTED' OR cancelled_date IS NOT NULL) AND
                         (received_date<@date OR (received_date=@date AND
                          ('PURCHASE'<@kind OR ('PURCHASE'=@kind AND id<=@id))))),0)
+                     - COALESCE((SELECT SUM(grand_total) FROM purchase
+                    WHERE vendor_id=@vendorId AND cancelled_date IS NOT NULL AND
+                        (cancelled_date<@date OR (cancelled_date=@date AND
+                         ('PURCHASE_VOID'<@kind OR ('PURCHASE_VOID'=@kind AND id<=@id))))),0)
                      - COALESCE((SELECT SUM(amount) FROM vendor_payment
                     WHERE vendor_id=@vendorId AND
                         (pay_date<@date OR (pay_date=@date AND
@@ -551,6 +611,11 @@ public sealed class PurchasingService(
                     WHERE vendor_id=@vendorId AND
                         (return_date<@date OR (return_date=@date AND
                          ('VENDOR_RETURN'<@kind OR ('VENDOR_RETURN'=@kind AND id<=@id))))),0)
+                     + COALESCE((SELECT SUM(vr.credit_total) FROM vendor_return_cancellation c
+                    JOIN vendor_return vr ON vr.id=c.vendor_return_id
+                    WHERE vr.vendor_id=@vendorId AND
+                        (c.cancellation_date<@date OR (c.cancellation_date=@date AND
+                         ('VENDOR_RETURN_CANCEL'<@kind OR ('VENDOR_RETURN_CANCEL'=@kind AND vr.id<=@id))))),0)
                 """, new { vendorId, date = first.Date, kind = first.Kind, id = first.SortId });
             var items = new List<VendorLedgerItem>(rows.Count);
             long balance = firstBalance;
@@ -572,7 +637,10 @@ public sealed class PurchasingService(
                 ?? throw new DomainException(ErrorCode.NotFound, "vendor", vendorId);
             var entries = connection.Query<LedgerRow>("""
                 SELECT received_date AS Date,'PURCHASE' AS Kind,doc_no AS Reference,grand_total AS Debit,0 AS Credit,id AS SortId
-                  FROM purchase WHERE vendor_id=@vendorId AND status='POSTED'
+                  FROM purchase WHERE vendor_id=@vendorId AND (status='POSTED' OR cancelled_date IS NOT NULL)
+                UNION ALL
+                SELECT cancelled_date,'PURCHASE_VOID',doc_no,0,grand_total,id
+                  FROM purchase WHERE vendor_id=@vendorId AND cancelled_date IS NOT NULL
                 UNION ALL
                 SELECT pay_date AS Date,'PAYMENT' AS Kind,reference AS Reference,0 AS Debit,amount AS Credit,id AS SortId
                   FROM vendor_payment WHERE vendor_id=@vendorId
@@ -580,6 +648,10 @@ public sealed class PurchasingService(
                 SELECT return_date AS Date,'VENDOR_RETURN' AS Kind,doc_no AS Reference,0 AS Debit,
                        credit_total AS Credit,id AS SortId
                   FROM vendor_return WHERE vendor_id=@vendorId
+                UNION ALL
+                SELECT c.cancellation_date,'VENDOR_RETURN_CANCEL',vr.doc_no,vr.credit_total,0,vr.id
+                  FROM vendor_return_cancellation c JOIN vendor_return vr ON vr.id=c.vendor_return_id
+                  WHERE vr.vendor_id=@vendorId
                 ORDER BY Date,Kind,SortId
                 """, new { vendorId }).ToList();
             Money balance = Money.FromScaled(opening);
@@ -607,6 +679,29 @@ public sealed class PurchasingService(
             .Where(static row => row.Received > row.Returned && row.OnHand > 0)
             .Select(static row => row.ToModel()).ToArray();
     }, cancellationToken);
+
+    public Task<VendorReturnHistoryPage> GetVendorReturnHistoryPageAsync(long purchaseId,
+        long? beforeId = null, int limit = 50, CancellationToken cancellationToken = default)
+    {
+        if (purchaseId <= 0 || beforeId < 1 || limit is < 1 or > 100)
+            throw new DomainException(ErrorCode.Validation, "Invalid return history page.");
+        return database.ReadAsync(connection =>
+        {
+            List<VendorReturnHistoryRow> rows = connection.Query<VendorReturnHistoryRow>("""
+                SELECT vr.id AS Id,vr.doc_no AS DocumentNumber,vr.return_date AS Date,
+                       vr.credit_total AS CreditTotal,vr.cost_total AS CostTotal,
+                       c.cancellation_date AS CancellationDate
+                FROM vendor_return vr LEFT JOIN vendor_return_cancellation c
+                    ON c.vendor_return_id=vr.id
+                WHERE vr.purchase_id=@purchaseId AND (@beforeId IS NULL OR vr.id<@beforeId)
+                ORDER BY vr.id DESC LIMIT @take
+                """, new { purchaseId, beforeId, take = limit + 1 }).ToList();
+            bool more = rows.Count > limit;
+            if (more) rows.RemoveAt(limit);
+            return new VendorReturnHistoryPage(rows.Select(static row => row.ToModel()).ToArray(),
+                more, rows.LastOrDefault()?.Id);
+        }, cancellationToken);
+    }
 
     public async Task<PostedVendorReturn> PostVendorReturnAsync(VendorReturnInput input, string operationId,
         CancellationToken cancellationToken = default)
@@ -691,7 +786,7 @@ public sealed class PurchasingService(
                     SELECT @returnId,l.product_id,l.id,@qty,@beforeTax,@tax,@cost,
                         l.purchase_line_id,pl.product_name_snapshot,pl.product_sku_snapshot,
                         pl.product_name_local_snapshot,pl.uom_snapshot,pl.product_class_snapshot,
-                        l.lot_code,l.batch_no,l.expiry_date,l.unit_cost,@taxMode,
+                        l.lot_code,l.batch_no,l.expiry_date,pl.landed_unit_cost,@taxMode,
                         'AT_POST',NULL
                     FROM product_lot l JOIN purchase_line pl ON pl.id=l.purchase_line_id
                     WHERE l.id=@lotId
@@ -725,14 +820,104 @@ public sealed class PurchasingService(
         return result;
     }
 
+    public async Task CancelVendorReturnAsync(long returnId, DateOnly date, string reason,
+        string operationId, CancellationToken cancellationToken = default)
+    {
+        string cleanReason = Required(reason, 500, nameof(reason));
+        var changedProducts = new HashSet<long>();
+        await database.WriteAsync(transaction =>
+        {
+            OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.VendorReturnCancel);
+            if (replay is not null) return;
+            var source = transaction.Connection.QuerySingleOrDefault<(long Id, DateOnly ReturnDate)>(
+                "SELECT id AS Id,return_date AS ReturnDate FROM vendor_return WHERE id=@returnId",
+                new { returnId }, transaction.Transaction);
+            if (source.Id == 0) throw new DomainException(ErrorCode.NotFound, "vendor return", returnId);
+            if (transaction.Connection.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM vendor_return_cancellation WHERE vendor_return_id=@returnId",
+                new { returnId }, transaction.Transaction) != 0)
+            {
+                OperationGuard.Complete(transaction, operationId, "vendor_return", returnId);
+                return;
+            }
+            periods.EnsureOpen(date);
+            var lines = transaction.Connection.Query<(long LotId, long ProductId, long Quantity, long UnitCost)>("""
+                SELECT lot_id AS LotId,product_id AS ProductId,qty AS Quantity,
+                       unit_cost_snapshot AS UnitCost
+                FROM vendor_return_line WHERE vendor_return_id=@returnId
+                """, new { returnId }, transaction.Transaction).ToList();
+            foreach (var line in lines)
+            {
+                ledger.Post(transaction, new(date, line.ProductId, line.LotId, "VENDOR_RETURN_CANCEL",
+                    Quantity.FromScaled(line.Quantity), Money.FromScaled(line.UnitCost),
+                    "vendor_return", returnId, cleanReason));
+                changedProducts.Add(line.ProductId);
+            }
+            transaction.Connection.Execute("""
+                INSERT INTO vendor_return_cancellation(vendor_return_id,operation_id,cancellation_date,reason)
+                VALUES (@returnId,@operationId,@date,@cleanReason)
+                """, new { returnId, operationId, date = Format(date), cleanReason }, transaction.Transaction);
+            audit.Write(transaction, "vendor_return", returnId, "CANCEL", new { cleanReason });
+            OperationGuard.Complete(transaction, operationId, "vendor_return", returnId);
+        }, cancellationToken);
+        if (changedProducts.Count > 0)
+            WeakReferenceMessenger.Default.Send(new StockChangedMessage(changedProducts.ToArray()));
+    }
+
+    public async Task<long> ConsumeInternalAsync(long lotId, Quantity quantity, DateOnly date,
+        string? reason, string operationId, CancellationToken cancellationToken = default)
+    {
+        if (lotId <= 0 || quantity <= Quantity.Zero)
+            throw new DomainException(ErrorCode.Validation, "Choose an internal-use lot and positive quantity.");
+        long recordId = await database.WriteAsync(transaction =>
+        {
+            OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.InternalUse);
+            if (replay?.RefId is long previous) return previous;
+            periods.EnsureOpen(date);
+            var lot = transaction.Connection.QuerySingleOrDefault<InternalLotRow>("""
+                SELECT l.id AS LotId,l.product_id AS ProductId,l.qty_on_hand AS OnHand,
+                       l.unit_cost AS UnitCost,l.lot_code AS LotCode,l.batch_no AS BatchNumber,
+                       l.expiry_date AS ExpiryDate,p.sku AS Sku,p.name AS ProductName,
+                       u.code AS Uom,u.allow_fraction AS AllowFraction
+                FROM product_lot l JOIN product p ON p.id=l.product_id JOIN uom u ON u.id=p.uom_id
+                WHERE l.id=@lotId AND p.product_class='INTERNAL' AND l.is_active=1
+                """, new { lotId }, transaction.Transaction)
+                ?? throw new DomainException(ErrorCode.NotFound, "internal-use lot", lotId);
+            if (quantity.Scaled > lot.OnHand) throw new DomainException(ErrorCode.InsufficientStock, lotId);
+            if (!lot.AllowFraction && !quantity.IsWhole)
+                throw new DomainException(ErrorCode.FractionalQtyNotAllowed);
+            long id = transaction.Connection.ExecuteScalar<long>("""
+                INSERT INTO internal_use_record(product_id_snapshot,lot_id_snapshot,product_sku_snapshot,
+                    product_name_snapshot,uom_snapshot,lot_code_snapshot,batch_no_snapshot,
+                    expiry_date_snapshot,quantity,unit_cost,used_date,reason)
+                VALUES (@ProductId,@LotId,@Sku,@ProductName,@Uom,@LotCode,@BatchNumber,
+                    @ExpiryDate,@quantity,@UnitCost,@date,@reason) RETURNING id
+                """, new { lot.ProductId, lot.LotId, lot.Sku, lot.ProductName, lot.Uom, lot.LotCode,
+                    lot.BatchNumber, lot.ExpiryDate, quantity = quantity.Scaled, lot.UnitCost,
+                    date = Format(date), reason = Optional(reason, 500) }, transaction.Transaction);
+            ledger.Post(transaction, new(date, lot.ProductId, lotId, "INTERNAL_USE", Quantity.FromScaled(-quantity.Scaled),
+                Money.FromScaled(lot.UnitCost), "internal_use_record", id, reason));
+            audit.Write(transaction, "internal_use_record", id, "CONSUME", new { lotId, quantity = quantity.Scaled });
+            OperationGuard.Complete(transaction, operationId, "internal_use_record", id);
+            return id;
+        }, cancellationToken);
+        return recordId;
+    }
+
     private static VendorReturnLotRow[] LoadVendorReturnLots(IDbConnection connection, long purchaseId,
         IDbTransaction? transaction = null) => connection.Query<VendorReturnLotRow>("""
             SELECT l.id AS LotId,l.product_id AS ProductId,p.name AS ProductName,l.lot_code AS LotCode,
-                   l.qty_received AS Received,l.qty_on_hand AS OnHand,l.unit_cost AS UnitCost,
+                   l.qty_received AS Received,l.qty_on_hand AS OnHand,pl.landed_unit_cost AS UnitCost,
                    pl.line_total-pl.tax_amount AS OriginalBeforeTax,pl.tax_amount AS OriginalTax,
-                   COALESCE((SELECT SUM(vrl.qty) FROM vendor_return_line vrl WHERE vrl.lot_id=l.id),0) AS Returned,
-                   COALESCE((SELECT SUM(vrl.credit_before_tax) FROM vendor_return_line vrl WHERE vrl.lot_id=l.id),0) AS CreditedBeforeTax,
-                   COALESCE((SELECT SUM(vrl.tax_credit) FROM vendor_return_line vrl WHERE vrl.lot_id=l.id),0) AS CreditedTax,
+                   COALESCE((SELECT SUM(vrl.qty) FROM vendor_return_line vrl
+                     LEFT JOIN vendor_return_cancellation c ON c.vendor_return_id=vrl.vendor_return_id
+                     WHERE vrl.lot_id=l.id AND c.vendor_return_id IS NULL),0) AS Returned,
+                   COALESCE((SELECT SUM(vrl.credit_before_tax) FROM vendor_return_line vrl
+                     LEFT JOIN vendor_return_cancellation c ON c.vendor_return_id=vrl.vendor_return_id
+                     WHERE vrl.lot_id=l.id AND c.vendor_return_id IS NULL),0) AS CreditedBeforeTax,
+                   COALESCE((SELECT SUM(vrl.tax_credit) FROM vendor_return_line vrl
+                     LEFT JOIN vendor_return_cancellation c ON c.vendor_return_id=vrl.vendor_return_id
+                     WHERE vrl.lot_id=l.id AND c.vendor_return_id IS NULL),0) AS CreditedTax,
                    u.allow_fraction AS AllowFraction
             FROM purchase_line pl JOIN product_lot l ON l.purchase_line_id=pl.id
             JOIN product p ON p.id=l.product_id JOIN uom u ON u.id=p.uom_id
@@ -822,22 +1007,34 @@ public sealed class PurchasingService(
         {
             PurchaseLineInput line = lines[index];
             ProductRule rule = transaction.Connection.QuerySingleOrDefault<ProductRule>("""
-                SELECT p.track_expiry AS TrackExpiry,u.allow_fraction AS AllowFraction
+                SELECT p.track_expiry AS TrackExpiry,u.allow_fraction AS AllowFraction,
+                       p.product_class AS ProductClass
                 FROM product p JOIN uom u ON u.id=p.uom_id WHERE p.id=@ProductId AND p.is_active=1
                 """, line, transaction.Transaction) ?? throw new DomainException(ErrorCode.NotFound, "product", line.ProductId);
             ValidateLine(line, rule.TrackExpiry, rule.AllowFraction, default);
+            if (line.LineKind != "EXPENSE" &&
+                ((line.LineKind == "INTERNAL") != (rule.ProductClass == "INTERNAL")))
+                throw new DomainException(ErrorCode.Validation, "Purchase line type does not match product classification.");
+            if (line.LineKind == "EXPENSE" && transaction.Connection.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM expense_category WHERE id=@id AND is_active=1",
+                new { id = line.ExpenseCategoryId }, transaction.Transaction) != 1)
+                throw new DomainException(ErrorCode.Validation, "Choose an active expense category.");
             Money taxable = line.Rate * line.Quantity - line.Discount;
             Money tax = Tax.FromExclusive(taxable, line.TaxRate).Tax;
             transaction.Connection.Execute("""
-                INSERT INTO purchase_line(purchase_id,line_no,product_id,batch_no,mfg_date,expiry_date,qty,free_qty,
+                INSERT INTO purchase_line(purchase_id,line_no,product_id,line_kind,expense_category_id,
+                                          batch_no,mfg_date,expiry_date,qty,free_qty,
                                           unit_cost,discount,tax_rate_pct,tax_amount,line_total,landed_unit_cost,mrp,selling_price)
-                VALUES (@purchaseId,@lineNo,@ProductId,@BatchNumber,@ManufacturingDate,@ExpiryDate,@Quantity,@FreeQuantity,
+                VALUES (@purchaseId,@lineNo,@ProductId,@LineKind,@ExpenseCategoryId,
+                        @BatchNumber,@ManufacturingDate,@ExpiryDate,@Quantity,@FreeQuantity,
                         @Rate,@Discount,@TaxRate,@tax,@lineTotal,0,@Mrp,@SellingPrice)
                 """, new
             {
                 purchaseId,
                 lineNo = index + 1,
                 line.ProductId,
+                line.LineKind,
+                line.ExpenseCategoryId,
                 BatchNumber = Optional(line.BatchNumber, 120),
                 line.ManufacturingDate,
                 line.ExpiryDate,
@@ -877,7 +1074,7 @@ public sealed class PurchasingService(
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.Lines);
         if (input.VendorId <= 0 || input.ReceivedDate == default || input.OtherCharges < Money.Zero ||
-            input.VendorBillTotal < Money.Zero || input.Lines.Count == 0)
+            input.VendorBillTotal < Money.Zero || input.Lines.Count is < 1 or > 200)
             throw new DomainException(ErrorCode.Validation, "Invalid purchase draft.");
         if (input.VendorInvoiceDate is not null && input.VendorInvoiceDate > input.ReceivedDate)
             throw new DomainException(ErrorCode.InvalidDate);
@@ -885,13 +1082,16 @@ public sealed class PurchasingService(
 
     private static void ValidateLine(PurchaseLineInput line, bool trackExpiry, bool allowFraction, DateOnly receivedDate)
     {
-        if (line.ProductId <= 0 || line.Quantity <= Quantity.Zero || line.FreeQuantity < Quantity.Zero || line.Rate < Money.Zero ||
+        if (line.ProductId <= 0 || line.LineKind is not ("PRODUCT" or "INTERNAL" or "EXPENSE") ||
+            (line.LineKind == "EXPENSE") != (line.ExpenseCategoryId is not null) ||
+            line.Quantity <= Quantity.Zero || line.FreeQuantity < Quantity.Zero || line.Rate < Money.Zero ||
             line.Discount < Money.Zero || line.Discount > line.Rate * line.Quantity || line.TaxRate < Percent.Zero ||
             line.TaxRate.Value > 100m || line.SellingPrice < Money.Zero)
             throw new DomainException(ErrorCode.Validation, "Invalid purchase line.");
         if (!allowFraction && (!line.Quantity.IsWhole || !line.FreeQuantity.IsWhole))
             throw new DomainException(ErrorCode.FractionalQtyNotAllowed);
-        if (trackExpiry && line.ExpiryDate is null) throw new DomainException(ErrorCode.Validation, "Expiry is required.");
+        if (line.LineKind != "EXPENSE" && trackExpiry && line.ExpiryDate is null)
+            throw new DomainException(ErrorCode.Validation, "Expiry is required.");
         if (line.Mrp is not null && line.SellingPrice > line.Mrp.Value) throw new DomainException(ErrorCode.PriceAboveMrp);
         if (line.ManufacturingDate is not null && line.ExpiryDate is not null && line.ManufacturingDate > line.ExpiryDate)
             throw new DomainException(ErrorCode.InvalidDate);
@@ -978,12 +1178,13 @@ public sealed class PurchasingService(
     private sealed record ValidVendor(string Name, string? ContactPerson, string? Phone, string? AlternatePhone, string? Email, string? Address, string? City, string? State, string? Pincode, string? Gstin, string? Pan, string? UpiId, string? BankDetails, int PaymentTermsDays, long OpeningBalance, string? Notes);
     private sealed class VendorRow { public long Id { get; init; } public string Name { get; init; } = ""; public string? Phone { get; init; } public string? Gstin { get; init; } public long BalanceDue { get; init; } public bool IsActive { get; init; } public VendorItem ToModel() => new(Id, Name, Phone, Gstin, Money.FromScaled(BalanceDue), IsActive); }
     private sealed class VendorDetailsRow { public string Name { get; init; } = ""; public string? ContactPerson { get; init; } public string? Phone { get; init; } public string? AlternatePhone { get; init; } public string? Email { get; init; } public string? Address { get; init; } public string? City { get; init; } public string? State { get; init; } public string? Pincode { get; init; } public string? Gstin { get; init; } public string? Pan { get; init; } public string? UpiId { get; init; } public string? BankDetails { get; init; } public int PaymentTermsDays { get; init; } public long OpeningBalance { get; init; } public string? Notes { get; init; } }
-    private sealed class ProductRule { public bool TrackExpiry { get; init; } public bool AllowFraction { get; init; } }
+    private sealed class ProductRule { public bool TrackExpiry { get; init; } public bool AllowFraction { get; init; } public string ProductClass { get; init; } = "SALEABLE"; }
     private sealed class PurchaseHeader { public long Id { get; init; } public long VendorId { get; init; } public DateOnly ReceivedDate { get; init; } public string Status { get; init; } = ""; public long OtherCharges { get; init; } public long? VendorBillTotal { get; init; } }
     private sealed class DraftHeader { public long Id { get; init; } public long VendorId { get; init; } public string? VendorInvoiceNumber { get; init; } public DateOnly? VendorInvoiceDate { get; init; } public DateOnly ReceivedDate { get; init; } public long? VendorBillTotal { get; init; } public long OtherCharges { get; init; } public string? Notes { get; init; } }
     private sealed class LineDefaultsRow { public bool TrackExpiry { get; init; } public bool PriceIncludesTax { get; init; } public int? ShelfLifeDays { get; init; } public int ExpiryAlertDays { get; init; } public long TaxRate { get; init; } public long? Mrp { get; init; } public long? SellingPrice { get; init; } public long? LastRate { get; init; } }
-    private sealed class PurchaseLineRow { public long Id { get; init; } public long ProductId { get; init; } public string? BatchNumber { get; init; } public DateOnly? ManufacturingDate { get; init; } public DateOnly? ExpiryDate { get; init; } public long Quantity { get; init; } public long FreeQuantity { get; init; } public long Rate { get; init; } public long Discount { get; init; } public long TaxRate { get; init; } public long? Mrp { get; init; } public long SellingPrice { get; init; } public bool TrackExpiry { get; init; } public bool AllowFraction { get; init; } public PurchaseLineInput ToInput() => new(ProductId, BatchNumber, ManufacturingDate, ExpiryDate, GroceryErp.Core.Numerics.Quantity.FromScaled(Quantity), GroceryErp.Core.Numerics.Quantity.FromScaled(FreeQuantity), Money.FromScaled(Rate), Money.FromScaled(Discount), Percent.FromScaled(TaxRate), Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(SellingPrice)); }
+    private sealed class PurchaseLineRow { public long Id { get; init; } public long ProductId { get; init; } public string LineKind { get; init; } = "PRODUCT"; public long? ExpenseCategoryId { get; init; } public string ProductClass { get; init; } = "SALEABLE"; public string? BatchNumber { get; init; } public DateOnly? ManufacturingDate { get; init; } public DateOnly? ExpiryDate { get; init; } public long Quantity { get; init; } public long FreeQuantity { get; init; } public long Rate { get; init; } public long Discount { get; init; } public long TaxRate { get; init; } public long? Mrp { get; init; } public long SellingPrice { get; init; } public bool TrackExpiry { get; init; } public bool AllowFraction { get; init; } public PurchaseLineInput ToInput() => new(ProductId, BatchNumber, ManufacturingDate, ExpiryDate, GroceryErp.Core.Numerics.Quantity.FromScaled(Quantity), GroceryErp.Core.Numerics.Quantity.FromScaled(FreeQuantity), Money.FromScaled(Rate), Money.FromScaled(Discount), Percent.FromScaled(TaxRate), Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(SellingPrice)) { LineKind=LineKind, ExpenseCategoryId=ExpenseCategoryId }; }
     private sealed class CancelLotRow { public long LotId { get; init; } public long ProductId { get; init; } public long Received { get; init; } public long OnHand { get; init; } public long UnitCost { get; init; } public long PurchaseLineId { get; init; } public long MovementCount { get; init; } }
+    private sealed class CancelLineCountRow { public long AllLines { get; init; } public long StockLines { get; init; } }
     private sealed class PostedRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public long Subtotal { get; init; } public long Discount { get; init; } public long Tax { get; init; } public long OtherCharges { get; init; } public long RoundOff { get; init; } public long GrandTotal { get; init; } public long? VendorBillTotal { get; init; } }
     private sealed class LedgerRow { public DateOnly Date { get; init; } public string Kind { get; init; } = ""; public string? Reference { get; init; } public long Debit { get; init; } public long Credit { get; init; } public long SortId { get; init; } }
     private sealed class VendorPurchaseChoiceRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public string? InvoiceNumber { get; init; } public DateOnly ReceivedDate { get; init; } }
@@ -1011,6 +1212,8 @@ public sealed class PurchasingService(
             Money.FromScaled(UnitCost), AllowFraction, Quantity.FromScaled(Returned));
     }
     private sealed class VendorReturnPostedRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public long CreditTotal { get; init; } public long CostTotal { get; init; } }
+    private sealed class VendorReturnHistoryRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public DateOnly Date { get; init; } public long CreditTotal { get; init; } public long CostTotal { get; init; } public DateOnly? CancellationDate { get; init; } public VendorReturnHistoryItem ToModel() => new(Id, DocumentNumber, Date, Money.FromScaled(CreditTotal), Money.FromScaled(CostTotal), CancellationDate is not null, CancellationDate); }
+    private sealed class InternalLotRow { public long LotId { get; init; } public long ProductId { get; init; } public long OnHand { get; init; } public long UnitCost { get; init; } public string LotCode { get; init; } = ""; public string? BatchNumber { get; init; } public DateOnly? ExpiryDate { get; init; } public string Sku { get; init; } = ""; public string ProductName { get; init; } = ""; public string Uom { get; init; } = ""; public bool AllowFraction { get; init; } }
     private sealed class PurchaseListRow { public long Id { get; init; } public string? DocumentNumber { get; init; } public string VendorName { get; init; } = ""; public string? VendorInvoiceNumber { get; init; } public DateOnly ReceivedDate { get; init; } public string Status { get; init; } = ""; public long GrandTotal { get; init; } public long? VendorBillTotal { get; init; } public PurchaseListItem ToModel() => new(Id, DocumentNumber, VendorName, VendorInvoiceNumber, ReceivedDate, Status, Money.FromScaled(GrandTotal), VendorBillTotal is null ? null : Money.FromScaled(VendorBillTotal.Value)); }
     private sealed class PurchaseInvoiceHeaderRow
     {
@@ -1021,6 +1224,7 @@ public sealed class PurchasingService(
         public DateOnly? VendorInvoiceDate { get; init; }
         public DateOnly ReceivedDate { get; init; }
         public string Status { get; init; } = "";
+        public string? TaxMode { get; init; }
         public string? Notes { get; init; }
         public long Subtotal { get; init; }
         public long Discount { get; init; }
@@ -1033,6 +1237,8 @@ public sealed class PurchasingService(
     private sealed class PurchaseInvoiceLineRow
     {
         public int LineNumber { get; init; }
+        public string LineKind { get; init; } = "PRODUCT";
+        public string? ExpenseCategoryName { get; init; }
         public string Sku { get; init; } = "";
         public string ProductName { get; init; } = "";
         public string? BatchNumber { get; init; }
@@ -1057,6 +1263,8 @@ public sealed class PurchasingService(
             Money.FromScaled(TaxAmount), Money.FromScaled(LineTotal), Money.FromScaled(LandedUnitCost),
             Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(SellingPrice))
         {
+            LineKind = LineKind,
+            ExpenseCategoryName = ExpenseCategoryName,
             SnapshotProvenance = SnapshotProvenance,
             LegacyUnknownFields = LegacyUnknownFields,
         };

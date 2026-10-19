@@ -28,7 +28,14 @@ public sealed record ProductInput(
     Quantity ReorderLevel,
     Money? DefaultSellingPrice,
     Money? DefaultMrp,
-    IReadOnlyCollection<ProductBarcodeInput> Barcodes);
+    IReadOnlyCollection<ProductBarcodeInput> Barcodes)
+{
+    public string ProductClass { get; init; } = "SALEABLE";
+}
+
+public sealed record NewProductLotInput(Quantity Quantity, Money UnitCost,
+    Money SellingPrice, Money? Mrp, string? BatchNumber, DateOnly? ExpiryDate,
+    DateOnly ReceivedDate, string Reason);
 
 public sealed class ProductListItem
 {
@@ -59,7 +66,8 @@ public sealed record ProductSearchFilter(
     bool MissingLocalNameOnly = false,
     bool IncludeArchived = false,
     bool LooseOnly = false,
-    int Limit = 200);
+    int Limit = 200,
+    bool SaleableOnly = false);
 
 public sealed record ProductSearchPage(
     IReadOnlyList<ProductListItem> Items,

@@ -26,6 +26,7 @@ public partial class PurchaseInvoiceWindow : Window
         ChargesText.Text = invoice.Totals.OtherCharges.ToString();
         RoundOffText.Text = invoice.Totals.RoundOff.ToString();
         TotalText.Text = invoice.Totals.GrandTotal.ToString();
+        TaxModeText.Text = $"{text["Purchasing_TaxMode"]}: {invoice.TaxMode ?? "—"}";
         BillTotalText.Text = $"{text["Purchasing_BillTotal"]}: {invoice.Totals.VendorBillTotal?.ToString() ?? "—"}";
         DifferenceText.Text = invoice.Totals.Difference is { } difference
             ? $"{text["Purchasing_Difference"]}: {difference}"

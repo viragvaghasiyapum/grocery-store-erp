@@ -21,7 +21,7 @@ public sealed class NullMigrationBackup : IMigrationBackup
 
 public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMigrationBackup backup)
 {
-    public const int LatestVersion = 29;
+    public const int LatestVersion = 30;
 
     public void Run()
     {
@@ -30,6 +30,9 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
         List<Script> scripts = LoadEmbedded();
         using SqliteConnection connection = factory.Open();
         long current = connection.ExecuteScalar<long>("PRAGMA user_version;");
+        if (connection.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='direct_stock_sandbox'") != 0)
+            throw new DomainException(ErrorCode.DatabaseNewerThanApp, current + 1, LatestVersion);
         if (current > LatestVersion)
             throw new DomainException(ErrorCode.DatabaseNewerThanApp, current, LatestVersion);
         if (current == LatestVersion) return;

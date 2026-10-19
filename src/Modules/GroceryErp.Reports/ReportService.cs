@@ -69,6 +69,9 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                           AND COALESCE(m.ref_type,'')<>'damage_correction'
                     UNION ALL SELECT 'EXPENSE','EXPENSE_CATEGORY',e.category_id,e.amount
                         FROM expense e WHERE e.expense_date BETWEEN @from AND @to
+                    UNION ALL SELECT 'EXPENSE','EXPENSE_CATEGORY',e.category_id,-r.amount
+                        FROM purchase_expense_reversal r JOIN expense e ON e.id=r.expense_id
+                        WHERE r.reversal_date BETWEEN @from AND @to
                     UNION ALL SELECT 'EXPENSE','SALARIES',NULL,sp.amount
                         FROM salary_payment sp WHERE sp.period_month BETWEEN @firstMonth AND @lastCompleteMonth
                     UNION ALL SELECT 'EXPENSE','SALARIES',NULL,sc.amount_delta
@@ -82,6 +85,10 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                     UNION ALL SELECT 'OTHER','VENDOR_RETURN_VARIANCE',NULL,
                         vr.credit_before_tax+CASE WHEN vr.tax_mode='REGULAR' THEN 0 ELSE vr.tax_credit END-vr.cost_total
                         FROM vendor_return vr WHERE vr.return_date BETWEEN @from AND @to
+                    UNION ALL SELECT 'OTHER','VENDOR_RETURN_VARIANCE',NULL,
+                        -(vr.credit_before_tax+CASE WHEN vr.tax_mode='REGULAR' THEN 0 ELSE vr.tax_credit END-vr.cost_total)
+                        FROM vendor_return_cancellation c JOIN vendor_return vr ON vr.id=c.vendor_return_id
+                        WHERE c.cancellation_date BETWEEN @from AND @to
                 )
                 SELECT section AS Section,head_code AS HeadCode,ref_id AS ReferenceId,SUM(amount) AS Amount
                 FROM entries GROUP BY section,head_code,ref_id
@@ -148,6 +155,9 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                       AND COALESCE(ref_type,'')<>'damage_correction'
                     UNION ALL SELECT 'EXPENSE','EXPENSE_CATEGORY',category_id,substr(expense_date,1,7),amount
                     FROM expense WHERE expense_date BETWEEN @from AND @to
+                    UNION ALL SELECT 'EXPENSE','EXPENSE_CATEGORY',e.category_id,substr(r.reversal_date,1,7),-r.amount
+                    FROM purchase_expense_reversal r JOIN expense e ON e.id=r.expense_id
+                    WHERE r.reversal_date BETWEEN @from AND @to
                     UNION ALL SELECT 'EXPENSE','SALARIES',NULL,period_month,amount
                     FROM salary_payment WHERE period_month BETWEEN @firstMonth AND @lastCompleteMonth
                     UNION ALL SELECT 'EXPENSE','SALARIES',NULL,substr(correction_date,1,7),amount_delta
@@ -161,6 +171,10 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                     UNION ALL SELECT 'OTHER','VENDOR_RETURN_VARIANCE',NULL,substr(return_date,1,7),
                         credit_before_tax+CASE WHEN tax_mode='REGULAR' THEN 0 ELSE tax_credit END-cost_total
                     FROM vendor_return WHERE return_date BETWEEN @from AND @to
+                    UNION ALL SELECT 'OTHER','VENDOR_RETURN_VARIANCE',NULL,substr(c.cancellation_date,1,7),
+                        -(vr.credit_before_tax+CASE WHEN vr.tax_mode='REGULAR' THEN 0 ELSE vr.tax_credit END-vr.cost_total)
+                    FROM vendor_return_cancellation c JOIN vendor_return vr ON vr.id=c.vendor_return_id
+                    WHERE c.cancellation_date BETWEEN @from AND @to
                 )
                 SELECT section AS Section,head_code AS HeadCode,ref_id AS ReferenceId,
                        month AS Month,SUM(amount) AS Amount

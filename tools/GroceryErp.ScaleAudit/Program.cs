@@ -21,7 +21,7 @@ using GroceryErp.Reports;
 using GroceryErp.Sales;
 
 if (args.Length < 1)
-    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase2-direct-audit|phase1-schema-audit|phase1-rollback|refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|phase6-reports|phase6-matrix|phase6-category-index|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|phase5-label-failure|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
+    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase2-direct-audit|phase3-purchase-read|phase1-schema-audit|phase1-rollback|refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|phase6-reports|phase6-matrix|phase6-category-index|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|phase5-label-failure|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
 
 string root = Path.GetFullPath(args[0]);
 string mode = args.Length > 1 ? args[1] : "read";
@@ -246,7 +246,7 @@ switch (mode)
         if (!Path.GetFileName(root).Contains("phase2", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Crash rehearsal runs only in a disposable phase2 root.");
         using var connection = factory.Open();
-        if (connection.ExecuteScalar<long>("PRAGMA user_version") != 30)
+        if (connection.ExecuteScalar<long>("PRAGMA user_version") != 31)
             throw new InvalidDataException("Activate the direct-stock sandbox first.");
         long product = connection.ExecuteScalar<long>("""
             SELECT id FROM product WHERE sku LIKE 'PH2-%' ORDER BY id DESC LIMIT 1
@@ -302,7 +302,7 @@ switch (mode)
         if (!Path.GetFileName(root).Contains("phase2", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Count profile runs only in a disposable phase2 data root.");
         using var check = factory.Open();
-        if (check.ExecuteScalar<long>("PRAGMA user_version") != 30)
+        if (check.ExecuteScalar<long>("PRAGMA user_version") != 31)
             throw new InvalidDataException("Activate the direct-stock sandbox first.");
         long product = check.ExecuteScalar<long>("""
             SELECT product_id FROM product_lot WHERE id=(SELECT MAX(id) FROM product_lot)
@@ -332,7 +332,7 @@ switch (mode)
             throw new InvalidOperationException("Cashier rehearsal runs only in a disposable phase2 data root.");
         bool directMode = mode == "phase2-cashier-write";
         using (var check = factory.Open())
-            if (check.ExecuteScalar<long>("PRAGMA user_version") != (directMode ? 30 : 29) ||
+            if (check.ExecuteScalar<long>("PRAGMA user_version") != (directMode ? 31 : 30) ||
                 check.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE name='direct_stock_sandbox'") != (directMode ? 1 : 0))
                 throw new InvalidDataException("Cashier rehearsal has the wrong fixture schema.");
         var direct = new DirectStockEngine();
@@ -410,12 +410,10 @@ switch (mode)
         using (var check = factory.Open())
         {
             directVersion = check.ExecuteScalar<long>("PRAGMA user_version");
-            if (directVersion is not (29 or 30) ||
+            if (directVersion != 31 ||
                 check.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE name='direct_stock_sandbox'") != 1)
                 throw new InvalidDataException("Activate the phase-2 direct-stock sandbox first.");
         }
-        if (directVersion == 29)
-            await database.WriteAsync(tx => tx.Connection.Execute("PRAGMA user_version=30", transaction: tx.Transaction));
         var direct = new DirectStockEngine();
         string suffix = Guid.NewGuid().ToString("N");
         long product = await database.WriteAsync(tx =>
@@ -500,16 +498,14 @@ switch (mode)
         if (!Path.GetFileName(root).Contains("phase2", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Phase 2 conversion runs only in a data root named phase2.");
         using (var check = factory.Open())
-            if (check.ExecuteScalar<long>("PRAGMA user_version") is not (29 or 30))
-                throw new InvalidDataException("Phase 2 requires a schema-29 disposable copy or its schema-30 sandbox.");
+            if (check.ExecuteScalar<long>("PRAGMA user_version") is not (30 or 31))
+                throw new InvalidDataException("Phase 2 requires a schema-30 disposable copy or its schema-31 sandbox.");
         await Measure("phase2-sandbox-activate", async () =>
         {
             using var check = factory.Open();
             bool active = check.ExecuteScalar<long>(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='direct_stock_sandbox'") != 0;
             if (!active) await database.WriteAsync(tx => DirectStockSandbox.Activate(tx));
-            else if (check.ExecuteScalar<long>("PRAGMA user_version") == 29)
-                await database.WriteAsync(tx => tx.Connection.Execute("PRAGMA user_version=30", transaction: tx.Transaction));
             if (active) await database.WriteAsync(tx => tx.Connection.Execute(
                 "DROP INDEX IF EXISTS ix_direct_count_product_lot", transaction: tx.Transaction));
             return active ? 0 : 1;
@@ -2420,6 +2416,33 @@ switch (mode)
             CapturePlan("catalog-low-stock", "SELECT p.id FROM product_stock_total t JOIN product p ON p.id=t.product_id WHERE t.is_low=1 AND p.is_active=1 ORDER BY p.name COLLATE NOCASE,p.id LIMIT 100");
             CapturePlan("catalog-low-stock-name-order", "SELECT p.id FROM product p INDEXED BY ix_product_name CROSS JOIN product_stock_total t ON t.product_id=p.id AND t.is_low=1 WHERE p.is_active=1 ORDER BY p.name COLLATE NOCASE,p.id LIMIT 100");
         }
+        break;
+    }
+    case "phase3-purchase-read":
+    {
+        long vendorId;
+        string productTerm;
+        using (var connection = factory.Open())
+        {
+            vendorId = connection.ExecuteScalar<long>(
+                "SELECT vendor_id FROM purchase WHERE status='POSTED' ORDER BY id DESC LIMIT 1");
+            productTerm = connection.ExecuteScalar<string>("""
+                SELECT substr(COALESCE(product_name_snapshot,''),1,12) FROM purchase_line
+                WHERE line_kind='PRODUCT' AND product_name_snapshot IS NOT NULL
+                ORDER BY id DESC LIMIT 1
+                """) ?? "";
+        }
+        if (vendorId <= 0 || productTerm.Length == 0)
+            throw new InvalidDataException("The purchasing read fixture needs a posted purchase and product snapshot.");
+        await Measure("purchase-first-page", () => purchasing.GetPurchasesPageAsync(limit: 50),
+            static page => page.Items.Count);
+        await Measure("purchase-vendor-status-type", () => purchasing.GetPurchasesPageAsync(
+            vendorId: vendorId, status: "POSTED", lineKind: "PRODUCT", limit: 50),
+            static page => page.Items.Count);
+        await Measure("purchase-product-search", () => purchasing.GetPurchasesPageAsync(
+            productQuery: productTerm, limit: 50), static page => page.Items.Count);
+        await Measure("vendor-ledger-first-page", () => purchasing.GetVendorLedgerPageAsync(vendorId,
+            limit: 50), static page => page.Items.Count);
         break;
     }
     case "phase3-read":

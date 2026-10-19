@@ -1,0 +1,38 @@
+<Window x:Class="GroceryErp.App.Presentation.VendorReturnHistoryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+        Title="{l:Tr Purchasing_ReturnHistory}" Width="850" Height="570"
+        MinWidth="650" MinHeight="420" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <Grid Margin="14">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <TextBlock Text="{l:Tr Purchasing_ReturnHistory}" FontSize="21" FontWeight="SemiBold" Margin="0,0,0,8"/>
+    <DataGrid x:Name="ReturnsGrid" Grid.Row="1" Style="{StaticResource CompactTableGrid}"
+              AutoGenerateColumns="False" SelectionMode="Single" SelectionChanged="ReturnsGrid_OnSelectionChanged">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="{l:Tr Purchasing_Grn}" Binding="{Binding DocumentNumber}" Width="150"/>
+        <DataGridTextColumn Header="{l:Tr Purchasing_Received}" Binding="{Binding Date}" Width="125"/>
+        <DataGridTextColumn Header="{l:Tr Purchasing_Total}" Binding="{Binding CreditTotal}" Width="125"/>
+        <DataGridTextColumn Header="{l:Tr Purchasing_Landed}" Binding="{Binding CostTotal}" Width="125"/>
+        <DataGridCheckBoxColumn Header="{l:Tr Purchasing_ReturnCancelled}" Binding="{Binding IsCancelled}" Width="120"/>
+        <DataGridTextColumn Header="{l:Tr Purchasing_ReturnCancelledDate}" Binding="{Binding CancellationDate}" Width="125"/>
+      </DataGrid.Columns>
+    </DataGrid>
+    <Grid Grid.Row="2" Margin="0,8,0,0">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <TextBox x:Name="ReasonBox" MaxLength="500" ToolTip="{l:Tr Purchasing_ReturnCancelReason}"
+               AutomationProperties.Name="{l:Tr Purchasing_ReturnCancelReason}"/>
+      <Button x:Name="CancelReturnButton" Grid.Column="1" Margin="8,0,0,0" IsEnabled="False"
+              Content="{l:Tr Purchasing_CancelReturn}" Click="CancelReturn_OnClick"/>
+    </Grid>
+    <Grid Grid.Row="3" Margin="0,8,0,0">
+      <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="Crimson" TextWrapping="Wrap"/>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+        <Button x:Name="PreviousButton" Content="{l:Tr Sales_Previous}" IsEnabled="False" Click="Previous_OnClick" Margin="0,0,8,0"/>
+        <Button x:Name="NextButton" Content="{l:Tr Sales_Next}" IsEnabled="False" Click="Next_OnClick" Margin="0,0,8,0"/>
+        <Button Content="{l:Tr Common_Close}" IsCancel="True"/>
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Window>

@@ -12,7 +12,7 @@ public enum OpType
     DirectPurchaseLot, DirectOriginLot, DirectSaleComplete, DirectSaleVoid,
     DirectCustomerReturn, DirectDamage, DirectInternalUse, DirectVendorReturn,
     DirectVendorReturnCancel, DirectCountReview,
-    DirectPurchaseVoid,
+    DirectPurchaseVoid, VendorReturnCancel, InternalUse, DirectEntry,
 }
 
 public sealed class OperationRef

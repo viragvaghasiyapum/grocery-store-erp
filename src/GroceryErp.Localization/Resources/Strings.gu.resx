@@ -1161,4 +1161,32 @@
   <data name="Stock_CountNoLots" xml:space="preserve"><value>આ ઉત્પાદનો માટે કોઈ લોટ ઉપલબ્ધ નથી.</value><comment>MT - needs review</comment></data>
   <data name="Stock_ReasonRequired" xml:space="preserve"><value>સમીક્ષા પહેલાં કારણ દાખલ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Stock_CountPagePosted" xml:space="preserve"><value>ચકાસેલું ગણતરી પાનું નોંધાયું. આગળના પાને જાઓ અથવા બંધ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_LineType" xml:space="preserve"><value>પ્રકાર</value></data>
+  <data name="Purchasing_ExpenseCategory" xml:space="preserve"><value>ખર્ચની શ્રેણી</value></data>
+  <data name="Purchasing_KindProduct" xml:space="preserve"><value>ઉત્પાદન — વેચાણ માટેનો લોટ</value></data>
+  <data name="Purchasing_KindInternal" xml:space="preserve"><value>આંતરિક ઉપયોગ — નફા-નુકસાનમાં નહીં</value></data>
+  <data name="Purchasing_KindExpense" xml:space="preserve"><value>ખર્ચ — સ્ટોક લોટ નહીં</value></data>
+  <data name="Purchasing_ReturnHistory" xml:space="preserve"><value>પરત ઇતિહાસ</value></data>
+  <data name="Purchasing_ReturnCancelled" xml:space="preserve"><value>રદ કરેલ</value></data>
+  <data name="Purchasing_ReturnCancelledDate" xml:space="preserve"><value>રદ કરવાની તારીખ</value></data>
+  <data name="Purchasing_ReturnCancelReason" xml:space="preserve"><value>આ પરત રદ કરવા માટે કારણ લખો.</value></data>
+  <data name="Purchasing_CancelReturn" xml:space="preserve"><value>પરત રદ કરો</value></data>
+  <data name="Purchasing_NoReturns" xml:space="preserve"><value>આ ખરીદી માટે કોઈ પરત નથી.</value></data>
+  <data name="Stock_AddDirectLot" xml:space="preserve"><value>સીધો લોટ ઉમેરો</value></data>
+  <data name="Stock_DirectReason" xml:space="preserve"><value>કારણ</value></data>
+  <data name="Catalog_ProductClass" xml:space="preserve"><value>ઉત્પાદન પ્રકાર</value></data>
+  <data name="Catalog_Saleable" xml:space="preserve"><value>વેચાણ માટે</value></data>
+  <data name="Catalog_InternalUse" xml:space="preserve"><value>આંતરિક ઉપયોગ</value></data>
+  <data name="Catalog_FirstLot" xml:space="preserve"><value>પ્રથમ લોટ</value></data>
+  <data name="Catalog_AddFirstLot" xml:space="preserve"><value>આ ઉત્પાદન સાથે પ્રથમ લોટ ઉમેરો</value></data>
+  <data name="Stock_ConsumeInternal" xml:space="preserve"><value>આંતરિક ઉપયોગ માટે વાપરો</value></data>
+  <data name="Purchasing_FilterAll" xml:space="preserve"><value>બધા</value></data>
+  <data name="Purchasing_TypeProduct" xml:space="preserve"><value>ઉત્પાદન</value></data>
+  <data name="Purchasing_TypeInternal" xml:space="preserve"><value>આંતરિક ઉપયોગ</value></data>
+  <data name="Purchasing_TypeExpense" xml:space="preserve"><value>ખર્ચ</value></data>
+  <data name="Purchasing_StatusDraft" xml:space="preserve"><value>મુસદ્દો</value></data>
+  <data name="Purchasing_StatusPosted" xml:space="preserve"><value>નોંધાયેલ</value></data>
+  <data name="Purchasing_StatusVoided" xml:space="preserve"><value>રદ કરેલ</value></data>
+  <data name="Purchasing_TaxMode" xml:space="preserve"><value>કર પદ્ધતિ</value></data>
+  <data name="Purchasing_LineTypeHint" xml:space="preserve"><value>ઉત્પાદન: વેચાણ લોટ · આંતરિક ઉપયોગ: નફા-નુકસાન બહાર · ખર્ચ: શ્રેણી, લોટ નહીં</value></data>
 </root>

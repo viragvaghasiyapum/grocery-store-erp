@@ -4,7 +4,11 @@ using GroceryErp.Catalog;
 using GroceryErp.Core;
 using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
+using GroceryErp.Core.Time;
+using GroceryErp.Data.Services;
+using GroceryErp.Inventory.Contracts;
 using GroceryErp.Localization;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GroceryErp.App.Presentation;
 
@@ -33,6 +37,8 @@ public partial class ProductEditorWindow : Window
             BrandBox.ItemsSource = (await _catalog.GetBrandsAsync()).Where(static item => item.IsActive);
             UnitBox.ItemsSource = await _catalog.GetUnitsAsync();
             TaxRateBox.ItemsSource = (await _catalog.GetTaxRatesAsync()).Where(static item => item.IsActive);
+            FirstLotDateBox.SelectedDate = ((App)Application.Current).Services
+                .GetRequiredService<IClock>().BusinessDate.ToDateTime(TimeOnly.MinValue);
             if (_productId is null)
             {
                 SkuBox.Text = await _catalog.SuggestSkuAsync();
@@ -43,6 +49,7 @@ public partial class ProductEditorWindow : Window
             }
             else
             {
+                FirstLotTab.Visibility = Visibility.Collapsed;
                 ProductInput product = (await _catalog.GetAsync(_productId.Value)).Product;
                 _originalBarcodes = product.Barcodes;
                 SkuBox.Text = product.Sku;
@@ -63,6 +70,7 @@ public partial class ProductEditorWindow : Window
                 ReorderBox.Text = product.ReorderLevel.Value.ToString("0.000", TranslationSource.FormatCulture);
                 PriceBox.Text = product.DefaultSellingPrice?.Value.ToString("0.000", TranslationSource.FormatCulture);
                 MrpBox.Text = product.DefaultMrp?.Value.ToString("0.000", TranslationSource.FormatCulture);
+                ProductClassBox.SelectedValue = product.ProductClass;
                 BarcodesBox.Text = string.Join(Environment.NewLine, product.Barcodes.Select(static item => item.Barcode));
             }
             SaveButton.IsEnabled = categories.Count > 0;
@@ -100,8 +108,26 @@ public partial class ProductEditorWindow : Window
                 PricesIncludeTaxBox.IsChecked == true, LooseBox.IsChecked == true, PluBox.Text,
                 TrackExpiryBox.IsChecked == true, ParseNullableInt(ShelfLifeBox.Text), ParseNullableInt(ExpiryAlertBox.Text, allowZero: true),
                 new Quantity(ParseDecimal(ReorderBox.Text, required: true) ?? 0),
-                ParseMoney(PriceBox.Text), ParseMoney(MrpBox.Text), barcodes);
-            if (_productId is null) await _catalog.CreateAsync(input);
+                ParseMoney(PriceBox.Text), ParseMoney(MrpBox.Text), barcodes)
+                { ProductClass = ProductClassBox.SelectedValue as string ?? "SALEABLE" };
+            if (_productId is null && AddFirstLotBox.IsChecked == true)
+            {
+                DateOnly date = DateOnly.FromDateTime(FirstLotDateBox.SelectedDate ??
+                    throw new DomainException(ErrorCode.Validation, "First lot received date is required."));
+                var lot = new NewProductLotInput(
+                    new Quantity(ParseDecimal(FirstLotQtyBox.Text, required: true) ?? 0),
+                    new Money(ParseDecimal(FirstLotCostBox.Text, required: true) ?? 0),
+                    new Money(ParseDecimal(FirstLotPriceBox.Text, required: true) ?? 0),
+                    ParseMoney(FirstLotMrpBox.Text), FirstLotBatchBox.Text,
+                    FirstLotExpiryBox.SelectedDate is { } expiry ? DateOnly.FromDateTime(expiry) : null,
+                    date, FirstLotReasonBox.Text);
+                IServiceProvider services = ((App)Application.Current).Services;
+                await _catalog.CreateWithDirectLotAsync(input, lot,
+                    services.GetRequiredService<IStockLedger>(),
+                    services.GetRequiredService<DocNumberService>(),
+                    services.GetRequiredService<PeriodGuard>(), OperationGuard.NewId());
+            }
+            else if (_productId is null) await _catalog.CreateAsync(input);
             else await _catalog.UpdateAsync(_productId.Value, input);
             DialogResult = true;
         }

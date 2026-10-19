@@ -63,6 +63,8 @@ public partial class PurchasesPage : Page
         PurchaseFromBox.SelectedDate = null;
         PurchaseToBox.SelectedDate = null;
         PurchaseVendorFilter.SelectedValue = null;
+        PurchaseStatusFilter.SelectedIndex = 0;
+        PurchaseTypeFilter.SelectedIndex = 0;
         PurchaseProductFilter.Clear();
         await RefreshAsync();
     }
@@ -165,6 +167,7 @@ public partial class PurchasesPage : Page
         ViewInvoiceButton.IsEnabled = purchase is { Status: "POSTED" or "CANCELLED" };
         CancelPurchaseButton.IsEnabled = purchase is { Status: "POSTED" };
         VendorReturnButton.IsEnabled = purchase is { Status: "POSTED" };
+        ReturnHistoryButton.IsEnabled = purchase is { Status: "POSTED" or "CANCELLED" };
         bool multiple = _selectedPurchases.Count > 1;
         BulkCancelPurchaseButton.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
         BulkCancelPurchaseButton.IsEnabled = multiple && _selectedPurchases.Values.All(static item => item.Status == "POSTED");
@@ -371,6 +374,13 @@ public partial class PurchasesPage : Page
         StatusText.Text = TranslationSource.Instance.Format("Purchasing_ReturnPosted", window.DocumentNumber ?? "");
     }
 
+    private async void ReturnHistory_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (SelectedSinglePurchase() is not { Status: "POSTED" or "CANCELLED" } purchase) return;
+        new VendorReturnHistoryWindow(_purchasing, purchase.Id) { Owner = Window.GetWindow(this) }.ShowDialog();
+        await RefreshAsync();
+    }
+
     private Task RefreshAsync() => LoadPageAsync(null, null, reset: true);
 
     private async Task LoadPageAsync(DateOnly? beforeDate, long? beforeId, bool reset)
@@ -385,7 +395,9 @@ public partial class PurchasesPage : Page
             PurchasePage page = await _purchasing.GetPurchasesPageAsync(beforeDate, beforeId,
                 PurchaseFromBox.SelectedDate is { } from ? DateOnly.FromDateTime(from) : null,
                 PurchaseToBox.SelectedDate is { } to ? DateOnly.FromDateTime(to) : null,
-                PurchaseVendorFilter.SelectedValue as long?, PageSize, PurchaseProductFilter.Text);
+                PurchaseVendorFilter.SelectedValue as long?, PageSize, PurchaseProductFilter.Text,
+                (PurchaseStatusFilter.SelectedValue as string) is { Length: > 0 } status ? status : null,
+                (PurchaseTypeFilter.SelectedValue as string) is { Length: > 0 } kind ? kind : null);
             if (reset)
             {
                 _previousPages.Clear();

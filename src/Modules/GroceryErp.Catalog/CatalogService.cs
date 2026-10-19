@@ -1,9 +1,12 @@
 using Dapper;
+using CommunityToolkit.Mvvm.Messaging;
 using GroceryErp.Catalog.Barcodes;
 using GroceryErp.Core.Errors;
+using GroceryErp.Core.Messages;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
+using GroceryErp.Inventory.Contracts;
 
 namespace GroceryErp.Catalog;
 
@@ -67,7 +70,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                        track_expiry AS TrackExpiry, default_shelf_life_days AS DefaultShelfLifeDays,
                        expiry_alert_days AS ExpiryAlertDays, reorder_level AS ReorderLevel,
                        default_selling_price AS DefaultSellingPrice, default_mrp AS DefaultMrp,
-                       is_active AS IsActive
+                       is_active AS IsActive,product_class AS ProductClass
                 FROM product WHERE id=@id
                 """, new { id });
             if (row is null) throw new DomainException(ErrorCode.NotFound, "product", id);
@@ -83,7 +86,8 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                 row.TrackExpiry, row.DefaultShelfLifeDays, row.ExpiryAlertDays,
                 Quantity.FromScaled(row.ReorderLevel),
                 row.DefaultSellingPrice is null ? null : Money.FromScaled(row.DefaultSellingPrice.Value),
-                row.DefaultMrp is null ? null : Money.FromScaled(row.DefaultMrp.Value), barcodes), row.IsActive);
+                row.DefaultMrp is null ? null : Money.FromScaled(row.DefaultMrp.Value), barcodes)
+                { ProductClass = row.ProductClass }, row.IsActive);
         }, cancellationToken);
     }
 
@@ -233,23 +237,76 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
         return database.WriteAsync(transaction =>
         {
             ValidateUnit(transaction, null, input.UomId, input.IsLoose);
+            return CreateProduct(transaction, product);
+        }, cancellationToken);
+    }
+
+    public async Task<long> CreateWithDirectLotAsync(ProductInput input, NewProductLotInput lot,
+        IStockLedger ledger, DocNumberService numbers, PeriodGuard periods, string operationId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(lot);
+        ValidatedProduct product = Validate(input);
+        if (lot.Quantity <= Quantity.Zero || lot.UnitCost < Money.Zero ||
+            lot.SellingPrice < Money.Zero || lot.Mrp < Money.Zero ||
+            lot.Mrp is not null && lot.SellingPrice > lot.Mrp.Value ||
+            input.TrackExpiry && lot.ExpiryDate is null ||
+            lot.ExpiryDate is not null && lot.ExpiryDate < lot.ReceivedDate ||
+            string.IsNullOrWhiteSpace(lot.Reason) || lot.Reason.Length > 500 ||
+            lot.BatchNumber?.Length > 120)
+            throw new DomainException(ErrorCode.Validation, "Invalid first lot.");
+        periods.EnsureOpen(lot.ReceivedDate);
+        long id = await database.WriteAsync(transaction =>
+        {
+            OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.DirectEntry);
+            if (replay?.RefId is long previous) return previous;
+            ValidateUnit(transaction, null, input.UomId, input.IsLoose);
+            if (transaction.Connection.ExecuteScalar<long>(
+                "SELECT allow_fraction FROM uom WHERE id=@id", new { id = input.UomId }, transaction.Transaction) == 0 &&
+                !lot.Quantity.IsWhole)
+                throw new DomainException(ErrorCode.FractionalQtyNotAllowed);
+            long productId = CreateProduct(transaction, product);
+            string lotCode = numbers.Next(transaction, DocType.Lot, lot.ReceivedDate);
+            long lotId = transaction.Connection.ExecuteScalar<long>("""
+                INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,
+                    unit_cost,mrp,selling_price,qty_received,direct_reason)
+                VALUES (@productId,@lotCode,@batch,@date,@expiry,@cost,@mrp,@price,@quantity,@reason)
+                RETURNING id
+                """, new { productId, lotCode, batch = lot.BatchNumber?.Trim(),
+                    date = lot.ReceivedDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                    expiry = lot.ExpiryDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                    cost = lot.UnitCost.Scaled, mrp = lot.Mrp?.Scaled, price = lot.SellingPrice.Scaled,
+                    quantity = lot.Quantity.Scaled, reason = lot.Reason.Trim() }, transaction.Transaction);
+            long originId = transaction.Connection.ExecuteScalar<long>(
+                "SELECT id FROM direct_stock_origin WHERE lot_id=@lotId", new { lotId }, transaction.Transaction);
+            ledger.Post(transaction, new(lot.ReceivedDate, productId, lotId, "DIRECT_ENTRY",
+                lot.Quantity, lot.UnitCost, "direct_stock_origin", originId, lot.Reason));
+            audit.Write(transaction, "direct_stock_origin", originId, "CREATE", new { lotId });
+            OperationGuard.Complete(transaction, operationId, "product", productId);
+            return productId;
+        }, cancellationToken);
+        WeakReferenceMessenger.Default.Send(new StockChangedMessage([id]));
+        return id;
+    }
+
+    private long CreateProduct(DbTx transaction, ValidatedProduct product)
+    {
             long id = transaction.Connection.ExecuteScalar<long>("""
                 INSERT INTO product(
                     sku, name, name_local, search_terms, category_id, brand_id, uom_id, hsn_code,
                     tax_rate_id, price_includes_tax, is_loose, plu_code, track_expiry,
                     default_shelf_life_days, expiry_alert_days, reorder_level,
-                    default_selling_price, default_mrp)
+                    default_selling_price, default_mrp, product_class)
                 VALUES (
                     @Sku, @Name, @NameLocal, @SearchTerms, @CategoryId, @BrandId, @UomId, @HsnCode,
                     @TaxRateId, @PriceIncludesTax, @IsLoose, @PluCode, @TrackExpiry,
                     @DefaultShelfLifeDays, @ExpiryAlertDays, @ReorderLevel,
-                    @DefaultSellingPrice, @DefaultMrp)
+                    @DefaultSellingPrice, @DefaultMrp, @ProductClass)
                 RETURNING id
                 """, product, transaction.Transaction);
             InsertBarcodes(transaction, id, product.Barcodes);
             audit.Write(transaction, "product", id, "CREATE", new { product.Sku, product.Name });
             return id;
-        }, cancellationToken);
     }
 
     public Task<BarcodeOwner?> AttachBarcodeAsync(long productId, string rawBarcode, CancellationToken cancellationToken = default)
@@ -305,7 +362,8 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                     plu_code=@PluCode, track_expiry=@TrackExpiry,
                     default_shelf_life_days=@DefaultShelfLifeDays, expiry_alert_days=@ExpiryAlertDays,
                     reorder_level=@ReorderLevel, default_selling_price=@DefaultSellingPrice,
-                    default_mrp=@DefaultMrp, updated_at=datetime('now','localtime')
+                    default_mrp=@DefaultMrp, product_class=@ProductClass,
+                    updated_at=datetime('now','localtime')
                 WHERE id=@id
                 """, new
             {
@@ -328,6 +386,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                 product.ReorderLevel,
                 product.DefaultSellingPrice,
                 product.DefaultMrp,
+                product.ProductClass,
             }, transaction.Transaction);
             transaction.Connection.Execute("DELETE FROM product_barcode WHERE product_id=@id AND lot_id IS NULL", new { id }, transaction.Transaction);
             InsertBarcodes(transaction, id, product.Barcodes);
@@ -509,6 +568,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             parameters.Add("NoBarcodeOnly", filter.NoBarcodeOnly);
             parameters.Add("MissingLocalNameOnly", filter.MissingLocalNameOnly);
             parameters.Add("IncludeArchived", filter.IncludeArchived);
+            parameters.Add("SaleableOnly", filter.SaleableOnly);
             parameters.Add("LooseOnly", filter.LooseOnly);
             parameters.Add("afterName", afterName);
             parameters.Add("afterId", afterId);
@@ -551,22 +611,24 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                         SearchBoundary? boundary = connection.QuerySingleOrDefault<SearchBoundary>("""
                             SELECT p.name AS Name,p.id AS Id FROM product p INDEXED BY ix_product_name
                             WHERE (@IncludeArchived=1 OR p.is_active=1)
+                              AND (@SaleableOnly=0 OR p.product_class='SALEABLE')
                               AND (@afterName IS NULL OR p.name COLLATE NOCASE > @afterName COLLATE NOCASE
                                    OR (p.name COLLATE NOCASE = @afterName COLLATE NOCASE AND p.id>@afterId))
                             ORDER BY p.name COLLATE NOCASE,p.id LIMIT 1 OFFSET @offset
-                            """, new { filter.IncludeArchived, afterName, afterId,
+                            """, new { filter.IncludeArchived, filter.SaleableOnly, afterName, afterId,
                                 offset = (limit + 1) * 4 - 1 });
                         pageIds = connection.Query<long>("""
                             SELECT p.id FROM product p INDEXED BY ix_product_name
                             CROSS JOIN product_fts f ON f.rowid=p.id
                             WHERE (@IncludeArchived=1 OR p.is_active=1)
+                              AND (@SaleableOnly=0 OR p.product_class='SALEABLE')
                               AND (@afterName IS NULL OR p.name COLLATE NOCASE > @afterName COLLATE NOCASE
                                    OR (p.name COLLATE NOCASE = @afterName COLLATE NOCASE AND p.id>@afterId))
                               AND (@boundaryName IS NULL OR p.name COLLATE NOCASE < @boundaryName COLLATE NOCASE
                                    OR (p.name COLLATE NOCASE = @boundaryName COLLATE NOCASE AND p.id<=@boundaryId))
                               AND product_fts MATCH @match
                             ORDER BY p.name COLLATE NOCASE,p.id LIMIT @take
-                            """, new { match, filter.IncludeArchived, afterName, afterId,
+                            """, new { match, filter.IncludeArchived, filter.SaleableOnly, afterName, afterId,
                                 boundaryName = boundary?.Name, boundaryId = boundary?.Id, take = limit + 1 }).ToArray();
                     }
                 }
@@ -604,6 +666,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                 WITH visible AS MATERIALIZED (
                     SELECT p.id,p.name FROM product p {{productIndex}} {{join}} {{stockJoin}}
                     WHERE (@IncludeArchived=1 OR p.is_active=1)
+                      AND (@SaleableOnly=0 OR p.product_class='SALEABLE')
                       AND (@CategoryId IS NULL OR p.category_id=@CategoryId)
                       AND (@BrandId IS NULL OR p.brand_id=@BrandId)
                       {{lowStockFilter}}
@@ -656,6 +719,8 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             throw new DomainException(ErrorCode.Validation, "Prices and quantities cannot be negative.");
         if (input.IsLoose && string.IsNullOrWhiteSpace(input.PluCode))
             throw new DomainException(ErrorCode.Validation, "Loose products require a PLU code.");
+        if (input.ProductClass is not ("SALEABLE" or "INTERNAL"))
+            throw new DomainException(ErrorCode.Validation, "Choose a product classification.");
         if (input.DefaultShelfLifeDays <= 0 || input.ExpiryAlertDays < 0)
             throw new DomainException(ErrorCode.Validation, "Shelf life must be positive and expiry alert days cannot be negative.");
 
@@ -683,7 +748,8 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             input.CategoryId, input.BrandId, input.UomId, hsn, input.TaxRateId,
             input.PriceIncludesTax ? 1 : 0, input.IsLoose ? 1 : 0, CatalogText.Optional(input.PluCode, 30),
             input.TrackExpiry ? 1 : 0, input.DefaultShelfLifeDays, input.ExpiryAlertDays,
-            input.ReorderLevel.Scaled, input.DefaultSellingPrice?.Scaled, input.DefaultMrp?.Scaled, barcodes);
+            input.ReorderLevel.Scaled, input.DefaultSellingPrice?.Scaled, input.DefaultMrp?.Scaled,
+            input.ProductClass, barcodes);
     }
 
     private static void InsertBarcodes(DbTx transaction, long productId, IEnumerable<ValidatedBarcode> barcodes)
@@ -774,7 +840,8 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
         string Sku, string Name, string? NameLocal, string? SearchTerms, long CategoryId, long? BrandId,
         long UomId, string? HsnCode, long? TaxRateId, int PriceIncludesTax, int IsLoose, string? PluCode,
         int TrackExpiry, int? DefaultShelfLifeDays, int? ExpiryAlertDays, long ReorderLevel,
-        long? DefaultSellingPrice, long? DefaultMrp, IReadOnlyCollection<ValidatedBarcode> Barcodes);
+        long? DefaultSellingPrice, long? DefaultMrp, string ProductClass,
+        IReadOnlyCollection<ValidatedBarcode> Barcodes);
 
     private sealed class TaxRateRow
     {
@@ -815,5 +882,6 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
         public long? DefaultSellingPrice { get; init; }
         public long? DefaultMrp { get; init; }
         public bool IsActive { get; init; }
+        public string ProductClass { get; init; } = "SALEABLE";
     }
 }

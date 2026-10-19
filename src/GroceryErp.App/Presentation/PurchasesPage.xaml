@@ -17,6 +17,7 @@
             <Button x:Name="ViewInvoiceButton" IsEnabled="False" Margin="0,0,8,0" Click="ViewInvoice_OnClick" Content="{l:Tr Purchasing_ViewInvoice}" />
             <Button x:Name="CancelPurchaseButton" IsEnabled="False" Margin="0,0,8,0" Click="CancelPurchase_OnClick" Content="{l:Tr Purchasing_CancelPurchase}" />
             <Button x:Name="VendorReturnButton" IsEnabled="False" Margin="0,0,8,0" Click="VendorReturn_OnClick" Content="{l:Tr Purchasing_VendorReturn}" />
+            <Button x:Name="ReturnHistoryButton" IsEnabled="False" Margin="0,0,8,0" Click="ReturnHistory_OnClick" Content="{l:Tr Purchasing_ReturnHistory}" />
             <Button Margin="0,0,12,0" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
             <Button x:Name="BulkCancelPurchaseButton" IsEnabled="False" Visibility="Collapsed" Margin="0,0,8,0" Click="BulkCancelPurchases_OnClick" Content="{l:Tr Purchasing_CancelSelected}"/>
             <TextBlock x:Name="PurchaseSelectedCountText" VerticalAlignment="Center" Text="0 selected"/>
@@ -26,6 +27,8 @@
             <StackPanel Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Reports_From}"/><DatePicker x:Name="PurchaseFromBox" Width="130" ToolTip="{l:Tr Reports_From}"/></StackPanel>
             <StackPanel Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Reports_To}"/><DatePicker x:Name="PurchaseToBox" Width="130" ToolTip="{l:Tr Reports_To}"/></StackPanel>
             <StackPanel Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Purchasing_Vendor}"/><ComboBox x:Name="PurchaseVendorFilter" Width="170" DisplayMemberPath="Name" SelectedValuePath="Id" ToolTip="{l:Tr Purchasing_Vendor}"/></StackPanel>
+            <StackPanel Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Purchasing_Status}"/><ComboBox x:Name="PurchaseStatusFilter" Width="125" SelectedIndex="0" SelectedValuePath="Tag"><ComboBoxItem Content="{l:Tr Purchasing_FilterAll}" Tag=""/><ComboBoxItem Content="{l:Tr Purchasing_StatusDraft}" Tag="DRAFT"/><ComboBoxItem Content="{l:Tr Purchasing_StatusPosted}" Tag="POSTED"/><ComboBoxItem Content="{l:Tr Purchasing_StatusVoided}" Tag="CANCELLED"/></ComboBox></StackPanel>
+            <StackPanel Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Purchasing_LineType}"/><ComboBox x:Name="PurchaseTypeFilter" Width="125" SelectedIndex="0" SelectedValuePath="Tag"><ComboBoxItem Content="{l:Tr Purchasing_FilterAll}" Tag=""/><ComboBoxItem Content="{l:Tr Purchasing_TypeProduct}" Tag="PRODUCT"/><ComboBoxItem Content="{l:Tr Purchasing_TypeInternal}" Tag="INTERNAL"/><ComboBoxItem Content="{l:Tr Purchasing_TypeExpense}" Tag="EXPENSE"/></ComboBox></StackPanel>
             <StackPanel Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Purchasing_ProductFilter}"/><TextBox x:Name="PurchaseProductFilter" Width="190" ToolTip="{l:Tr Purchasing_ProductFilter}" AutomationProperties.Name="{l:Tr Purchasing_ProductFilter}"/></StackPanel>
             <Button Margin="0,18,8,0" Click="FilterPurchases_OnClick" Content="{l:Tr Purchasing_Filter}"/>
             <Button Margin="0,18,0,0" Click="ClearPurchaseFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>

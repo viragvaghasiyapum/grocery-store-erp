@@ -97,6 +97,11 @@
 
         <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_ExpiryAlertDays}" />
         <TextBox x:Name="ExpiryAlertBox" />
+        <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_ProductClass}" />
+        <ComboBox x:Name="ProductClassBox" SelectedIndex="0" SelectedValuePath="Tag">
+          <ComboBoxItem Tag="SALEABLE" Content="{l:Tr Catalog_Saleable}"/>
+          <ComboBoxItem Tag="INTERNAL" Content="{l:Tr Catalog_InternalUse}"/>
+        </ComboBox>
         <WrapPanel Margin="0,14,0,0">
           <CheckBox x:Name="PricesIncludeTaxBox" Margin="0,0,24,0" IsChecked="True" Content="{l:Tr Catalog_PricesIncludeTax}" />
           <CheckBox x:Name="TrackExpiryBox" Margin="0,0,24,0" IsChecked="True" Content="{l:Tr Catalog_TrackExpiry}" />
@@ -106,6 +111,25 @@
         <TextBox x:Name="PluBox" IsEnabled="False" MaxLength="30" />
       </StackPanel>
       </ScrollViewer>
+      </TabItem>
+      <TabItem x:Name="FirstLotTab" Header="{l:Tr Catalog_FirstLot}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="8,10,18,8">
+            <CheckBox x:Name="AddFirstLotBox" Content="{l:Tr Catalog_AddFirstLot}" Margin="0,0,0,12"/>
+            <Grid IsEnabled="{Binding IsChecked, ElementName=AddFirstLotBox}">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+              <StackPanel Margin="0,0,8,10"><TextBlock Text="{l:Tr Stock_Quantity}"/><TextBox x:Name="FirstLotQtyBox"/></StackPanel>
+              <StackPanel Grid.Column="1" Margin="8,0,0,10"><TextBlock Text="{l:Tr Stock_UnitCost}"/><TextBox x:Name="FirstLotCostBox"/></StackPanel>
+              <StackPanel Grid.Row="1" Margin="0,0,8,10"><TextBlock Text="{l:Tr Catalog_Price}"/><TextBox x:Name="FirstLotPriceBox"/></StackPanel>
+              <StackPanel Grid.Row="1" Grid.Column="1" Margin="8,0,0,10"><TextBlock Text="{l:Tr Stock_Mrp}"/><TextBox x:Name="FirstLotMrpBox"/></StackPanel>
+              <StackPanel Grid.Row="2" Margin="0,0,8,10"><TextBlock Text="{l:Tr Stock_Batch}"/><TextBox x:Name="FirstLotBatchBox"/></StackPanel>
+              <StackPanel Grid.Row="2" Grid.Column="1" Margin="8,0,0,10"><TextBlock Text="{l:Tr Stock_Expiry}"/><DatePicker x:Name="FirstLotExpiryBox"/></StackPanel>
+              <StackPanel Grid.Row="3" Margin="0,0,8,10"><TextBlock Text="{l:Tr Purchasing_Received}"/><DatePicker x:Name="FirstLotDateBox"/></StackPanel>
+              <StackPanel Grid.Row="3" Grid.Column="1" Margin="8,0,0,10"><TextBlock Text="{l:Tr Stock_DirectReason}"/><TextBox x:Name="FirstLotReasonBox" MaxLength="500"/></StackPanel>
+            </Grid>
+          </StackPanel>
+        </ScrollViewer>
       </TabItem>
     </TabControl>
     <StackPanel Grid.Row="2" Margin="0,18,0,0" HorizontalAlignment="Right" Orientation="Horizontal">

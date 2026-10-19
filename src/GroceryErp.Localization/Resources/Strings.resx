@@ -381,7 +381,7 @@
   <data name="Stock_Expected" xml:space="preserve"><value>Expected</value></data>
   <data name="Stock_Counted" xml:space="preserve"><value>Counted</value></data>
   <data name="Stock_Difference" xml:space="preserve"><value>Difference</value></data>
-  <data name="Purchasing_CancelPurchase" xml:space="preserve"><value>Cancel purchase</value></data>
+  <data name="Purchasing_CancelPurchase" xml:space="preserve"><value>Void purchase</value></data>
   <data name="Purchasing_ViewInvoice" xml:space="preserve"><value>View invoice</value></data>
   <data name="Purchasing_CancelConfirm" xml:space="preserve"><value>Cancel this purchase and reverse its untouched stock?</value></data>
   <data name="Purchasing_CancelBlocked" xml:space="preserve"><value>This purchase has stock movements after receipt, so it cannot be cancelled. Use a stock adjustment for a correction; vendor returns are not yet available.</value></data>
@@ -1161,4 +1161,32 @@
   <data name="Stock_CountNoLots" xml:space="preserve"><value>No lots are available for these products.</value></data>
   <data name="Stock_ReasonRequired" xml:space="preserve"><value>Enter a reason before review.</value></data>
   <data name="Stock_CountPagePosted" xml:space="preserve"><value>Reviewed count page posted. Continue with the next page or close.</value></data>
+  <data name="Purchasing_LineType" xml:space="preserve"><value>Type</value></data>
+  <data name="Purchasing_ExpenseCategory" xml:space="preserve"><value>Expense category</value></data>
+  <data name="Purchasing_KindProduct" xml:space="preserve"><value>Product — saleable lot</value></data>
+  <data name="Purchasing_KindInternal" xml:space="preserve"><value>Internal use — excluded from P/L</value></data>
+  <data name="Purchasing_KindExpense" xml:space="preserve"><value>Expense — no stock lot</value></data>
+  <data name="Purchasing_ReturnHistory" xml:space="preserve"><value>Return history</value></data>
+  <data name="Purchasing_ReturnCancelled" xml:space="preserve"><value>Cancelled</value></data>
+  <data name="Purchasing_ReturnCancelledDate" xml:space="preserve"><value>Cancelled date</value></data>
+  <data name="Purchasing_ReturnCancelReason" xml:space="preserve"><value>Enter a reason to cancel this return.</value></data>
+  <data name="Purchasing_CancelReturn" xml:space="preserve"><value>Cancel return</value></data>
+  <data name="Purchasing_NoReturns" xml:space="preserve"><value>No returns for this purchase.</value></data>
+  <data name="Stock_AddDirectLot" xml:space="preserve"><value>Add direct lot</value></data>
+  <data name="Stock_DirectReason" xml:space="preserve"><value>Reason</value></data>
+  <data name="Catalog_ProductClass" xml:space="preserve"><value>Product type</value></data>
+  <data name="Catalog_Saleable" xml:space="preserve"><value>Saleable</value></data>
+  <data name="Catalog_InternalUse" xml:space="preserve"><value>Internal use</value></data>
+  <data name="Catalog_FirstLot" xml:space="preserve"><value>First lot</value></data>
+  <data name="Catalog_AddFirstLot" xml:space="preserve"><value>Add first lot with this product</value></data>
+  <data name="Stock_ConsumeInternal" xml:space="preserve"><value>Consume for internal use</value></data>
+  <data name="Purchasing_FilterAll" xml:space="preserve"><value>All</value></data>
+  <data name="Purchasing_TypeProduct" xml:space="preserve"><value>Product</value></data>
+  <data name="Purchasing_TypeInternal" xml:space="preserve"><value>Internal use</value></data>
+  <data name="Purchasing_TypeExpense" xml:space="preserve"><value>Expense</value></data>
+  <data name="Purchasing_StatusDraft" xml:space="preserve"><value>Draft</value></data>
+  <data name="Purchasing_StatusPosted" xml:space="preserve"><value>Posted</value></data>
+  <data name="Purchasing_StatusVoided" xml:space="preserve"><value>Voided</value></data>
+  <data name="Purchasing_TaxMode" xml:space="preserve"><value>Tax mode</value></data>
+  <data name="Purchasing_LineTypeHint" xml:space="preserve"><value>Product: saleable lot · Internal use: lot outside P/L · Expense: category, no lot</value></data>
 </root>

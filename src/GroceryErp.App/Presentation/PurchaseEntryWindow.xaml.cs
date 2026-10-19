@@ -13,6 +13,7 @@ using GroceryErp.Core;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Services;
+using GroceryErp.Expenses;
 using GroceryErp.Inventory;
 using GroceryErp.Localization;
 using GroceryErp.Purchasing;
@@ -52,6 +53,14 @@ public partial class PurchaseEntryWindow : Window
             _taxIsCost = !string.Equals(services.GetRequiredService<ISettings>().Current.TaxMode,
                 "REGULAR", StringComparison.Ordinal);
             VendorBox.ItemsSource = await _purchasing.GetVendorsAsync();
+            ExpenseCategoryColumn.ItemsSource = await services.GetRequiredService<MoneyOutService>()
+                .GetExpenseCategoriesAsync();
+            LineKindColumn.ItemsSource = new[]
+            {
+                new PurchaseKindChoice("PRODUCT", TranslationSource.Instance["Purchasing_TypeProduct"]),
+                new PurchaseKindChoice("INTERNAL", TranslationSource.Instance["Purchasing_TypeInternal"]),
+                new PurchaseKindChoice("EXPENSE", TranslationSource.Instance["Purchasing_TypeExpense"]),
+            };
             ProductColumn.ItemsSource = _availableProducts;
             if (_openingDraftId is long draftId)
             {
@@ -355,6 +364,15 @@ public partial class PurchaseEntryWindow : Window
     {
         public event PropertyChangedEventHandler? PropertyChanged;
         public long ProductId { get; set; }
+        private string _lineKind = "PRODUCT";
+        public string LineKind
+        {
+            get => _lineKind;
+            set { if (_lineKind == value) return; _lineKind = value; Notify(); Notify(nameof(IsStockLine)); Notify(nameof(IsExpenseLine)); }
+        }
+        public bool IsStockLine => LineKind != "EXPENSE";
+        public bool IsExpenseLine => LineKind == "EXPENSE";
+        public long? ExpenseCategoryId { get; set; }
         public long DefaultsLoadedForProductId { get; set; }
         public decimal? LastPurchaseRate { get; private set; }
         public int ExpiryAlertDays { get; private set; }
@@ -394,10 +412,13 @@ public partial class PurchaseEntryWindow : Window
             string.IsNullOrWhiteSpace(ManufacturingDate) ? null : DateOnly.ParseExact(InputNormalizer.Normalize(ManufacturingDate), "yyyy-MM-dd", CultureInfo.InvariantCulture),
             string.IsNullOrWhiteSpace(Expiry) ? null : DateOnly.ParseExact(InputNormalizer.Normalize(Expiry), "yyyy-MM-dd", CultureInfo.InvariantCulture),
             new Quantity(Quantity), new Quantity(FreeQuantity), new Money(Rate), new Money(Discount), new Percent(TaxRate),
-            Mrp is null ? null : new Money(Mrp.Value), new Money(SellingPrice));
+            Mrp is null ? null : new Money(Mrp.Value), new Money(SellingPrice))
+            { LineKind = LineKind, ExpenseCategoryId = IsExpenseLine ? ExpenseCategoryId : null };
         public static PurchaseEditLine FromInput(PurchaseLineInput line) => new()
         {
             ProductId = line.ProductId,
+            LineKind = line.LineKind,
+            ExpenseCategoryId = line.ExpenseCategoryId,
             Batch = line.BatchNumber,
             DefaultsLoadedForProductId = line.ProductId,
             ManufacturingDate = line.ManufacturingDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -411,4 +432,6 @@ public partial class PurchaseEntryWindow : Window
             SellingPrice = line.SellingPrice.Value,
         };
     }
+
+    public sealed record PurchaseKindChoice(string Code, string Label);
 }

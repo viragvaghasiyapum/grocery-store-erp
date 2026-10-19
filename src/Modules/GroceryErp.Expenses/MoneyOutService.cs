@@ -417,6 +417,10 @@ public sealed class MoneyOutService(
                 FROM expense e JOIN expense_category c ON c.id=e.category_id WHERE e.id=@id
                 """, new { id = original.Id }, transaction.Transaction);
             if (current is null) throw new DomainException(ErrorCode.NotFound, "expense", original.Id);
+            if (transaction.Connection.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM expense WHERE id=@id AND purchase_line_id IS NOT NULL",
+                new { id = original.Id }, transaction.Transaction) != 0)
+                throw new DomainException(ErrorCode.Validation, "Purchase expense lines cannot be edited; void the untouched purchase.");
             if (current.ToModel() != original)
                 throw new DomainException(ErrorCode.Validation, "This expense changed since it was loaded. Refresh and try again.");
             int changed = transaction.Connection.Execute("""

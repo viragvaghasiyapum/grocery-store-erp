@@ -677,6 +677,12 @@ public sealed class PhaseZeroSmokeTests
                 purchaseEntry.Lines.Add(purchaseLine);
                 ((DataGridComboBoxColumn)((DataGrid)purchaseEntry.FindName("LinesGrid")).Columns[0]).ItemsSource = new[]
                 {
+                    new PurchaseEntryWindow.PurchaseKindChoice("PRODUCT", "Product"),
+                    new PurchaseEntryWindow.PurchaseKindChoice("INTERNAL", "Internal use"),
+                    new PurchaseEntryWindow.PurchaseKindChoice("EXPENSE", "Expense"),
+                };
+                ((DataGridComboBoxColumn)((DataGrid)purchaseEntry.FindName("LinesGrid")).Columns[1]).ItemsSource = new[]
+                {
                     new ProductListItem { Id = 1, Name = "Tata Salt 1 kg" },
                 };
                 ((TextBox)purchaseEntry.FindName("ChargesBox")).Text = "૧૦૦";

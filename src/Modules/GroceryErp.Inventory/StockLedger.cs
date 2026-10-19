@@ -10,7 +10,8 @@ namespace GroceryErp.Inventory;
 public sealed class StockLedger(ISettings settings) : IStockLedger
 {
     private static readonly HashSet<string> MovementTypes =
-        ["OPENING", "PURCHASE", "PURCHASE_CANCEL", "VENDOR_RETURN", "SALE", "SALE_VOID", "SALE_RETURN", "DAMAGE", "ADJUSTMENT"];
+        ["OPENING", "DIRECT_ENTRY", "PURCHASE", "PURCHASE_CANCEL", "VENDOR_RETURN", "VENDOR_RETURN_CANCEL",
+         "INTERNAL_USE", "SALE", "SALE_VOID", "SALE_RETURN", "DAMAGE", "ADJUSTMENT"];
 
     public void Post(DbTx transaction, StockMovementInput movement)
     {

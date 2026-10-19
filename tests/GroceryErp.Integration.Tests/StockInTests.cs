@@ -15,6 +15,139 @@ namespace GroceryErp.Integration.Tests;
 public sealed class StockInTests
 {
     [Fact]
+    public async Task ProductAndFirstDirectLot_AreAtomicAndHaveDedicatedOrigin()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        var catalog = new CatalogService(fixture.Database, new AuditLog(), fixture.Settings);
+        ProductInput source = (await catalog.GetAsync(fixture.ProductId, ct)).Product;
+        var input = source with { Sku = "PH3-DIRECT", Name = "Direct product", HsnCode = "1234", Barcodes = [] };
+        var firstLot = new NewProductLotInput(new Quantity(3), new Money(20), new Money(30),
+            new Money(35), "DIRECT", fixture.Date.AddMonths(2), fixture.Date, "Owner added stock");
+        string operation = OperationGuard.NewId();
+        var numbers = new DocNumberService(fixture.Settings);
+        var periods = new PeriodGuard(fixture.Settings);
+        long productId = await catalog.CreateWithDirectLotAsync(input, firstLot, fixture.Ledger,
+            numbers, periods, operation, ct);
+        (await catalog.CreateWithDirectLotAsync(input, firstLot, fixture.Ledger,
+            numbers, periods, operation, ct)).ShouldBe(productId);
+        using var db = fixture.Factory.Open();
+        db.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot WHERE product_id=@productId", new { productId }).ShouldBe(1);
+        db.ExecuteScalar<long>("SELECT COUNT(*) FROM direct_stock_origin WHERE product_id_snapshot=@productId AND reason='Owner added stock'", new { productId }).ShouldBe(1);
+        db.ExecuteScalar<long>("SELECT quantity FROM product_stock_total WHERE product_id=@productId", new { productId }).ShouldBe(3000);
+        await Should.ThrowAsync<DomainException>(() => catalog.CreateWithDirectLotAsync(
+            input with { Sku = "PH3-FAIL" }, firstLot with { Quantity = Quantity.Zero },
+            fixture.Ledger, numbers, periods, OperationGuard.NewId(), ct));
+        db.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE sku='PH3-FAIL'").ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task PhaseThreePurchase_TypesCreateDistinctLotsAndLinkedExpense_ThenVoidReversesEffects()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long internalProduct;
+        long expenseCategory;
+        using (var db = fixture.Factory.Open())
+        {
+            internalProduct = db.ExecuteScalar<long>("""
+                INSERT INTO product(sku,name,category_id,uom_id,product_class)
+                SELECT 'RAW-1','Packing material',category_id,uom_id,'INTERNAL'
+                FROM product WHERE id=@id RETURNING id
+                """, new { id = fixture.ProductId });
+            expenseCategory = db.ExecuteScalar<long>(
+                "INSERT INTO expense_category(name) VALUES ('Freight') RETURNING id");
+        }
+        PurchaseLineInput first = fixture.Purchase().Lines.Single();
+        PurchaseLineInput raw = first with { ProductId = internalProduct, BatchNumber = "RAW" };
+        PurchaseLineInput expense = first with
+        {
+            Quantity = Quantity.One, FreeQuantity = Quantity.Zero, Rate = new Money(50),
+            Discount = Money.Zero, TaxRate = Percent.Zero, LineKind = "EXPENSE",
+            ExpenseCategoryId = expenseCategory,
+        };
+        var draftInput = fixture.Purchase("PH3-MIX") with
+        {
+            VendorBillTotal = null,
+            Lines = [first, first with { BatchNumber = first.BatchNumber },
+                raw with { LineKind = "INTERNAL" }, expense],
+        };
+        long id = await fixture.Purchasing.SaveDraftAsync(null, draftInput, ct);
+        (await fixture.Purchasing.GetDraftAsync(id, ct)).Input.Lines[3].LineKind.ShouldBe("EXPENSE");
+        PostedPurchase posted = await fixture.Purchasing.PostAsync(id, OperationGuard.NewId(), ct);
+        posted.LotIds.Count.ShouldBe(3);
+        posted.LotIds.Distinct().Count().ShouldBe(3);
+        using (var db = fixture.Factory.Open())
+        {
+            db.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot WHERE purchase_line_id IN (SELECT id FROM purchase_line WHERE purchase_id=@id)", new { id }).ShouldBe(3);
+            db.ExecuteScalar<long>("SELECT COUNT(*) FROM expense e JOIN purchase_line pl ON pl.id=e.purchase_line_id WHERE pl.purchase_id=@id", new { id }).ShouldBe(1);
+            db.Execute("UPDATE expense_category SET name='Freight renamed' WHERE id=@expenseCategory", new { expenseCategory });
+            Should.Throw<Microsoft.Data.Sqlite.SqliteException>(() => db.Execute(
+                "DELETE FROM expense WHERE purchase_line_id IN (SELECT id FROM purchase_line WHERE purchase_id=@id)", new { id }));
+        }
+        (await fixture.Purchasing.GetInvoiceAsync(id, ct)).Lines[3].ExpenseCategoryName.ShouldBe("Freight");
+        (await fixture.Purchasing.GetPurchasesPageAsync(status: "POSTED", lineKind: "EXPENSE",
+            cancellationToken: ct)).Items.Select(static item => item.Id).ShouldContain(id);
+        await fixture.Purchasing.CancelAsync(id, fixture.Date, OperationGuard.NewId(), ct);
+        using var verify = fixture.Factory.Open();
+        verify.ExecuteScalar<long>("SELECT COUNT(*) FROM purchase_expense_reversal WHERE purchase_id=@id", new { id }).ShouldBe(1);
+        verify.ExecuteScalar<long>("SELECT COALESCE(SUM(amount),0) FROM v_pnl_entry WHERE head_code='EXPENSE_CATEGORY' AND ref_id=@expenseCategory", new { expenseCategory }).ShouldBe(0);
+        verify.ExecuteScalar<long>("SELECT balance_due FROM v_vendor_balance WHERE vendor_id=@id", new { id = fixture.VendorId }).ShouldBe(100000);
+    }
+
+    [Fact]
+    public async Task VendorReturnCancellation_RestoresLotAndBalanceOnce()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long purchaseId = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("PH3-RET"), ct);
+        PostedPurchase purchase = await fixture.Purchasing.PostAsync(purchaseId, OperationGuard.NewId(), ct);
+        VendorReturnLot lot = (await fixture.Purchasing.GetVendorReturnLotsAsync(purchaseId, ct)).Single();
+        PostedVendorReturn returned = await fixture.Purchasing.PostVendorReturnAsync(
+            new(purchaseId, fixture.Date, "PH3-CN", "Surplus",
+                [new(lot.LotId, Quantity.One, new Money(200), new Money(10))]),
+            OperationGuard.NewId(), ct);
+        await fixture.Purchasing.CancelVendorReturnAsync(returned.Id, fixture.Date,
+            "Credit cancelled", OperationGuard.NewId(), ct);
+        await fixture.Purchasing.CancelVendorReturnAsync(returned.Id, fixture.Date,
+            "Repeated request", OperationGuard.NewId(), ct);
+        using var db = fixture.Factory.Open();
+        db.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = purchase.LotIds[0] }).ShouldBe(11000);
+        db.ExecuteScalar<long>("SELECT balance_due FROM v_vendor_balance WHERE vendor_id=@id", new { id = fixture.VendorId }).ShouldBe(2825000);
+        db.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement WHERE type_code='VENDOR_RETURN_CANCEL'").ShouldBe(1);
+        db.ExecuteScalar<long>("SELECT COALESCE(SUM(amount),0) FROM v_pnl_entry WHERE head_code='VENDOR_RETURN_VARIANCE'").ShouldBe(0);
+        (await fixture.Purchasing.GetVendorReturnLotsAsync(purchaseId, ct)).Single().AlreadyReturned.ShouldBe(Quantity.Zero);
+    }
+
+    [Fact]
+    public async Task InternalUse_IsAnImmutableNonPnlConsumption()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long internalProduct;
+        using (var db = fixture.Factory.Open())
+            internalProduct = db.ExecuteScalar<long>("""
+                INSERT INTO product(sku,name,category_id,uom_id,product_class)
+                SELECT 'RAW-2','Bags',category_id,uom_id,'INTERNAL'
+                FROM product WHERE id=@id RETURNING id
+                """, new { id = fixture.ProductId });
+        var line = fixture.Purchase().Lines.Single() with { ProductId = internalProduct, LineKind = "INTERNAL" };
+        long draft = await fixture.Purchasing.SaveDraftAsync(null,
+            fixture.Purchase("PH3-USE") with { Lines = [line] }, ct);
+        PostedPurchase purchase = await fixture.Purchasing.PostAsync(draft, OperationGuard.NewId(), ct);
+        string operation = OperationGuard.NewId();
+        long id = await fixture.Purchasing.ConsumeInternalAsync(purchase.LotIds[0], Quantity.One,
+            fixture.Date, "Used for shop packing", operation, ct);
+        (await fixture.Purchasing.ConsumeInternalAsync(purchase.LotIds[0], Quantity.One,
+            fixture.Date, "Used for shop packing", operation, ct)).ShouldBe(id);
+        using var verify = fixture.Factory.Open();
+        verify.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = purchase.LotIds[0] }).ShouldBe(10000);
+        verify.ExecuteScalar<long>("SELECT COUNT(*) FROM v_pnl_entry WHERE head_code='INTERNAL_USE'").ShouldBe(0);
+        await Should.ThrowAsync<DomainException>(() => fixture.Purchasing.CancelAsync(
+            draft, fixture.Date, OperationGuard.NewId(), ct));
+    }
+
+    [Fact]
     public async Task PostedPurchaseInvoice_ShowsSavedLinesAndOriginalNamesAfterRename()
     {
         using var fixture = new StockInFixture();
@@ -32,6 +165,7 @@ public sealed class StockInTests
         invoice.DocumentNumber.ShouldBe(posted.DocumentNumber);
         invoice.VendorName.ShouldBe("Supplier");
         invoice.VendorInvoiceNumber.ShouldBe("INV-VIEW");
+        invoice.TaxMode.ShouldBe(fixture.Settings.Current.TaxMode);
         invoice.Totals.GrandTotal.ShouldBe(posted.Totals.GrandTotal);
         PurchaseInvoiceLine line = invoice.Lines.Single();
         line.ProductName.ShouldBe("Phase Three Product");

@@ -71,6 +71,7 @@ public sealed class InventoryService(
                        l.batch_no AS BatchNumber,l.received_date AS ReceivedDate,l.expiry_date AS ExpiryDate,
                        l.unit_cost AS UnitCost,l.mrp AS Mrp,l.selling_price AS SellingPrice,
                        l.qty_received AS Received,l.qty_on_hand AS OnHand,l.is_active AS IsActive,
+                       l.origin_kind AS OriginKind,
                        CASE WHEN l.is_active=0 THEN 'BLOCKED' WHEN l.qty_on_hand<=0 THEN 'EMPTY'
                             WHEN l.expiry_date IS NULL THEN 'NONE'
                             WHEN l.expiry_date<date('now','localtime') THEN 'EXPIRED'
@@ -280,6 +281,34 @@ public sealed class InventoryService(
         string type;
         switch (movement.RefType)
         {
+            case "direct_stock_origin" when movement.RefId is { } originId:
+                type = "Direct entry";
+                header = connection.QuerySingleOrDefault<SourceHeaderRow>("""
+                    SELECT lot_code_snapshot AS Number,origin_date AS Date,
+                           provenance AS Status,reason AS Notes
+                    FROM direct_stock_origin WHERE id=@originId
+                    """, new { originId });
+                lines = connection.Query<SourceLineRow>("""
+                    SELECT COALESCE(product_name_snapshot,'Legacy unknown') AS ProductName,
+                           COALESCE(lot_code_snapshot,'Legacy unknown') AS LotCode,
+                           quantity AS Quantity,
+                           CAST(ROUND(quantity*unit_cost/1000.0) AS INTEGER) AS Amount
+                    FROM direct_stock_origin WHERE id=@originId
+                    """, new { originId }).ToArray();
+                break;
+            case "internal_use_record" when movement.RefId is { } internalId:
+                type = "Internal use";
+                header = connection.QuerySingleOrDefault<SourceHeaderRow>("""
+                    SELECT CAST(id AS TEXT) AS Number,used_date AS Date,reason AS Notes
+                    FROM internal_use_record WHERE id=@internalId
+                    """, new { internalId });
+                lines = connection.Query<SourceLineRow>("""
+                    SELECT product_name_snapshot AS ProductName,lot_code_snapshot AS LotCode,
+                           quantity AS Quantity,
+                           CAST(ROUND(quantity*unit_cost/1000.0) AS INTEGER) AS Amount
+                    FROM internal_use_record WHERE id=@internalId
+                    """, new { internalId }).ToArray();
+                break;
             case "purchase_line" when movement.RefId is { } purchaseLineId:
                 type = "Purchase";
                 header = connection.QuerySingleOrDefault<SourceHeaderRow>("""
@@ -405,6 +434,45 @@ public sealed class InventoryService(
             lines.Select(static row => new StockSourceLine(row.ProductName, row.LotCode,
                 Quantity.FromScaled(row.Quantity), Money.FromScaled(row.Amount))).ToArray());
     }, cancellationToken);
+
+    public async Task<long> CreateDirectLotAsync(OpeningStockLine line, string reason,
+        string operationId, CancellationToken cancellationToken = default)
+    {
+        ValidateOpening(line);
+        string note = Required(reason, 500, nameof(reason));
+        string? batch = Optional(line.BatchNumber, 120);
+        periods.EnsureOpen(line.ReceivedDate);
+        long lotId = await database.WriteAsync(transaction =>
+        {
+            OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.DirectEntry);
+            if (replay?.RefId is long previous) return previous;
+            ProductRule product = LoadProductRule(transaction, line.ProductId);
+            ValidateProductQuantity(product, line.Quantity, line.ExpiryDate);
+            if (line.Mrp is not null && line.SellingPrice > line.Mrp.Value)
+                throw new DomainException(ErrorCode.PriceAboveMrp);
+            string lotCode = numbers.Next(transaction, DocType.Lot, line.ReceivedDate);
+            long id = transaction.Connection.ExecuteScalar<long>("""
+                INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,
+                    unit_cost,mrp,selling_price,qty_received,direct_reason)
+                VALUES (@ProductId,@lotCode,@BatchNumber,@receivedDate,@expiryDate,
+                    @unitCost,@mrp,@sellingPrice,@quantity,@note) RETURNING id
+                """, new { line.ProductId, lotCode, BatchNumber = batch,
+                    receivedDate = Format(line.ReceivedDate),
+                    expiryDate = line.ExpiryDate is null ? null : Format(line.ExpiryDate.Value),
+                    unitCost = line.UnitCost.Scaled, mrp = line.Mrp?.Scaled,
+                    sellingPrice = line.SellingPrice.Scaled, quantity = line.Quantity.Scaled,
+                    note }, transaction.Transaction);
+            long originId = transaction.Connection.ExecuteScalar<long>(
+                "SELECT id FROM direct_stock_origin WHERE lot_id=@id", new { id }, transaction.Transaction);
+            ledger.Post(transaction, new(line.ReceivedDate, line.ProductId, id, "DIRECT_ENTRY",
+                line.Quantity, line.UnitCost, "direct_stock_origin", originId, note));
+            audit.Write(transaction, "direct_stock_origin", originId, "CREATE", new { lotId = id, note });
+            OperationGuard.Complete(transaction, operationId, "product_lot", id);
+            return id;
+        }, cancellationToken);
+        WeakReferenceMessenger.Default.Send(new StockChangedMessage([line.ProductId]));
+        return lotId;
+    }
 
     public async Task<long> ImportOpeningStockAsync(
         IReadOnlyList<OpeningStockLine> lines,
@@ -1005,7 +1073,7 @@ public sealed class InventoryService(
     private static string Format(DateOnly date) => date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
     private sealed class OverviewRow { public long ProductId { get; init; } public string Sku { get; init; } = ""; public string Name { get; init; } = ""; public long Quantity { get; init; } public long CostValue { get; init; } public long ReorderLevel { get; init; } public bool IsLow { get; init; } }
-    private sealed class LotRow { public long Id { get; init; } public long ProductId { get; init; } public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public string? BatchNumber { get; init; } public DateOnly ReceivedDate { get; init; } public DateOnly? ExpiryDate { get; init; } public long UnitCost { get; init; } public long? Mrp { get; init; } public long SellingPrice { get; init; } public long Received { get; init; } public long OnHand { get; init; } public bool IsActive { get; init; } public string ExpiryBucketCode { get; init; } = "NONE"; public LotItem ToModel() => new(Id, ProductId, ProductName, LotCode, BatchNumber, ReceivedDate, ExpiryDate, Money.FromScaled(UnitCost), Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(SellingPrice), Quantity.FromScaled(Received), Quantity.FromScaled(OnHand), IsActive, ExpiryBucketCode); }
+    private sealed class LotRow { public long Id { get; init; } public long ProductId { get; init; } public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public string? BatchNumber { get; init; } public DateOnly ReceivedDate { get; init; } public DateOnly? ExpiryDate { get; init; } public long UnitCost { get; init; } public long? Mrp { get; init; } public long SellingPrice { get; init; } public long Received { get; init; } public long OnHand { get; init; } public bool IsActive { get; init; } public string ExpiryBucketCode { get; init; } = "NONE"; public string OriginKind { get; init; } = "DIRECT"; public LotItem ToModel() => new(Id, ProductId, ProductName, LotCode, BatchNumber, ReceivedDate, ExpiryDate, Money.FromScaled(UnitCost), Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(SellingPrice), Quantity.FromScaled(Received), Quantity.FromScaled(OnHand), IsActive, ExpiryBucketCode) { OriginKind = OriginKind }; }
     private sealed class LedgerRow { public long Id { get; init; } public DateTime MovedAt { get; init; } public DateOnly MoveDate { get; init; } public string TypeCode { get; init; } = ""; public long Qty { get; init; } public long UnitCost { get; init; } public string? RefType { get; init; } public long? RefId { get; init; } public string LotCode { get; init; } = ""; public long LotBalance { get; init; } public string? Note { get; init; } public LedgerItem ToModel() => new(Id, MovedAt, MoveDate, TypeCode, Quantity.FromScaled(Qty), Money.FromScaled(UnitCost), RefType, RefId, LotCode, Quantity.FromScaled(LotBalance), Note); }
     private sealed class SourceHeaderRow { public string? Number { get; init; } public DateOnly Date { get; init; } public string? Party { get; init; } public string? Status { get; init; } public string? Notes { get; init; } }
     private sealed class SourceLineRow { public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public long Quantity { get; init; } public long Amount { get; init; } }

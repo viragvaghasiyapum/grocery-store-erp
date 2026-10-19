@@ -163,7 +163,7 @@ public partial class BillingPage : Page, IDisposable
             long? lotId;
             if (result.Kind == ScanResultKind.NotFound)
             {
-                IReadOnlyList<ProductListItem> matches = await _catalog.SearchAsync(new(Query: code, Limit: 2));
+                IReadOnlyList<ProductListItem> matches = await _catalog.SearchAsync(new(Query: code, Limit: 2, SaleableOnly: true));
                 bool looksLikeBarcode = code.Length >= 8 && code.All(char.IsAsciiDigit);
                 if (matches.Count == 1 && !looksLikeBarcode)
                     productId = matches[0].Id;

@@ -16,7 +16,7 @@ public sealed class PhaseOneSnapshotTests
         new MigrationRunner(fixture.Factory, NullMigrationBackup.Instance).Run();
         using SqliteConnection db = fixture.Factory.Open();
 
-        db.ExecuteScalar<long>("PRAGMA user_version").ShouldBe(29);
+        db.ExecuteScalar<long>("PRAGMA user_version").ShouldBe(MigrationRunner.LatestVersion);
         db.ExecuteScalar<long>("SELECT COUNT(*) FROM schema_migration_marker WHERE version=29")
             .ShouldBe(1);
         db.ExecuteScalar<string>("SELECT product_name FROM sale_line WHERE id=1")
@@ -88,7 +88,7 @@ public sealed class PhaseOneSnapshotTests
         }
         new MigrationRunner(fixture.Factory, NullMigrationBackup.Instance).Run();
         using SqliteConnection upgraded = fixture.Factory.Open();
-        upgraded.ExecuteScalar<long>("PRAGMA user_version").ShouldBe(29);
+        upgraded.ExecuteScalar<long>("PRAGMA user_version").ShouldBe(MigrationRunner.LatestVersion);
         upgraded.ExecuteScalar<long>("SELECT COUNT(*) FROM schema_migration_marker").ShouldBe(1);
     }
 

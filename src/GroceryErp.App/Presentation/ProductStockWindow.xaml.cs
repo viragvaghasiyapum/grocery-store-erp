@@ -6,6 +6,7 @@ using GroceryErp.Data.Services;
 using GroceryErp.Expenses;
 using GroceryErp.Inventory;
 using GroceryErp.Localization;
+using GroceryErp.Purchasing;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GroceryErp.App.Presentation;
@@ -21,6 +22,7 @@ public partial class ProductStockWindow : Window
     private long? _ledgerCursor;
     private LotPage? _lotPage;
     private LedgerPage? _ledgerPage;
+    private bool? _isInternal;
 
     public ProductStockWindow(InventoryService inventory, ProductListItem product, bool showLedger, bool loadOnShow = true)
     {
@@ -41,6 +43,13 @@ public partial class ProductStockWindow : Window
     {
         try
         {
+            if (_isInternal is null)
+            {
+                IServiceProvider services = ((App)Application.Current).Services;
+                _isInternal = (await services.GetRequiredService<CatalogService>().GetAsync(_productId))
+                    .Product.ProductClass == "INTERNAL";
+                ConsumeInternalButton.Visibility = _isInternal.Value ? Visibility.Visible : Visibility.Collapsed;
+            }
             _lotPrevious.Clear();
             _ledgerPrevious.Clear();
             await LoadLotsAsync(null);
@@ -73,6 +82,8 @@ public partial class ProductStockWindow : Window
         if (PreviousLotButton is null) return;
         bool lots = StockTabs.SelectedIndex == 0;
         PrintLotButton.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
+        AddDirectLotButton.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
+        ConsumeInternalButton.Visibility = lots && _isInternal == true ? Visibility.Visible : Visibility.Collapsed;
         CorrectLotButton.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
         WriteOffButton.Visibility = lots ? Visibility.Visible : Visibility.Collapsed;
         OpenSourceButton.Visibility = lots ? Visibility.Collapsed : Visibility.Visible;
@@ -123,6 +134,9 @@ public partial class ProductStockWindow : Window
             PrintLotButton.IsEnabled = LotsGrid.SelectedItem is LotItem { IsActive: true } lot && lot.OnHand.Value > 0;
         if (WriteOffButton is not null)
             WriteOffButton.IsEnabled = LotsGrid.SelectedItem is LotItem { ExpiryBucketCode: "EXPIRED", IsActive: true } expired && expired.OnHand > Quantity.Zero;
+        if (ConsumeInternalButton is not null)
+            ConsumeInternalButton.IsEnabled = _isInternal == true &&
+                LotsGrid.SelectedItem is LotItem { IsActive: true } chosen && chosen.OnHand > Quantity.Zero;
     }
 
     private async void LotActive_OnClick(object sender, RoutedEventArgs e)
@@ -149,6 +163,22 @@ public partial class ProductStockWindow : Window
     {
         if (LotsGrid.SelectedItem is not LotItem lot) return;
         if (new LotPriceWindow(_inventory, lot) { Owner = this }.ShowDialog() == true) await RefreshAsync();
+    }
+
+    private async void AddDirectLot_OnClick(object sender, RoutedEventArgs e)
+    {
+        IServiceProvider services = ((App)Application.Current).Services;
+        if (new DirectLotWindow(_inventory, _productId, services.GetRequiredService<IClock>())
+            { Owner = this }.ShowDialog() == true) await RefreshAsync();
+    }
+
+    private async void ConsumeInternal_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_isInternal != true || LotsGrid.SelectedItem is not LotItem { IsActive: true } lot) return;
+        IServiceProvider services = ((App)Application.Current).Services;
+        if (new InternalUseWindow(services.GetRequiredService<PurchasingService>(), lot.Id,
+            services.GetRequiredService<IClock>()) { Owner = this }.ShowDialog() == true)
+            await RefreshAsync();
     }
 
     private async void PageSize_OnChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)

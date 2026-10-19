@@ -25,7 +25,10 @@ public sealed record LotItem(
     Quantity Received,
     Quantity OnHand,
     bool IsActive,
-    string ExpiryBucketCode = "NONE");
+    string ExpiryBucketCode = "NONE")
+{
+    public string OriginKind { get; init; } = "DIRECT";
+}
 
 public sealed record StockOverviewPage(IReadOnlyList<StockOverviewItem> Items, bool HasMore, string? NextName, long? NextId);
 public sealed record LotPage(IReadOnlyList<LotItem> Items, bool HasMore, long? NextId);

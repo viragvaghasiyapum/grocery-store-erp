@@ -33,7 +33,11 @@ public sealed record PurchaseLineInput(
     Money Discount,
     Percent TaxRate,
     Money? Mrp,
-    Money SellingPrice);
+    Money SellingPrice)
+{
+    public string LineKind { get; init; } = "PRODUCT";
+    public long? ExpenseCategoryId { get; init; }
+}
 
 public sealed record PurchaseDraftInput(
     long VendorId,
@@ -70,13 +74,18 @@ public sealed record PurchaseInvoiceLine(int LineNumber, string Sku, string Prod
     Percent TaxRate, Money TaxAmount, Money LineTotal, Money LandedUnitCost,
     Money? Mrp, Money SellingPrice)
 {
+    public string LineKind { get; init; } = "PRODUCT";
+    public string? ExpenseCategoryName { get; init; }
     public string? SnapshotProvenance { get; init; }
     public string? LegacyUnknownFields { get; init; }
 }
 
 public sealed record PurchaseInvoice(long Id, string? DocumentNumber, string VendorName,
     string? VendorInvoiceNumber, DateOnly? VendorInvoiceDate, DateOnly ReceivedDate,
-    string Status, string? Notes, PurchaseTotals Totals, IReadOnlyList<PurchaseInvoiceLine> Lines);
+    string Status, string? Notes, PurchaseTotals Totals, IReadOnlyList<PurchaseInvoiceLine> Lines)
+{
+    public string? TaxMode { get; init; }
+}
 
 public sealed record VendorLedgerItem(DateOnly Date, string Kind, string? Reference, Money Debit, Money Credit, Money Balance);
 public sealed record VendorLedgerPage(IReadOnlyList<VendorLedgerItem> Items, bool HasMore,
@@ -105,6 +114,11 @@ public sealed record VendorReturnInput(long PurchaseId, DateOnly Date, string Ve
 
 public sealed record PostedVendorReturn(long Id, string DocumentNumber, Money CreditTotal,
     Money CostTotal, bool WasReplay = false);
+
+public sealed record VendorReturnHistoryItem(long Id, string DocumentNumber, DateOnly Date,
+    Money CreditTotal, Money CostTotal, bool IsCancelled, DateOnly? CancellationDate);
+public sealed record VendorReturnHistoryPage(IReadOnlyList<VendorReturnHistoryItem> Items,
+    bool HasMore, long? NextId);
 
 public sealed record PurchaseListItem(
     long Id,

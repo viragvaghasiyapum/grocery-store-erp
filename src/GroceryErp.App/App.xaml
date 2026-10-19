@@ -21,6 +21,7 @@
         <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
       </Style>
       <p:ExpiryBucketConverter x:Key="ExpiryBucketConverter"/>
+      <p:PurchaseLineKindConverter x:Key="PurchaseLineKindConverter"/>
       <Style TargetType="{x:Type p:AnimatedSection}">
         <Setter Property="Template">
           <Setter.Value>
