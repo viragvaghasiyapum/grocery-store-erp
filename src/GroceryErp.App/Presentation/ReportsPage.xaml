@@ -3,66 +3,93 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
  Title="{l:Tr Reports_Title}" ScrollViewer.CanContentScroll="False">
- <Grid Margin="16,12,16,12">
+ <Grid Margin="16,10,16,10">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <TextBlock FontSize="22" FontWeight="SemiBold" Text="{l:Tr Reports_Title}"/>
-  <Border Grid.Row="1" Margin="0,8,0,6" Padding="10" CornerRadius="8" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-   <StackPanel>
-    <WrapPanel>
-     <StackPanel Margin="0,0,16,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_Report}"/><ComboBox x:Name="ReportPicker" Width="220" SelectionChanged="ReportPicker_OnSelectionChanged"/></StackPanel>
-     <CheckBox x:Name="IncludeExpiredCheck" Visibility="Collapsed" IsChecked="True" Margin="0,18,12,8"
-               Click="IncludeExpired_OnClick" Content="{l:Tr Reports_IncludeExpired}"/>
-     <StackPanel Margin="0,0,16,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_Period}"/><ComboBox x:Name="PeriodPicker" Width="140" SelectionChanged="PeriodPicker_OnSelectionChanged"/></StackPanel>
-     <StackPanel Margin="0,0,16,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_From}"/><DatePicker x:Name="FromPicker" Width="140" Language="en-IN" SelectedDateFormat="Short" SelectedDateChanged="DatePicker_OnSelectedDateChanged"/></StackPanel>
-     <StackPanel Margin="0,0,16,8"><TextBlock Margin="0,0,0,5" Text="{l:Tr Reports_To}"/><DatePicker x:Name="ToPicker" Width="140" Language="en-IN" SelectedDateFormat="Short" SelectedDateChanged="DatePicker_OnSelectedDateChanged"/></StackPanel>
-     <Button Margin="0,18,8,8" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
-     <Menu Margin="0,18,8,8" VerticalAlignment="Center" MinHeight="36">
-      <MenuItem Header="{l:Tr Common_Actions}">
-       <MenuItem x:Name="ExportExcelButton" Click="Export_OnClick" Header="{l:Tr Reports_ExportExcel}"/>
-       <MenuItem x:Name="FullCsvButton" Click="ExportFullCsv_OnClick" Header="{l:Tr Reports_ExportFullCsv}"/>
-       <MenuItem x:Name="PreviewA4Button" Click="Preview_OnClick" Header="{l:Tr Reports_PrintA4}"/>
-      </MenuItem>
-     </Menu>
-     <Button x:Name="CancelExportButton" IsEnabled="False" Visibility="Collapsed" Margin="0,18,8,8" Click="CancelExport_OnClick" Content="{l:Tr Reports_CancelExport}"/>
-     <ProgressBar x:Name="ExportProgress" Width="72" Height="5" Margin="0,18,0,8" VerticalAlignment="Center" IsIndeterminate="True" Visibility="Collapsed"/>
-    </WrapPanel>
+  <DockPanel>
+   <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+    <Button Margin="0,0,8,0" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
+    <Menu VerticalAlignment="Center" MinHeight="36">
+     <MenuItem Header="{l:Tr Common_Actions}">
+      <MenuItem x:Name="ExportExcelButton" Click="Export_OnClick" Header="{l:Tr Reports_ExportExcel}"/>
+      <MenuItem x:Name="PnlCsvButton" Click="ExportPnlCsv_OnClick" Header="{l:Tr Reports_ExportPnlCsv}"/>
+      <MenuItem x:Name="FullCsvButton" Click="ExportFullCsv_OnClick" Header="{l:Tr Reports_ExportFullCsv}"/>
+      <MenuItem x:Name="PreviewA4Button" Click="Preview_OnClick" Header="{l:Tr Reports_PrintA4}"/>
+     </MenuItem>
+    </Menu>
+    <Button x:Name="CancelExportButton" IsEnabled="False" Visibility="Collapsed" Margin="8,0,0,0" Click="CancelExport_OnClick" Content="{l:Tr Reports_CancelExport}"/>
+    <ProgressBar x:Name="ExportProgress" Width="72" Height="5" Margin="8,0,0,0" VerticalAlignment="Center" IsIndeterminate="True" Visibility="Collapsed"/>
    </StackPanel>
-  </Border>
-  <Expander x:Name="MoreFiltersExpander" Grid.Row="2" Header="{l:Tr Reports_MoreFilters}" Margin="0,0,0,8">
-   <Border Padding="12" CornerRadius="8" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-    <WrapPanel>
-     <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Reports_Status}"/><ComboBox x:Name="StatusPicker" Width="130" SelectionChanged="FilterPicker_OnSelectionChanged"/></StackPanel>
-     <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Reports_Payment}"/><ComboBox x:Name="PaymentPicker" Width="130" SelectionChanged="FilterPicker_OnSelectionChanged"/></StackPanel>
-     <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Reports_FilterProduct}"/><TextBox x:Name="ProductFilter" Width="100"/></StackPanel>
-     <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Reports_FilterLot}"/><TextBox x:Name="LotFilter" Width="100"/></StackPanel>
-     <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Reports_FilterVendor}"/><TextBox x:Name="VendorFilter" Width="100"/></StackPanel>
-     <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Reports_FilterAsset}"/><TextBox x:Name="AssetFilter" Width="100"/></StackPanel>
-     <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Reports_FilterSlowDays}"/><TextBox x:Name="SlowDaysFilter" Width="100" Text="90"/></StackPanel>
-     <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Reports_FilterEntity}"/><TextBox x:Name="EntityFilter" Width="120"/></StackPanel>
-     <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Reports_FilterAction}"/><TextBox x:Name="ActionFilter" Width="120"/></StackPanel>
-     <CheckBox x:Name="MatrixCheck" Margin="0,18,14,8" Click="MatrixCheck_OnClick" Content="{l:Tr Reports_MonthlyMatrix}"/>
-     <CheckBox x:Name="CompareCheck" Margin="0,18,0,8" Click="CompareCheck_OnClick" Content="{l:Tr Reports_ComparePrevious}"/>
-    </WrapPanel>
-   </Border>
+   <TextBlock FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" Text="{l:Tr Reports_Title}"/>
+  </DockPanel>
+  <WrapPanel Grid.Row="1" Margin="0,8,0,2">
+   <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_Report}"/>
+   <ComboBox x:Name="ReportPicker" Width="230" Margin="0,0,14,6" SelectionChanged="ReportPicker_OnSelectionChanged" AutomationProperties.Name="{l:Tr Reports_Report}"/>
+   <StackPanel x:Name="PnlPeriodControls" Orientation="Horizontal" Margin="0,0,14,6">
+    <ComboBox x:Name="ScopePicker" Width="150" Margin="0,0,8,0" SelectionChanged="ScopePicker_OnSelectionChanged" AutomationProperties.Name="{l:Tr Reports_PnlScope}"/>
+    <ComboBox x:Name="PnlPeriodPicker" Width="250" SelectionChanged="PnlPeriodPicker_OnSelectionChanged" AutomationProperties.Name="{l:Tr Reports_Period}"/>
+   </StackPanel>
+   <StackPanel x:Name="RangeControls" Orientation="Horizontal" Margin="0,0,14,6">
+    <ComboBox x:Name="PeriodPicker" Width="140" Margin="0,0,8,0" SelectionChanged="PeriodPicker_OnSelectionChanged" AutomationProperties.Name="{l:Tr Reports_Period}"/>
+    <TextBlock Margin="0,0,6,0" VerticalAlignment="Center" Text="{l:Tr Reports_From}"/>
+    <DatePicker x:Name="FromPicker" Width="132" Margin="0,0,8,0" Language="en-IN" SelectedDateFormat="Short" SelectedDateChanged="DatePicker_OnSelectedDateChanged" AutomationProperties.Name="{l:Tr Reports_From}"/>
+    <TextBlock Margin="0,0,6,0" VerticalAlignment="Center" Text="{l:Tr Reports_To}"/>
+    <DatePicker x:Name="ToPicker" Width="132" Language="en-IN" SelectedDateFormat="Short" SelectedDateChanged="DatePicker_OnSelectedDateChanged" AutomationProperties.Name="{l:Tr Reports_To}"/>
+   </StackPanel>
+   <CheckBox x:Name="MonthsCheck" Margin="0,0,14,6" Click="MonthsCheck_OnClick" Content="{l:Tr Reports_MonthlyMatrix}"/>
+   <CheckBox x:Name="CompareCheck" Margin="0,0,14,6" Click="CompareCheck_OnClick" Content="{l:Tr Reports_ComparePrevious}"/>
+   <CheckBox x:Name="IncludeExpiredCheck" Visibility="Collapsed" IsChecked="True" Margin="0,0,14,6" Click="IncludeExpired_OnClick" Content="{l:Tr Reports_IncludeExpired}"/>
+   <CheckBox x:Name="MismatchesCheck" Visibility="Collapsed" Margin="0,0,14,6" Click="IncludeExpired_OnClick" Content="{l:Tr Reports_MismatchesOnly}"/>
+  </WrapPanel>
+  <Expander x:Name="MoreFiltersExpander" Grid.Row="2" Header="{l:Tr Reports_MoreFilters}" Margin="0,0,0,6">
+   <WrapPanel Margin="0,4,0,0">
+    <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_Status}"/><ComboBox x:Name="StatusPicker" Width="130" Margin="0,0,12,6" SelectionChanged="FilterPicker_OnSelectionChanged"/>
+    <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_Payment}"/><ComboBox x:Name="PaymentPicker" Width="130" Margin="0,0,12,6" SelectionChanged="FilterPicker_OnSelectionChanged"/>
+    <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterProduct}"/><TextBox x:Name="ProductFilter" Width="90" Margin="0,0,12,6"/>
+    <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterLot}"/><TextBox x:Name="LotFilter" Width="90" Margin="0,0,12,6"/>
+    <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterVendor}"/><TextBox x:Name="VendorFilter" Width="90" Margin="0,0,12,6"/>
+    <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterAsset}"/><TextBox x:Name="AssetFilter" Width="90" Margin="0,0,12,6"/>
+    <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterSlowDays}"/><TextBox x:Name="SlowDaysFilter" Width="70" Margin="0,0,12,6" Text="90"/>
+    <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterEntity}"/><TextBox x:Name="EntityFilter" Width="110" Margin="0,0,12,6"/>
+    <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterAction}"/><TextBox x:Name="ActionFilter" Width="110" Margin="0,0,12,6"/>
+   </WrapPanel>
   </Expander>
-  <Border Grid.Row="3" Padding="8" CornerRadius="8" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"><Grid>
-   <DataGrid x:Name="ReportGrid" Style="{StaticResource CompactTableGrid}" RowHeight="38"/>
-    <Grid x:Name="PnlPanel" Visibility="Collapsed">
-     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-     <TextBlock Text="{l:Tr Reports_PnlExplanation}" TextWrapping="Wrap" Margin="0,0,0,12"/>
-     <DataGrid x:Name="PnlGrid" Grid.Row="1" Style="{StaticResource CatalogGrid}" RowHeight="38">
-      <DataGrid.Columns><DataGridTextColumn Width="*" MinWidth="420" Header="{l:Tr Reports_Particulars}" Binding="{Binding Label}"/><DataGridTextColumn Width="180" Header="{l:Tr Reports_Amount}" Binding="{Binding Amount}"/></DataGrid.Columns>
-     </DataGrid>
-     <TextBlock x:Name="PnlTotals" Grid.Row="2" Margin="0,12,0,0" FontSize="16" FontWeight="SemiBold"/>
-     <TextBlock Grid.Row="3" Text="{l:Tr Reports_PnlCutMonthNote}" Margin="0,8,0,0" TextWrapping="Wrap"/>
-    </Grid>
-    <ScrollViewer x:Name="HourlyPanel" Visibility="Collapsed" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-     <StackPanel>
-      <TextBlock Text="{l:Tr Reports_HourlyHint}" Margin="4,2,4,12" TextWrapping="Wrap"/>
-      <UniformGrid x:Name="HourlyGrid" Columns="25" MinWidth="1000"/>
-     </StackPanel>
-    </ScrollViewer>
+  <Border Grid.Row="3" Padding="6" CornerRadius="8" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"><Grid>
+   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+   <Border x:Name="PnlStatusBadge" HorizontalAlignment="Left" Margin="0,0,0,6" Padding="8,3" CornerRadius="4" Visibility="Collapsed"
+           Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+           ToolTip="{l:Tr Reports_PnlExplanation}">
+    <TextBlock x:Name="PnlStatusText" TextWrapping="Wrap"/>
+   </Border>
+   <DataGrid x:Name="ReportGrid" Grid.Row="1" Style="{StaticResource CompactTableGrid}" RowHeight="34"/>
+   <Grid x:Name="PnlPanel" Grid.Row="1" Visibility="Collapsed">
+    <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <DataGrid x:Name="PnlGrid" Style="{StaticResource CompactTableGrid}" RowHeight="32" IsReadOnly="True"
+              AutoGenerateColumns="False" PreviewMouseLeftButtonUp="PnlGrid_OnPreviewMouseLeftButtonUp" PreviewKeyDown="PnlGrid_OnPreviewKeyDown"
+              AutomationProperties.Name="{l:Tr Reports_Kind_ProfitAndLoss}">
+     <DataGrid.RowStyle>
+      <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+       <Style.Triggers><DataTrigger Binding="{Binding IsBold}" Value="True"><Setter Property="FontWeight" Value="SemiBold"/></DataTrigger></Style.Triggers>
+      </Style>
+     </DataGrid.RowStyle>
+     <DataGrid.Columns>
+      <DataGridTextColumn Width="*" MinWidth="360" Header="{l:Tr Reports_Particulars}" Binding="{Binding Label}"/>
+      <DataGridTextColumn Width="180" Header="{l:Tr Reports_Amount}" Binding="{Binding Amount}">
+       <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextAlignment" Value="Right"/></Style></DataGridTextColumn.ElementStyle>
+      </DataGridTextColumn>
+     </DataGrid.Columns>
+    </DataGrid>
+    <TextBlock x:Name="PnlTotals" Grid.Row="1" Margin="0,8,0,0" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"/>
+   </Grid>
+   <ScrollViewer x:Name="HourlyPanel" Grid.Row="1" Visibility="Collapsed" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+    <StackPanel>
+     <TextBlock Text="{l:Tr Reports_HourlyHint}" Margin="4,2,4,12" TextWrapping="Wrap"/>
+     <UniformGrid x:Name="HourlyGrid" Columns="25" MinWidth="1000"/>
+    </StackPanel>
+   </ScrollViewer>
   </Grid></Border>
-  <Grid Grid.Row="4" Margin="0,8,0,0"><TextBlock x:Name="StatusText"/><TextBlock x:Name="TotalsText" HorizontalAlignment="Right" FontWeight="SemiBold"/></Grid>
+  <DockPanel Grid.Row="4" Margin="0,6,0,0" LastChildFill="True">
+   <TextBlock x:Name="TotalsText" DockPanel.Dock="Right" Margin="12,0,0,0" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="640"/>
+   <TextBlock x:Name="StatusText" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+  </DockPanel>
  </Grid>
 </Page>

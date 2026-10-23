@@ -1,5 +1,5 @@
-using Dapper;
 using CommunityToolkit.Mvvm.Messaging;
+using Dapper;
 using GroceryErp.Catalog.Barcodes;
 using GroceryErp.Core.Errors;
 using GroceryErp.Core.Messages;
@@ -87,7 +87,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                 Quantity.FromScaled(row.ReorderLevel),
                 row.DefaultSellingPrice is null ? null : Money.FromScaled(row.DefaultSellingPrice.Value),
                 row.DefaultMrp is null ? null : Money.FromScaled(row.DefaultMrp.Value), barcodes)
-                { ProductClass = row.ProductClass }, row.IsActive);
+            { ProductClass = row.ProductClass }, row.IsActive);
         }, cancellationToken);
     }
 
@@ -318,6 +318,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
         {
             OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.DirectEntry);
             if (replay?.RefId is long previous) return previous;
+            periods.EnsureOpen(transaction, lot.ReceivedDate);
             ValidateUnit(transaction, null, input.UomId, input.IsLoose);
             if (transaction.Connection.ExecuteScalar<long>(
                 "SELECT allow_fraction FROM uom WHERE id=@id", new { id = input.UomId }, transaction.Transaction) == 0 &&
@@ -330,11 +331,19 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                     unit_cost,mrp,selling_price,qty_received,direct_reason)
                 VALUES (@productId,@lotCode,@batch,@date,@expiry,@cost,@mrp,@price,@quantity,@reason)
                 RETURNING id
-                """, new { productId, lotCode, batch = lot.BatchNumber?.Trim(),
-                    date = lot.ReceivedDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                    expiry = lot.ExpiryDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                    cost = lot.UnitCost.Scaled, mrp = lot.Mrp?.Scaled, price = lot.SellingPrice.Scaled,
-                    quantity = lot.Quantity.Scaled, reason = lot.Reason.Trim() }, transaction.Transaction);
+                """, new
+            {
+                productId,
+                lotCode,
+                batch = lot.BatchNumber?.Trim(),
+                date = lot.ReceivedDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                expiry = lot.ExpiryDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                cost = lot.UnitCost.Scaled,
+                mrp = lot.Mrp?.Scaled,
+                price = lot.SellingPrice.Scaled,
+                quantity = lot.Quantity.Scaled,
+                reason = lot.Reason.Trim()
+            }, transaction.Transaction);
             long originId = transaction.Connection.ExecuteScalar<long>(
                 "SELECT id FROM direct_stock_origin WHERE lot_id=@lotId", new { lotId }, transaction.Transaction);
             ledger.Post(transaction, new(lot.ReceivedDate, productId, lotId, "DIRECT_ENTRY",
@@ -349,7 +358,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
 
     private long CreateProduct(DbTx transaction, ValidatedProduct product)
     {
-            long id = transaction.Connection.ExecuteScalar<long>("""
+        long id = transaction.Connection.ExecuteScalar<long>("""
                 INSERT INTO product(
                     sku, name, name_local, search_terms, category_id, brand_id, uom_id, hsn_code,
                     tax_rate_id, price_includes_tax, is_loose, plu_code, track_expiry,
@@ -362,9 +371,9 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                     @DefaultSellingPrice, @DefaultMrp, @ProductClass)
                 RETURNING id
                 """, product, transaction.Transaction);
-            InsertBarcodes(transaction, id, product.Barcodes);
-            audit.Write(transaction, "product", id, "CREATE", new { product.Sku, product.Name });
-            return id;
+        InsertBarcodes(transaction, id, product.Barcodes);
+        audit.Write(transaction, "product", id, "CREATE", new { product.Sku, product.Name });
+        return id;
     }
 
     public Task<BarcodeOwner?> AttachBarcodeAsync(long productId, string rawBarcode, CancellationToken cancellationToken = default)
@@ -464,25 +473,38 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             long exists = transaction.Connection.ExecuteScalar<long>(
                 "SELECT COUNT(*) FROM product WHERE id=@id", new { id }, transaction.Transaction);
             if (exists == 0) throw new DomainException(ErrorCode.NotFound, "product", id);
-            long hasHistory = transaction.Connection.ExecuteScalar<long>("""
-                SELECT EXISTS(SELECT 1 FROM product_lot WHERE product_id=@id)
-                    OR EXISTS(SELECT 1 FROM purchase_line WHERE product_id=@id)
-                    OR EXISTS(SELECT 1 FROM sale_line WHERE product_id=@id)
-                    OR EXISTS(SELECT 1 FROM damage WHERE product_id=@id)
-                """, new { id }, transaction.Transaction);
-            if (hasHistory == 0)
-            {
-                transaction.Connection.Execute("DELETE FROM product_barcode WHERE product_id=@id", new { id }, transaction.Transaction);
-                transaction.Connection.Execute("DELETE FROM product WHERE id=@id", new { id }, transaction.Transaction);
-                audit.Write(transaction, "product", id, "DELETE", null);
-                return ProductRemoval.Deleted;
-            }
-            transaction.Connection.Execute(
-                "UPDATE product SET is_active=0, updated_at=datetime('now','localtime') WHERE id=@id",
-                new { id }, transaction.Transaction);
-            audit.Write(transaction, "product", id, "ARCHIVE", null);
-            return ProductRemoval.Archived;
+            return Remove(transaction, id);
         }, cancellationToken);
+
+    // Posted documents carry their own snapshots, so history never blocks deletion.
+    // Stock, an unfinished bill or a draft purchase still needs the live product,
+    // which is then archived instead.
+    private ProductRemoval Remove(DbTx transaction, long id)
+    {
+        bool inUse = transaction.Connection.ExecuteScalar<long>("""
+            SELECT EXISTS(SELECT 1 FROM product_lot WHERE product_id=@id AND qty_on_hand<>0)
+                OR EXISTS(SELECT 1 FROM sale s CROSS JOIN sale_line sl
+                          WHERE s.status IN ('HELD','DRAFT') AND sl.sale_id=s.id AND sl.product_id=@id)
+                OR EXISTS(SELECT 1 FROM purchase p CROSS JOIN purchase_line pl
+                          WHERE p.status='DRAFT' AND pl.purchase_id=p.id AND pl.product_id=@id)
+            """, new { id }, transaction.Transaction) != 0;
+        if (!inUse)
+        {
+            long[] lots = transaction.Connection.Query<long>(
+                "SELECT id FROM product_lot WHERE product_id=@id", new { id }, transaction.Transaction).ToArray();
+            transaction.Connection.Execute("DELETE FROM product_barcode WHERE product_id=@id", new { id }, transaction.Transaction);
+            transaction.Connection.Execute("DELETE FROM product_lot WHERE product_id=@id AND qty_on_hand=0",
+                new { id }, transaction.Transaction);
+            transaction.Connection.Execute("DELETE FROM product WHERE id=@id", new { id }, transaction.Transaction);
+            audit.Write(transaction, "product", id, "DELETE", new { zeroLots = lots });
+            return ProductRemoval.Deleted;
+        }
+        transaction.Connection.Execute(
+            "UPDATE product SET is_active=0, updated_at=datetime('now','localtime') WHERE id=@id",
+            new { id }, transaction.Transaction);
+        audit.Write(transaction, "product", id, "ARCHIVE", null);
+        return ProductRemoval.Archived;
+    }
 
     public Task RestoreAsync(long id, CancellationToken cancellationToken = default) =>
         database.WriteAsync(transaction =>
@@ -527,24 +549,7 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                 bool? active = transaction.Connection.QuerySingleOrDefault<bool?>(
                     "SELECT is_active FROM product WHERE id=@id", new { id }, transaction.Transaction);
                 if (active != true) throw new DomainException(ErrorCode.Validation, "Only active products can be removed.");
-                long hasHistory = transaction.Connection.ExecuteScalar<long>("""
-                    SELECT EXISTS(SELECT 1 FROM product_lot WHERE product_id=@id)
-                        OR EXISTS(SELECT 1 FROM purchase_line WHERE product_id=@id)
-                        OR EXISTS(SELECT 1 FROM sale_line WHERE product_id=@id)
-                        OR EXISTS(SELECT 1 FROM damage WHERE product_id=@id)
-                    """, new { id }, transaction.Transaction);
-                if (hasHistory == 0)
-                {
-                    transaction.Connection.Execute("DELETE FROM product_barcode WHERE product_id=@id", new { id }, transaction.Transaction);
-                    transaction.Connection.Execute("DELETE FROM product WHERE id=@id", new { id }, transaction.Transaction);
-                    audit.Write(transaction, "product", id, "DELETE", null);
-                }
-                else
-                {
-                    transaction.Connection.Execute("UPDATE product SET is_active=0,updated_at=datetime('now','localtime') WHERE id=@id",
-                        new { id }, transaction.Transaction);
-                    audit.Write(transaction, "product", id, "ARCHIVE", null);
-                }
+                Remove(transaction, id);
                 count++;
             }
             return count;
@@ -684,8 +689,14 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                               AND (@afterName IS NULL OR p.name COLLATE NOCASE > @afterName COLLATE NOCASE
                                    OR (p.name COLLATE NOCASE = @afterName COLLATE NOCASE AND p.id>@afterId))
                             ORDER BY p.name COLLATE NOCASE,p.id LIMIT 1 OFFSET @offset
-                            """, new { filter.IncludeArchived, filter.SaleableOnly, afterName, afterId,
-                                offset = (limit + 1) * 4 - 1 });
+                            """, new
+                        {
+                            filter.IncludeArchived,
+                            filter.SaleableOnly,
+                            afterName,
+                            afterId,
+                            offset = (limit + 1) * 4 - 1
+                        });
                         pageIds = connection.Query<long>("""
                             SELECT p.id FROM product p INDEXED BY ix_product_name
                             CROSS JOIN product_fts f ON f.rowid=p.id
@@ -697,8 +708,17 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                                    OR (p.name COLLATE NOCASE = @boundaryName COLLATE NOCASE AND p.id<=@boundaryId))
                               AND product_fts MATCH @match
                             ORDER BY p.name COLLATE NOCASE,p.id LIMIT @take
-                            """, new { match, filter.IncludeArchived, filter.SaleableOnly, afterName, afterId,
-                                boundaryName = boundary?.Name, boundaryId = boundary?.Id, take = limit + 1 }).ToArray();
+                            """, new
+                        {
+                            match,
+                            filter.IncludeArchived,
+                            filter.SaleableOnly,
+                            afterName,
+                            afterId,
+                            boundaryName = boundary?.Name,
+                            boundaryId = boundary?.Id,
+                            take = limit + 1
+                        }).ToArray();
                     }
                 }
                 if (pageIds is { Length: > 0 } && pageIds.Length == limit + 1)

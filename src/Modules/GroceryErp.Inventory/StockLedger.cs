@@ -7,6 +7,9 @@ using GroceryErp.Inventory.Contracts;
 
 namespace GroceryErp.Inventory;
 
+// The one writer of lot quantity. Each change runs in its document's transaction as
+// a conditional update; the document itself is the stock record. Only corrections,
+// which have no other document, are saved as stock_correction rows.
 public sealed class StockLedger(ISettings settings) : IStockLedger
 {
     private static readonly HashSet<string> MovementTypes =
@@ -19,22 +22,58 @@ public sealed class StockLedger(ISettings settings) : IStockLedger
         if (movement.ProductId <= 0 || movement.LotId <= 0 || movement.Quantity == Quantity.Zero ||
             movement.UnitCost < Money.Zero || !MovementTypes.Contains(movement.Type))
             throw new DomainException(ErrorCode.Validation, "Invalid stock movement.");
-
-        transaction.Connection.Execute("""
-            INSERT INTO stock_movement(move_date,product_id,lot_id,type_code,qty,unit_cost,ref_type,ref_id,note)
-            VALUES (@Date,@ProductId,@LotId,@Type,@Quantity,@UnitCost,@RefType,@RefId,@Note)
+        string date = movement.Date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        bool sale = movement.Type == "SALE";
+        int updated = transaction.Connection.Execute("""
+            UPDATE product_lot SET qty_on_hand=qty_on_hand+@delta
+            WHERE id=@lotId AND product_id=@productId AND qty_on_hand+@delta>=0
+              AND (@sale=0 OR (is_active=1 AND
+                   (@blockExpired=0 OR expiry_date IS NULL OR expiry_date>=@date)))
             """, new
         {
-            Date = movement.Date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+            delta = movement.Quantity.Scaled,
+            lotId = movement.LotId,
+            productId = movement.ProductId,
+            sale = sale ? 1 : 0,
+            blockExpired = sale && settings.Current.BlockExpiredLots ? 1 : 0,
+            date,
+        }, transaction.Transaction);
+        if (updated != 1) throw Rejected(transaction, movement, sale);
+        if (movement.Type != "ADJUSTMENT") return;
+        transaction.Connection.Execute("""
+            INSERT INTO stock_correction(correction_date,product_id,lot_id,quantity_delta,unit_cost,
+                source_kind,source_id,reason)
+            VALUES (@date,@ProductId,@LotId,@delta,@cost,@kind,@RefId,@Note)
+            """, new
+        {
+            date,
             movement.ProductId,
             movement.LotId,
-            movement.Type,
-            Quantity = movement.Quantity.Scaled,
-            UnitCost = movement.UnitCost.Scaled,
-            movement.RefType,
+            delta = movement.Quantity.Scaled,
+            cost = movement.UnitCost.Scaled,
+            kind = movement.RefType switch
+            {
+                "damage_correction" => "DAMAGE_CORRECTION",
+                "lot_correction" or "lot_cost_correction" => "LOT_CORRECTION",
+                _ => "MANUAL",
+            },
             movement.RefId,
             movement.Note,
         }, transaction.Transaction);
+    }
+
+    private static DomainException Rejected(DbTx transaction, StockMovementInput movement, bool sale)
+    {
+        var lot = transaction.Connection.QuerySingleOrDefault<(long OnHand, long IsActive)?>("""
+            SELECT qty_on_hand AS OnHand,is_active AS IsActive FROM product_lot
+            WHERE id=@LotId AND product_id=@ProductId
+            """, new { movement.LotId, movement.ProductId }, transaction.Transaction);
+        if (lot is null) return new DomainException(ErrorCode.LotProductMismatch, movement.LotId);
+        if (lot.Value.OnHand + movement.Quantity.Scaled < 0)
+            return new DomainException(ErrorCode.InsufficientStock, movement.LotId);
+        return sale && lot.Value.IsActive == 1
+            ? new DomainException(ErrorCode.ExpiredLot, movement.LotId)
+            : new DomainException(ErrorCode.Validation, "This lot is blocked for sale.");
     }
 
     public IReadOnlyList<LotAllocation> AllocateFefo(
@@ -73,25 +112,7 @@ public sealed class StockLedger(ISettings settings) : IStockLedger
             remaining -= take;
             if (remaining == Quantity.Zero) return result;
         }
-
-        if (!settings.Current.AllowNegativeStock)
-            throw new DomainException(ErrorCode.InsufficientStock, requested - remaining);
-
-        LotRow? newest = transaction.Connection.QuerySingleOrDefault<LotRow>("""
-            SELECT id AS LotId, qty_on_hand AS OnHand, expiry_date AS Expiry,
-                   selling_price AS Price, mrp AS Mrp, unit_cost AS Cost
-            FROM product_lot WHERE product_id=@productId AND is_active=1
-              AND (@blockExpired=0 OR expiry_date IS NULL OR expiry_date>=@asOf)
-            ORDER BY received_date DESC,id DESC LIMIT 1
-            """, new
-        {
-            productId,
-            blockExpired = settings.Current.BlockExpiredLots ? 1 : 0,
-            asOf = asOf.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-        }, transaction.Transaction);
-        if (newest is null) throw new DomainException(ErrorCode.NoLotForProduct, productId);
-        result.Add(new(newest.ToModel(), remaining));
-        return result;
+        throw new DomainException(ErrorCode.InsufficientStock, requested - remaining);
     }
 
     private sealed class LotRow

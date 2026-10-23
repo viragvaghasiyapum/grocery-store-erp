@@ -752,11 +752,9 @@ public sealed class FoundationsTests
         // A second begin without a clean shutdown models the next process after a crash.
         await maintenance.BeginSessionAsync(TestContext.Current.CancellationToken);
         connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key='maintenance.recovery_pending'").ShouldBe("1");
-        connection.Execute("""
-            UPDATE setting SET value='1' WHERE key='maintenance.clean_shutdown';
-            INSERT INTO setting(key,value) VALUES ('maintenance.stock_rebuild_pending','1')
-            ON CONFLICT(key) DO UPDATE SET value='1'
-            """);
+        (await maintenance.CheckBeforeShellAsync(TestContext.Current.CancellationToken)).LotCacheHealthy.ShouldBeTrue();
+        // Movement history that no longer matches the upgrade's high-water mark was changed outside the app.
+        connection.Execute("UPDATE direct_stock_live SET movement_high_water=movement_high_water+1");
         (await maintenance.CheckBeforeShellAsync(TestContext.Current.CancellationToken)).LotCacheHealthy.ShouldBeFalse();
     }
 

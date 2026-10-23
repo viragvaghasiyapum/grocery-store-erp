@@ -72,34 +72,6 @@ public sealed record OpeningStockLine(
     string? BatchNumber,
     DateOnly ReceivedDate);
 
-public sealed record StockCountLine(
-    long Id,
-    long ProductId,
-    string ProductName,
-    long LotId,
-    string LotCode,
-    Quantity Expected,
-    Quantity? Counted,
-    Money UnitCost,
-    Quantity MovementSinceSnapshot,
-    Quantity Difference,
-    Money DifferenceValue);
-
-public sealed record StockCountDetails(long Id, DateOnly Date, string Status, string? Notes, IReadOnlyList<StockCountLine> Lines);
-public sealed record StockCountPage(long Id, DateOnly Date, string Status, string? Notes,
-    IReadOnlyList<StockCountLine> Lines, bool HasMore, long? NextLineId, long Total, long Counted);
-public sealed record StockCountReview(long Total, long Counted, long Differences,
-    Money NetDifferenceValue, long MovementHighWaterMark);
-
-public sealed class StockCountSummary
-{
-    public long Id { get; init; }
-    public DateOnly Date { get; init; }
-    public long LotCount { get; init; }
-    public long CountedCount { get; init; }
-}
-public sealed record DraftCountPage(IReadOnlyList<StockCountSummary> Items, bool HasMore, long? NextId);
-
 public sealed record StockValuationItem(
     long CategoryId,
     string CategoryName,

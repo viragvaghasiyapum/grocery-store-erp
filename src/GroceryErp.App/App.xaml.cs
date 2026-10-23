@@ -110,6 +110,7 @@ public partial class App : Application
             builder.Services.AddSingleton<IAuditLog, AuditLog>();
             builder.Services.AddSingleton<DocNumberService>();
             builder.Services.AddSingleton<PeriodGuard>();
+            builder.Services.AddSingleton<AnnualCloseService>();
             builder.Services.AddSingleton<MigrationRunner>();
             builder.Services.AddSingleton<MaintenanceService>();
             builder.Services.AddSingleton<StartupPipeline>();
@@ -212,56 +213,11 @@ public partial class App : Application
             }
             if (!health.LotCacheHealthy)
             {
-                Log.Error("Lot cache integrity check failed");
-                MessageBoxResult rebuild = MessageBox.Show(
-                    TranslationSource.Instance["Startup_LotCache"], TranslationSource.Instance["App_Title"],
-                    MessageBoxButton.YesNo, MessageBoxImage.Warning);
-                if (rebuild == MessageBoxResult.Yes)
-                {
-                    InventoryService inventory = _host.Services.GetRequiredService<InventoryService>();
-                    var bar = new ProgressBar { Minimum = 0, Maximum = 1, IsIndeterminate = true,
-                        Height = 20, Margin = new Thickness(16, 16, 16, 8) };
-                    var count = new TextBlock { Margin = new Thickness(16, 0, 16, 16),
-                        HorizontalAlignment = HorizontalAlignment.Center };
-                    var panel = new StackPanel();
-                    panel.Children.Add(bar);
-                    panel.Children.Add(count);
-                    var progressWindow = new Window
-                    {
-                        Title = TranslationSource.Instance["App_Title"], Content = panel,
-                        Width = 380, Height = 110, ResizeMode = ResizeMode.NoResize,
-                        WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                        ShowInTaskbar = false,
-                    };
-                    bool finished = false;
-                    progressWindow.Closing += (_, args) => { if (!finished) args.Cancel = true; };
-                    progressWindow.Show();
-                    try
-                    {
-                        if (!await inventory.IsStockCacheRebuildPendingAsync())
-                            await Task.Run(() => backups.Create("pre-stock-cache-rebuild"));
-                        bar.IsIndeterminate = false;
-                        var progress = new Progress<StockCacheRebuildProgress>(value =>
-                        {
-                            bar.Maximum = Math.Max(1, value.TotalLots);
-                            bar.Value = value.ProcessedLots;
-                            count.Text = string.Format(CultureInfo.CurrentCulture,
-                                "{0:N0} / {1:N0}", value.ProcessedLots, value.TotalLots);
-                        });
-                        int corrected = await inventory.RebuildStockCacheAsync(progress);
-                        Log.Warning("Rebuilt cached quantities for {LotCount} lots", corrected);
-                    }
-                    finally
-                    {
-                        finished = true;
-                        progressWindow.Close();
-                    }
-                }
-                else
-                {
-                    await RequestShutdownAsync(1);
-                    return;
-                }
+                // Lot quantities commit with their documents, so there is nothing to
+                // rebuild. A stock movement after the upgrade means a foreign writer.
+                Log.Error("A stock movement was written after the direct-stock upgrade");
+                MessageBox.Show(TranslationSource.Instance["Startup_LotCache"], TranslationSource.Instance["App_Title"],
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             if (health.LastSaleDate is not null &&
                 DateOnly.TryParseExact(health.LastSaleDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly lastSale) &&
@@ -302,7 +258,8 @@ public partial class App : Application
             }
             _maintenanceCancellation = new CancellationTokenSource();
             _maintenanceTask = RunMaintenanceWhenIdleAsync(shell, maintenance,
-                _host.Services.GetRequiredService<AssetService>(), _maintenanceCancellation.Token);
+                _host.Services.GetRequiredService<AssetService>(),
+                _host.Services.GetRequiredService<AnnualCloseService>(), _maintenanceCancellation.Token);
             _ = _maintenanceTask.ContinueWith(
                 task =>
                 {
@@ -440,7 +397,7 @@ public partial class App : Application
     }
 
     private static async Task RunMaintenanceWhenIdleAsync(ShellWindow shell, MaintenanceService maintenance,
-        AssetService assets, CancellationToken cancellationToken)
+        AssetService assets, AnnualCloseService annualClose, CancellationToken cancellationToken)
     {
         TimeSpan idleWindow = TimeSpan.FromMinutes(10);
         while (true)
@@ -453,6 +410,7 @@ public partial class App : Application
             {
                 await maintenance.RunAfterShellAsync(workCancellation.Token);
                 await assets.PostDueDepreciationAsync(workCancellation.Token);
+                await annualClose.EnsureFinalizedAsync(workCancellation.Token);
                 return;
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)

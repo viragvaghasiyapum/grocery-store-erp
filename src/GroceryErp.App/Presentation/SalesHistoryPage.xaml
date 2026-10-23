@@ -9,6 +9,7 @@
   <local:SaleStatusConverter x:Key="SaleStatusConverter"/>
   <local:LegacySnapshotTextConverter x:Key="LegacySnapshotTextConverter"/>
   <local:PaymentModesConverter x:Key="PaymentModesConverter"/>
+  <local:SaleActivityConverter x:Key="SaleActivityConverter"/>
  </Page.Resources>
  <Grid Margin="16,12,16,12">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
@@ -17,43 +18,48 @@
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <TextBlock FontSize="22" FontWeight="SemiBold" Text="{l:Tr Sales_History_Title}"/>
    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-    <TextBlock x:Name="StatusText" MaxWidth="220" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-    <Button x:Name="ExportButton" Margin="8,0,0,0" Click="Export_OnClick" Content="{l:Tr Sales_Export}"/>
-    <Button x:Name="CancelExportButton" Margin="6,0,0,0" IsEnabled="False" Click="CancelExport_OnClick" Content="Cancel"/>
+    <TextBlock x:Name="StatusText" MaxWidth="260" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+    <Button Margin="8,0,0,0" Click="DayEnd_OnClick" Content="{l:Tr Sales_DayEnd}"/>
+    <Button x:Name="ExportButton" Margin="6,0,0,0" Click="Export_OnClick" Content="{l:Tr Sales_Export}"/>
+    <Button x:Name="CancelExportButton" Margin="6,0,0,0" IsEnabled="False" Click="CancelExport_OnClick" Content="{l:Tr Common_Cancel}"/>
     <ProgressBar x:Name="ExportProgress" Width="64" Height="5" Margin="10,0,0,0" VerticalAlignment="Center" IsIndeterminate="True" Visibility="Collapsed"/>
    </StackPanel>
   </Grid>
   <StackPanel Grid.Row="1" Margin="0,6,0,4">
   <WrapPanel>
-   <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Sales_From}"/><DatePicker x:Name="FromPicker" Width="135" SelectedDateFormat="Short"/></StackPanel>
-   <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Sales_To}"/><DatePicker x:Name="ToPicker" Width="135" SelectedDateFormat="Short"/></StackPanel>
-   <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Sales_Invoice}"/><TextBox x:Name="InvoiceBox" Width="145" Height="32"/></StackPanel>
-   <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Purchasing_Status}"/>
-    <ComboBox x:Name="StatusBox" Width="115" Height="32" SelectedIndex="0">
+   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Sales_From}"/><DatePicker x:Name="FromPicker" Width="130" SelectedDateFormat="Short" AutomationProperties.Name="{l:Tr Sales_From}"/></StackPanel>
+   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Sales_To}"/><DatePicker x:Name="ToPicker" Width="130" SelectedDateFormat="Short" AutomationProperties.Name="{l:Tr Sales_To}"/></StackPanel>
+   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Sales_Invoice}"/><TextBox x:Name="InvoiceBox" Width="140" Height="32" VerticalContentAlignment="Center" KeyDown="Filter_OnKeyDown" AutomationProperties.Name="{l:Tr Sales_Invoice}"/></StackPanel>
+   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Catalog_Name}"/><TextBox x:Name="ProductBox" Width="170" Height="32" VerticalContentAlignment="Center" KeyDown="Filter_OnKeyDown" AutomationProperties.Name="{l:Tr Catalog_Name}"/></StackPanel>
+   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Purchasing_Status}"/>
+    <ComboBox x:Name="StatusBox" Width="150" Height="32" SelectedIndex="0" AutomationProperties.Name="{l:Tr Purchasing_Status}">
      <ComboBoxItem Content="{l:Tr Sales_All}"/><ComboBoxItem Content="{l:Tr Sales_CompletedStatus}" Tag="Completed"/>
+     <ComboBoxItem Content="{l:Tr Sales_Status_PartiallyRefunded}" Tag="PartiallyRefunded"/>
+     <ComboBoxItem Content="{l:Tr Sales_Status_Refunded}" Tag="Refunded"/>
      <ComboBoxItem Content="{l:Tr Sales_Void}" Tag="Void"/>
     </ComboBox>
    </StackPanel>
-   <Button Margin="0,15,8,8" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
-   <Button Margin="0,15,0,8" Click="DayEnd_OnClick" Content="{l:Tr Sales_DayEnd}"/>
+   <Button Margin="0,18,6,4" Click="Refresh_OnClick" Content="{l:Tr Sales_Search}" FontWeight="SemiBold"/>
+   <Button Margin="0,18,0,4" Click="ClearFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
   </WrapPanel>
-  <local:AnimatedSection Header="{l:Tr Purchasing_Filters}" IsExpanded="False" Margin="0,0,0,4">
-   <WrapPanel Margin="0,6,0,0">
-   <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Purchasing_Mode}"/>
-    <ComboBox x:Name="PaymentBox" Width="115" Height="32" SelectedIndex="0">
+  <local:AnimatedSection Header="{l:Tr Sales_MoreFilters}" IsExpanded="False" Margin="0,0,0,2">
+   <WrapPanel Margin="0,4,0,0">
+   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Sales_Customer}"/><TextBox x:Name="CustomerBox" Width="170" Height="32" VerticalContentAlignment="Center" KeyDown="Filter_OnKeyDown" AutomationProperties.Name="{l:Tr Sales_Customer}"/></StackPanel>
+   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Purchasing_Mode}"/>
+    <ComboBox x:Name="PaymentBox" Width="115" Height="32" SelectedIndex="0" AutomationProperties.Name="{l:Tr Purchasing_Mode}">
      <ComboBoxItem Content="{l:Tr Sales_All}"/><ComboBoxItem Content="{l:Tr Sales_CashLabel}" Tag="Cash"/>
      <ComboBoxItem Content="{l:Tr Sales_UpiLabel}" Tag="Upi"/><ComboBoxItem Content="{l:Tr Sales_CardLabel}" Tag="Card"/>
     </ComboBox>
    </StackPanel>
-   <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Sales_Minimum}"/><TextBox x:Name="MinimumBox" Width="100" Height="32"/></StackPanel>
-   <StackPanel Margin="0,0,12,8"><TextBlock Text="{l:Tr Sales_Maximum}"/><TextBox x:Name="MaximumBox" Width="100" Height="32"/></StackPanel>
+   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Sales_Minimum}"/><TextBox x:Name="MinimumBox" Width="100" Height="32" VerticalContentAlignment="Center" KeyDown="Filter_OnKeyDown" AutomationProperties.Name="{l:Tr Sales_Minimum}"/></StackPanel>
+   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Sales_Maximum}"/><TextBox x:Name="MaximumBox" Width="100" Height="32" VerticalContentAlignment="Center" KeyDown="Filter_OnKeyDown" AutomationProperties.Name="{l:Tr Sales_Maximum}"/></StackPanel>
    </WrapPanel>
   </local:AnimatedSection>
   </StackPanel>
   <DataGrid x:Name="HistoryGrid" Grid.Row="2" Margin="0,0,0,6" Style="{StaticResource CompactTableGrid}"
             SelectionChanged="HistoryGrid_OnSelectionChanged">
    <DataGrid.Columns>
-    <DataGridTemplateColumn Width="125" Header="{l:Tr Sales_ViewBillItems}">
+    <DataGridTemplateColumn Width="132">
      <DataGridTemplateColumn.CellTemplate><DataTemplate>
       <Button Content="{l:Tr Sales_ViewBillItems}" Tag="{Binding}" Click="ViewBillItems_OnClick"
               HorizontalAlignment="Center" VerticalAlignment="Center" Height="28" MinHeight="0" MinWidth="0"
@@ -62,7 +68,7 @@
     </DataGridTemplateColumn>
     <DataGridTextColumn Width="155" Header="{l:Tr Sales_Invoice}" Binding="{Binding InvoiceNumber}"/>
     <DataGridTextColumn Width="115" Header="{l:Tr Sales_Date}" Binding="{Binding SaleDate}"/>
-    <DataGridTextColumn Width="100" Header="{l:Tr Purchasing_Status}" Binding="{Binding Status,Converter={StaticResource SaleStatusConverter}}"/>
+    <DataGridTextColumn Width="145" Header="{l:Tr Purchasing_Status}" Binding="{Binding Status,Converter={StaticResource SaleStatusConverter}}"/>
     <DataGridTextColumn Width="78" Header="{l:Tr Sales_Items}" Binding="{Binding LineCount}"/>
     <DataGridTextColumn Width="125" Header="{l:Tr Purchasing_Total}" Binding="{Binding GrandTotal}"/>
     <DataGridTextColumn Width="155" Header="{l:Tr Purchasing_Mode}" Binding="{Binding PaymentModes,Converter={StaticResource PaymentModesConverter}}"/>
@@ -95,25 +101,26 @@
     </DataGrid>
      </TabItem>
      <TabItem Header="{l:Tr Sales_ReturnsTab}">
-      <DataGrid x:Name="ReturnsGrid" Style="{StaticResource CatalogGrid}" RowHeight="36">
+      <DataGrid x:Name="ReturnsGrid" Style="{StaticResource CompactTableGrid}" RowHeight="34">
        <DataGrid.Columns>
         <DataGridTextColumn Width="120" Header="{l:Tr Sales_Return}" Binding="{Binding ReturnNumber}"/>
         <DataGridTextColumn Width="100" Header="{l:Tr Sales_Date}" Binding="{Binding Date}"/>
         <DataGridTextColumn Width="*" MinWidth="160" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
+        <DataGridTextColumn Width="110" Header="{l:Tr Stock_LotCode}" Binding="{Binding RestockLotCode}"/>
         <DataGridTextColumn Width="90" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
         <DataGridTextColumn Width="110" Header="{l:Tr Receipt_RefundTotal}" Binding="{Binding Refund}"/>
-        <DataGridCheckBoxColumn Width="90" Header="{l:Tr Sales_Resellable}" Binding="{Binding Resellable}"/>
+        <DataGridTextColumn Width="135" Header="{l:Tr Sales_ReturnRestockHeader}" Binding="{Binding DispositionCode,Converter={StaticResource SaleActivityConverter}}"/>
         <DataGridTextColumn Width="150" Header="{l:Tr Stock_Reason}" Binding="{Binding Reason}"/>
        </DataGrid.Columns>
       </DataGrid>
      </TabItem>
      <TabItem Header="{l:Tr Sales_MovementsTab}">
-      <DataGrid x:Name="MovementsGrid" Style="{StaticResource CatalogGrid}" RowHeight="36">
+      <DataGrid x:Name="MovementsGrid" Style="{StaticResource CompactTableGrid}" RowHeight="34">
        <DataGrid.Columns>
         <DataGridTextColumn Width="110" Header="{l:Tr Sales_Date}" Binding="{Binding Date}"/>
         <DataGridTextColumn Width="*" MinWidth="160" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
         <DataGridTextColumn Width="110" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
-        <DataGridTextColumn Width="140" Header="{l:Tr Stock_MovementType}" Binding="{Binding Type}"/>
+        <DataGridTextColumn Width="140" Header="{l:Tr Stock_MovementType}" Binding="{Binding Type,Converter={StaticResource SaleActivityConverter}}"/>
         <DataGridTextColumn Width="100" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
        </DataGrid.Columns>
       </DataGrid>

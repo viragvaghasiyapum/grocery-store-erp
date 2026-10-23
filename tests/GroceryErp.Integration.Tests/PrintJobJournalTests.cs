@@ -1,12 +1,12 @@
-using System.Collections.Immutable;
 using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.Text.Json;
 using Dapper;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
-using GroceryErp.Sales;
 using GroceryErp.Printing;
+using GroceryErp.Sales;
 using Shouldly;
 using Xunit;
 
@@ -117,7 +117,7 @@ public sealed class PrintJobJournalTests
             new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
             var journal = new PrintJobJournal(factory);
             string missingPrinter = $"missing-printer-{Guid.NewGuid():N}";
-            var appSettings = new AppSettings("Store", 4, 0, null, 15, 30, root)
+            var appSettings = new AppSettings("Store", 4, 0, 15, 30, root)
             {
                 Values = ImmutableDictionary<string, string>.Empty
                     .Add("printer.receipt.name", missingPrinter)
@@ -153,7 +153,7 @@ public sealed class PrintJobJournalTests
             new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
             var journal = new PrintJobJournal(factory);
             var printer = new ReceiptPrinter(new TestSettings(new AppSettings("Store", 4, 0,
-                null, 15, 30, root)), journal);
+                15, 30, root)), journal);
             string missingPrinter = $"missing-printer-{Guid.NewGuid():N}";
             var label = new TsplLabel("Rice", null, "8901234567890", 42m, null, Copies: 250);
 
@@ -180,7 +180,7 @@ public sealed class PrintJobJournalTests
         using var firstChunkEntered = new ManualResetEventSlim();
         using var releaseFirstChunk = new ManualResetEventSlim();
         var order = new ConcurrentQueue<string>();
-        var appSettings = new AppSettings("Store", 4, 0, null, 15, 30, Path.GetTempPath())
+        var appSettings = new AppSettings("Store", 4, 0, 15, 30, Path.GetTempPath())
         {
             Values = ImmutableDictionary<string, string>.Empty.Add("printer.receipt.name", "test-printer"),
         };

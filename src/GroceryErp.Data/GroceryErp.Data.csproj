@@ -40,5 +40,8 @@
     <EmbeddedResource Include="../../029_historical_snapshots.sql" Link="db/029_historical_snapshots.sql" />
     <EmbeddedResource Include="../../030_purchase_workflows.sql" Link="db/030_purchase_workflows.sql" />
     <EmbeddedResource Include="../../031_catalog_lot_workflows.sql" Link="db/031_catalog_lot_workflows.sql" />
+    <EmbeddedResource Include="../../032_sales_return_lookup.sql" Link="db/032_sales_return_lookup.sql" />
+    <EmbeddedResource Include="../../033_direct_lot_stock.sql" Link="db/033_direct_lot_stock.sql" />
+    <EmbeddedResource Include="../../034_annual_close.sql" Link="db/034_annual_close.sql" />
   </ItemGroup>
 </Project>

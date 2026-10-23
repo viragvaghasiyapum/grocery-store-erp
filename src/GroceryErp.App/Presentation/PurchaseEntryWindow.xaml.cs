@@ -413,7 +413,7 @@ public partial class PurchaseEntryWindow : Window
             string.IsNullOrWhiteSpace(Expiry) ? null : DateOnly.ParseExact(InputNormalizer.Normalize(Expiry), "yyyy-MM-dd", CultureInfo.InvariantCulture),
             new Quantity(Quantity), new Quantity(FreeQuantity), new Money(Rate), new Money(Discount), new Percent(TaxRate),
             Mrp is null ? null : new Money(Mrp.Value), new Money(SellingPrice))
-            { LineKind = LineKind, ExpenseCategoryId = IsExpenseLine ? ExpenseCategoryId : null };
+        { LineKind = LineKind, ExpenseCategoryId = IsExpenseLine ? ExpenseCategoryId : null };
         public static PurchaseEditLine FromInput(PurchaseLineInput line) => new()
         {
             ProductId = line.ProductId,

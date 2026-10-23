@@ -27,9 +27,14 @@ public sealed partial class InventoryService
                     detail_version=detail_version+1,
                     updated_at=strftime('%Y-%m-%d %H:%M:%f','now','localtime')
                 WHERE id=@id AND detail_version=@version
-                """, new { id = edit.LotId, version = edit.ExpectedVersion,
-                    price = edit.SellingPrice.Scaled, mrp = edit.Mrp?.Scaled,
-                    expiry = edit.ExpiryDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) },
+                """, new
+            {
+                id = edit.LotId,
+                version = edit.ExpectedVersion,
+                price = edit.SellingPrice.Scaled,
+                mrp = edit.Mrp?.Scaled,
+                expiry = edit.ExpiryDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+            },
                 tx.Transaction);
             if (changed != 1) ThrowLotEditConflict(tx, edit.LotId);
             audit.Write(tx, "product_lot", edit.LotId, "DETAIL_EDIT", new
@@ -45,14 +50,7 @@ public sealed partial class InventoryService
             """, new { lotId });
         if (lot is null) throw new DomainException(ErrorCode.NotFound, "lot", lotId);
         string? reason = lot.Quantity != 0 ? "Stock_DeleteHasStock" :
-            connection.ExecuteScalar<long>("""
-                SELECT EXISTS(SELECT 1 FROM stock_movement WHERE lot_id=@lotId)
-                    OR EXISTS(SELECT 1 FROM vendor_return_line WHERE lot_id=@lotId)
-                    OR EXISTS(SELECT 1 FROM stock_count_line WHERE lot_id=@lotId)
-                    OR EXISTS(SELECT 1 FROM sale_line WHERE lot_id=@lotId)
-                    OR EXISTS(SELECT 1 FROM damage WHERE lot_id=@lotId)
-                    OR EXISTS(SELECT 1 FROM direct_stock_origin WHERE lot_id=@lotId)
-                """, new { lotId }) != 0 ? "Stock_DeleteHistory" : null;
+            IsOnOpenBill(connection, lotId) ? "Stock_DeleteOpenBill" : null;
         return new LotDeletionPreview(lotId, lot.LotCode, Quantity.FromScaled(lot.Quantity), reason is null, reason);
     }, cancellationToken);
 
@@ -64,15 +62,8 @@ public sealed partial class InventoryService
             SELECT product_id FROM product_lot WHERE id=@lotId AND qty_on_hand=0 AND detail_version=@expectedVersion
             """, new { lotId, expectedVersion }, tx.Transaction);
         if (productId is null) ThrowLotEditConflict(tx, lotId);
-        if (tx.Connection.ExecuteScalar<long>("""
-            SELECT EXISTS(SELECT 1 FROM stock_movement WHERE lot_id=@lotId)
-                OR EXISTS(SELECT 1 FROM vendor_return_line WHERE lot_id=@lotId)
-                OR EXISTS(SELECT 1 FROM stock_count_line WHERE lot_id=@lotId)
-                OR EXISTS(SELECT 1 FROM sale_line WHERE lot_id=@lotId)
-                OR EXISTS(SELECT 1 FROM damage WHERE lot_id=@lotId)
-                OR EXISTS(SELECT 1 FROM direct_stock_origin WHERE lot_id=@lotId)
-            """, new { lotId }, tx.Transaction) != 0)
-            throw new DomainException(ErrorCode.Validation, "Historical documents still reference this lot.");
+        if (IsOnOpenBill(tx.Connection, lotId, tx.Transaction))
+            throw new DomainException(ErrorCode.Validation, "A held or draft bill still uses this lot.");
         int changed = tx.Connection.Execute("""
             DELETE FROM product_lot WHERE id=@lotId AND qty_on_hand=0 AND detail_version=@expectedVersion
             """, new { lotId, expectedVersion }, tx.Transaction);
@@ -93,9 +84,9 @@ public sealed partial class InventoryService
                     SELECT lot_code AS LotCode,qty_on_hand AS Quantity FROM product_lot WHERE id=@lotId
                     """, new { lotId });
                 if (lot is null) throw new DomainException(ErrorCode.NotFound, "lot", lotId);
-                bool referenced = lot.Quantity == 0 && HasLotHistory(connection, lotId);
+                bool referenced = lot.Quantity == 0 && IsOnOpenBill(connection, lotId);
                 string? reason = lot.Quantity != 0 ? "Stock_DeleteHasStock" :
-                    referenced ? "Stock_DeleteHistory" : null;
+                    referenced ? "Stock_DeleteOpenBill" : null;
                 previews.Add(new(lotId, lot.LotCode, Quantity.FromScaled(lot.Quantity),
                     reason is null, reason));
             }
@@ -120,8 +111,8 @@ public sealed partial class InventoryService
                     WHERE id=@lotId AND qty_on_hand=0 AND detail_version=@expectedVersion
                     """, key, tx.Transaction);
                 if (productId is null) ThrowLotEditConflict(tx, request.LotId);
-                if (HasLotHistory(tx.Connection, request.LotId, tx.Transaction))
-                    throw new DomainException(ErrorCode.Validation, "Historical documents still reference this lot.");
+                if (IsOnOpenBill(tx.Connection, request.LotId, tx.Transaction))
+                    throw new DomainException(ErrorCode.Validation, "A held or draft bill still uses this lot.");
                 int changed = tx.Connection.Execute("""
                     DELETE FROM product_lot
                     WHERE id=@lotId AND qty_on_hand=0 AND detail_version=@expectedVersion
@@ -141,14 +132,12 @@ public sealed partial class InventoryService
         return ids;
     }
 
-    private static bool HasLotHistory(System.Data.IDbConnection connection, long lotId,
+    // Posted documents keep their own snapshots, so history never blocks deleting a
+    // zero lot. An unfinished bill still points at the live lot it will sell from.
+    internal static bool IsOnOpenBill(System.Data.IDbConnection connection, long lotId,
         System.Data.IDbTransaction? transaction = null) => connection.ExecuteScalar<long>("""
-            SELECT EXISTS(SELECT 1 FROM stock_movement WHERE lot_id=@lotId)
-                OR EXISTS(SELECT 1 FROM vendor_return_line WHERE lot_id=@lotId)
-                OR EXISTS(SELECT 1 FROM stock_count_line WHERE lot_id=@lotId)
-                OR EXISTS(SELECT 1 FROM sale_line WHERE lot_id=@lotId)
-                OR EXISTS(SELECT 1 FROM damage WHERE lot_id=@lotId)
-                OR EXISTS(SELECT 1 FROM direct_stock_origin WHERE lot_id=@lotId)
+            SELECT EXISTS(SELECT 1 FROM sale s CROSS JOIN sale_line sl
+                          WHERE s.status IN ('HELD','DRAFT') AND sl.sale_id=s.id AND sl.lot_id=@lotId)
             """, new { lotId }, transaction) != 0;
 
     private sealed class LotEditRule

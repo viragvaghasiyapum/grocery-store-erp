@@ -23,8 +23,7 @@ public sealed partial class SalesService(
     PeriodGuard periodGuard,
     ISettings settings,
     IAuditLog auditLog,
-    IClock clock,
-    IDirectStockEngine? directStock = null)
+    IClock clock)
 {
     private static readonly JsonSerializerOptions ReceiptJsonOptions = new()
     {
@@ -149,7 +148,7 @@ public sealed partial class SalesService(
                 ?? throw new DomainException(ErrorCode.NotFound, lineId);
             if (!line.AllowFraction && !quantity.IsWhole)
                 throw new DomainException(ErrorCode.FractionalQtyNotAllowed, line.ProductId);
-            if (!settings.Current.AllowNegativeStock && quantity.Scaled > line.OnHand)
+            if (quantity.Scaled > line.OnHand)
                 throw new DomainException(ErrorCode.InsufficientStock, quantity);
             transaction.Connection.Execute("UPDATE sale_line SET qty=@qty WHERE id=@lineId",
                 new { qty = quantity.Scaled, lineId }, transaction.Transaction);
@@ -471,9 +470,19 @@ public sealed partial class SalesService(
                   AND (@beforeCreatedAt IS NULL OR created_at<@beforeCreatedAt
                        OR (created_at=@beforeCreatedAt AND id<@beforeId))
                 ORDER BY created_at DESC,id DESC LIMIT @take
-                """, new { includeDrafts, excludeId, term, exactId, pattern, beforeCreatedAt, beforeId,
-                    take = limit + 1 }).Select(static row => new HeldSale(row.Id, row.CreatedAt,
-                    row.Label, row.ItemCount, Money.FromScaled(row.Total)) { IsHeld = row.Status == "HELD" }).ToList();
+                """, new
+            {
+                includeDrafts,
+                excludeId,
+                term,
+                exactId,
+                pattern,
+                beforeCreatedAt,
+                beforeId,
+                take = limit + 1
+            }).Select(static row => new HeldSale(row.Id, row.CreatedAt,
+                row.Label, row.ItemCount, Money.FromScaled(row.Total))
+            { IsHeld = row.Status == "HELD" }).ToList();
             bool hasMore = rows.Count > limit;
             if (hasMore) rows.RemoveAt(limit);
             HeldSale? last = rows.LastOrDefault();
@@ -494,13 +503,42 @@ public sealed partial class SalesService(
         CancellationToken cancellationToken = default) => database.ReadAsync<IReadOnlyList<ReturnableSaleLine>>(connection =>
     {
         SaleDetails sale = LoadDetails(connection, saleId);
-        Dictionary<long, long> returned = connection.Query<(long LineId, long Returned)>("""
-            SELECT rl.sale_line_id AS LineId,SUM(rl.qty) AS Returned
+        if (sale.Status is not (SaleStatus.Completed or SaleStatus.PartiallyRefunded or SaleStatus.Refunded))
+            throw new DomainException(ErrorCode.SaleFinalized);
+        Dictionary<long, (long Quantity, long Refund)> returned = connection.Query<(long LineId, long Returned, long Refund)>("""
+            SELECT rl.sale_line_id AS LineId,SUM(rl.qty) AS Returned,
+                   SUM(rl.refund_amount) AS Refund
             FROM sale_return_line rl JOIN sale_line sl ON sl.id=rl.sale_line_id
             WHERE sl.sale_id=@saleId GROUP BY rl.sale_line_id
-            """, new { saleId }).ToDictionary(static row => row.LineId, static row => row.Returned);
-        return sale.Lines.Select(line => new ReturnableSaleLine(line,
-            Quantity.FromScaled(line.Quantity.Scaled - returned.GetValueOrDefault(line.Id))))
+            """, new { saleId }).ToDictionary(static row => row.LineId,
+                static row => (row.Returned, row.Refund));
+        // Mirrors ReturnAsync: an unchanged active lot takes units back; otherwise a new
+        // lot repeats the sold expiry. Either way an expired lot cannot be resold.
+        Dictionary<long, (bool Reuse, DateOnly? Expiry)> restock = connection.Query<RestockRow>("""
+            SELECT sl.id AS LineId,
+                   l.id IS NOT NULL AND l.detail_version=sl.lot_version_snapshot AND l.is_active=1 AS Reuse,
+                   l.expiry_date AS CurrentExpiry
+            FROM sale_line sl LEFT JOIN product_lot l ON l.id=sl.lot_id AND l.product_id=sl.product_id
+            WHERE sl.sale_id=@saleId
+            """, new { saleId }).ToDictionary(static row => row.LineId,
+                static row => (row.Reuse, row.CurrentExpiry));
+        Dictionary<long, long> refundable = AllocateRefundableTotals(
+            sale.Lines.Select(static line => (line.Id, line.Total.Scaled)).ToArray(),
+            sale.Totals.RoundOff.Scaled);
+        DateOnly today = clock.BusinessDate;
+        return sale.Lines.Select(line =>
+            {
+                (bool reuse, DateOnly? current) = restock.GetValueOrDefault(line.Id);
+                DateOnly? expiry = reuse ? current : line.ExpiryDate;
+                return new ReturnableSaleLine(line,
+                    Quantity.FromScaled(line.Quantity.Scaled - returned.GetValueOrDefault(line.Id).Quantity))
+                {
+                    Refundable = Money.FromScaled(refundable[line.Id]),
+                    RemainingRefund = Money.FromScaled(refundable[line.Id] - returned.GetValueOrDefault(line.Id).Refund),
+                    OriginalLotAvailable = reuse,
+                    ResaleExpired = expiry < today,
+                };
+            })
             .Where(static line => line.Remaining > Quantity.Zero).ToArray();
     }, cancellationToken);
 
@@ -517,7 +555,7 @@ public sealed partial class SalesService(
             HeaderRow sale = GetHeader(transaction, command.SaleId);
             if (sale.Status is not ("DRAFT" or "HELD")) throw new DomainException(ErrorCode.SaleFinalized);
             DateOnly date = ParseDate(sale.SaleDate);
-            periodGuard.EnsureOpen(date);
+            periodGuard.EnsureOpen(transaction, date);
             RevalidateStock(transaction, command.SaleId);
             PricedBill bill = Reprice(transaction, command.SaleId);
             if (bill.Lines.Count == 0) throw new DomainException(ErrorCode.EmptyBill);
@@ -543,17 +581,10 @@ public sealed partial class SalesService(
                 JOIN category c ON c.id=p.category_id
                 WHERE sale_line.sale_id=@saleId AND l.id=sale_line.lot_id
                 """, new { saleId = command.SaleId, taxMode = settings.Current.TaxMode }, transaction.Transaction);
-            Dictionary<long, long>? directVersions = directStock is null ? null : transaction.Connection
-                .Query<(long LotId, long Version)>("""
-                    SELECT l.id AS LotId,l.quantity_version AS Version
-                    FROM product_lot l JOIN sale_line sl ON sl.lot_id=l.id
-                    WHERE sl.sale_id=@saleId GROUP BY l.id
-                    """, new { saleId = command.SaleId }, transaction.Transaction)
-                .ToDictionary(static row => row.LotId, static row => row.Version);
-            if (directStock is null)
-                foreach (DbLineRow line in LoadLines(transaction, command.SaleId))
-                    stockLedger.Post(transaction, new(date, line.ProductId, line.LotId, "SALE",
-                        Quantity.FromScaled(-line.Quantity), Money.FromScaled(line.UnitCost), "sale_line", line.Id));
+            // Every P&L and history value is on the line above before any lot changes.
+            foreach (DbLineRow line in LoadLines(transaction, command.SaleId))
+                stockLedger.Post(transaction, new(date, line.ProductId, line.LotId, "SALE",
+                    Quantity.FromScaled(-line.Quantity), Money.FromScaled(line.UnitCost), "sale_line", line.Id));
             foreach (PaymentInput payment in command.Payments)
                 transaction.Connection.Execute("""
                     INSERT INTO sale_payment(sale_id,mode,amount,reference,paid_at)
@@ -577,8 +608,6 @@ public sealed partial class SalesService(
                 completedAt = Timestamp(clock.Now),
                 saleId = command.SaleId,
             }, transaction.Transaction);
-            if (directStock is not null)
-                directStock.CompleteSale(transaction, command.SaleId, directVersions!, OperationGuard.NewId());
             ReceiptData receipt = BuildSaleReceipt(transaction.Connection, command.SaleId, settings.Current, false);
             transaction.Connection.Execute("UPDATE sale SET receipt_snapshot=@snapshot WHERE id=@saleId",
                 new { snapshot = JsonSerializer.Serialize(receipt, ReceiptJsonOptions), saleId = command.SaleId }, transaction.Transaction);
@@ -602,7 +631,15 @@ public sealed partial class SalesService(
         DateOnly date = ParseDate(sale.SaleDate);
         if (settings.Current.VoidSameDayOnly && date != clock.BusinessDate)
             throw new DomainException(ErrorCode.VoidNotAllowed, date);
-        periodGuard.EnsureOpen(date);
+        periodGuard.EnsureOpen(transaction, date);
+        // A void puts units back into the lots they came from. Once a sold lot has
+        // been deleted, the customer return path recreates stock instead.
+        if (transaction.Connection.ExecuteScalar<long>("""
+                SELECT EXISTS(SELECT 1 FROM sale_line sl
+                              WHERE sl.sale_id=@saleId AND NOT EXISTS(
+                                SELECT 1 FROM product_lot l WHERE l.id=sl.lot_id AND l.product_id=sl.product_id))
+                """, new { saleId }, transaction.Transaction) != 0)
+            throw new DomainException(ErrorCode.VoidNotAllowed, saleId);
         foreach (DbLineRow line in LoadLines(transaction, saleId))
             stockLedger.Post(transaction, new(clock.BusinessDate, line.ProductId, line.LotId, "SALE_VOID",
                 Quantity.FromScaled(line.Quantity), Money.FromScaled(line.UnitCost), "sale_line", line.Id, reason.Trim()));
@@ -623,9 +660,16 @@ public sealed partial class SalesService(
             throw new DomainException(ErrorCode.Validation, "A reason and return quantities are required.");
         OperationRef? replay = OperationGuard.Claim(transaction, command.OperationId, OpType.SaleReturn);
         if (replay?.RefId is { } oldId) return LoadReturn(transaction, oldId) with { WasReplay = true };
-        if (GetHeader(transaction, command.SaleId).Status != "COMPLETED")
+        HeaderRow saleHeader = GetHeader(transaction, command.SaleId);
+        if (saleHeader.Status != "COMPLETED")
             throw new DomainException(ErrorCode.SaleFinalized);
-        periodGuard.EnsureOpen(command.ReturnDate);
+        Dictionary<long, long> refundable = AllocateRefundableTotals(
+            transaction.Connection.Query<(long Id, long Total)>("""
+                SELECT id AS Id,line_total AS Total FROM sale_line
+                WHERE sale_id=@saleId ORDER BY line_no
+                """, new { saleId = command.SaleId }, transaction.Transaction).ToArray(),
+            saleHeader.RoundOff);
+        periodGuard.EnsureOpen(transaction, command.ReturnDate);
         string returnNumber = documentNumbers.Next(transaction, DocType.SaleReturn, command.ReturnDate);
         long returnId = transaction.Connection.ExecuteScalar<long>("""
             INSERT INTO sale_return(return_no,sale_id,return_date,reason,refund_mode)
@@ -642,6 +686,7 @@ public sealed partial class SalesService(
         Money taxTotal = Money.Zero;
         Money refundTotal = Money.Zero;
         Money costTotal = Money.Zero;
+        var pendingDamage = new List<PendingReturnDamage>();
         foreach (ReturnLineInput requested in command.Lines)
         {
             ReturnableRow original = transaction.Connection.QuerySingleOrDefault<ReturnableRow>("""
@@ -653,7 +698,11 @@ public sealed partial class SalesService(
                        COALESCE(SUM(rl.tax_amount),0) AS ReturnedTax,
                        COALESCE(SUM(rl.refund_amount),0) AS ReturnedTotal,
                        COALESCE(SUM(rl.cost_amount),0) AS ReturnedCost
-                       ,COALESCE(SUM(rl.discount_snapshot),0) AS ReturnedDiscount
+                       ,COALESCE(SUM(rl.discount_snapshot),0) AS ReturnedDiscount,
+                       sl.lot_version_snapshot AS OriginalLotVersion,
+                       (SELECT detail_version FROM product_lot WHERE id=sl.lot_id) AS CurrentLotVersion,
+                       (SELECT is_active FROM product_lot WHERE id=sl.lot_id) AS CurrentLotActive,
+                       (SELECT expiry_date FROM product_lot WHERE id=sl.lot_id) AS CurrentLotExpiry
                 FROM sale_line sl LEFT JOIN sale_return_line rl ON rl.sale_line_id=sl.id
                 WHERE sl.id=@lineId AND sl.sale_id=@saleId GROUP BY sl.id
                 """, new { lineId = requested.SaleLineId, saleId = command.SaleId }, transaction.Transaction)
@@ -664,11 +713,12 @@ public sealed partial class SalesService(
             bool final = requested.Quantity == remaining;
             Money taxable = Prorate(original.Taxable, original.ReturnedTaxable, original.Quantity, requested.Quantity, final);
             Money tax = Prorate(original.Tax, original.ReturnedTax, original.Quantity, requested.Quantity, final);
-            Money refund = Prorate(original.Total, original.ReturnedTotal, original.Quantity, requested.Quantity, final);
+            Money refund = Prorate(refundable[original.Id], original.ReturnedTotal,
+                original.Quantity, requested.Quantity, final);
             Money cost = Prorate(original.Cost, original.ReturnedCost, original.Quantity, requested.Quantity, final);
             Money discount = Prorate(original.Discount, original.ReturnedDiscount,
                 original.Quantity, requested.Quantity, final);
-            transaction.Connection.Execute("""
+            long returnLineId = transaction.Connection.ExecuteScalar<long>("""
                 INSERT INTO sale_return_line(sale_return_id,sale_line_id,qty,taxable_amount,tax_amount,
                     refund_amount,cost_amount,resellable,product_id_snapshot,lot_id_snapshot,
                     product_sku_snapshot,product_name_snapshot,product_name_local_snapshot,uom_snapshot,
@@ -688,7 +738,7 @@ public sealed partial class SalesService(
                     sl.tax_rate_pct,sl.mrp,sl.unit_price,sl.unit_cost,
                     @discount,
                     'SALE_LINE_COPY',sl.legacy_unknown_fields
-                FROM sale_line sl WHERE sl.id=@lineId
+                FROM sale_line sl WHERE sl.id=@lineId RETURNING id
                 """, new
             {
                 returnId,
@@ -701,44 +751,39 @@ public sealed partial class SalesService(
                 resellable = requested.Resellable ? 1 : 0,
                 discount = discount.Scaled,
             }, transaction.Transaction);
-            stockLedger.Post(transaction, new(command.ReturnDate, original.ProductId, original.LotId,
-                "SALE_RETURN", requested.Quantity, Money.FromScaled(original.UnitCost),
-                "sale_return", returnId, command.Reason.Trim()));
-            if (!requested.Resellable)
+            if (requested.Resellable)
             {
-                string damageNumber = documentNumbers.Next(transaction, DocType.Damage, command.ReturnDate);
-                long damageId = transaction.Connection.ExecuteScalar<long>("""
-                    INSERT INTO damage(doc_no,damage_date,product_id,lot_id,qty,unit_cost,cost_value,
-                        reason,notes,product_name_snapshot,product_sku_snapshot,
-                        product_name_local_snapshot,uom_snapshot,product_class_snapshot,
-                        lot_code_snapshot,batch_no_snapshot,expiry_date_snapshot,snapshot_provenance,
-                        legacy_unknown_fields)
-                    SELECT @number,@date,@productId,@lotId,@qty,@unitCost,@cost,'CUSTOMER_RETURN',@notes,
-                        sl.product_name,sl.product_sku_snapshot,sl.product_name_local,
-                        sl.uom_snapshot,sl.product_class_snapshot,sl.lot_code_snapshot,
-                        sl.batch_no_snapshot,sl.expiry_date_snapshot,'SALE_LINE_COPY',sl.legacy_unknown_fields
-                    FROM sale_line sl WHERE sl.id=@saleLineId RETURNING id
-                    """, new
-                {
-                    number = damageNumber,
-                    date = DateText(command.ReturnDate),
-                    productId = original.ProductId,
-                    lotId = original.LotId,
-                    qty = requested.Quantity.Scaled,
-                    unitCost = original.UnitCost,
-                    cost = cost.Scaled,
-                    notes = command.Reason.Trim(),
-                    saleLineId = original.Id,
-                }, transaction.Transaction);
-                stockLedger.Post(transaction, new(command.ReturnDate, original.ProductId, original.LotId,
-                    "DAMAGE", Quantity.FromScaled(-requested.Quantity.Scaled), Money.FromScaled(original.UnitCost),
-                    "damage", damageId, "CUSTOMER_RETURN"));
+                // The original lot takes the units back only if nothing about it changed
+                // since the sale; otherwise a linked return lot repeats the sold details.
+                bool reuse = original.CurrentLotVersion is not null && original.CurrentLotActive == 1 &&
+                    original.CurrentLotVersion == original.OriginalLotVersion;
+                if (reuse && original.CurrentLotExpiry is { } currentExpiry && currentExpiry < command.ReturnDate)
+                    throw new DomainException(ErrorCode.ExpiredLot, currentExpiry);
+                (long restockProductId, long restockLotId) = reuse ? (original.ProductId, original.LotId)
+                    : CreateReturnLot(transaction, original.Id, returnLineId, requested.Quantity,
+                        command.ReturnDate, requested.Recreation);
+                transaction.Connection.Execute("""
+                    UPDATE sale_return_line SET restock_lot_id=@restockLotId,
+                        restock_product_id_snapshot=@restockProductId,
+                        restock_lot_code_snapshot=(SELECT lot_code FROM product_lot WHERE id=@restockLotId)
+                    WHERE id=@returnLineId
+                    """, new { restockLotId, restockProductId, returnLineId }, transaction.Transaction);
+                stockLedger.Post(transaction, new(command.ReturnDate, restockProductId, restockLotId,
+                    "SALE_RETURN", requested.Quantity, Money.FromScaled(original.UnitCost),
+                    "sale_return_line", returnLineId, command.Reason.Trim()));
             }
+            else
+                // A damaged unit never re-enters saleable stock. Its damage row offsets
+                // the return against the sold lot, which may no longer exist.
+                pendingDamage.Add(new(returnLineId, original.Id, original.ProductId,
+                    original.LotId, requested.Quantity.Scaled, original.UnitCost, cost.Scaled));
             taxableTotal += taxable;
             taxTotal += tax;
             refundTotal += refund;
             costTotal += cost;
         }
+        foreach (PendingReturnDamage pending in pendingDamage)
+            CreateReturnDamage(transaction, command.ReturnDate, command.Reason.Trim(), pending);
         transaction.Connection.Execute("""
             UPDATE sale_return SET taxable_total=@taxable,tax_total=@tax,refund_total=@refund,
                 cost_total=@cost WHERE id=@returnId
@@ -767,6 +812,9 @@ public sealed partial class SalesService(
         string? status = filter.Status is null ? null : StatusCode(filter.Status.Value);
         string? payment = filter.PaymentMode is null ? null : PaymentCode(filter.PaymentMode.Value);
         string? invoice = Clean(filter.InvoiceNumber);
+        string? product = Clean(filter.Product);
+        string? customer = Clean(filter.Customer);
+        string? productPattern = product is null ? null : product + "%";
         int limit = Math.Clamp(filter.Limit, 1, 500);
         if (filter.BeforeDate is not null && filter.BeforeId is null)
             throw new ArgumentException("A history cursor requires both a date and an ID.", nameof(filter));
@@ -786,21 +834,52 @@ public sealed partial class SalesService(
             if (matches == 0) return [];
             selectiveInvoice = matches <= invoiceIndexThreshold;
         }
+        bool selectiveProduct = false;
+        if (productPattern is not null && product![0] is not ('%' or '_'))
+        {
+            const int productIndexThreshold = 5000;
+            int matches = connection.ExecuteScalar<int>("""
+                SELECT COUNT(*) FROM (
+                    SELECT 1 FROM sale_snapshot_name_product n
+                    JOIN sale_line sl INDEXED BY ix_sale_line_product ON sl.product_id=n.product_id
+                    WHERE n.name LIKE @productPattern AND sl.product_name LIKE @productPattern
+                    LIMIT @probeLimit
+                )
+                """, new { productPattern, probeLimit = productIndexThreshold + 1 });
+            if (matches == 0) return [];
+            selectiveProduct = matches <= productIndexThreshold;
+        }
         List<string> conditions = [];
-        if (status is not null) conditions.Add("s.status=@status");
+        if (status is "PARTIALLYREFUNDED" or "REFUNDED")
+            conditions.Add("s.status='COMPLETED' AND rp.returned_qty" +
+                (status == "REFUNDED" ? ">=rp.sold_qty" : "<rp.sold_qty"));
+        else if (status == "COMPLETED")
+            conditions.Add("s.status='COMPLETED' AND rp.sale_id IS NULL");
+        else if (status is not null) conditions.Add("s.status=@status");
         if (payment is not null) conditions.Add("EXISTS(SELECT 1 FROM sale_payment p WHERE p.sale_id=s.id AND p.mode=@payment)");
+        if (product is not null) conditions.Add(selectiveProduct
+            ? "s.id IN (SELECT sl.sale_id FROM sale_snapshot_name_product n JOIN sale_line sl INDEXED BY ix_sale_line_product ON sl.product_id=n.product_id WHERE n.name LIKE @productPattern AND sl.product_name LIKE @productPattern)"
+            : "EXISTS(SELECT 1 FROM sale_line sl WHERE sl.sale_id=s.id AND sl.product_name LIKE @productPattern)");
+        if (customer is not null) conditions.Add("s.customer_id IN (SELECT c.id FROM customer c WHERE c.name LIKE @customerPattern OR c.phone LIKE @customerPattern)");
         if (filter.MinimumAmount is not null) conditions.Add("s.grand_total>=@minimum");
         if (filter.MaximumAmount is not null) conditions.Add("s.grand_total<=@maximum");
         if (invoice is not null) conditions.Add(selectiveInvoice
             ? "s.invoice_no LIKE @invoicePattern" : "s.invoice_no LIKE @invoice || '%'");
         const string select = """
-            SELECT s.id AS Id,s.invoice_no AS InvoiceNumber,s.sale_date AS SaleDate,s.status AS Status,
+            SELECT s.id AS Id,s.invoice_no AS InvoiceNumber,s.sale_date AS SaleDate,
+                   CASE WHEN s.status='COMPLETED' AND rp.returned_qty>0 THEN
+                     CASE WHEN rp.returned_qty>=rp.sold_qty THEN 'REFUNDED'
+                          ELSE 'PARTIALLYREFUNDED' END
+                   ELSE s.status END AS Status,
                    s.line_count AS LineCount,s.grand_total AS GrandTotal,s.completed_at AS CompletedAt,
                    s.void_reason AS VoidReason,
                    COALESCE((SELECT group_concat(DISTINCT p.mode) FROM sale_payment p WHERE p.sale_id=s.id),'') AS PaymentModes
-            FROM sale s
             """;
-        string pageSelect = select + (selectiveInvoice ? " INDEXED BY ix_sale_invoice_nocase" : "");
+        bool refundLookup = (status is "PARTIALLYREFUNDED" or "REFUNDED") && !selectiveInvoice;
+        string pageSelect = select + (refundLookup
+            ? " FROM sale_refund_progress rp CROSS JOIN sale s ON s.id=rp.sale_id"
+            : " FROM sale s" + (selectiveInvoice ? " INDEXED BY ix_sale_invoice_nocase" : "") +
+              " LEFT JOIN sale_refund_progress rp ON rp.sale_id=s.id");
         HistoryRow[] QueryPage(string? cursorCondition, int pageLimit)
         {
             var predicates = new List<string>(conditions);
@@ -819,19 +898,23 @@ public sealed partial class SalesService(
             long queryStarted = Stopwatch.GetTimestamp();
             HistoryRow[] page = connection.Query<HistoryRow>(pageSelect + where +
                 " ORDER BY s.sale_date DESC,s.id DESC LIMIT @limit", new
-            {
-                fromDate = filter.From is null ? null : DateText(filter.From.Value),
-                toDate = filter.To is null ? null : DateText(filter.To.Value),
-                status,
-                payment,
-                minimum = filter.MinimumAmount?.Scaled,
-                maximum = filter.MaximumAmount?.Scaled,
-                invoice,
-                invoicePattern,
-                beforeDate = filter.BeforeDate is null ? null : DateText(filter.BeforeDate.Value),
-                beforeId = filter.BeforeId,
-                limit = pageLimit,
-            }).ToArray();
+                {
+                    fromDate = filter.From is null ? null : DateText(filter.From.Value),
+                    toDate = filter.To is null ? null : DateText(filter.To.Value),
+                    status,
+                    payment,
+                    minimum = filter.MinimumAmount?.Scaled,
+                    maximum = filter.MaximumAmount?.Scaled,
+                    invoice,
+                    invoicePattern,
+                    product,
+                    productPattern,
+                    customer,
+                    customerPattern = customer is null ? null : customer + "%",
+                    beforeDate = filter.BeforeDate is null ? null : DateText(filter.BeforeDate.Value),
+                    beforeId = filter.BeforeId,
+                    limit = pageLimit,
+                }).ToArray();
             PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(queryStarted).TotalMilliseconds,
                 new KeyValuePair<string, object?>("operation", "history.query-and-row-map"));
             PerformanceMetrics.ReportStageRows.Record(page.Length,
@@ -870,37 +953,61 @@ public sealed partial class SalesService(
         SaleReturnHistoryItem[] returns = connection.Query<ReturnActivityRow>("""
             SELECT r.return_no AS ReturnNumber,r.return_date AS Date,
                    COALESCE(rl.product_name_snapshot,'Legacy unknown') AS ProductName,rl.qty AS Quantity,
-                   rl.refund_amount AS Refund,rl.resellable AS Resellable,r.reason AS Reason
+                   rl.refund_amount AS Refund,rl.resellable AS Resellable,r.reason AS Reason,
+                   COALESCE(rl.restock_lot_code_snapshot,rl.lot_code_snapshot) AS RestockLotCode,
+                   CASE WHEN rl.resellable=0 THEN 'RETURN_DAMAGED'
+                        WHEN rl.restock_lot_id IS NOT NULL AND rl.restock_lot_id<>rl.lot_id_snapshot
+                          THEN 'RETURN_NEW_LOT'
+                        ELSE 'RETURN_ORIGINAL' END AS DispositionCode
             FROM sale_return r JOIN sale_return_line rl ON rl.sale_return_id=r.id
             WHERE r.sale_id=@saleId ORDER BY r.id,rl.id
             """, new { saleId }).Select(static row => new SaleReturnHistoryItem(row.ReturnNumber,
                 row.Date, row.ProductName, Quantity.FromScaled(row.Quantity),
-                Money.FromScaled(row.Refund), row.Resellable, row.Reason)).ToArray();
+                Money.FromScaled(row.Refund), row.Resellable, row.Reason)
+        { RestockLotCode = row.RestockLotCode, DispositionCode = row.DispositionCode }).ToArray();
         SaleMovementHistoryItem[] movements = connection.Query<MovementActivityRow>("""
-            SELECT m.move_date AS Date,
-                   COALESCE(
-                     (SELECT sl.product_name FROM sale_line sl
-                      WHERE m.ref_type='sale_line' AND sl.id=m.ref_id),
-                     (SELECT rl.product_name_snapshot FROM sale_return_line rl
-                      WHERE m.ref_type='sale_return' AND rl.sale_return_id=m.ref_id
-                        AND rl.lot_id_snapshot=m.lot_id LIMIT 1),
-                     'Legacy unknown') AS ProductName,
-                   COALESCE(
-                     (SELECT sl.lot_code_snapshot FROM sale_line sl
-                      WHERE m.ref_type='sale_line' AND sl.id=m.ref_id),
-                     (SELECT rl.lot_code_snapshot FROM sale_return_line rl
-                      WHERE m.ref_type='sale_return' AND rl.sale_return_id=m.ref_id
-                        AND rl.lot_id_snapshot=m.lot_id LIMIT 1),
-                     'Legacy unknown') AS LotCode,
-                   m.type_code AS Type,m.qty AS Quantity
-            FROM stock_movement m
-            WHERE (m.ref_type='sale_line' AND m.ref_id IN
-                (SELECT id FROM sale_line WHERE sale_id=@saleId))
-               OR (m.ref_type='sale_return' AND m.ref_id IN
-                (SELECT id FROM sale_return WHERE sale_id=@saleId))
-            ORDER BY m.id
+            SELECT event_date AS Date,product_name AS ProductName,lot_code AS LotCode,
+                   event_type AS Type,quantity AS Quantity
+            FROM (
+              SELECT s.sale_date AS event_date,sl.product_name AS product_name,
+                     COALESCE(sl.lot_code_snapshot,'Legacy unknown') AS lot_code,
+                     'COMPLETED' AS event_type,-sl.qty AS quantity,
+                     0 AS event_order,sl.line_no AS line_order
+              FROM sale s JOIN sale_line sl ON sl.sale_id=s.id
+              WHERE s.id=@saleId AND s.completed_at IS NOT NULL
+              UNION ALL
+              SELECT r.return_date,COALESCE(rl.product_name_snapshot,'Legacy unknown'),
+                     COALESCE(rl.restock_lot_code_snapshot,rl.lot_code_snapshot,'Legacy unknown'),
+                     'RETURN',rl.qty,r.id*3,rl.id
+              FROM sale_return r JOIN sale_return_line rl ON rl.sale_return_id=r.id
+              WHERE r.sale_id=@saleId
+              UNION ALL
+              SELECT r.return_date,COALESCE(rl.product_name_snapshot,'Legacy unknown'),
+                     COALESCE(rl.restock_lot_code_snapshot,rl.lot_code_snapshot,'Legacy unknown'),
+                     'DAMAGE',-rl.qty,r.id*3+1,rl.id
+              FROM sale_return r JOIN sale_return_line rl ON rl.sale_return_id=r.id
+              WHERE r.sale_id=@saleId AND rl.resellable=0
+              UNION ALL
+              SELECT substr(s.voided_at,1,10),sl.product_name,
+                     COALESCE(sl.lot_code_snapshot,'Legacy unknown'),
+                     'VOID',sl.qty,9223372036854775807,sl.line_no
+              FROM sale s JOIN sale_line sl ON sl.sale_id=s.id
+              WHERE s.id=@saleId AND s.status='VOID'
+            ) ORDER BY event_order,line_order
             """, new { saleId }).Select(static row => new SaleMovementHistoryItem(row.Date,
                 row.ProductName, row.LotCode, row.Type, Quantity.FromScaled(row.Quantity))).ToArray();
+        long sold = connection.ExecuteScalar<long>(
+            "SELECT COALESCE(SUM(qty),0) FROM sale_line WHERE sale_id=@saleId", new { saleId });
+        long returned = 0;
+        for (int index = 0; index < movements.Length; index++)
+        {
+            if (movements[index].Type != "RETURN") continue;
+            returned += movements[index].Quantity.Scaled;
+            movements[index] = movements[index] with
+            {
+                Type = returned >= sold ? "REFUNDED" : "PARTIAL_RETURN",
+            };
+        }
         return new SaleHistoryActivity(returns, movements);
     }, cancellationToken);
 
@@ -974,7 +1081,8 @@ public sealed partial class SalesService(
     private static ReceiptData BuildSaleReceipt(IDbConnection connection, long saleId, AppSettings current, bool duplicate)
     {
         SaleDetails sale = LoadDetails(connection, saleId);
-        if (sale.Status is not (SaleStatus.Completed or SaleStatus.Void) ||
+        if (sale.Status is not (SaleStatus.Completed or SaleStatus.PartiallyRefunded or
+            SaleStatus.Refunded or SaleStatus.Void) ||
             sale.InvoiceNumber is null || sale.CompletedAt is null)
             throw new DomainException(ErrorCode.SaleFinalized, saleId);
         long change = connection.ExecuteScalar<long>("SELECT change_returned FROM sale WHERE id=@saleId", new { saleId });
@@ -1083,7 +1191,7 @@ public sealed partial class SalesService(
         if (settings.Current.BlockExpiredLots && row.Expiry is { } expiry && expiry < clock.BusinessDate)
             throw new DomainException(ErrorCode.ExpiredLot, expiry);
         Quantity available = Quantity.FromScaled(row.OnHand) - reserved.GetValueOrDefault(lotId);
-        if (!settings.Current.AllowNegativeStock && quantity > available)
+        if (quantity > available)
             throw new DomainException(ErrorCode.InsufficientStock, quantity - available);
         return new(new(row.LotId, Quantity.FromScaled(row.OnHand), row.Expiry, Money.FromScaled(row.Price),
             row.Mrp is null ? null : Money.FromScaled(row.Mrp.Value), Money.FromScaled(row.Cost)), quantity);
@@ -1100,7 +1208,7 @@ public sealed partial class SalesService(
             if (!row.IsActive) throw new DomainException(ErrorCode.Validation, "A bill lot is blocked.");
             if (settings.Current.BlockExpiredLots && row.Expiry is { } expiry && expiry < clock.BusinessDate)
                 throw new DomainException(ErrorCode.ExpiredLot, expiry);
-            if (!settings.Current.AllowNegativeStock && row.Quantity > row.OnHand)
+            if (row.Quantity > row.OnHand)
                 throw new DomainException(ErrorCode.InsufficientStock, row.ProductId);
         }
     }
@@ -1109,13 +1217,18 @@ public sealed partial class SalesService(
     {
         DetailHeaderRow header = connection.QuerySingleOrDefault<DetailHeaderRow>("""
             SELECT s.id AS Id,s.invoice_no AS InvoiceNo,s.sale_date AS SaleDate,
-                   s.customer_id AS CustomerId,s.status AS Status,s.gross_total AS GrossTotal,
+                   s.customer_id AS CustomerId,
+                   CASE WHEN s.status='COMPLETED' AND rp.returned_qty>0 THEN
+                     CASE WHEN rp.returned_qty>=rp.sold_qty THEN 'REFUNDED'
+                          ELSE 'PARTIALLYREFUNDED' END
+                   ELSE s.status END AS Status,s.gross_total AS GrossTotal,
                    s.discount_total AS DiscountTotal,s.taxable_total AS TaxableTotal,
                    s.tax_total AS TaxTotal,s.round_off AS RoundOff,s.grand_total AS GrandTotal,
                    s.cost_total AS CostTotal,s.notes AS Notes,s.void_reason AS VoidReason,
                    s.created_at AS CreatedAt,s.completed_at AS CompletedAt,
                    s.bill_discount AS BillDiscount,c.name AS CustomerName
-            FROM sale s LEFT JOIN customer c ON c.id=s.customer_id WHERE s.id=@saleId
+            FROM sale s LEFT JOIN customer c ON c.id=s.customer_id
+            LEFT JOIN sale_refund_progress rp ON rp.sale_id=s.id WHERE s.id=@saleId
             """, new { saleId }) ?? throw new DomainException(ErrorCode.NotFound, saleId);
         SaleLine[] lines = connection.Query<DetailLineRow>("""
             SELECT sl.id AS Id,sl.line_no AS LineNo,sl.product_id AS ProductId,sl.lot_id AS LotId,
@@ -1270,6 +1383,8 @@ public sealed partial class SalesService(
         "DRAFT" => SaleStatus.Draft,
         "HELD" => SaleStatus.Held,
         "COMPLETED" => SaleStatus.Completed,
+        "PARTIALLYREFUNDED" => SaleStatus.PartiallyRefunded,
+        "REFUNDED" => SaleStatus.Refunded,
         "VOID" => SaleStatus.Void,
         _ => throw new InvalidOperationException($"Unknown sale status '{status}'."),
     };
@@ -1284,9 +1399,10 @@ public sealed partial class SalesService(
     private sealed class SavedBillRow { public long Id { get; init; } public DateTime CreatedAt { get; init; } public string? Label { get; init; } public int ItemCount { get; init; } public long Total { get; init; } public string Status { get; init; } = ""; }
     private sealed class HeldReviewRow { public long LineId { get; init; } public string ProductName { get; init; } = ""; public long Quantity { get; init; } public long PreviousPrice { get; init; } public long CurrentPrice { get; init; } public long? PreviousMrp { get; init; } public long? CurrentMrp { get; init; } public long CurrentCost { get; init; } public long Available { get; init; } public bool IsActive { get; init; } public DateOnly? ExpiryDate { get; init; } }
     private sealed class HistoryRow { public long Id { get; init; } public string? InvoiceNumber { get; init; } public string SaleDate { get; init; } = ""; public string Status { get; init; } = ""; public int LineCount { get; init; } public long GrandTotal { get; init; } public string PaymentModes { get; init; } = ""; public DateTime? CompletedAt { get; init; } public string? VoidReason { get; init; } }
-    private sealed class ReturnActivityRow { public string ReturnNumber { get; init; } = ""; public DateOnly Date { get; init; } public string ProductName { get; init; } = ""; public long Quantity { get; init; } public long Refund { get; init; } public bool Resellable { get; init; } public string Reason { get; init; } = ""; }
+    private sealed class ReturnActivityRow { public string ReturnNumber { get; init; } = ""; public DateOnly Date { get; init; } public string ProductName { get; init; } = ""; public long Quantity { get; init; } public long Refund { get; init; } public bool Resellable { get; init; } public string Reason { get; init; } = ""; public string? RestockLotCode { get; init; } public string DispositionCode { get; init; } = "RETURN_ORIGINAL"; }
+    private sealed class RestockRow { public long LineId { get; init; } public bool Reuse { get; init; } public DateOnly? CurrentExpiry { get; init; } }
     private sealed class MovementActivityRow { public DateOnly Date { get; init; } public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public string Type { get; init; } = ""; public long Quantity { get; init; } }
-    private sealed class ReturnableRow { public long Id { get; init; } public long ProductId { get; init; } public long LotId { get; init; } public long Quantity { get; init; } public long Taxable { get; init; } public long Tax { get; init; } public long Total { get; init; } public long Cost { get; init; } public long UnitCost { get; init; } public long Discount { get; init; } public long ReturnedQuantity { get; init; } public long ReturnedTaxable { get; init; } public long ReturnedTax { get; init; } public long ReturnedTotal { get; init; } public long ReturnedCost { get; init; } public long ReturnedDiscount { get; init; } }
+    private sealed class ReturnableRow { public long Id { get; init; } public long ProductId { get; init; } public long LotId { get; init; } public long Quantity { get; init; } public long Taxable { get; init; } public long Tax { get; init; } public long Total { get; init; } public long Cost { get; init; } public long UnitCost { get; init; } public long Discount { get; init; } public long ReturnedQuantity { get; init; } public long ReturnedTaxable { get; init; } public long ReturnedTax { get; init; } public long ReturnedTotal { get; init; } public long ReturnedCost { get; init; } public long ReturnedDiscount { get; init; } public long? OriginalLotVersion { get; init; } public long? CurrentLotVersion { get; init; } public long? CurrentLotActive { get; init; } public DateOnly? CurrentLotExpiry { get; init; } }
     private sealed class ReturnSummaryRow { public long Id { get; init; } public string ReturnNo { get; init; } = ""; public long Taxable { get; init; } public long Tax { get; init; } public long Refund { get; init; } public long Cost { get; init; } }
     private sealed class ReturnReceiptRow { public string ReturnNumber { get; init; } = ""; public DateTime CreatedAt { get; init; } public string? Reason { get; init; } public string RefundMode { get; init; } = ""; public long Taxable { get; init; } public long Tax { get; init; } public long Refund { get; init; } public string? OriginalInvoice { get; init; } public string? CustomerName { get; init; } }
     private sealed class ReturnReceiptLineRow { public string Name { get; init; } = ""; public string? LocalName { get; init; } public long Quantity { get; init; } public long UnitPrice { get; init; } public long? Mrp { get; init; } public long Taxable { get; init; } public long Tax { get; init; } public long Total { get; init; } public long TaxRate { get; init; } }
@@ -1330,8 +1446,12 @@ public sealed partial class SalesService(
             Money.FromScaled(LineTotal), Money.FromScaled(UnitCost), Money.FromScaled(CostAmount), ScannedBarcode,
             Money.FromScaled(LineDiscount), Quantity.FromScaled(StockOnHand))
         {
-            Sku = Sku, Unit = Unit, ProductClass = ProductClass, LotCode = LotCode,
-            SnapshotProvenance = SnapshotProvenance, LegacyUnknownFields = LegacyUnknownFields,
+            Sku = Sku,
+            Unit = Unit,
+            ProductClass = ProductClass,
+            LotCode = LotCode,
+            SnapshotProvenance = SnapshotProvenance,
+            LegacyUnknownFields = LegacyUnknownFields,
         };
     }
 }

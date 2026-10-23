@@ -30,7 +30,12 @@ public partial class MoneyOutPage : Page
     private (DateOnly? Date, long? Id) _expenseCursor;
     private DamagePage? _damagePage;
     private ExpensePage? _expensePage;
-    private ExpenseItem? _editingExpense;
+    private CorrectionDating? _damageDating;
+    private CorrectionDating? _expenseDating;
+    private CorrectionDating? _salaryDating;
+    private Money? _editingEmployeeSalary;
+    private int _salaryHintVersion;
+    private string _expenseOperationId = OperationGuard.NewId();
     private readonly Dictionary<long, ExpiryLot> _selectedExpiryLots = new();
     private readonly Dictionary<DataGrid, CheckBox> _expiryHeaderChecks = new();
     private bool _changingExpenseSection;
@@ -143,16 +148,39 @@ public partial class MoneyOutPage : Page
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
-    private void DamageGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e) =>
-        CorrectDamageButton.IsEnabled = DamageGrid.SelectedItem is DamageItem;
-
-    private async void CorrectDamage_OnClick(object sender, RoutedEventArgs e)
+    // A selected entry opens its history and states how an edit would be dated.
+    private async void DamageGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (DamageGrid.SelectedItem is not DamageItem item) return;
-        var window = new MoneyOutCorrectionWindow(_service, item, _clock.BusinessDate)
-            { Owner = Window.GetWindow(this) };
+        if (DamageGrid.SelectedItem is not DamageItem item) { DamageDetails.Clear(); return; }
+        try
+        {
+            IReadOnlyList<DamageHistoryItem> history = await _service.GetDamageHistoryAsync(item.Id);
+            CorrectionDating dating = await _service.PreviewCorrectionAsync(item.Date);
+            if (!ReferenceEquals(DamageGrid.SelectedItem, item)) return;
+            _damageDating = dating;
+            DamageDetails.Show($"{item.DocumentNumber} · {item.ProductName}", dating, item.Status != "VOID",
+                history.Select(DamageHistoryText));
+        }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async void DamageDetails_OnEdit(object? sender, EventArgs e) => await CorrectDamageAsync(false);
+    private async void DamageDetails_OnVoid(object? sender, EventArgs e) => await CorrectDamageAsync(true);
+
+    private async Task CorrectDamageAsync(bool voidEntry)
+    {
+        if (DamageGrid.SelectedItem is not DamageItem item || _damageDating is not { } dating) return;
+        var window = new MoneyOutCorrectionWindow(_service, item, dating, voidEntry) { Owner = Window.GetWindow(this) };
         if (window.ShowDialog() == true) await RefreshAsync();
     }
+
+    private static string DamageHistoryText(DamageHistoryItem item) => HistoryText(item.Kind, item.RecordedOn,
+        item.Treatment, item.EffectiveDate, string.Join(" · ",
+            $"{T("Stock_Quantity")} {Number(item.Quantity.Value)}",
+            $"{T("MoneyOut_Recovered")} ₹{Number(item.RecoveredAmount.Value)}",
+            ReasonText(item.Reason),
+            $"{T(item.Kind == "ORIGINAL" ? "MoneyOut_Loss" : "MoneyOut_LossChange")} ₹{Number(item.LossChange.Value)}")
+        + (item.RestoredLotId is null ? "" : " · " + T("MoneyOut_RestoredNewLot")), item.CorrectionReason);
 
     private async void BulkWriteOff_OnClick(object sender, RoutedEventArgs e)
     {
@@ -218,12 +246,8 @@ public partial class MoneyOutPage : Page
             string mode = ((ComboBoxItem)ExpenseMode.SelectedItem).Tag?.ToString() ?? "CASH";
             var input = new ExpenseInput(DateOnly.FromDateTime(date), category, new Money(Parse(ExpenseAmount.Text)), mode,
                 ExpensePaidTo.Text, ExpenseReference.Text, ExpenseNotes.Text);
-            if (_editingExpense is { } original)
-            {
-                await _service.CorrectExpenseAsync(original, input, ExpenseCorrectionReason.Text);
-                ClearExpenseCorrection();
-            }
-            else await _service.RecordExpenseAsync(input, OperationGuard.NewId());
+            await _service.RecordExpenseAsync(input, _expenseOperationId);
+            _expenseOperationId = OperationGuard.NewId();
             if (RepeatDraftGrid.SelectedItem is ExpenseInput repeated && RepeatDraftGrid.ItemsSource is List<ExpenseInput> drafts)
             {
                 drafts.Remove(repeated);
@@ -236,36 +260,49 @@ public partial class MoneyOutPage : Page
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
-    private void ExpenseGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void ExpenseGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (ExpenseGrid.SelectedItem is not ExpenseItem item) return;
-        ShowExpenseEntry();
-        _editingExpense = item;
-        ExpenseDate.SelectedDate = item.Date.ToDateTime(TimeOnly.MinValue);
-        ExpenseCategory.SelectedValue = item.CategoryId;
-        ExpenseAmount.Text = item.Amount.Value.ToString("0.000", TranslationSource.FormatCulture);
-        SelectMode(ExpenseMode, item.Mode);
-        ExpensePaidTo.Text = item.PaidTo ?? "";
-        ExpenseReference.Text = item.Reference ?? "";
-        ExpenseNotes.Text = item.Notes ?? "";
-        ExpenseCorrectionPanel.Visibility = Visibility.Visible;
+        if (ExpenseGrid.SelectedItem is not ExpenseItem item) { ExpenseDetails.Clear(); return; }
+        try
+        {
+            IReadOnlyList<ExpenseHistoryItem> history = await _service.GetExpenseHistoryAsync(item.Id);
+            CorrectionDating dating = await _service.PreviewCorrectionAsync(item.Date);
+            if (!ReferenceEquals(ExpenseGrid.SelectedItem, item)) return;
+            _expenseDating = dating;
+            ExpenseDetails.Show($"{Day(item.Date)} · {item.CategoryName}", item.Status == "PURCHASE" ? null : dating,
+                item.Status is "ACTIVE" or "CORRECTED", history.Select(ExpenseHistoryText));
+        }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
+
+    private async void ExpenseDetails_OnEdit(object? sender, EventArgs e) => await CorrectExpenseAsync(false);
+    private async void ExpenseDetails_OnVoid(object? sender, EventArgs e) => await CorrectExpenseAsync(true);
+
+    private async Task CorrectExpenseAsync(bool voidEntry)
+    {
+        if (ExpenseGrid.SelectedItem is not ExpenseItem item || _expenseDating is not { } dating) return;
+        try
+        {
+            IReadOnlyList<ExpenseCategoryItem> categories = await _service.GetExpenseCategoriesAsync();
+            var window = new MoneyOutCorrectionWindow(_service, item, categories, dating, voidEntry) { Owner = Window.GetWindow(this) };
+            if (window.ShowDialog() == true) await RefreshAsync();
+        }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private static string ExpenseHistoryText(ExpenseHistoryItem item) => HistoryText(item.Kind, item.RecordedOn,
+        item.Treatment, item.AppliedOn ?? item.Date, string.Join(" · ", new[]
+        {
+            Day(item.Date), item.CategoryName, $"₹{Number(item.Amount.Value)}", item.Mode, item.PaidTo,
+        }.Where(static value => !string.IsNullOrWhiteSpace(value))), item.CorrectionReason);
 
     private void NewExpense_OnClick(object sender, RoutedEventArgs e)
     {
-        ClearExpenseCorrection();
-        ShowExpenseEntry();
-        ExpenseAmount.Focus();
-    }
-
-    private void ClearExpenseCorrection()
-    {
-        _editingExpense = null;
         ExpenseGrid.SelectedItem = null;
-        ExpenseCorrectionReason.Clear();
-        ExpenseCorrectionPanel.Visibility = Visibility.Collapsed;
+        ShowExpenseEntry();
         ExpenseDate.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
         ExpenseAmount.Clear(); ExpensePaidTo.Clear(); ExpenseReference.Clear(); ExpenseNotes.Clear();
+        ExpenseAmount.Focus();
     }
 
     private void OpenAssets_OnClick(object sender, RoutedEventArgs e)
@@ -372,21 +409,25 @@ public partial class MoneyOutPage : Page
     {
         try
         {
+            YearMonth? salaryFrom = EmployeeSalaryFromPanel.Visibility == Visibility.Visible
+                ? YearMonth.Parse(EmployeeSalaryFrom.Text.Trim()) : null;
             await _service.SaveEmployeeAsync(_editingEmployeeId, new(EmployeeName.Text, EmployeePhone.Text, EmployeeRole.Text,
                 EmployeeJoinDate.SelectedDate is { } join ? DateOnly.FromDateTime(join) : null,
                 EmployeeLeaveDate.SelectedDate is { } leave ? DateOnly.FromDateTime(leave) : null,
-                new Money(Parse(EmployeeSalary.Text)), EmployeeActive.IsChecked == true, EmployeeNotes.Text));
+                new Money(Parse(EmployeeSalary.Text)), EmployeeActive.IsChecked == true, EmployeeNotes.Text), salaryFrom);
             NewEmployee_OnClick(sender, e);
             await RefreshAsync();
         }
+        catch (FormatException exception) { StatusText.Text = exception.Message; }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
-    private void EmployeeGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void EmployeeGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (EmployeeGrid.SelectedItem is not EmployeeItem employee) return;
+        if (EmployeeGrid.SelectedItem is not EmployeeItem employee) { EmployeeDetails.Clear(); return; }
         EmployeeDetailsExpander.IsExpanded = true;
         _editingEmployeeId = employee.Id;
+        _editingEmployeeSalary = employee.MonthlySalary;
         EmployeeName.Text = employee.Name;
         EmployeePhone.Text = employee.Phone ?? "";
         EmployeeRole.Text = employee.Role ?? "";
@@ -395,6 +436,53 @@ public partial class MoneyOutPage : Page
         EmployeeSalary.Text = employee.MonthlySalary.Value.ToString("0.000", TranslationSource.FormatCulture);
         EmployeeActive.IsChecked = employee.IsActive;
         EmployeeNotes.Text = employee.Notes ?? "";
+        try
+        {
+            IReadOnlyList<SalaryTermItem> terms = await _service.GetSalaryTermsAsync(employee.Id);
+            if (!ReferenceEquals(EmployeeGrid.SelectedItem, employee)) return;
+            EmployeeDetails.Show(employee.Name, null, false, terms.Select(term => TranslationSource.Instance.Format(
+                "MoneyOut_SalaryTermLine", term.EffectiveMonth.ToString(), Number(term.MonthlySalary.Value),
+                T($"MoneyOut_TermReason_{term.Reason}"), term.CreatedAt.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture))),
+                actions: false);
+        }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    // A changed salary needs the month it applies from; posted payments stay as paid.
+    private async void EmployeeSalary_OnTextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (EmployeeSalaryFromPanel is null || EmployeeSalaryHint is null) return;
+        bool changed = _editingEmployeeId is not null && _editingEmployeeSalary is { } previous &&
+            decimal.TryParse(EmployeeSalary.Text, NumberStyles.Number, TranslationSource.FormatCulture, out decimal salary) &&
+            salary != previous.Value;
+        if (!changed)
+        {
+            EmployeeSalaryFromPanel.Visibility = Visibility.Collapsed;
+            EmployeeSalaryHint.Visibility = Visibility.Collapsed;
+            return;
+        }
+        if (EmployeeSalaryFromPanel.Visibility != Visibility.Visible)
+        {
+            EmployeeSalaryFromPanel.Visibility = Visibility.Visible;
+            EmployeeSalaryFrom.Text = YearMonth.From(_clock.BusinessDate).ToString();
+        }
+        int version = ++_salaryHintVersion;
+        try
+        {
+            YearMonth effective = YearMonth.Parse(EmployeeSalaryFrom.Text.Trim());
+            SalaryTermPreview preview = await _service.PreviewSalaryTermAsync(_editingEmployeeId!.Value, effective);
+            if (version != _salaryHintVersion) return;
+            EmployeeSalaryHint.Text = TranslationSource.Instance.Format(
+                preview.EffectiveMonth < preview.FirstOpenMonth ? "MoneyOut_SalaryFromClosed" : "MoneyOut_SalaryFromHint",
+                preview.EffectiveMonth.ToString(), preview.FirstOpenMonth.ToString(), preview.PostedMonths);
+        }
+        catch (FormatException)
+        {
+            if (version != _salaryHintVersion) return;
+            EmployeeSalaryHint.Text = T("MoneyOut_SalaryFromFormat");
+        }
+        catch (Exception exception) { EmployeeSalaryHint.Text = UserError.Message(exception); }
+        EmployeeSalaryHint.Visibility = Visibility.Visible;
     }
 
     private void NewEmployee_OnClick(object sender, RoutedEventArgs e)
@@ -402,6 +490,7 @@ public partial class MoneyOutPage : Page
         EmployeeDetailsExpander.IsExpanded = true;
         EmployeeGrid.SelectedItem = null;
         _editingEmployeeId = null;
+        _editingEmployeeSalary = null;
         EmployeeName.Clear(); EmployeePhone.Clear(); EmployeeRole.Clear(); EmployeeSalary.Clear();
         EmployeeLeaveDate.SelectedDate = null; EmployeeNotes.Clear(); EmployeeActive.IsChecked = true;
         EmployeeJoinDate.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
@@ -490,16 +579,62 @@ public partial class MoneyOutPage : Page
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
-    private void SalaryRegisterGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e) =>
-        CorrectSalaryButton.IsEnabled = SalaryRegisterGrid.SelectedItem is SalaryPaymentItem;
-
-    private async void CorrectSalary_OnClick(object sender, RoutedEventArgs e)
+    private async void SalaryRegisterGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (SalaryRegisterGrid.SelectedItem is not SalaryPaymentItem item) return;
-        var window = new MoneyOutCorrectionWindow(_service, item, _clock.BusinessDate)
-            { Owner = Window.GetWindow(this) };
-        if (window.ShowDialog() == true) await RefreshSalaryRegisterAsync();
+        if (SalaryRegisterGrid.SelectedItem is not SalaryPaymentItem item) { SalaryDetails.Clear(); return; }
+        try
+        {
+            IReadOnlyList<SalaryHistoryItem> history = await _service.GetSalaryHistoryAsync(item.Id);
+            CorrectionDating dating = await _service.PreviewCorrectionAsync(item.Period.LastDay);
+            if (!ReferenceEquals(SalaryRegisterGrid.SelectedItem, item)) return;
+            _salaryDating = dating;
+            SalaryDetails.Show($"{item.EmployeeName} · {item.Period}", dating, item.Status != "VOID",
+                history.Select(static entry => HistoryText(entry.Kind, entry.RecordedOn, entry.Treatment,
+                    entry.EffectiveDate, string.Join(" · ", $"₹{Number(entry.Amount.Value)}",
+                        $"{T("MoneyOut_PayDate")} {Day(entry.PayDate)}", entry.Mode), entry.CorrectionReason)));
+        }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
+
+    private async void SalaryDetails_OnEdit(object? sender, EventArgs e) => await CorrectSalaryAsync(false);
+    private async void SalaryDetails_OnVoid(object? sender, EventArgs e) => await CorrectSalaryAsync(true);
+
+    private async Task CorrectSalaryAsync(bool voidEntry)
+    {
+        if (SalaryRegisterGrid.SelectedItem is not SalaryPaymentItem item || _salaryDating is not { } dating) return;
+        var window = new MoneyOutCorrectionWindow(_service, item, dating, voidEntry) { Owner = Window.GetWindow(this) };
+        if (window.ShowDialog() == true)
+            try { await RefreshSalaryRegisterAsync(); }
+            catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    // One history entry: when it was recorded, the P&L date it affects and how it was dated.
+    private static string HistoryText(string kind, DateOnly recordedOn, string? treatment, DateOnly pnlDate,
+        string details, string? reason)
+    {
+        string head = kind == "ORIGINAL"
+            ? TranslationSource.Instance.Format("MoneyOut_HistoryOriginal", Day(recordedOn), Day(pnlDate))
+            : TranslationSource.Instance.Format(kind == "VOID" ? "MoneyOut_HistoryVoid" : "MoneyOut_HistoryEdit",
+                Day(recordedOn), Day(pnlDate), T($"MoneyOut_Treatment_{treatment}"));
+        return string.IsNullOrWhiteSpace(reason)
+            ? head + Environment.NewLine + details
+            : head + Environment.NewLine + details + Environment.NewLine + T("MoneyOut_CorrectionReason") + ": " + reason;
+    }
+
+    private static string ReasonText(string reason) => reason switch
+    {
+        "EXPIRED" => T("MoneyOut_ReasonExpired"),
+        "BROKEN" => T("MoneyOut_ReasonBroken"),
+        "SPOILED" => T("MoneyOut_ReasonSpoiled"),
+        "PEST" => T("MoneyOut_ReasonPest"),
+        "LOST" => T("MoneyOut_ReasonLost"),
+        "CUSTOMER_RETURN" => T("MoneyOut_ReasonReturn"),
+        _ => T("MoneyOut_ReasonOther"),
+    };
+
+    private static string Day(DateOnly date) => date.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture);
+    private static string Number(decimal value) => value.ToString("N3", TranslationSource.FormatCulture);
+    private static string T(string key) => TranslationSource.Instance[key];
 
     private async void RefreshSalaryRegister_OnClick(object sender, RoutedEventArgs e)
     {
@@ -578,7 +713,9 @@ public partial class MoneyOutPage : Page
 
     private string ActiveExpiryBucket() => ExpiryTabs.SelectedIndex switch
     {
-        1 => "CRITICAL", 2 => "SOON", _ => "EXPIRED",
+        1 => "CRITICAL",
+        2 => "SOON",
+        _ => "EXPIRED",
     };
 
     private void ExpiryCheck_OnLoaded(object sender, RoutedEventArgs e)

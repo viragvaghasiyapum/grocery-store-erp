@@ -21,7 +21,7 @@ public sealed class NullMigrationBackup : IMigrationBackup
 
 public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMigrationBackup backup)
 {
-    public const int LatestVersion = 31;
+    public const int LatestVersion = 34;
 
     public void Run()
     {
@@ -41,7 +41,11 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
         foreach (Script script in scripts.Where(item => item.Version > current))
         {
             if (script.Version == 29)
-                connection.Execute("PRAGMA foreign_keys=OFF; PRAGMA temp_store=FILE;");
+                connection.Execute("PRAGMA foreign_keys=OFF;");
+            // Whole-history rebuilds sort millions of sale lines; spill them to disk
+            // instead of holding the sorter in process memory.
+            if (script.Version is 29 or 32)
+                connection.Execute("PRAGMA temp_store=FILE;");
             try
             {
                 using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
@@ -60,9 +64,12 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
                                 string.Empty, StringComparison.Ordinal);
                 PhaseOneMigration? phaseOne = script.Version == 29
                     ? PhaseOneMigration.Prepare(connection, transaction) : null;
+                int closedCounts = script.Version == 33 ? DirectStockCutover.Prepare(connection, transaction) : 0;
                 connection.Execute(sql, transaction: transaction);
                 if (phaseOne is not null)
                     phaseOne.Finish(connection, transaction);
+                if (script.Version == 33)
+                    DirectStockCutover.Finish(connection, transaction, closedCounts);
                 if (script.Version == 19)
                     DashboardTopProjection.Rebuild(connection, transaction, DateOnly.FromDateTime(DateTime.Now));
                 if (script.Version != 16)
@@ -74,7 +81,9 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
             finally
             {
                 if (script.Version == 29)
-                    connection.Execute("PRAGMA foreign_keys=ON; PRAGMA temp_store=MEMORY;");
+                    connection.Execute("PRAGMA foreign_keys=ON;");
+                if (script.Version is 29 or 32)
+                    connection.Execute("PRAGMA temp_store=MEMORY;");
             }
             if (script.Version == 16)
             {
@@ -92,7 +101,7 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
     public void RebuildPnlDays()
     {
         using (SqliteConnection check = factory.Open())
-            if (check.ExecuteScalar<long>("PRAGMA user_version") != LatestVersion)
+            if (!IsCurrentOperationalSchema(check))
                 throw new InvalidOperationException("Migrate the database before rebuilding P&L days.");
         backup.CreateBeforeMigration("pre-pnl-day-rebuild");
         factory.BeginExclusive();
@@ -112,7 +121,7 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
     public void RebuildDashboardTop(DateOnly through)
     {
         using (SqliteConnection check = factory.Open())
-            if (check.ExecuteScalar<long>("PRAGMA user_version") != LatestVersion)
+            if (!IsCurrentOperationalSchema(check))
                 throw new InvalidOperationException("Migrate the database before rebuilding dashboard products.");
         backup.CreateBeforeMigration("pre-dashboard-top-rebuild");
         factory.BeginExclusive();
@@ -129,10 +138,15 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
         }
     }
 
+    private static bool IsCurrentOperationalSchema(SqliteConnection connection) =>
+        connection.ExecuteScalar<long>("PRAGMA user_version") == LatestVersion;
+
     private static void RebuildPnlDays(SqliteConnection connection)
     {
         bool includeSales = connection.ExecuteScalar<long>(
             "SELECT COUNT(*) FROM pragma_table_info('pnl_day') WHERE name='sales'") != 0;
+        bool includeReturnRounding = connection.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM pragma_table_info('pnl_day') WHERE name='return_rounding'") != 0;
         string? first = connection.ExecuteScalar<string>("""
             SELECT MIN(day) FROM (SELECT MIN(sale_date) AS day FROM sale WHERE status='COMPLETED'
                                  UNION ALL SELECT MIN(return_date) FROM sale_return)
@@ -166,7 +180,16 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
                 FROM sale WHERE status='COMPLETED' AND sale_date>=@from AND sale_date<@until
                 GROUP BY sale_date
                 """, new { from, until }, chunk);
-            connection.Execute("""
+            connection.Execute(includeReturnRounding ? """
+                INSERT INTO pnl_day(day,returns,return_taxable,return_cost,return_rounding)
+                SELECT return_date,COUNT(*),SUM(taxable_total),SUM(cost_total),
+                       SUM(refund_total-taxable_total-tax_total)
+                FROM sale_return WHERE return_date>=@from AND return_date<@until
+                GROUP BY return_date
+                ON CONFLICT(day) DO UPDATE SET
+                    returns=excluded.returns,return_taxable=excluded.return_taxable,
+                    return_cost=excluded.return_cost,return_rounding=excluded.return_rounding
+                """ : """
                 INSERT INTO pnl_day(day,returns,return_taxable,return_cost)
                 SELECT return_date,COUNT(*),SUM(taxable_total),SUM(cost_total)
                 FROM sale_return WHERE return_date>=@from AND return_date<@until

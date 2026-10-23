@@ -9,7 +9,8 @@ public enum ErrorCode
     OverpaymentNonCash, CreditNeedsCustomer, DiscountExceedsLine, ReturnQtyExceedsSold,
     VoidNotAllowed, CancelNotAllowed, DatabaseNewerThanApp, ClockBehindLastBill,
     WrongPassword, BackupInvalid, StockCountReviewChanged, DatabaseBusy, DiskFull, DatabaseCorrupt,
-    RestoreRecovered, DatabaseIo
+    RestoreRecovered, DatabaseIo, AnnualReportInvalid, EntryChanged, EntryVoided, EffectiveMonthClosed,
+    AssetTermsFinalized, DamageProductDeleted
 }
 
 public sealed class DomainException(ErrorCode code, params object[] arguments) : Exception(code.ToString())

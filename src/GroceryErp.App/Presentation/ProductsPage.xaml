@@ -51,7 +51,7 @@
       <Button x:Name="EditButton" IsEnabled="False" Margin="0,0,8,0" Click="Edit_OnClick" Content="{l:Tr Catalog_Edit}"/>
       <Menu VerticalAlignment="Center" Margin="0,0,8,0" MinHeight="36" Padding="2" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"><MenuItem Header="{l:Tr Common_Actions}">
         <MenuItem x:Name="LotsButton" IsEnabled="False" Click="Lots_OnClick" Header="{l:Tr Stock_Lots}"/>
-        <MenuItem x:Name="ReconcileButton" IsEnabled="False" Visibility="Collapsed" Click="Reconcile_OnClick" Header="{l:Tr Stock_ReconcileSelected}"/>
+        <MenuItem x:Name="ReconcileButton" IsEnabled="False" Click="Reconcile_OnClick" Header="{l:Tr Stock_ReconcileSelected}"/>
         <MenuItem x:Name="LedgerButton" IsEnabled="False" Click="Ledger_OnClick" Header="{l:Tr Stock_Ledger}"/>
         <MenuItem x:Name="LabelsButton" IsEnabled="False" Click="Labels_OnClick" Header="{l:Tr Catalog_PrintLabels}"/>
         <MenuItem x:Name="BarcodeButton" IsEnabled="False" Click="GenerateBarcode_OnClick" Header="{l:Tr Catalog_GenerateBarcode}"/>
@@ -62,7 +62,7 @@
           <MenuItem x:Name="BulkRestoreButton" IsEnabled="False" Click="BulkRestore_OnClick" Header="{l:Tr Catalog_RestoreSelected}"/>
           <MenuItem x:Name="BulkRemoveButton" IsEnabled="False" Click="BulkRemove_OnClick" Header="{l:Tr Catalog_RemoveSelected}"/>
           <MenuItem x:Name="BulkButton" Click="Bulk_OnClick" Header="{l:Tr Catalog_BulkEdit}"/>
-          <MenuItem x:Name="BulkReconcileButton" Visibility="Collapsed" Click="Reconcile_OnClick" Header="{l:Tr Stock_ReconcileSelected}"/>
+          <MenuItem x:Name="BulkReconcileButton" Click="Reconcile_OnClick" Header="{l:Tr Stock_ReconcileSelected}"/>
           <MenuItem Click="BulkLabels_OnClick" Header="{l:Tr Catalog_PrintLabelsSelected}"/>
           <MenuItem x:Name="BulkBarcodeButton" IsEnabled="False" Click="BulkBarcode_OnClick" Header="{l:Tr Catalog_GenerateBarcodeSelected}"/>
         </MenuItem>

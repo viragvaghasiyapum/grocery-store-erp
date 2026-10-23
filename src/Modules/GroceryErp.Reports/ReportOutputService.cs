@@ -40,9 +40,11 @@ public sealed class ReportOutputService(ISettings settings, TranslationSource? t
             IXLWorksheet sheet = workbook.Worksheets.Add(SafeSheetName(report.Title));
             sheet.Cell(1, 1).Value = report.Title;
             sheet.Range(1, 1, 1, Math.Max(1, report.Columns.Count)).Merge().Style.Font.SetBold().Font.SetFontSize(16);
-            int headerRow = (report.Period is null ? 3 : 4) + (report.IsTruncated ? 1 : 0);
+            int headerRow = (report.Period is null ? 3 : 4) + (report.IsTruncated ? 1 : 0) + (report.Summary is null ? 0 : 1);
             if (report.Period is { } period)
                 sheet.Cell(2, 1).Value = $"{period.From:dd-MM-yyyy} to {period.To:dd-MM-yyyy}";
+            if (report.Summary is { } summary)
+                sheet.Cell(report.Period is null ? 2 : 3, 1).Value = summary;
             if (report.IsTruncated)
             {
                 sheet.Cell(headerRow - 1, 1).Value = Text("Reports_PartialExport", "Partial report: totals include displayed rows only.");
@@ -117,6 +119,57 @@ public sealed class ReportOutputService(ISettings settings, TranslationSource? t
                 new("Amount", Text("Reports_Amount", "Amount"), ReportValueKind.Money),
                 new("Margin", Text("Reports_Column_MarginPercent", "Margin %"), ReportValueKind.Percent)],
             rows, new Dictionary<string, decimal> { ["Amount"] = statement.NetProfit.Value });
+    }
+
+    // The displayed P&L version: every head, category and total, optionally by month,
+    // with its open or finalized status, cutoff, version and checksum.
+    public TabularReport BuildPnlReport(PnlReport report, bool byMonth)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        var columns = new List<ReportColumn> { new("Label", Text("Reports_Particulars", "Particulars"), ReportValueKind.Text) };
+        if (byMonth)
+            columns.AddRange(report.Matrix.MonthKeys.Select(month => new ReportColumn(month, MonthHeading(month), ReportValueKind.Money)));
+        columns.Add(new("Amount", Text("Reports_Amount", "Amount"), ReportValueKind.Money));
+        List<ReportRow> rows = report.Rows.Select(row =>
+        {
+            var values = new Dictionary<string, object?>
+            {
+                ["Label"] = row.Kind == "CATEGORY" ? "    " + row.Label : row.Label,
+                ["Amount"] = row.Kind == "SECTION" ? null : row.Amount.Scaled,
+            };
+            if (byMonth)
+                for (int index = 0; index < report.Matrix.MonthKeys.Count; index++)
+                    values[report.Matrix.MonthKeys[index]] = row.Kind == "SECTION" ? null : row.Months[index].Scaled;
+            return new ReportRow(values);
+        }).ToList();
+        return new TabularReport($"{Text("Reports_Kind_ProfitAndLoss", "Profit and loss")} — {report.Period.Label}",
+            report.Period.Range, columns, rows, new Dictionary<string, decimal>(), Summary: PnlStatusText(report));
+    }
+
+    public string PnlStatusText(PnlReport report)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        string cutoff = report.Cutoff.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture);
+        return report.Status switch
+        {
+            "FINALIZED" => string.Format(CultureInfo.InvariantCulture,
+                Text("Reports_PnlStatusFinalized", "Finalized · {0} · edits closed after {1} · version {2} · checksum {3}"),
+                report.FinalizedYear, cutoff, report.FormatVersion,
+                report.Checksum is { Length: > 12 } checksum ? checksum[..12] : report.Checksum),
+            "OPEN" => string.Format(CultureInfo.InvariantCulture,
+                Text("Reports_PnlStatusOpen", "Open · editable through {0} · source records as of {1}"), cutoff,
+                DateOnly.TryParseExact(report.GeneratedAt, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out DateOnly asOf) ? asOf.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture) : cutoff),
+            _ => string.Format(CultureInfo.InvariantCulture,
+                Text("Reports_PnlStatusLive", "Custom range · source records as of {0}"), cutoff),
+        };
+    }
+
+    private string MonthHeading(string month)
+    {
+        DateOnly date = DateOnly.ParseExact(month + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture);
+        CultureInfo culture = translations?.UiCulture ?? CultureInfo.GetCultureInfo("en-IN");
+        return $"{culture.DateTimeFormat.GetAbbreviatedMonthName(date.Month)} {date.Year.ToString(CultureInfo.InvariantCulture)}";
     }
 
     public FixedDocument CreateA4(TabularReport report, DateTime printedAt)
@@ -196,8 +249,13 @@ public sealed class ReportOutputService(ISettings settings, TranslationSource? t
             string contact = string.Join(" · ", new[] { settings.Current.StorePhone, settings.Current.StoreGstin }
                 .Where(static value => !string.IsNullOrWhiteSpace(value)));
             AddText(page, contact, Margin, 90, 9, FontWeights.Normal, pageWidth - 2 * Margin);
-            if (report.Period is { } period)
-                AddText(page, $"{period.From:dd-MM-yyyy} to {period.To:dd-MM-yyyy}", Margin, 106, 10, FontWeights.Normal, 300);
+            string periodLine = string.Join(" · ", new[]
+            {
+                report.Period is { } period ? $"{period.From:dd-MM-yyyy} to {period.To:dd-MM-yyyy}" : null,
+                report.Summary,
+            }.Where(static value => !string.IsNullOrEmpty(value)));
+            if (periodLine.Length > 0)
+                AddText(page, periodLine, Margin, 106, 10, FontWeights.Normal, pageWidth - 2 * Margin - (bands > 1 ? 190 : 0));
             if (bands > 1)
                 AddText(page, Text("Reports_Print_Band", "Columns") + $" {band + 1}/{bands}",
                     pageWidth - Margin - 180, 106, 10, FontWeights.Normal, 180, TextAlignment.Right);

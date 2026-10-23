@@ -81,10 +81,10 @@ public partial class ProductStockWindow : Window
         if (version != _lotLoadVersion) return;
         await Dispatcher.InvokeAsync(() =>
         {
-        _lotPage = page;
-        _lotCursor = beforeId;
-        LotsGrid.ItemsSource = page.Items;
-        UpdatePageButtons();
+            _lotPage = page;
+            _lotCursor = beforeId;
+            LotsGrid.ItemsSource = page.Items;
+            UpdatePageButtons();
         });
     }
 
@@ -95,10 +95,10 @@ public partial class ProductStockWindow : Window
         if (version != _ledgerLoadVersion) return;
         await Dispatcher.InvokeAsync(() =>
         {
-        _ledgerPage = page;
-        _ledgerCursor = beforeId;
-        LedgerGrid.ItemsSource = page.Items;
-        UpdatePageButtons();
+            _ledgerPage = page;
+            _ledgerCursor = beforeId;
+            LedgerGrid.ItemsSource = page.Items;
+            UpdatePageButtons();
         });
     }
 
@@ -202,7 +202,7 @@ public partial class ProductStockWindow : Window
     {
         IServiceProvider services = ((App)Application.Current).Services;
         if (new DirectLotWindow(_inventory, _productId, services.GetRequiredService<IClock>())
-            { Owner = this }.ShowDialog() == true) await RefreshAsync();
+        { Owner = this }.ShowDialog() == true) await RefreshAsync();
     }
 
     private async void ConsumeInternal_OnClick(object sender, RoutedEventArgs e)
@@ -210,7 +210,8 @@ public partial class ProductStockWindow : Window
         if (_isInternal != true || LotsGrid.SelectedItem is not LotItem { IsActive: true } lot) return;
         IServiceProvider services = ((App)Application.Current).Services;
         if (new InternalUseWindow(services.GetRequiredService<PurchasingService>(), lot.Id,
-            services.GetRequiredService<IClock>()) { Owner = this }.ShowDialog() == true)
+            services.GetRequiredService<IClock>())
+        { Owner = this }.ShowDialog() == true)
             await RefreshAsync();
     }
 
@@ -224,7 +225,8 @@ public partial class ProductStockWindow : Window
         if (LotsGrid.SelectedItem is not LotItem lot || lot.OnHand <= Quantity.Zero) return;
         IServiceProvider services = ((App)Application.Current).Services;
         if (new LotDamageWindow(services.GetRequiredService<MoneyOutService>(),
-            services.GetRequiredService<IClock>(), lot) { Owner = this }.ShowDialog() == true)
+            services.GetRequiredService<IClock>(), lot)
+        { Owner = this }.ShowDialog() == true)
             await RefreshAsync();
     }
 
@@ -234,7 +236,8 @@ public partial class ProductStockWindow : Window
         if (lots.Length is < 2 or > 50 || lots.Any(static lot => lot.OnHand <= Quantity.Zero)) return;
         IServiceProvider services = ((App)Application.Current).Services;
         if (new LotBulkDamageWindow(services.GetRequiredService<MoneyOutService>(),
-            services.GetRequiredService<IClock>(), lots) { Owner = this }.ShowDialog() == true)
+            services.GetRequiredService<IClock>(), lots)
+        { Owner = this }.ShowDialog() == true)
             await RefreshAsync();
     }
 

@@ -1,7 +1,7 @@
 using System.IO;
 using GroceryErp.Core.Errors;
-using GroceryErp.Localization;
 using GroceryErp.Data.Infrastructure;
+using GroceryErp.Localization;
 using Microsoft.Data.Sqlite;
 using Serilog;
 

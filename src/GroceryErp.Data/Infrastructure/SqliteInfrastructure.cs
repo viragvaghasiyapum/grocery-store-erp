@@ -1,10 +1,10 @@
-using Dapper;
-using System.Diagnostics;
-using System.Diagnostics.Metrics;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Data;
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Runtime.CompilerServices;
+using Dapper;
 using GroceryErp.Core.Errors;
 using Microsoft.Data.Sqlite;
 
@@ -386,6 +386,11 @@ public static class SqliteErrorMapper
     private static readonly (string Fragment, ErrorCode Code)[] Rules =
     [
         ("insufficient stock in lot", ErrorCode.InsufficientStock),
+        ("direct stock forbids negative stock", ErrorCode.InsufficientStock),
+        ("return exceeds original sale", ErrorCode.ReturnQtyExceedsSold),
+        ("completed sale values are immutable", ErrorCode.SaleFinalized),
+        ("posted return is immutable", ErrorCode.SaleFinalized),
+        ("posted return lines are immutable", ErrorCode.SaleFinalized),
         ("stock_movement is append-only", ErrorCode.LedgerAppendOnly),
         ("sale is finalized", ErrorCode.SaleFinalized),
         ("completed sale is read-only", ErrorCode.SaleFinalized),

@@ -26,7 +26,7 @@ public sealed partial class MoneyOutService
                 return (IReadOnlyList<long>)tx.Connection.Query<long>(
                     "SELECT id FROM damage WHERE bulk_operation_id=@operationId ORDER BY id",
                     new { operationId }, tx.Transaction).ToList();
-            periods.EnsureOpen(date);
+            periods.EnsureOpen(tx, date);
             var ids = new List<long>(lines.Count);
             foreach (BulkDamageInput line in lines.OrderBy(static line => line.LotId))
             {
@@ -56,13 +56,26 @@ public sealed partial class MoneyOutService
                         p.product_class,l.lot_code,l.batch_no,l.expiry_date,'AT_POST'
                     FROM product_lot l JOIN product p ON p.id=l.product_id JOIN uom u ON u.id=p.uom_id
                     WHERE l.id=@lotId RETURNING id
-                    """, new { document, date = Format(date), qty = line.Quantity.Scaled,
-                        unitCost = unitCost.Scaled, cost = cost.Scaled, reason, operationId,
-                        lotId = line.LotId }, tx.Transaction);
+                    """, new
+                {
+                    document,
+                    date = Format(date),
+                    qty = line.Quantity.Scaled,
+                    unitCost = unitCost.Scaled,
+                    cost = cost.Scaled,
+                    reason,
+                    operationId,
+                    lotId = line.LotId
+                }, tx.Transaction);
                 stock.Post(tx, new(date, lot.ProductId, line.LotId, "DAMAGE",
                     new Quantity(-line.Quantity.Value), unitCost, "damage", id, reason));
-                audit.Write(tx, "damage", id, "CREATE", new { document, operationId,
-                    Quantity = line.Quantity.Scaled, Cost = cost.Scaled });
+                audit.Write(tx, "damage", id, "CREATE", new
+                {
+                    document,
+                    operationId,
+                    Quantity = line.Quantity.Scaled,
+                    Cost = cost.Scaled
+                });
                 ids.Add(id);
                 products.Add(lot.ProductId);
             }

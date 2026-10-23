@@ -1,5 +1,5 @@
-using System.Globalization;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using Dapper;
@@ -12,11 +12,12 @@ using GroceryErp.Localization;
 
 namespace GroceryErp.Reports;
 
-public sealed class ReportService(DbExecutor database, ISettings settings, IClock clock, TranslationSource? translations = null)
+public sealed partial class ReportService(DbExecutor database, ISettings settings, IClock clock, TranslationSource? translations = null)
 {
     private DateOnly? _ensuredTopWindowDate;
     private static readonly string[] LocalizedCodeKeys =
-        ["Status", "Direction", "PaymentMode", "Method", "Weekday", "Type", "ReferenceType", "Reason", "Action", "Entity"];
+        ["Status", "Direction", "PaymentMode", "Method", "Weekday", "Type", "ReferenceType", "Reason", "Action", "Entity",
+         "Class", "Source"];
     private static readonly string[] AssetScheduleColumns =
         ["Period", "Status", "Opening", "Depreciation", "Closing"];
     public DateRange ResolvePeriod(PnlPeriodKind kind, DateOnly? customFrom = null, DateOnly? customTo = null)
@@ -34,85 +35,6 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         };
     }
 
-    public Task<PnlStatement> GetPnlAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
-    {
-        DateRange period = new(from, to);
-        string operation = to.DayNumber - from.DayNumber > 45 ? "pnl.long-range" : "pnl.short-range";
-        return database.ReadAsync(connection =>
-        {
-            DateOnly lastCompleteMonth = to.Day == DateTime.DaysInMonth(to.Year, to.Month)
-                ? to : to.AddMonths(-1);
-            long queryStarted = Stopwatch.GetTimestamp();
-            List<PnlRaw> raw = connection.Query<PnlRaw>("""
-                WITH sale_totals AS MATERIALIZED (
-                    SELECT SUM(bills) AS bills,SUM(taxable) AS taxable,
-                           SUM(rounding) AS rounding,SUM(cost) AS cost
-                    FROM pnl_day WHERE day BETWEEN @from AND @to
-                ), return_totals AS MATERIALIZED (
-                    SELECT SUM(returns) AS returns,SUM(return_taxable) AS taxable,
-                           SUM(return_cost) AS cost
-                    FROM pnl_day WHERE day BETWEEN @from AND @to
-                ), entries AS (
-                    SELECT 'INCOME' AS section,'SALES' AS head_code,NULL AS ref_id,taxable AS amount
-                    FROM sale_totals WHERE bills>0
-                    UNION ALL SELECT 'INCOME','ROUND_OFF',NULL,rounding FROM sale_totals WHERE rounding<>0
-                    UNION ALL SELECT 'COGS','COGS',NULL,cost FROM sale_totals WHERE bills>0
-                    UNION ALL SELECT 'INCOME','SALES_RETURNS',NULL,-taxable FROM return_totals WHERE returns>0
-                    UNION ALL SELECT 'COGS','COGS',NULL,-cost FROM return_totals WHERE returns>0
-                    UNION ALL SELECT 'EXPENSE','DAMAGES',NULL,d.cost_value-d.recovered_amount
-                        FROM damage d WHERE d.damage_date BETWEEN @from AND @to
-                    UNION ALL SELECT 'EXPENSE','DAMAGES',NULL,dc.expense_delta
-                        FROM damage_correction dc WHERE dc.correction_date BETWEEN @from AND @to
-                    UNION ALL SELECT 'EXPENSE','STOCK_ADJUSTMENT',NULL,
-                        -CAST(ROUND(m.qty*m.unit_cost/1000.0) AS INTEGER)
-                        FROM stock_movement m WHERE m.type_code='ADJUSTMENT' AND m.move_date BETWEEN @from AND @to
-                          AND COALESCE(m.ref_type,'')<>'damage_correction'
-                    UNION ALL SELECT 'EXPENSE','EXPENSE_CATEGORY',e.category_id,e.amount
-                        FROM expense e WHERE e.expense_date BETWEEN @from AND @to
-                    UNION ALL SELECT 'EXPENSE','EXPENSE_CATEGORY',e.category_id,-r.amount
-                        FROM purchase_expense_reversal r JOIN expense e ON e.id=r.expense_id
-                        WHERE r.reversal_date BETWEEN @from AND @to
-                    UNION ALL SELECT 'EXPENSE','SALARIES',NULL,sp.amount
-                        FROM salary_payment sp WHERE sp.period_month BETWEEN @firstMonth AND @lastCompleteMonth
-                    UNION ALL SELECT 'EXPENSE','SALARIES',NULL,sc.amount_delta
-                        FROM salary_correction sc WHERE sc.correction_date BETWEEN @from AND @to
-                    UNION ALL SELECT 'EXPENSE','DEPRECIATION',NULL,ad.amount
-                        FROM asset_depreciation ad WHERE ad.period_month BETWEEN @firstMonth AND @lastCompleteMonth
-                    UNION ALL SELECT 'OTHER','ASSET_DISPOSAL',a.id,
-                        a.disposal_value-COALESCE((SELECT ad.closing_value FROM asset_depreciation ad
-                            WHERE ad.asset_id=a.id ORDER BY ad.period_month DESC LIMIT 1),a.cost)
-                        FROM asset a WHERE a.disposed_date BETWEEN @from AND @to
-                    UNION ALL SELECT 'OTHER','VENDOR_RETURN_VARIANCE',NULL,
-                        vr.credit_before_tax+CASE WHEN vr.tax_mode='REGULAR' THEN 0 ELSE vr.tax_credit END-vr.cost_total
-                        FROM vendor_return vr WHERE vr.return_date BETWEEN @from AND @to
-                    UNION ALL SELECT 'OTHER','VENDOR_RETURN_VARIANCE',NULL,
-                        -(vr.credit_before_tax+CASE WHEN vr.tax_mode='REGULAR' THEN 0 ELSE vr.tax_credit END-vr.cost_total)
-                        FROM vendor_return_cancellation c JOIN vendor_return vr ON vr.id=c.vendor_return_id
-                        WHERE c.cancellation_date BETWEEN @from AND @to
-                )
-                SELECT section AS Section,head_code AS HeadCode,ref_id AS ReferenceId,SUM(amount) AS Amount
-                FROM entries GROUP BY section,head_code,ref_id
-                ORDER BY CASE section WHEN 'INCOME' THEN 1 WHEN 'COGS' THEN 2 ELSE 3 END,head_code,ref_id
-                """, new { from = Iso(from), to = Iso(to),
-                    firstMonth = from.ToString("yyyy-MM", CultureInfo.InvariantCulture),
-                    lastCompleteMonth = lastCompleteMonth.ToString("yyyy-MM", CultureInfo.InvariantCulture) }).ToList();
-            var stageTag = new KeyValuePair<string, object?>("operation", operation + ".entries");
-            PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(queryStarted).TotalMilliseconds, stageTag);
-            PerformanceMetrics.ReportStageRows.Record(raw.Count, stageTag);
-            long categoriesStarted = Stopwatch.GetTimestamp();
-            Dictionary<long, string> categories = connection.Query<NamedRow>(
-                "SELECT id AS Id,name AS Name,name_local AS LocalName FROM expense_category")
-                .ToDictionary(static x => x.Id, x => Pick(x.Name, x.LocalName));
-            PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(categoriesStarted).TotalMilliseconds,
-                new KeyValuePair<string, object?>("operation", operation + ".categories"));
-            long buildStarted = Stopwatch.GetTimestamp();
-            PnlStatement statement = BuildStatement(period, raw, categories);
-            PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(buildStarted).TotalMilliseconds,
-                new KeyValuePair<string, object?>("operation", operation + ".build"));
-            return statement;
-        }, cancellationToken, operation);
-    }
-
     public async Task<PnlComparison> GetPnlComparisonAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
     {
         DateRange current = new(from, to);
@@ -123,103 +45,6 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         Task<PnlStatement> previousTask = GetPnlAsync(previousFrom, previousTo, cancellationToken);
         await Task.WhenAll(currentTask, previousTask).ConfigureAwait(false);
         return new(await currentTask, await previousTask);
-    }
-
-    public Task<PnlMatrix> GetPnlMatrixAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
-    {
-        DateRange period = new(from, to);
-        return database.ReadAsync(connection =>
-        {
-            DateOnly lastCompleteMonth = to.Day == DateTime.DaysInMonth(to.Year, to.Month)
-                ? to : to.AddMonths(-1);
-            List<PnlMonthRaw> raw = connection.Query<PnlMonthRaw>("""
-                WITH entries AS (
-                    SELECT 'INCOME' AS section,'SALES' AS head_code,NULL AS ref_id,
-                           substr(day,1,7) AS month,taxable AS amount
-                    FROM pnl_day WHERE day BETWEEN @from AND @to AND bills>0
-                    UNION ALL SELECT 'INCOME','ROUND_OFF',NULL,substr(day,1,7),rounding
-                    FROM pnl_day WHERE day BETWEEN @from AND @to AND rounding<>0
-                    UNION ALL SELECT 'COGS','COGS',NULL,substr(day,1,7),cost
-                    FROM pnl_day WHERE day BETWEEN @from AND @to AND bills>0
-                    UNION ALL SELECT 'INCOME','SALES_RETURNS',NULL,substr(day,1,7),-return_taxable
-                    FROM pnl_day WHERE day BETWEEN @from AND @to AND returns>0
-                    UNION ALL SELECT 'COGS','COGS',NULL,substr(day,1,7),-return_cost
-                    FROM pnl_day WHERE day BETWEEN @from AND @to AND returns>0
-                    UNION ALL SELECT 'EXPENSE','DAMAGES',NULL,substr(damage_date,1,7),cost_value-recovered_amount
-                    FROM damage WHERE damage_date BETWEEN @from AND @to
-                    UNION ALL SELECT 'EXPENSE','DAMAGES',NULL,substr(correction_date,1,7),expense_delta
-                    FROM damage_correction WHERE correction_date BETWEEN @from AND @to
-                    UNION ALL SELECT 'EXPENSE','STOCK_ADJUSTMENT',NULL,substr(move_date,1,7),
-                        -CAST(ROUND(qty*unit_cost/1000.0) AS INTEGER)
-                    FROM stock_movement WHERE type_code='ADJUSTMENT' AND move_date BETWEEN @from AND @to
-                      AND COALESCE(ref_type,'')<>'damage_correction'
-                    UNION ALL SELECT 'EXPENSE','EXPENSE_CATEGORY',category_id,substr(expense_date,1,7),amount
-                    FROM expense WHERE expense_date BETWEEN @from AND @to
-                    UNION ALL SELECT 'EXPENSE','EXPENSE_CATEGORY',e.category_id,substr(r.reversal_date,1,7),-r.amount
-                    FROM purchase_expense_reversal r JOIN expense e ON e.id=r.expense_id
-                    WHERE r.reversal_date BETWEEN @from AND @to
-                    UNION ALL SELECT 'EXPENSE','SALARIES',NULL,period_month,amount
-                    FROM salary_payment WHERE period_month BETWEEN @firstMonth AND @lastCompleteMonth
-                    UNION ALL SELECT 'EXPENSE','SALARIES',NULL,substr(correction_date,1,7),amount_delta
-                    FROM salary_correction WHERE correction_date BETWEEN @from AND @to
-                    UNION ALL SELECT 'EXPENSE','DEPRECIATION',NULL,period_month,amount
-                    FROM asset_depreciation WHERE period_month BETWEEN @firstMonth AND @lastCompleteMonth
-                    UNION ALL SELECT 'OTHER','ASSET_DISPOSAL',a.id,substr(a.disposed_date,1,7),
-                        a.disposal_value-COALESCE((SELECT ad.closing_value FROM asset_depreciation ad
-                            WHERE ad.asset_id=a.id ORDER BY ad.period_month DESC LIMIT 1),a.cost)
-                    FROM asset a WHERE a.disposed_date BETWEEN @from AND @to
-                    UNION ALL SELECT 'OTHER','VENDOR_RETURN_VARIANCE',NULL,substr(return_date,1,7),
-                        credit_before_tax+CASE WHEN tax_mode='REGULAR' THEN 0 ELSE tax_credit END-cost_total
-                    FROM vendor_return WHERE return_date BETWEEN @from AND @to
-                    UNION ALL SELECT 'OTHER','VENDOR_RETURN_VARIANCE',NULL,substr(c.cancellation_date,1,7),
-                        -(vr.credit_before_tax+CASE WHEN vr.tax_mode='REGULAR' THEN 0 ELSE vr.tax_credit END-vr.cost_total)
-                    FROM vendor_return_cancellation c JOIN vendor_return vr ON vr.id=c.vendor_return_id
-                    WHERE c.cancellation_date BETWEEN @from AND @to
-                )
-                SELECT section AS Section,head_code AS HeadCode,ref_id AS ReferenceId,
-                       month AS Month,SUM(amount) AS Amount
-                FROM entries GROUP BY section,head_code,ref_id,month
-                ORDER BY section,head_code,ref_id,month
-                """, new { from = Iso(from), to = Iso(to),
-                    firstMonth = from.ToString("yyyy-MM", CultureInfo.InvariantCulture),
-                    lastCompleteMonth = lastCompleteMonth.ToString("yyyy-MM", CultureInfo.InvariantCulture) }).ToList();
-            Dictionary<long, string> categories = connection.Query<NamedRow>(
-                "SELECT id AS Id,name AS Name,name_local AS LocalName FROM expense_category")
-                .ToDictionary(static x => x.Id, x => Pick(x.Name, x.LocalName));
-            List<string> months = [];
-            DateOnly cursor = new(from.Year, from.Month, 1);
-            DateOnly last = new(to.Year, to.Month, 1);
-            while (cursor <= last) { months.Add(cursor.ToString("yyyy-MM", CultureInfo.InvariantCulture)); cursor = cursor.AddMonths(1); }
-            List<PnlMatrixRow> rows = raw.GroupBy(static x => (x.Section, x.HeadCode, x.ReferenceId))
-                .Select(group =>
-                {
-                    Dictionary<string, long> values = group.ToDictionary(static x => x.Month, static x => x.Amount);
-                    List<Money> cells = months.Select(month => Money.FromScaled(values.GetValueOrDefault(month))).ToList();
-                    return new PnlMatrixRow(group.Key.Section, group.Key.HeadCode, group.Key.ReferenceId,
-                        Label(group.Key.HeadCode, group.Key.ReferenceId, categories), cells,
-                        Money.FromScaled(cells.Sum(static x => x.Scaled)));
-                }).ToList();
-            List<PnlMatrixRow> income = rows.Where(static row => row.Section == "INCOME").ToList();
-            List<PnlMatrixRow> cogs = rows.Where(static row => row.Section == "COGS").ToList();
-            List<PnlMatrixRow> expenses = rows.Where(static row => row.Section == "EXPENSE").ToList();
-            List<PnlMatrixRow> other = rows.Where(static row => row.Section == "OTHER").ToList();
-            Money[] netSales = SumMonths(income, months.Count);
-            Money[] grossProfit = SubtractMonths(netSales, SumMonths(cogs, months.Count));
-            Money[] totalExpenses = SumMonths(expenses, months.Count);
-            Money[] netProfit = AddMonths(SubtractMonths(grossProfit, totalExpenses), SumMonths(other, months.Count));
-            List<PnlMatrixRow> ordered =
-            [
-                ..income,
-                SummaryRow("NET_SALES", Text("Reports_Section_NetSales", "Net sales"), netSales),
-                ..cogs,
-                SummaryRow("GROSS_PROFIT", Text("Reports_Section_GrossProfit", "Gross profit"), grossProfit),
-                ..expenses,
-                SummaryRow("TOTAL_EXPENSES", Text("Reports_Section_TotalExpenses", "Total expenses"), totalExpenses),
-                ..other,
-                SummaryRow("NET_PROFIT", Text("Reports_Section_NetProfit", "Net profit"), netProfit),
-            ];
-            return new PnlMatrix(period, months, ordered);
-        }, cancellationToken);
     }
 
     public async Task<DashboardSummary> GetDashboardAsync(CancellationToken cancellationToken = default)
@@ -407,6 +232,8 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
             return GetSalaryMatrixAsync(period, Math.Min(filter.Limit, 500), cancellationToken);
         if (kind == ReportKind.AssetSchedule)
             return GetAssetScheduleAsync(filter.AssetId, period, Math.Min(filter.Limit, 500), cancellationToken);
+        if (kind == ReportKind.StockReconciliation)
+            return GetStockReconciliationAsync(filter, cancellationToken);
         int days = period.To.DayNumber - period.From.DayNumber + 1;
         DateOnly previousTo = period.From.AddDays(-1);
         DateOnly previousFrom = previousTo.AddDays(1 - days);
@@ -467,7 +294,8 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
             IReadOnlyList<ReportColumn> columns = definition.Columns.Select(column =>
                 column with { Heading = Text($"Reports_Column_{column.Key}", column.Heading) }).ToList();
             return new TabularReport(Text($"Reports_Kind_{kind}", definition.Title),
-                definition.UsesPeriod ? period : null, columns, rows, totals, truncated);
+                definition.UsesPeriod ? period : null, columns, rows, totals, truncated,
+                kind == ReportKind.StockValue ? ExpiredStockSummary(connection, filter.IncludeExpired) : null);
         }, cancellationToken);
     }
 
@@ -491,6 +319,11 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                 exported = await ExportAssetScheduleCsvAsync(filter.AssetId, period, temporary,
                     progress, cancellationToken).ConfigureAwait(false);
             }
+            else if (kind == ReportKind.StockReconciliation)
+            {
+                exported = await ExportStockReconciliationCsvAsync(filter, temporary, progress,
+                    cancellationToken).ConfigureAwait(false);
+            }
             else
             {
                 ReportDefinition definition = Definition(kind);
@@ -504,10 +337,18 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
                         Text($"Reports_Column_{column.Key}", column.Heading)))));
                     var parameters = new
                     {
-                        from = Iso(from), to = Iso(to), filter.ProductId, filter.LotId,
-                        filter.VendorId, filter.Status, filter.PaymentMode, filter.Entity, filter.Action,
+                        from = Iso(from),
+                        to = Iso(to),
+                        filter.ProductId,
+                        filter.LotId,
+                        filter.VendorId,
+                        filter.Status,
+                        filter.PaymentMode,
+                        filter.Entity,
+                        filter.Action,
                         stockAsOf = Iso(clock.BusinessDate),
-                        previousFrom = Iso(previousFrom), previousTo = Iso(previousTo),
+                        previousFrom = Iso(previousFrom),
+                        previousTo = Iso(previousTo),
                         slowFrom = Iso(to.AddDays(-filter.SlowMoverDays)),
                         firstMonth = from.ToString("yyyy-MM", CultureInfo.InvariantCulture),
                         lastMonth = (to.Day == DateTime.DaysInMonth(to.Year, to.Month) ? to : to.AddMonths(-1))
@@ -798,18 +639,6 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         return months;
     }
 
-    private static Money[] SumMonths(IReadOnlyList<PnlMatrixRow> rows, int count) =>
-        Enumerable.Range(0, count).Select(index => Money.FromScaled(rows.Sum(row => row.Months[index].Scaled))).ToArray();
-
-    private static Money[] SubtractMonths(Money[] left, Money[] right) =>
-        Enumerable.Range(0, left.Length).Select(index => left[index] - right[index]).ToArray();
-
-    private static Money[] AddMonths(Money[] left, Money[] right) =>
-        Enumerable.Range(0, left.Length).Select(index => left[index] + right[index]).ToArray();
-
-    private static PnlMatrixRow SummaryRow(string code, string label, Money[] months) =>
-        new("TOTAL", code, null, label, months, Money.FromScaled(months.Sum(static month => month.Scaled)));
-
     private List<ReportRow> AddCategorySubtotals(List<ReportRow> rows)
     {
         var result = new List<ReportRow>(rows.Count + rows.Count / 4);
@@ -865,6 +694,11 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         "SLM" => Text("Reports_Value_SLM", code),
         "WDV" => Text("Reports_Value_WDV", code),
         "OPENING" => Text("Stock_SourceDoc_Opening", code),
+        "SALEABLE" => Text("Catalog_Saleable", code),
+        "INTERNAL" => Text("Catalog_InternalUse", code),
+        "PURCHASE_LINE" => Text("Stock_SourceDoc_Purchase", code),
+        "DIRECT" => Text("Reports_Value_DIRECT", code),
+        "MISMATCH" => Text("Reports_Value_MISMATCH", code),
         "PURCHASE" or "PURCHASE_CANCEL" => Text("Stock_SourceDoc_Purchase", code),
         "VENDOR_RETURN" => Text("Stock_SourceDoc_VendorReturn", code),
         "SALE" or "SALE_VOID" => Text("Stock_SourceDoc_Sale", code),
@@ -887,39 +721,6 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
         return yearOffset == 0 ? new(from, today) : new(from, to);
     }
 
-    private PnlStatement BuildStatement(DateRange period, IReadOnlyList<PnlRaw> raw, IReadOnlyDictionary<long, string> categories)
-    {
-        List<PnlLine> lines = raw.Select(row => new PnlLine(row.Section, row.HeadCode, row.ReferenceId,
-            Label(row.HeadCode, row.ReferenceId, categories), Money.FromScaled(row.Amount))).ToList();
-        List<PnlLine> other = lines.Where(static x => x.Section == "OTHER" || x.HeadCode == "ASSET_DISPOSAL").ToList();
-        List<PnlLine> income = lines.Where(static x => x.Section == "INCOME" && x.HeadCode != "ASSET_DISPOSAL").ToList();
-        List<PnlLine> cogs = lines.Where(static x => x.Section == "COGS").ToList();
-        List<PnlLine> expenses = lines.Where(static x => x.Section == "EXPENSE").ToList();
-        Money netSales = Sum(income);
-        Money gross = netSales - Sum(cogs);
-        Money totalExpenses = Sum(expenses);
-        Money net = gross - totalExpenses + Sum(other);
-        return new(period, income, cogs, expenses, other, netSales, gross, Ratio(gross, netSales),
-            totalExpenses, net, Ratio(net, netSales));
-    }
-
-    private static Money Sum(IEnumerable<PnlLine> lines) => Money.FromScaled(lines.Sum(static x => x.Amount.Scaled));
-    private static Percent Ratio(Money amount, Money basis) => basis == Money.Zero ? Percent.Zero : new(amount.Value * 100m / basis.Value);
-    private string Label(string code, long? referenceId, IReadOnlyDictionary<long, string> categories) => code switch
-    {
-        "SALES" => Text("Pnl_Head_Sales", "Sales (net of GST)"),
-        "SALES_RETURNS" => Text("Pnl_Head_SalesReturns", "Sales returns"),
-        "ROUND_OFF" => Text("Pnl_Head_RoundOff", "Round off"),
-        "COGS" => Text("Pnl_Head_Cogs", "Cost of goods sold"),
-        "DAMAGES" => Text("Pnl_Head_Damages", "Damages and expiry"),
-        "STOCK_ADJUSTMENT" => Text("Pnl_Head_StockAdjustment", "Stock adjustments"),
-        "SALARIES" => Text("Pnl_Head_Salaries", "Salaries"),
-        "DEPRECIATION" => Text("Pnl_Head_Depreciation", "Depreciation"),
-        "ASSET_DISPOSAL" => Text("Pnl_Head_AssetDisposal", "Asset disposal gain/(loss)"),
-        "VENDOR_RETURN_VARIANCE" => Text("Pnl_Head_VendorReturnVariance", "Vendor return variance"),
-        "EXPENSE_CATEGORY" when referenceId is { } id => categories.GetValueOrDefault(id, $"Expense {id}"),
-        _ => code
-    };
     private static TopProduct ToTop(TopRaw x) => new(x.ProductId, x.Name, x.LocalName, Quantity.FromScaled(x.Quantity),
         Money.FromScaled(x.Revenue), Money.FromScaled(x.Cost), Money.FromScaled(x.Margin));
     private static decimal ScaledDecimal(object? value) => value switch
@@ -963,8 +764,6 @@ public sealed class ReportService(DbExecutor database, ISettings settings, ICloc
 
     private static ReportDefinition Definition(ReportKind kind) => ReportDefinitions.All[kind];
 
-    private class PnlRaw { public string Section { get; init; } = ""; public string HeadCode { get; init; } = ""; public long? ReferenceId { get; init; } public long Amount { get; init; } }
-    private sealed class PnlMonthRaw : PnlRaw { public string Month { get; init; } = ""; }
     private sealed class DashboardCore { public long TodaySales { get; init; } public long TodayTaxableSales { get; init; } public int TodayBills { get; init; } public long TodayGrossProfit { get; init; } public long MonthSales { get; init; } public long PreviousMonthSales { get; init; } public int ExpiredLots { get; init; } public int CriticalLots { get; init; } public int SoonLots { get; init; } public int LowStockProducts { get; init; } public long StockValue { get; init; } public long Payables { get; init; } }
     private sealed class DashboardWindowRaw { public string FromDay { get; init; } = ""; public string ToDay { get; init; } = ""; }
     private sealed class PaymentRaw { public string Mode { get; init; } = ""; public long Amount { get; init; } }

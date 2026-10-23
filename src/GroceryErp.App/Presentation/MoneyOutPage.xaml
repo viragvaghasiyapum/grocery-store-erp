@@ -27,6 +27,8 @@
                 Tag="{Binding RelativeSource={RelativeSource AncestorType=DataGrid}}"
                 AutomationProperties.Name="{l:Tr Selection_ThisPage}"/>
     </DataTemplate>
+    <p:EntryStatusConverter x:Key="EntryStatus"/>
+    <p:EmployeeStatusConverter x:Key="EmployeeStatus"/>
     <DataTemplate x:Key="ExpiryNameTemplate">
       <StackPanel VerticalAlignment="Center">
         <TextBlock Text="{Binding ProductName}" TextTrimming="CharacterEllipsis"/>
@@ -128,7 +130,6 @@
           <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Reports_To}"/>
           <DatePicker x:Name="DamageToBox" Width="140" Margin="0,0,12,0" SelectedDateFormat="Short"/>
           <Button Click="DamageFilter_OnClick" Content="{l:Tr MoneyOut_SearchHistory}"/>
-          <Button x:Name="CorrectDamageButton" Margin="12,0,0,0" IsEnabled="False" Click="CorrectDamage_OnClick" Content="{l:Tr MoneyOut_CorrectPosted}"/>
         </WrapPanel>
         <p:AnimatedSection DockPanel.Dock="Top" Header="{l:Tr MoneyOut_DamageEntry}" Margin="0,0,0,8" IsExpanded="False">
         <WrapPanel Margin="0,8,0,0">
@@ -149,17 +150,22 @@
           <Button Height="36" VerticalAlignment="Top" Margin="0,18,0,0" Click="RecordAnyDamage_OnClick" Content="{l:Tr MoneyOut_RecordDamage}"/>
         </WrapPanel>
         </p:AnimatedSection>
-        <DataGrid Style="{StaticResource CompactTableGrid}" x:Name="DamageGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="DamageGrid_OnSelectionChanged">
-          <DataGrid.Columns>
-            <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Document}" Binding="{Binding DocumentNumber}"/>
-            <DataGridTextColumn Width="105" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date}"/>
-            <DataGridTextColumn Width="240" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
-            <DataGridTextColumn Width="100" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
-            <DataGridTextColumn Width="115" Header="{l:Tr MoneyOut_Cost}" Binding="{Binding CostValue}"/>
-            <DataGridTextColumn Width="115" Header="{l:Tr MoneyOut_Recovered}" Binding="{Binding RecoveredAmount}"/>
-            <DataGridTextColumn Width="130" Header="{l:Tr MoneyOut_Reason}" Binding="{Binding Reason}"/>
-          </DataGrid.Columns>
-        </DataGrid>
+        <Grid>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <DataGrid Style="{StaticResource CompactTableGrid}" x:Name="DamageGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="DamageGrid_OnSelectionChanged">
+            <DataGrid.Columns>
+              <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Document}" Binding="{Binding DocumentNumber}"/>
+              <DataGridTextColumn Width="105" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date}"/>
+              <DataGridTextColumn Width="230" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
+              <DataGridTextColumn Width="95" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
+              <DataGridTextColumn Width="110" Header="{l:Tr MoneyOut_Cost}" Binding="{Binding CostValue}"/>
+              <DataGridTextColumn Width="110" Header="{l:Tr MoneyOut_Recovered}" Binding="{Binding RecoveredAmount}"/>
+              <DataGridTextColumn Width="120" Header="{l:Tr MoneyOut_Reason}" Binding="{Binding Reason}"/>
+              <DataGridTextColumn Width="110" Header="{l:Tr Reports_Status}" Binding="{Binding Status, Converter={StaticResource EntryStatus}}"/>
+            </DataGrid.Columns>
+          </DataGrid>
+          <p:CorrectionDetailsPanel x:Name="DamageDetails" Grid.Column="1" EditRequested="DamageDetails_OnEdit" VoidRequested="DamageDetails_OnVoid"/>
+        </Grid>
         </DockPanel>
       </TabItem>
       <TabItem Header="{l:Tr MoneyOut_Expenses}">
@@ -191,10 +197,6 @@
             <Button Margin="0,17,8,4" Click="NewExpense_OnClick" Content="{l:Tr MoneyOut_NewEntry}"/>
             <Button Margin="0,17,0,4" Click="RepeatExpense_OnClick" Content="{l:Tr MoneyOut_RepeatLastMonth}"/>
           </WrapPanel>
-          <StackPanel x:Name="ExpenseCorrectionPanel" DockPanel.Dock="Top" Orientation="Horizontal" Visibility="Collapsed" Margin="0,0,0,8">
-            <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{l:Tr MoneyOut_RequiredCorrectionReason}"/>
-            <TextBox x:Name="ExpenseCorrectionReason" Width="330" MaxLength="240"/>
-          </StackPanel>
           <p:AnimatedSection DockPanel.Dock="Top" Header="{l:Tr MoneyOut_RepeatCategories}" Margin="0,0,0,8">
             <DockPanel>
               <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,4">
@@ -227,15 +229,20 @@
             <Button Margin="0,17,0,0" Click="AddCategory_OnClick" Content="{l:Tr Common_Save}"/>
           </WrapPanel>
           </Grid>
-          <DataGrid Style="{StaticResource CompactTableGrid}" x:Name="ExpenseGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="ExpenseGrid_OnSelectionChanged">
-            <DataGrid.Columns>
-              <DataGridTextColumn Width="110" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date}"/>
-              <DataGridTextColumn Width="220" Header="{l:Tr Catalog_Category}" Binding="{Binding CategoryName}"/>
-              <DataGridTextColumn Width="120" Header="{l:Tr MoneyOut_Amount}" Binding="{Binding Amount}"/>
-              <DataGridTextColumn Width="145" Header="{l:Tr Purchasing_Mode}" Binding="{Binding Mode}"/>
-              <DataGridTextColumn Width="220" Header="{l:Tr MoneyOut_PaidTo}" Binding="{Binding PaidTo}"/>
-            </DataGrid.Columns>
-          </DataGrid>
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <DataGrid Style="{StaticResource CompactTableGrid}" x:Name="ExpenseGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="ExpenseGrid_OnSelectionChanged">
+              <DataGrid.Columns>
+                <DataGridTextColumn Width="110" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date}"/>
+                <DataGridTextColumn Width="200" Header="{l:Tr Catalog_Category}" Binding="{Binding CategoryName}"/>
+                <DataGridTextColumn Width="120" Header="{l:Tr MoneyOut_Amount}" Binding="{Binding Amount}"/>
+                <DataGridTextColumn Width="110" Header="{l:Tr Purchasing_Mode}" Binding="{Binding Mode}"/>
+                <DataGridTextColumn Width="200" Header="{l:Tr MoneyOut_PaidTo}" Binding="{Binding PaidTo}"/>
+                <DataGridTextColumn Width="110" Header="{l:Tr Reports_Status}" Binding="{Binding Status, Converter={StaticResource EntryStatus}}"/>
+              </DataGrid.Columns>
+            </DataGrid>
+            <p:CorrectionDetailsPanel x:Name="ExpenseDetails" Grid.Column="1" EditRequested="ExpenseDetails_OnEdit" VoidRequested="ExpenseDetails_OnVoid"/>
+          </Grid>
         </DockPanel>
       </TabItem>
       <TabItem Header="{l:Tr MoneyOut_Payroll}">
@@ -243,22 +250,37 @@
           <TabItem Header="{l:Tr MoneyOut_Employees}">
             <DockPanel Margin="0,8,0,0">
             <p:AnimatedSection x:Name="EmployeeDetailsExpander" DockPanel.Dock="Top" Header="{l:Tr MoneyOut_EmployeeDetails}" Margin="0,0,0,8" IsExpanded="False">
-            <WrapPanel MaxWidth="950" HorizontalAlignment="Left" Margin="0,8,0,0" ItemHeight="62">
+            <StackPanel>
+            <WrapPanel MaxWidth="1050" HorizontalAlignment="Left" Margin="0,8,0,0" ItemHeight="62">
               <StackPanel Width="170" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_EmployeeName}"/><TextBox x:Name="EmployeeName"/></StackPanel>
               <StackPanel Width="120" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_Phone}"/><TextBox x:Name="EmployeePhone"/></StackPanel>
               <StackPanel Width="130" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_Role}"/><TextBox x:Name="EmployeeRole"/></StackPanel>
               <StackPanel Width="125" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_JoinDate}"/><DatePicker x:Name="EmployeeJoinDate" SelectedDateFormat="Short"/></StackPanel>
               <StackPanel Width="125" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_LeaveDate}"/><DatePicker x:Name="EmployeeLeaveDate" SelectedDateFormat="Short"/></StackPanel>
-              <StackPanel Width="110" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_Salary}"/><TextBox x:Name="EmployeeSalary"/></StackPanel>
+              <StackPanel Width="110" Margin="0,0,8,0"><TextBlock Text="{l:Tr MoneyOut_Salary}"/><TextBox x:Name="EmployeeSalary" TextChanged="EmployeeSalary_OnTextChanged"/></StackPanel>
+              <StackPanel x:Name="EmployeeSalaryFromPanel" Width="120" Margin="0,0,8,0" Visibility="Collapsed"><TextBlock Text="{l:Tr MoneyOut_SalaryFrom}"/><TextBox x:Name="EmployeeSalaryFrom" ToolTip="YYYY-MM" TextChanged="EmployeeSalary_OnTextChanged" AutomationProperties.Name="{l:Tr MoneyOut_SalaryFrom}"/></StackPanel>
               <StackPanel Width="145" Margin="0,0,8,0"><TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="EmployeeNotes"/></StackPanel>
               <CheckBox x:Name="EmployeeActive" IsChecked="True" VerticalAlignment="Center" Margin="0,0,8,0" Content="{l:Tr MoneyOut_Active}"/>
               <Button Margin="0,16,8,0" Click="NewEmployee_OnClick" Content="{l:Tr MoneyOut_New}"/>
               <Button Margin="0,16,0,0" Click="AddEmployee_OnClick" Content="{l:Tr Common_Save}"/>
             </WrapPanel>
+            <TextBlock x:Name="EmployeeSalaryHint" Margin="0,4,0,0" TextWrapping="Wrap" Visibility="Collapsed" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+            </StackPanel>
             </p:AnimatedSection>
-            <DataGrid x:Name="EmployeeGrid" Style="{StaticResource CompactTableGrid}" SelectionChanged="EmployeeGrid_OnSelectionChanged">
-            <DataGrid.Columns><DataGridTextColumn Width="260" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}"/><DataGridTextColumn Width="160" Header="{l:Tr MoneyOut_Role}" Binding="{Binding Role}"/><DataGridTextColumn Width="150" Header="{l:Tr MoneyOut_Salary}" Binding="{Binding MonthlySalary}"/></DataGrid.Columns>
-            </DataGrid>
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <DataGrid x:Name="EmployeeGrid" Style="{StaticResource CompactTableGrid}" SelectionChanged="EmployeeGrid_OnSelectionChanged">
+              <DataGrid.Columns>
+                <DataGridTextColumn Width="230" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}"/>
+                <DataGridTextColumn Width="140" Header="{l:Tr MoneyOut_Role}" Binding="{Binding Role}"/>
+                <DataGridTextColumn Width="130" Header="{l:Tr MoneyOut_Salary}" Binding="{Binding MonthlySalary}"/>
+                <DataGridTextColumn Width="105" Header="{l:Tr MoneyOut_JoinDate}" Binding="{Binding JoinDate}"/>
+                <DataGridTextColumn Width="105" Header="{l:Tr MoneyOut_LeaveDate}" Binding="{Binding LeaveDate}"/>
+                <DataGridTextColumn Width="105" Header="{l:Tr Reports_Status}" Binding="{Binding IsActive, Converter={StaticResource EmployeeStatus}}"/>
+              </DataGrid.Columns>
+              </DataGrid>
+              <p:CorrectionDetailsPanel x:Name="EmployeeDetails" Grid.Column="1"/>
+            </Grid>
             </DockPanel>
           </TabItem>
           <TabItem Header="{l:Tr MoneyOut_PrepareSalary}">
@@ -291,7 +313,6 @@
                 <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                   <StackPanel Width="100" Margin="0,0,8,0"><TextBlock Text="{l:Tr Assets_Period}"/><TextBox x:Name="SalaryRegisterPeriod"/></StackPanel>
                   <Button Margin="0,18,8,0" Click="RefreshSalaryRegister_OnClick" Content="{l:Tr Stock_Refresh}"/>
-                  <Button x:Name="CorrectSalaryButton" IsEnabled="False" Margin="0,18,0,0" Click="CorrectSalary_OnClick" Content="{l:Tr MoneyOut_CorrectPosted}"/>
                 </WrapPanel>
                 <p:AnimatedSection DockPanel.Dock="Top" Header="{l:Tr MoneyOut_AdvanceDetails}" Margin="0,0,0,8" IsExpanded="False">
                 <WrapPanel Margin="0,8,0,0">
@@ -303,17 +324,22 @@
                   <Button Margin="0,18,0,0" Click="RecordAdvance_OnClick" Content="{l:Tr MoneyOut_RecordAdvance}"/>
                 </WrapPanel>
                 </p:AnimatedSection>
-                <DataGrid Style="{StaticResource CompactTableGrid}" x:Name="SalaryRegisterGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="SalaryRegisterGrid_OnSelectionChanged">
-                  <DataGrid.Columns>
-                    <DataGridTextColumn Width="180" Header="{l:Tr MoneyOut_EmployeeName}" Binding="{Binding EmployeeName}"/>
-                    <DataGridTextColumn Width="110" Header="{l:Tr Assets_Period}" Binding="{Binding Period}"/>
-                    <DataGridTextColumn Width="110" Header="{l:Tr MoneyOut_PayDate}" Binding="{Binding PayDate}"/>
-                    <DataGridTextColumn Width="110" Header="{l:Tr MoneyOut_Reason}" Binding="{Binding Kind}"/>
-                    <DataGridTextColumn Width="120" Header="{l:Tr MoneyOut_Salary}" Binding="{Binding Amount}"/>
-                    <DataGridTextColumn Width="100" Header="{l:Tr Purchasing_Mode}" Binding="{Binding Mode}"/>
-                    <DataGridTextColumn Width="220" Header="{l:Tr Purchasing_Notes}" Binding="{Binding Notes}"/>
-                  </DataGrid.Columns>
-                </DataGrid>
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <DataGrid Style="{StaticResource CompactTableGrid}" x:Name="SalaryRegisterGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="SalaryRegisterGrid_OnSelectionChanged">
+                    <DataGrid.Columns>
+                      <DataGridTextColumn Width="170" Header="{l:Tr MoneyOut_EmployeeName}" Binding="{Binding EmployeeName}"/>
+                      <DataGridTextColumn Width="95" Header="{l:Tr Assets_Period}" Binding="{Binding Period}"/>
+                      <DataGridTextColumn Width="105" Header="{l:Tr MoneyOut_PayDate}" Binding="{Binding PayDate}"/>
+                      <DataGridTextColumn Width="95" Header="{l:Tr MoneyOut_Reason}" Binding="{Binding Kind}"/>
+                      <DataGridTextColumn Width="115" Header="{l:Tr MoneyOut_Salary}" Binding="{Binding Amount}"/>
+                      <DataGridTextColumn Width="90" Header="{l:Tr Purchasing_Mode}" Binding="{Binding Mode}"/>
+                      <DataGridTextColumn Width="105" Header="{l:Tr Reports_Status}" Binding="{Binding Status, Converter={StaticResource EntryStatus}}"/>
+                      <DataGridTextColumn Width="180" Header="{l:Tr Purchasing_Notes}" Binding="{Binding Notes}"/>
+                    </DataGrid.Columns>
+                  </DataGrid>
+                  <p:CorrectionDetailsPanel x:Name="SalaryDetails" Grid.Column="1" EditRequested="SalaryDetails_OnEdit" VoidRequested="SalaryDetails_OnVoid"/>
+                </Grid>
               </DockPanel>
           </TabItem>
         </TabControl>

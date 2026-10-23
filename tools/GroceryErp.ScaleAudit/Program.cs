@@ -21,7 +21,7 @@ using GroceryErp.Reports;
 using GroceryErp.Sales;
 
 if (args.Length < 1)
-    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase2-direct-audit|phase3-purchase-read|phase1-schema-audit|phase1-rollback|refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|phase6-reports|phase6-matrix|phase6-category-index|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|phase5-label-failure|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
+    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase3-purchase-read|phase1-schema-audit|phase1-rollback|refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|phase6-reports|phase6-matrix|phase6-category-index|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|phase5-label-failure|phase5-live-write|phase5-return-reconcile|phase5-sales-read|phase5-count-read|phase5-fixture-align|phase5-direct-audit|phase5-direct-crash|phase5-direct-crash-check|phase6-annual|rebuild-pnl-days|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
 
 string root = Path.GetFullPath(args[0]);
 string mode = args.Length > 1 ? args[1] : "read";
@@ -101,7 +101,7 @@ using var settings = new SettingsService(database, paths, audit);
 if (mode != "restore-recover") await settings.LoadAsync();
 var clock = new AuditClock(new DateTime(2026, 9, 26, 12, 0, 0));
 var numbers = new DocNumberService(settings);
-var periods = new PeriodGuard(settings);
+var periods = new PeriodGuard(settings, clock);
 var ledger = new StockLedger(settings);
 var catalog = new CatalogService(database, audit, settings);
 var inventory = new InventoryService(database, ledger, numbers, periods, audit);
@@ -241,71 +241,62 @@ DateOnly monthStart = new(2026, 9, 1);
 DateOnly fiscalStart = new(2026, 4, 1);
 switch (mode)
 {
-    case "phase2-direct-crash":
+    case "phase5-direct-crash":
     {
-        if (!Path.GetFileName(root).Contains("phase2", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Crash rehearsal runs only in a disposable phase2 root.");
+        if (!Path.GetFileName(root).Contains("rehearsal", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Crash rehearsal runs only in a disposable rehearsal root.");
         using var connection = factory.Open();
-        if (connection.ExecuteScalar<long>("PRAGMA user_version") is not (31 or 32))
-            throw new InvalidDataException("Activate the direct-stock sandbox first.");
         long product = connection.ExecuteScalar<long>("""
-            SELECT id FROM product WHERE sku LIKE 'PH2-%' ORDER BY id DESC LIMIT 1
+            SELECT product_id FROM product_lot WHERE qty_on_hand>0 AND is_active=1
+            ORDER BY id DESC LIMIT 1
             """);
         using var transaction = connection.BeginTransaction(deferred: false);
         long lotId = connection.ExecuteScalar<long>("""
-            SELECT id FROM product_lot WHERE product_id=@product AND qty_on_hand>0
+            SELECT id FROM product_lot WHERE product_id=@product AND qty_on_hand>0 AND is_active=1
             ORDER BY expiry_date IS NULL,expiry_date,received_date,id LIMIT 1
             """, new { product }, transaction);
-        long version = connection.ExecuteScalar<long>(
-            "SELECT quantity_version FROM product_lot WHERE id=@lotId", new { lotId }, transaction);
         long sale = connection.ExecuteScalar<long>("""
             INSERT INTO sale(invoice_no,sale_date,line_count,gross_total,taxable_total,
               grand_total,cost_total)
-            VALUES ('PH2-CRASH-ROLLBACK','2026-10-18',1,2000,2000,2000,1000) RETURNING id
+            VALUES ('PH5-CRASH-ROLLBACK','2026-10-18',1,2000,2000,2000,1000) RETURNING id
             """, transaction: transaction);
-        connection.Execute("""
+        long line = connection.ExecuteScalar<long>("""
             INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,
               qty,unit_price,taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
-            VALUES (@sale,1,@product,@lotId,'Phase 2 hot product',1000,2000,2000,0,2000,1000,1000)
+            VALUES (@sale,1,@product,@lotId,'Phase 5 crash product',1000,2000,2000,0,2000,1000,1000)
+            RETURNING id
             """, new { sale, product, lotId }, transaction);
-        connection.Execute("UPDATE sale SET status='COMPLETED' WHERE id=@sale",
-            new { sale }, transaction);
-        new DirectStockEngine().CompleteSale(new(connection, transaction), sale,
-            new Dictionary<long, long> { [lotId] = version }, OperationGuard.NewId());
+        ledger.Post(new(connection, transaction), new(new DateOnly(2026, 10, 18), product, lotId, "SALE",
+            Quantity.FromScaled(-1000), new Money(1), "sale_line", line));
+        connection.Execute("UPDATE sale SET status='COMPLETED' WHERE id=@sale", new { sale }, transaction);
         Console.WriteLine($"INTENTIONAL_CRASH_BEFORE_COMMIT lot={lotId} sale={sale}");
         Console.Out.Flush();
         Environment.Exit(137);
         break;
     }
-    case "phase2-direct-crash-check":
+    case "phase5-direct-crash-check":
     {
         using var connection = factory.Open();
         phaseTwoChecks = new Dictionary<string, long>
         {
             ["uncommittedSaleRows"] = connection.ExecuteScalar<long>(
-                "SELECT COUNT(*) FROM sale WHERE invoice_no='PH2-CRASH-ROLLBACK'"),
+                "SELECT COUNT(*) FROM sale WHERE invoice_no='PH5-CRASH-ROLLBACK'"),
             ["foreignKeyViolations"] = connection.ExecuteScalar<long>(
                 "SELECT COUNT(*) FROM pragma_foreign_key_check"),
             ["quickCheckOk"] = connection.ExecuteScalar<string>("PRAGMA quick_check") == "ok" ? 1 : 0,
         };
-        using var transaction = connection.BeginTransaction(deferred: true);
-        int mismatches = new DirectStockEngine().CheckAll(new(connection, transaction)).Count();
-        phaseTwoChecks["directStockMismatches"] = mismatches;
-        transaction.Commit();
+        int mismatches = LotSourceReconciliation.CheckAll(connection, null).Count();
+        phaseTwoChecks["sourceMismatches"] = mismatches;
         if (phaseTwoChecks["uncommittedSaleRows"] != 0 || phaseTwoChecks["foreignKeyViolations"] != 0 ||
             phaseTwoChecks["quickCheckOk"] != 1 || mismatches != 0)
             throw new InvalidDataException("Crash recovery left a document, balance or integrity mismatch.");
         break;
     }
-    case "phase2-count-read":
+    case "phase5-count-read":
     {
-        if (!Path.GetFileName(root).Contains("phase2", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Count profile runs only in a disposable phase2 data root.");
         using var check = factory.Open();
-        if (check.ExecuteScalar<long>("PRAGMA user_version") is not (31 or 32))
-            throw new InvalidDataException("Activate the direct-stock sandbox first.");
         long product = check.ExecuteScalar<long>("""
-            SELECT product_id FROM product_lot WHERE id=(SELECT MAX(id) FROM product_lot)
+            SELECT product_id FROM product_lot GROUP BY product_id ORDER BY COUNT(*) DESC LIMIT 1
             """);
         var counts = new DirectStockCountService(database, new DirectStockEngine(), periods);
         DirectCountLotPage? page = null;
@@ -313,7 +304,7 @@ switch (mode)
         {
             long started = Stopwatch.GetTimestamp();
             page = await counts.GetPageAsync([product]);
-            profileSamples.Add(new("phase2-selected-product-count-page",
+            profileSamples.Add(new("phase5-selected-product-count-page",
                 Stopwatch.GetElapsedTime(started).TotalMilliseconds, page.Items.Count, null));
         }
         phaseTwoChecks = new Dictionary<string, long>
@@ -325,21 +316,20 @@ switch (mode)
         if (page.Items.Count == 0) throw new InvalidDataException("Count page is empty.");
         break;
     }
-    case "phase2-cashier-ledger":
-    case "phase2-cashier-write":
+    // A cashier bill flow on the real write path while two readers page sales history.
+    case "phase5-live-write":
     {
-        if (!Path.GetFileName(root).Contains("phase2", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Cashier rehearsal runs only in a disposable phase2 data root.");
-        bool directMode = mode == "phase2-cashier-write";
+        if (!Path.GetFileName(root).Contains("rehearsal", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Cashier rehearsal needs a disposable rehearsal root.");
+        long movementsBefore;
         using (var check = factory.Open())
-            if ((directMode ? check.ExecuteScalar<long>("PRAGMA user_version") is not (31 or 32) :
-                    check.ExecuteScalar<long>("PRAGMA user_version") is not (30 or 31)) ||
-                check.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE name='direct_stock_sandbox'") != (directMode ? 1 : 0))
-                throw new InvalidDataException("Cashier rehearsal has the wrong fixture schema.");
-        var direct = new DirectStockEngine();
+        {
+            if (check.ExecuteScalar<long>("PRAGMA user_version") != MigrationRunner.LatestVersion)
+                throw new InvalidDataException("Migrate the rehearsal copy first.");
+            movementsBefore = check.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement");
+        }
         var cashierClock = new AuditClock(new DateTime(2026, 10, 18, 12, 0, 0));
-        var directSales = new SalesService(database, ledger, numbers, periods, settings, audit, cashierClock,
-            directMode ? direct : null);
+        var cashierSales = new SalesService(database, ledger, numbers, periods, settings, audit, cashierClock);
         string suffix = Guid.NewGuid().ToString("N");
         long product = await database.WriteAsync(tx =>
         {
@@ -347,8 +337,8 @@ switch (mode)
             long uom = tx.Connection.ExecuteScalar<long>("SELECT id FROM uom WHERE code='PCS'", transaction: tx.Transaction);
             long id = tx.Connection.ExecuteScalar<long>("""
                 INSERT INTO product(sku,name,category_id,uom_id)
-                VALUES (@sku,'Phase 2 cashier product',@category,@uom) RETURNING id
-                """, new { sku = "PH2-C-" + suffix, category, uom }, tx.Transaction);
+                VALUES (@sku,'Phase 5 cashier product',@category,@uom) RETURNING id
+                """, new { sku = "PH5-C-" + suffix, category, uom }, tx.Transaction);
             for (int index = 0; index < 128; index++)
             {
                 long lotId = tx.Connection.ExecuteScalar<long>("""
@@ -356,37 +346,54 @@ switch (mode)
                       unit_cost,selling_price,qty_received)
                     VALUES (@id,@code,'CASHIER-BATCH','2026-10-18','2027-10-18',1000,2000,1000)
                     RETURNING id
-                    """, new { id, code = "PH2-C-L-" + suffix + "-" + index.ToString("D3", System.Globalization.CultureInfo.InvariantCulture) },
+                    """, new { id, code = "PH5-C-L-" + suffix + "-" + index.ToString("D3", System.Globalization.CultureInfo.InvariantCulture) },
                     tx.Transaction);
-                if (directMode) direct.CreateDirectLot(tx, lotId, 1, OperationGuard.NewId());
-                else ledger.Post(tx, new(cashierClock.BusinessDate, id, lotId, "OPENING",
-                    Quantity.One, new Money(1), "phase2_cashier_seed", lotId));
+                ledger.Post(tx, new(cashierClock.BusinessDate, id, lotId, "DIRECT_ENTRY",
+                    Quantity.One, new Money(1), "direct_stock_origin", lotId));
             }
             return id;
         });
-        for (int index = 0; index < 100; index++)
+        using var readersStop = new CancellationTokenSource();
+        Task[] readers = Enumerable.Range(0, 2).Select(_ => Task.Run(async () =>
         {
-            long saleId = await directSales.AddProductAsync(null, product, Quantity.One);
-            long started = Stopwatch.GetTimestamp();
-            try
+            while (!readersStop.IsCancellationRequested)
+                await cashierSales.GetHistoryAsync(new SaleHistoryFilter(Limit: 50), readersStop.Token);
+        })).ToArray();
+        try
+        {
+            for (int index = 0; index < 100; index++)
             {
-                await directSales.CompleteAsync(new(saleId,
-                    [new(PaymentMode.Cash, new Money(2))], OperationGuard.NewId()));
-                profileSamples.Add(new("phase2-cashier-complete",
-                    Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1, null));
+                long scanStarted = Stopwatch.GetTimestamp();
+                long saleId = await cashierSales.AddProductAsync(null, product, Quantity.One);
+                profileSamples.Add(new("phase5-live-scan-to-line",
+                    Stopwatch.GetElapsedTime(scanStarted).TotalMilliseconds, 1, null));
+                long started = Stopwatch.GetTimestamp();
+                try
+                {
+                    await cashierSales.CompleteAsync(new(saleId,
+                        [new(PaymentMode.Cash, new Money(2))], OperationGuard.NewId()));
+                    profileSamples.Add(new("phase5-live-bill-commit",
+                        Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1, null));
+                }
+                catch (Exception exception)
+                {
+                    profileSamples.Add(new("phase5-live-bill-commit",
+                        Stopwatch.GetElapsedTime(started).TotalMilliseconds, 0, exception.GetType().Name));
+                    throw;
+                }
+                if (index % 10 == 0)
+                {
+                    process.Refresh();
+                    long wal = File.Exists(paths.DatabaseFile + "-wal") ? new FileInfo(paths.DatabaseFile + "-wal").Length : 0;
+                    resourceSamples.Enqueue(new(auditElapsed.Elapsed.TotalSeconds, wal, process.WorkingSet64, 0, factory.ActiveConnections));
+                }
             }
-            catch (Exception exception)
-            {
-                profileSamples.Add(new("phase2-cashier-complete",
-                    Stopwatch.GetElapsedTime(started).TotalMilliseconds, 0, exception.GetType().Name));
-                throw;
-            }
-            if (index % 10 == 0)
-            {
-                process.Refresh();
-                long wal = File.Exists(paths.DatabaseFile + "-wal") ? new FileInfo(paths.DatabaseFile + "-wal").Length : 0;
-                resourceSamples.Enqueue(new(auditElapsed.Elapsed.TotalSeconds, wal, process.WorkingSet64, 0, factory.ActiveConnections));
-            }
+        }
+        finally
+        {
+            readersStop.Cancel();
+            try { await Task.WhenAll(readers); }
+            catch (OperationCanceledException) { }
         }
         using (var check = factory.Open())
             phaseTwoChecks = new Dictionary<string, long>
@@ -395,136 +402,77 @@ switch (mode)
                     "SELECT COUNT(*) FROM sale_line WHERE product_id=@product", new { product }),
                 ["cashierRemaining"] = check.ExecuteScalar<long>(
                     "SELECT quantity FROM product_stock_total WHERE product_id=@product", new { product }),
-                ["cashierMovements"] = check.ExecuteScalar<long>(
-                    "SELECT COUNT(*) FROM stock_movement WHERE product_id=@product", new { product }),
+                ["newMovements"] = check.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement") - movementsBefore,
             };
         if (phaseTwoChecks["cashierSales"] != 100 || phaseTwoChecks["cashierRemaining"] != 28000 ||
-            phaseTwoChecks["cashierMovements"] != (directMode ? 0 : 228))
+            phaseTwoChecks["newMovements"] != 0)
             throw new InvalidDataException("Cashier-path stock or movement parity failed.");
         break;
     }
-    case "phase2-direct-write":
+    // The full-size schema-31 fixture was built with drafts of 025 and 031. Give a
+    // disposable copy the committed shape: 031's sale and return snapshot columns,
+    // which it adds without a backfill, and 025's idempotent last-sale triggers.
+    case "phase5-fixture-align":
     {
-        if (!Path.GetFileName(root).Contains("phase2", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Phase 2 writes run only in a disposable phase2 data root.");
-        long directVersion;
-        using (var check = factory.Open())
-        {
-            directVersion = check.ExecuteScalar<long>("PRAGMA user_version");
-            if (directVersion != 31 ||
-                check.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE name='direct_stock_sandbox'") != 1)
-                throw new InvalidDataException("Activate the phase-2 direct-stock sandbox first.");
-        }
-        var direct = new DirectStockEngine();
-        string suffix = Guid.NewGuid().ToString("N");
-        long product = await database.WriteAsync(tx =>
-        {
-            long category = tx.Connection.ExecuteScalar<long>("SELECT id FROM category LIMIT 1", transaction: tx.Transaction);
-            long uom = tx.Connection.ExecuteScalar<long>("SELECT id FROM uom WHERE code='PCS'", transaction: tx.Transaction);
-            long id = tx.Connection.ExecuteScalar<long>("""
-                INSERT INTO product(sku,name,category_id,uom_id)
-                VALUES (@sku,'Phase 2 hot product',@category,@uom) RETURNING id
-                """, new { sku = "PH2-" + suffix, category, uom }, tx.Transaction);
-            for (int index = 0; index < 128; index++)
-            {
-                long lotId = tx.Connection.ExecuteScalar<long>("""
-                    INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,
-                      unit_cost,selling_price,qty_received)
-                    VALUES (@id,@code,'SAME-BATCH','2026-10-18','2027-10-18',1000,2000,1000)
-                    RETURNING id
-                    """, new { id, code = "PH2-L-" + suffix + "-" + index.ToString("D3", System.Globalization.CultureInfo.InvariantCulture) },
-                    tx.Transaction);
-                direct.CreateDirectLot(tx, lotId, 1, OperationGuard.NewId());
-            }
-            return id;
-        });
-        for (int index = 0; index < 100; index++)
-        {
-            long started = Stopwatch.GetTimestamp();
-            int sequence = index;
-            try
-            {
-                await database.WriteAsync(tx =>
+        if (!Path.GetFileName(root).Contains("rehearsal", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Fixture alignment runs only in a disposable rehearsal root.");
+        string repository = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(repository, "025_sale_report_day.sql")))
+            repository = Path.GetDirectoryName(repository) ?? throw new FileNotFoundException("025_sale_report_day.sql");
+        string[] triggers = System.Text.RegularExpressions.Regex.Matches(
+                File.ReadAllText(Path.Combine(repository, "025_sale_report_day.sql")),
+                @"CREATE TRIGGER IF NOT EXISTS trg_sale_product_last_\w+.*?\bEND;",
+                System.Text.RegularExpressions.RegexOptions.Singleline)
+            .Select(static match => match.Value).ToArray();
+        string[] columns =
+        [
+            "category_id_snapshot INTEGER", "category_name_snapshot TEXT", "uom_id_snapshot INTEGER",
+            "tax_rate_id_snapshot INTEGER", "track_expiry_snapshot INTEGER", "is_loose_snapshot INTEGER",
+        ];
+        using var connection = factory.Open();
+        if (connection.ExecuteScalar<long>("PRAGMA user_version") != 31)
+            throw new InvalidDataException("Align only a schema-31 fixture before migrating it.");
+        using var transaction = connection.BeginTransaction(deferred: false);
+        long added = 0;
+        foreach (string table in new[] { "sale_line", "sale_return_line" })
+            foreach (string column in columns)
+                if (connection.ExecuteScalar<long>("SELECT COUNT(*) FROM pragma_table_info(@table) WHERE name=@name",
+                        new { table, name = column.Split(' ')[0] }, transaction) == 0)
                 {
-                    long lotId = tx.Connection.ExecuteScalar<long>("""
-                        SELECT id FROM product_lot
-                        WHERE product_id=@product AND qty_on_hand>0 AND is_active=1
-                        ORDER BY expiry_date IS NULL,expiry_date,received_date,id LIMIT 1
-                        """, new { product }, tx.Transaction);
-                    long version = tx.Connection.ExecuteScalar<long>(
-                        "SELECT quantity_version FROM product_lot WHERE id=@lotId", new { lotId }, tx.Transaction);
-                    long sale = tx.Connection.ExecuteScalar<long>("""
-                        INSERT INTO sale(invoice_no,sale_date,line_count,gross_total,taxable_total,
-                          grand_total,cost_total)
-                        VALUES (@invoice,'2026-10-18',1,2000,2000,2000,1000) RETURNING id
-                        """, new { invoice = "PH2-S-" + suffix + "-" + sequence.ToString("D3", System.Globalization.CultureInfo.InvariantCulture) },
-                        tx.Transaction);
-                    tx.Connection.Execute("""
-                        INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,
-                          qty,unit_price,taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
-                        VALUES (@sale,1,@product,@lotId,'Phase 2 hot product',1000,2000,2000,0,2000,1000,1000)
-                        """, new { sale, product, lotId }, tx.Transaction);
-                    tx.Connection.Execute("UPDATE sale SET status='COMPLETED' WHERE id=@sale",
-                        new { sale }, tx.Transaction);
-                    direct.CompleteSale(tx, sale, new Dictionary<long, long> { [lotId] = version }, OperationGuard.NewId());
-                });
-                profileSamples.Add(new("phase2-direct-sale-transaction",
-                    Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1, null));
-            }
-            catch (Exception exception)
-            {
-                profileSamples.Add(new("phase2-direct-sale-transaction",
-                    Stopwatch.GetElapsedTime(started).TotalMilliseconds, 0, exception.GetType().Name));
-                throw;
-            }
-            if (index % 10 == 0)
-            {
-                process.Refresh();
-                long wal = File.Exists(paths.DatabaseFile + "-wal") ? new FileInfo(paths.DatabaseFile + "-wal").Length : 0;
-                resourceSamples.Enqueue(new(auditElapsed.Elapsed.TotalSeconds, wal, process.WorkingSet64, 0, factory.ActiveConnections));
-            }
-        }
-        using (var check = factory.Open())
-            phaseTwoChecks = new Dictionary<string, long>
-            {
-                ["phase2HotProductRemaining"] = check.ExecuteScalar<long>(
-                    "SELECT quantity FROM product_stock_total WHERE product_id=@product", new { product }),
-                ["phase2HotProductSales"] = check.ExecuteScalar<long>(
-                    "SELECT COUNT(*) FROM sale_line WHERE product_id=@product", new { product }),
-            };
+                    connection.Execute($"ALTER TABLE {table} ADD COLUMN {column};", transaction: transaction);
+                    added++;
+                }
+        long before = connection.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'trg_sale_product_last_%'",
+            transaction: transaction);
+        foreach (string trigger in triggers) connection.Execute(trigger, transaction: transaction);
+        long after = connection.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'trg_sale_product_last_%'",
+            transaction: transaction);
+        transaction.Commit();
+        phaseTwoChecks = new Dictionary<string, long>
+        {
+            ["snapshotColumnsAdded"] = added,
+            ["lastSaleTriggersFound"] = triggers.Length,
+            ["lastSaleTriggersAdded"] = after - before,
+        };
+        if (triggers.Length != 7 || after != 7)
+            throw new InvalidDataException("The last-sale triggers did not align with 025.");
         break;
     }
-    case "phase2-direct-audit":
+    case "phase5-direct-audit":
     {
-        if (!Path.GetFileName(root).Contains("phase2", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Phase 2 conversion runs only in a data root named phase2.");
-        using (var check = factory.Open())
-            if (check.ExecuteScalar<long>("PRAGMA user_version") is not (30 or 31 or 32))
-                throw new InvalidDataException("Phase 2 requires a disposable copy or its direct-stock sandbox.");
-        await Measure("phase2-sandbox-activate", async () =>
-        {
-            using var check = factory.Open();
-            bool active = check.ExecuteScalar<long>(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='direct_stock_sandbox'") != 0;
-            if (!active) await database.WriteAsync(tx => DirectStockSandbox.Activate(tx));
-            if (active) await database.WriteAsync(tx => tx.Connection.Execute(
-                "DROP INDEX IF EXISTS ix_direct_count_product_lot", transaction: tx.Transaction));
-            return active ? 0 : 1;
-        }, static value => value);
-        await Measure("phase2-source-reconciliation", () => Task.Run(() =>
+        await Measure("phase5-source-reconciliation", () => Task.Run(() =>
         {
             using var connection = factory.Open();
-            using var transaction = connection.BeginTransaction(deferred: true);
-            var engine = new DirectStockEngine();
             int mismatches = 0;
-            foreach (DirectStockMismatch mismatch in engine.CheckAll(new(connection, transaction)))
+            foreach (LotSourceMismatch mismatch in LotSourceReconciliation.CheckAll(connection, null))
             {
                 if (mismatches < 10)
                     Console.WriteLine($"MISMATCH lot={mismatch.LotId} actual={mismatch.Actual} expected={mismatch.Expected}");
                 mismatches++;
             }
-            transaction.Commit();
-            phaseTwoChecks = new Dictionary<string, long> { ["directStockMismatches"] = mismatches };
+            phaseTwoChecks = new Dictionary<string, long> { ["sourceMismatches"] = mismatches };
             return mismatches;
         }), static value => value);
         break;
@@ -1466,18 +1414,6 @@ switch (mode)
             Task openingImport = Measure("combined-opening-import-20000", () =>
                 combinedOpeningImporter.ImportAsync(combinedOpeningPreview!, OperationGuard.NewId()),
                 static _ => 20000);
-            long countId = 0;
-            await Measure("combined-whole-count-create", async () =>
-                countId = await inventory.CreateStockCountAsync(end, null, "Combined load count"), static _ => 1);
-            if (countId == 0) throw new InvalidDataException("Whole-store count creation failed.");
-            await Measure("combined-whole-count-first-page", () => inventory.GetStockCountPageAsync(countId),
-                static page => page.Lines.Count);
-            await Measure("combined-whole-count-review", () => inventory.GetStockCountReviewAsync(countId),
-                static _ => 1);
-            await Measure("combined-whole-count-find-last-lot", async () =>
-                await inventory.FindStockCountLineAsync(countId, combinedLotCode!)
-                ?? throw new InvalidDataException("The preexisting last lot was not on the whole-store count."),
-                static _ => 1);
             await Task.WhenAll(productImport, openingImport);
         }) : Task.CompletedTask;
         using var secondDatabase = new DbExecutor(new SqliteConnectionFactory(paths), readConcurrency);
@@ -1693,7 +1629,6 @@ switch (mode)
             ("asset-cursor", async () => { AssetPage first = await assets.GetAssetPageAsync(limit: 20); return first.NextName is null ? 0 : (await assets.GetAssetPageAsync(afterDisposed: first.NextDisposed, afterName: first.NextName, afterId: first.NextId, limit: 20)).Items.Count; }),
             ("asset-unbounded", async () => (await assets.GetAssetsAsync()).Count),
             ("asset-schedule", async () => (await assets.GetScheduleAsync(41)).Count),
-            ("draft-counts", async () => (await inventory.GetDraftCountsAsync()).Count),
             ("employee-list", async () => (await moneyOut.GetEmployeesAsync(includeInactive: true)).Count),
             ("salary-register-month", async () => (await moneyOut.GetSalaryRegisterAsync(new YearMonth(2025, 10), new YearMonth(2025, 10))).Count),
             ("startup-health", async () => { await maintenance.CheckBeforeShellAsync(); return 1; }),
@@ -1936,10 +1871,10 @@ switch (mode)
     case "phase6-matrix":
     {
         const string sourceSql = """
-            SELECT section AS Section,head_code AS HeadCode,ref_id AS ReferenceId,
+            SELECT section AS Section,head_code AS HeadCode,NULLIF(category_id,0) AS ReferenceId,
                    substr(entry_date,1,7) AS Month,SUM(amount) AS Amount
             FROM v_pnl_entry WHERE entry_date BETWEEN @from AND @to
-            GROUP BY section,head_code,ref_id,substr(entry_date,1,7)
+            GROUP BY section,head_code,category_id,substr(entry_date,1,7)
             """;
         foreach ((string name, DateOnly from, DateOnly to) in new[]
                  { ("five-year", new DateOnly(2022, 1, 1), end),
@@ -2128,53 +2063,6 @@ switch (mode)
         if (drift != 0) throw new InvalidDataException($"{drift} product valuations differ from their lots.");
         break;
     }
-    case "phase4-count-search":
-    {
-        long countId;
-        long lotId;
-        string lotCode;
-        string productName;
-        using (var connection = factory.Open())
-        {
-            countId = connection.ExecuteScalar<long>("""
-                SELECT stock_count_id FROM stock_count_line GROUP BY stock_count_id
-                ORDER BY COUNT(*) DESC LIMIT 1
-                """);
-            (lotId, lotCode, productName) = connection.QuerySingle<(long, string, string)>("""
-                SELECT l.id,l.lot_code,p.name FROM stock_count_line scl
-                JOIN product_lot l ON l.id=scl.lot_id JOIN product p ON p.id=l.product_id
-                WHERE scl.stock_count_id=@countId ORDER BY scl.id DESC LIMIT 1
-                """, new { countId });
-        }
-        for (int run = 0; run < 5; run++)
-        {
-            await Measure("count-search-name-legacy-sql", () => database.ReadAsync(connection =>
-                connection.ExecuteScalar<long?>("""
-                    SELECT scl.id FROM product p JOIN stock_count_line scl ON scl.product_id=p.id
-                    WHERE scl.stock_count_id=@countId AND p.name LIKE @pattern ESCAPE '\'
-                    ORDER BY scl.id LIMIT 1
-                    """, new { countId, pattern = "%" + productName + "%" })),
-                static id => id is null ? 0 : 1);
-            await Measure("count-search-lot-code", () => inventory.FindStockCountLineAsync(
-                countId, lotCode.ToLowerInvariant()), static id => id is null ? 0 : 1);
-            await Measure("count-search-lot-id", () => inventory.FindStockCountLineAsync(
-                countId, "", lotId: lotId), static id => id is null ? 0 : 1);
-            await Measure("count-search-name", () => inventory.FindStockCountLineAsync(
-                countId, productName), static id => id is null ? 0 : 1);
-        }
-        CapturePlan("count-search-lot-code", """
-            SELECT scl.id FROM stock_count_line scl WHERE scl.stock_count_id=1
-            AND scl.lot_id=(SELECT id FROM product_lot WHERE lot_code=upper('l000001'))
-            """);
-        CapturePlan("count-search-name-fts", """
-            SELECT scl.id FROM product_fts f JOIN product p ON p.id=f.rowid
-            JOIN stock_count_line scl ON scl.product_id=p.id
-            WHERE product_fts MATCH @match AND p.name LIKE @pattern ESCAPE '\'
-              AND scl.stock_count_id=@countId ORDER BY scl.id LIMIT 1
-            """, new { match = "\"" + productName.Replace("\"", "\"\"") + "\"",
-                pattern = "%" + productName + "%", countId });
-        break;
-    }
     case "phase1-low-seed":
     {
         await Measure("seed-low-stock", () => database.WriteAsync(transaction =>
@@ -2287,17 +2175,6 @@ switch (mode)
         Console.WriteLine($"HISTORY_ROWS {actual} DATE {saleDate}");
         break;
     }
-    case "phase1-count":
-    {
-        long countId = await inventory.CreateStockCountAsync(end, null, "Phase 1 whole-store paging audit");
-        await Measure("draft-count-page-after-create", () => inventory.GetDraftCountPageAsync(),
-            static x => x.Items.Count);
-        await Measure("whole-count-first-page", () => inventory.GetStockCountPageAsync(countId),
-            static x => x.Lines.Count);
-        await Measure("whole-count-review", () => inventory.GetStockCountReviewAsync(countId),
-            static x => checked((int)x.Total));
-        break;
-    }
     case "phase1-read":
     {
         await Measure("catalog-visible-page", async () =>
@@ -2391,12 +2268,6 @@ switch (mode)
             if (seen.Count != expected) throw new InvalidDataException($"Reached {seen.Count} of {expected} purchases.");
             return seen.Count;
         }, static x => x);
-        await Measure("draft-count-page", async () =>
-        {
-            DraftCountPage page = await inventory.GetDraftCountPageAsync();
-            if (page.Items.Count > 50) throw new InvalidDataException("Draft count page exceeded its bound.");
-            return page.Items.Count;
-        }, static x => x);
         using (var connection = factory.Open())
         {
             long lowMismatch = connection.ExecuteScalar<long>("""
@@ -2405,13 +2276,7 @@ switch (mode)
                     AND t.quantity<=p.reorder_level THEN 1 ELSE 0 END
                 """);
             if (lowMismatch != 0) throw new InvalidDataException($"Low-stock projection mismatches: {lowMismatch}.");
-            long? countId = connection.ExecuteScalar<long?>(
-                "SELECT id FROM stock_count WHERE status='DRAFT' ORDER BY id DESC LIMIT 1");
-            if (countId is long id)
-                await Measure("stock-count-review", () => inventory.GetStockCountReviewAsync(id),
-                    static x => checked((int)x.Total));
             CapturePlan("vendor-purchase-page", "SELECT id FROM purchase WHERE vendor_id=1 AND status='POSTED' ORDER BY received_date DESC,id DESC LIMIT 100");
-            CapturePlan("draft-count-page", "SELECT id FROM stock_count WHERE status='DRAFT' ORDER BY id DESC LIMIT 50");
             CapturePlan("customer-name-page", "SELECT id FROM customer WHERE is_active=1 ORDER BY name COLLATE NOCASE,id LIMIT 100");
             CapturePlan("customer-phone-prefix", "SELECT id FROM customer WHERE is_active=1 AND phone>='90000' AND phone<'90000:' ORDER BY phone,id LIMIT 100");
             CapturePlan("catalog-low-stock", "SELECT p.id FROM product_stock_total t JOIN product p ON p.id=t.product_id WHERE t.is_low=1 AND p.is_active=1 ORDER BY p.name COLLATE NOCASE,p.id LIMIT 100");
@@ -2477,6 +2342,187 @@ switch (mode)
               AND l.qty_on_hand>0 AND l.expiry_date<'2026-10-19'
             ORDER BY l.id DESC LIMIT 50
             """, new { productId });
+        break;
+    }
+    case "phase5-return-reconcile":
+    {
+        if (!Path.GetFileName(root).Contains("rehearsal", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Returns may be seeded only in a disposable rehearsal root.");
+        using (var check = factory.Open())
+            if (check.ExecuteScalar<long>("PRAGMA user_version") != MigrationRunner.LatestVersion)
+                throw new InvalidDataException("Migrate the disposable rehearsal copy first.");
+        var returnClock = new AuditClock(new DateTime(2026, 10, 18, 12, 0, 0));
+        var returnSales = new SalesService(database, ledger, numbers, periods, settings, audit, returnClock);
+        long twoLotProduct;
+        long historicalMovements;
+        long otherCategory;
+        using (var connection = factory.Open())
+        {
+            twoLotProduct = connection.ExecuteScalar<long>("""
+                SELECT product_id FROM product_lot WHERE lot_code LIKE 'PH5-C-L-%' AND qty_on_hand>0
+                GROUP BY product_id HAVING COUNT(*)>=3 ORDER BY product_id DESC LIMIT 1
+                """);
+            otherCategory = connection.ExecuteScalar<long>("""
+                SELECT id FROM category WHERE id<>(SELECT category_id FROM product WHERE id=@twoLotProduct)
+                ORDER BY id LIMIT 1
+                """, new { twoLotProduct });
+            historicalMovements = connection.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement");
+        }
+        long partialSale = await returnSales.AddProductAsync(null, twoLotProduct, new Quantity(3));
+        await returnSales.CompleteAsync(new(partialSale,
+            [new(PaymentMode.Cash, new Money(6))], OperationGuard.NewId()));
+        SaleDetails partialOriginal = await returnSales.GetAsync(partialSale);
+        // A category edit between the sale and its returns must not split the
+        // category projection; the last line comes back damaged.
+        await database.WriteAsync(tx => tx.Connection.Execute(
+            "UPDATE product SET category_id=@otherCategory WHERE id=@twoLotProduct",
+            new { otherCategory, twoLotProduct }, tx.Transaction));
+        for (int index = 0; index < partialOriginal.Lines.Count; index++)
+        {
+            SaleLine line = partialOriginal.Lines[index];
+            await returnSales.ReturnAsync(new(partialSale, returnClock.BusinessDate, "Full-size partial refund",
+                RefundMode.Cash, [new ReturnLineInput(line.Id, line.Quantity,
+                    index < partialOriginal.Lines.Count - 1)],
+                OperationGuard.NewId()));
+        }
+        if ((await returnSales.GetAsync(partialSale)).Status != SaleStatus.Refunded)
+            throw new InvalidDataException("Repeated partial returns did not fully refund the sale.");
+
+        string suffix = Guid.NewGuid().ToString("N");
+        (long Product, long Lot) deleted = await database.WriteAsync(tx =>
+        {
+            long category = tx.Connection.ExecuteScalar<long>("SELECT id FROM category LIMIT 1",
+                transaction: tx.Transaction);
+            long unit = tx.Connection.ExecuteScalar<long>("SELECT id FROM uom WHERE code='PCS'",
+                transaction: tx.Transaction);
+            long tax = tx.Connection.ExecuteScalar<long>("SELECT id FROM tax_rate ORDER BY id LIMIT 1",
+                transaction: tx.Transaction);
+            long product = tx.Connection.ExecuteScalar<long>("""
+                INSERT INTO product(sku,name,category_id,uom_id,tax_rate_id,hsn_code,
+                    price_includes_tax,track_expiry,is_loose,default_selling_price)
+                VALUES (@sku,'Phase 5 deleted product',@category,@unit,@tax,'1006',1,0,0,2000)
+                RETURNING id
+                """, new { sku = "PH5-R-" + suffix, category, unit, tax }, tx.Transaction);
+            long lot = tx.Connection.ExecuteScalar<long>("""
+                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,
+                  selling_price,qty_received)
+                VALUES (@product,@code,'2026-09-01',1000,2000,1000) RETURNING id
+                """, new { product, code = "PH5-R-L-" + suffix }, tx.Transaction);
+            ledger.Post(tx, new(returnClock.BusinessDate, product, lot, "DIRECT_ENTRY",
+                Quantity.One, new Money(1), "direct_stock_origin", lot));
+            return (product, lot);
+        });
+        long deletedSale = await returnSales.AddProductAsync(null, deleted.Product, Quantity.One);
+        await returnSales.CompleteAsync(new(deletedSale,
+            [new(PaymentMode.Cash, new Money(2))], OperationGuard.NewId()));
+        SaleDetails deletedOriginal = await returnSales.GetAsync(deletedSale);
+        long detailVersion;
+        using (var connection = factory.Open())
+            detailVersion = connection.ExecuteScalar<long>(
+                "SELECT detail_version FROM product_lot WHERE id=@id", new { id = deleted.Lot });
+        await inventory.DeleteZeroLotAsync(deleted.Lot, detailVersion);
+        if (await catalog.RemoveAsync(deleted.Product) != ProductRemoval.Deleted)
+            throw new InvalidDataException("The zero-stock historical product was not deleted.");
+        CompletedReturn recreated = await returnSales.ReturnAsync(new(deletedSale, returnClock.BusinessDate,
+            "Return after deletion", RefundMode.Cash,
+            [new ReturnLineInput(deletedOriginal.Lines.Single().Id, Quantity.One, true)],
+            OperationGuard.NewId()));
+        using (var connection = factory.Open())
+        {
+            long restored = connection.ExecuteScalar<long>("""
+                SELECT l.qty_on_hand FROM sale_return_line rl
+                JOIN product_lot l ON l.id=rl.restock_lot_id
+                WHERE rl.sale_return_id=@id AND rl.restock_product_id_snapshot<>@oldProduct
+                """, new { id = recreated.ReturnId, oldProduct = deleted.Product });
+            if (restored != Quantity.One.Scaled ||
+                connection.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement") != historicalMovements)
+                throw new InvalidDataException("Deleted-master return did not recreate direct stock cleanly.");
+        }
+        phaseTwoChecks = new Dictionary<string, long>
+        {
+            ["partialSale"] = partialSale,
+            ["deletedSale"] = deletedSale,
+            ["recreatedReturn"] = recreated.ReturnId,
+        };
+        break;
+    }
+    case "phase5-sales-read":
+    {
+        string invoice;
+        string product;
+        using (var connection = factory.Open())
+        {
+            invoice = connection.ExecuteScalar<string>(
+                "SELECT invoice_no FROM sale WHERE invoice_no IS NOT NULL ORDER BY id DESC LIMIT 1") ?? "";
+            product = connection.ExecuteScalar<string>(
+                "SELECT product_name FROM sale_line ORDER BY id DESC LIMIT 1") ?? "";
+        }
+        if (invoice.Length == 0 || product.Length == 0)
+            throw new InvalidDataException("The sale history fixture needs completed lines.");
+        await Measure("sales-first-page", () => sales.GetHistoryAsync(new SaleHistoryFilter(Limit: 50)),
+            static rows => rows.Count);
+        await Measure("sales-product-snapshot", () => sales.GetHistoryAsync(new SaleHistoryFilter(
+            Product: product[..Math.Min(16, product.Length)], Limit: 50)), static rows => rows.Count);
+        await Measure("sales-invoice-exact", () => sales.GetHistoryAsync(new SaleHistoryFilter(
+            InvoiceNumber: invoice, Limit: 50)), static rows => rows.Count);
+        await Measure("sales-partial-status", () => sales.GetHistoryAsync(new SaleHistoryFilter(
+            Status: SaleStatus.PartiallyRefunded, Limit: 50)), static rows => rows.Count);
+        await Measure("sales-refunded-status", () => sales.GetHistoryAsync(new SaleHistoryFilter(
+            Status: SaleStatus.Refunded, Limit: 50)), static rows => rows.Count);
+        await Measure("refund-progress-reconciliation", () => Task.Run(() =>
+        {
+            using var connection = factory.Open();
+            long drift = connection.ExecuteScalar<long>("""
+                WITH expected AS (
+                  SELECT sl.sale_id AS sale_id,SUM(rl.qty) AS returned_qty,
+                         SUM(rl.refund_amount) AS refunded_total
+                  FROM sale_return_line rl JOIN sale_line sl ON sl.id=rl.sale_line_id
+                  GROUP BY sl.sale_id
+                )
+                SELECT (SELECT COUNT(*) FROM expected e LEFT JOIN sale_refund_progress rp
+                  ON rp.sale_id=e.sale_id WHERE rp.sale_id IS NULL OR
+                  rp.returned_qty<>e.returned_qty OR rp.refunded_total<>e.refunded_total OR
+                  rp.sold_qty<>(SELECT SUM(qty) FROM sale_line WHERE sale_id=e.sale_id))
+                +(SELECT COUNT(*) FROM sale_refund_progress rp LEFT JOIN expected e
+                  ON e.sale_id=rp.sale_id WHERE e.sale_id IS NULL)
+                """);
+            if (drift != 0) throw new InvalidDataException($"{drift} sale refund progress rows differ from source documents.");
+            return checked((int)drift);
+        }), static rows => rows);
+        await Measure("refund-day-projections", () => Task.Run(() =>
+        {
+            using var connection = factory.Open();
+            long hourlyDrift = connection.ExecuteScalar<long>("""
+                WITH expected AS (
+                  SELECT return_date AS day,strftime('%w',created_at) AS weekday,
+                         CAST(strftime('%H',created_at) AS INTEGER) AS hour,
+                         COUNT(*) AS return_count,SUM(refund_total) AS refund_total
+                  FROM sale_return WHERE refund_total<>0
+                  GROUP BY return_date,strftime('%w',created_at),strftime('%H',created_at)
+                )
+                SELECT (SELECT COUNT(*) FROM expected e LEFT JOIN sale_hour_return_day d
+                  ON d.day=e.day AND d.weekday=e.weekday AND d.hour=e.hour
+                  WHERE d.day IS NULL OR d.return_count<>e.return_count OR d.refund_total<>e.refund_total)
+                +(SELECT COUNT(*) FROM sale_hour_return_day d LEFT JOIN expected e
+                  ON e.day=d.day AND e.weekday=d.weekday AND e.hour=d.hour WHERE e.day IS NULL)
+                """);
+            long productDrift = connection.ExecuteScalar<long>("""
+                WITH expected AS (
+                  SELECT sl.product_id,r.return_date AS day,SUM(rl.qty) AS qty
+                  FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
+                  JOIN sale_line sl ON sl.id=rl.sale_line_id
+                  GROUP BY sl.product_id,r.return_date
+                )
+                SELECT (SELECT COUNT(*) FROM expected e LEFT JOIN sale_product_return_day d
+                  ON d.product_id=e.product_id AND d.day=e.day
+                  WHERE d.product_id IS NULL OR d.returned_qty<>e.qty)
+                +(SELECT COUNT(*) FROM sale_product_return_day d LEFT JOIN expected e
+                  ON e.product_id=d.product_id AND e.day=d.day WHERE e.product_id IS NULL)
+                """);
+            if (hourlyDrift+productDrift != 0)
+                throw new InvalidDataException($"Refund day projection drift: hour={hourlyDrift}, product={productDrift}.");
+            return 0;
+        }), static rows => rows);
         break;
     }
     case "phase3-purchase-read":
@@ -2840,39 +2886,6 @@ switch (mode)
         await maintenanceTask;
         break;
     }
-    case "whole-count":
-    {
-        long countId = 0;
-        await Measure("whole-count-create", async () => countId = await inventory.CreateStockCountAsync(end, null, "Scale whole count"), static _ => 1);
-        if (countId == 0) break;
-        StockCountDetails? count = null;
-        await Measure("whole-count-load", async () => count = await inventory.GetStockCountAsync(countId), static x => x?.Lines.Count ?? 0);
-        if (count is null) break;
-        await Measure("whole-count-search-client", () => Task.Run(() =>
-        {
-            List<StockCountLine> lines = count.Lines.ToList();
-            return lines.FindIndex(line => line.LotCode == count.Lines[^1].LotCode);
-        }), static x => x < 0 ? 0 : 1);
-        await Measure("whole-count-drafts-summary", () => inventory.GetDraftCountsAsync(), static x => x.Count);
-        StockCountLine first = count.Lines[0];
-        await Measure("whole-count-set-one", async () =>
-        {
-            await inventory.SetCountedQuantityAsync(countId, first.LotId, first.Expected);
-            return 1;
-        }, static x => x);
-        var quantities = count.Lines.ToDictionary(static line => line.LotId, static line => line.Expected);
-        await Measure("whole-count-enter-all", async () =>
-        {
-            await inventory.SetCountedQuantitiesAsync(countId, quantities);
-            return quantities.Count;
-        }, static x => x);
-        await Measure("whole-count-post", async () =>
-        {
-            await inventory.PostStockCountAsync(countId, OperationGuard.NewId());
-            return 1;
-        }, static x => x);
-        break;
-    }
     case "a4-render":
     {
         TabularReport printReport = await reports.GetReportAsync(ReportKind.SalesRegister,
@@ -3011,7 +3024,6 @@ switch (mode)
             transaction.Commit();
             return 50000 + 10000 + 5000 + 600;
         }), static x => x);
-        await Measure("seed-whole-store-draft-count", () => inventory.CreateStockCountAsync(end, null, "Scale count fixture"), static _ => 1);
         break;
     }
     case "gap-read":
@@ -3032,7 +3044,6 @@ switch (mode)
         await Measure("vendor-purchase-choices", () => purchasing.GetVendorPurchaseChoicesAsync(1), static x => x.Count);
         await Measure("purchases-5000", () => purchasing.GetPurchasesAsync(5000), static x => x.Count);
         await Measure("inventory-valuation", () => inventory.GetValuationAsync(), static x => x.Count);
-        await Measure("draft-stock-counts", () => inventory.GetDraftCountsAsync(), static x => x.Count);
         await Measure("customer-empty", () => sales.SearchCustomersAsync(), static x => x.Count);
         await Measure("customer-contains-miss", () => sales.SearchCustomersAsync("son"), static x => x.Count);
         await Measure("customer-contains-match", () => sales.SearchCustomersAsync("Scale Customer 4"), static x => x.Count);
@@ -3106,6 +3117,117 @@ switch (mode)
                 return 1;
             }), static _ => 1);
         }
+        break;
+    case "phase6-annual":
+    {
+        // First launch after the Phase 6 upgrade: finalize every locked year, then read
+        // open and finalized P&L, export a finalized year twice and run the checks that
+        // background maintenance runs. The business date is the fourth argument.
+        DateOnly businessDate = args.Length > 3
+            ? DateOnly.ParseExact(args[3], "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+            : new DateOnly(2026, 10, 23);
+        var annualClock = new AuditClock(businessDate.ToDateTime(new TimeOnly(12, 0)));
+        var annualReports = new ReportService(database, settings, annualClock);
+        var closes = new AnnualCloseService(database, new PeriodGuard(settings, annualClock), annualClock);
+        int fiscalStartMonth = settings.Current.FyStartMonth;
+        DateOnly? firstEntry;
+        using (var connection = factory.Open())
+        {
+            firstEntry = PnlSource.FirstEntryDate(connection);
+            Console.WriteLine($"PNL_FIRST_ENTRY {firstEntry?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)}");
+            foreach (AnnualPeriod year in AnnualCloseService.Missing(connection, null, businessDate, fiscalStartMonth))
+                Console.WriteLine($"MISSING {year.Code} {year.Label}");
+        }
+        AnnualPeriod currentFiscal = AnnualPeriod.Fiscal(businessDate, fiscalStartMonth);
+        CapturePlan("pnl-source-fiscal-year", """
+            SELECT substr(entry_date,1,7) AS Month,section,head_code,category_id,SUM(amount),SUM(source_count)
+            FROM v_pnl_entry WHERE entry_date BETWEEN @from AND @to
+            GROUP BY substr(entry_date,1,7),section,head_code,category_id
+            """, new { from = currentFiscal.Start.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                to = currentFiscal.End.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) });
+        await Measure("annual-close-first-launch", () => closes.EnsureFinalizedAsync(), static count => count);
+        await Measure("annual-close-repeat", () => closes.EnsureFinalizedAsync(), static count => count);
+        IReadOnlyList<AnnualCloseInfo> finalized = await closes.GetClosesAsync();
+        foreach (AnnualCloseInfo close in finalized)
+            Console.WriteLine($"FINALIZED {close.Period.Code} {close.Period.Label} lines={close.LineCount} net={close.NetProfit} checksum={close.Checksum}");
+        var annualPeriods = new List<(string Name, PnlPeriod Period)>
+        {
+            ("month-open", annualReports.MonthPeriod(YearMonth.From(businessDate))),
+            ("calendar-open", annualReports.CalendarYearPeriod(businessDate.Year)),
+            ("fiscal-open", annualReports.FiscalYearPeriod(currentFiscal.Start.Year)),
+            ("custom-all-history", ReportService.CustomPeriod(firstEntry ?? businessDate, businessDate)),
+        };
+        foreach (AnnualCloseInfo close in finalized)
+            annualPeriods.Add(($"{close.Period.Code.ToLowerInvariant()}-{close.Period.Label}-finalized",
+                close.Period.Kind == AnnualPeriodKind.Calendar
+                    ? annualReports.CalendarYearPeriod(close.Period.Start.Year)
+                    : annualReports.FiscalYearPeriod(close.Period.Start.Year)));
+        if (finalized.Count > 0)
+            annualPeriods.Add(("month-finalized", annualReports.MonthPeriod(YearMonth.From(finalized[^1].Period.Start))));
+        foreach ((string name, PnlPeriod period) in annualPeriods)
+            for (int repeat = 0; repeat < 3; repeat++)
+                await Measure("pnl-" + name, () => annualReports.GetPnlReportAsync(period), static report => report.Lines.Count);
+        if (finalized.Count > 0)
+        {
+            AnnualCloseInfo year = finalized[^1];
+            PnlPeriod period = year.Period.Kind == AnnualPeriodKind.Calendar
+                ? annualReports.CalendarYearPeriod(year.Period.Start.Year)
+                : annualReports.FiscalYearPeriod(year.Period.Start.Year);
+            string first = Path.Combine(paths.TempDir, "phase6-finalized-1.csv");
+            string second = Path.Combine(paths.TempDir, "phase6-finalized-2.csv");
+            Directory.CreateDirectory(paths.TempDir);
+            await Measure("pnl-finalized-export-stable", async () =>
+            {
+                await annualReports.ExportPnlCsvAsync(await annualReports.GetPnlReportAsync(period), true, first);
+                await annualReports.ExportPnlCsvAsync(await annualReports.GetPnlReportAsync(period), true, second);
+                if (!File.ReadAllBytes(first).AsSpan().SequenceEqual(File.ReadAllBytes(second)))
+                    throw new InvalidDataException("Two exports of the finalized year differ.");
+                return checked((int)new FileInfo(first).Length);
+            }, static bytes => bytes);
+        }
+        await Measure("pnl-open-day-reconciliation", () => database.ReadAsync(connection =>
+        {
+            List<string> drift = PnlReconciliation.CheckOpenDays(connection, businessDate).ToList();
+            if (drift.Count > 0) throw new InvalidDataException($"P&L days differ from sources: {string.Join(',', drift.Take(5))}");
+            return drift.Count;
+        }), static rows => rows);
+        await Measure("annual-snapshot-verify", () => database.ReadAsync(connection =>
+        {
+            IReadOnlyList<string> failed = AnnualCloseService.VerifyAll(connection);
+            if (failed.Count > 0) throw new InvalidDataException("Finalized years fail their checksum: " + string.Join(',', failed));
+            return AnnualCloseService.Closes(connection, null).Count;
+        }), static rows => rows);
+        await Measure("stock-value-excluding-expired", () => annualReports.GetReportAsync(ReportKind.StockValue,
+            new ReportFilter(IncludeExpired: false, Limit: 100)), static report => report.Rows.Count);
+        await Measure("stock-value-including-expired", () => annualReports.GetReportAsync(ReportKind.StockValue,
+            new ReportFilter(IncludeExpired: true, Limit: 100)), static report => report.Rows.Count);
+        await Measure("stock-reconciliation-first-page", () => annualReports.GetReportAsync(ReportKind.StockReconciliation,
+            new ReportFilter(Limit: 100)), static report => report.Rows.Count);
+        long busiest;
+        using (var connection = factory.Open())
+            busiest = connection.ExecuteScalar<long>(
+                "SELECT product_id FROM product_lot GROUP BY product_id ORDER BY COUNT(*) DESC LIMIT 1");
+        await Measure("stock-reconciliation-busiest-product", () => annualReports.GetReportAsync(ReportKind.StockReconciliation,
+            new ReportFilter(ProductId: busiest, Limit: 100)), static report => report.Rows.Count);
+        await Measure("stock-reconciliation-recorded-differences", () => annualReports.GetReportAsync(
+            ReportKind.StockReconciliation, new ReportFilter(MismatchesOnly: true, Limit: 100)), static report => report.Rows.Count);
+        // The weekly maintenance check of every lot against all of its documents.
+        await Measure("lot-source-full-check", () => database.ReadAsync(connection =>
+        {
+            int differing = LotSourceReconciliation.CheckAll(connection, null).Count();
+            if (differing != 0) throw new InvalidDataException($"{differing} lots differ from their documents.");
+            return differing;
+        }), static rows => rows);
+        break;
+    }
+    case "rebuild-pnl-days":
+        // Support repair for a drifted open-period P&L day projection: an exclusive,
+        // month-by-month rebuild from sale and return snapshots.
+        await Measure("pnl-day-rebuild", () => Task.Run(() =>
+        {
+            new MigrationRunner(factory, NullMigrationBackup.Instance).RebuildPnlDays();
+            return 1;
+        }), static rows => rows);
         break;
     case "migrate":
         await Measure("migration-to-latest", () => Task.Run(() =>
@@ -3244,31 +3366,6 @@ switch (mode)
             return 1;
         }, static x => x);
 
-        long countId = 0;
-        await Measure("stock-count-create-category", async () =>
-            countId = await inventory.CreateStockCountAsync(end, [1], "Scale audit category count"), static _ => 1);
-        if (countId != 0)
-        {
-            StockCountDetails? count = null;
-            await Measure("stock-count-load", async () => count = await inventory.GetStockCountAsync(countId),
-                static x => x?.Lines.Count ?? 0);
-            if (count is not null)
-            {
-                var quantities = count.Lines.ToDictionary(static line => line.LotId, static line => line.Expected);
-                StockCountLine first = count.Lines[0];
-                quantities[first.LotId] = new Quantity(first.Expected.Value + 1);
-                await Measure("stock-count-enter-all", async () =>
-                {
-                    await inventory.SetCountedQuantitiesAsync(countId, quantities);
-                    return quantities.Count;
-                }, static x => x);
-                await Measure("stock-count-post", async () =>
-                {
-                    await inventory.PostStockCountAsync(countId, OperationGuard.NewId());
-                    return 1;
-                }, static x => x);
-            }
-        }
 
         await Measure("expense-record", () => moneyOut.RecordExpenseAsync(
             new(end, 1, new Money(100), "CASH", "Scale audit", null, null), OperationGuard.NewId()), static _ => 1);
@@ -3667,16 +3764,18 @@ switch (mode)
                 {
                     long drift = connection.ExecuteScalar<long>("""
                         WITH movements AS (
-                          SELECT s.sale_date AS day,p.category_id,COALESCE(sl.hsn_code,'') AS hsn,
+                          SELECT s.sale_date AS day,COALESCE(sl.category_id_snapshot,p.category_id,0) AS category_id,
+                                 COALESCE(sl.hsn_code,'') AS hsn,
                                  sl.tax_rate_pct AS rate,sl.qty AS quantity,sl.taxable_amount AS revenue,
                                  sl.tax_amount AS tax,sl.cost_amount AS cost
                           FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
-                          JOIN product p ON p.id=sl.product_id WHERE s.status='COMPLETED'
+                          LEFT JOIN product p ON p.id=sl.product_id WHERE s.status='COMPLETED'
                           UNION ALL
-                          SELECT r.return_date,p.category_id,COALESCE(sl.hsn_code,''),sl.tax_rate_pct,
+                          SELECT r.return_date,COALESCE(sl.category_id_snapshot,p.category_id,0),
+                                 COALESCE(sl.hsn_code,''),sl.tax_rate_pct,
                                  -rl.qty,-rl.taxable_amount,-rl.tax_amount,-rl.cost_amount
                           FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
-                          JOIN sale_line sl ON sl.id=rl.sale_line_id JOIN product p ON p.id=sl.product_id
+                          JOIN sale_line sl ON sl.id=rl.sale_line_id LEFT JOIN product p ON p.id=sl.product_id
                         ), expected AS MATERIALIZED (
                           SELECT day,category_id,hsn,rate,COUNT(*) AS entries,
                                  SUM(quantity) AS quantity,SUM(revenue) AS revenue,
@@ -3755,10 +3854,13 @@ switch (mode)
                 if (failures != 0) throw new InvalidDataException($"{failures} foreign key failures.");
                 return failures;
             }), static x => x);
-            await Measure("lot-cache-mismatch", () => Task.Run(() =>
+            bool directStock = connection.ExecuteScalar<int>("PRAGMA user_version") >= 33;
+            await Measure(directStock ? "lot-source-reconciliation" : "lot-cache-mismatch", () => Task.Run(() =>
             {
-                long mismatches = connection.ExecuteScalar<long>("SELECT COUNT(*) FROM v_lot_cache_mismatch");
-                if (mismatches != 0) throw new InvalidDataException($"{mismatches} lot cache mismatches.");
+                long mismatches = directStock
+                    ? LotSourceReconciliation.CheckAll(connection, null).LongCount()
+                    : connection.ExecuteScalar<long>("SELECT COUNT(*) FROM v_lot_cache_mismatch");
+                if (mismatches != 0) throw new InvalidDataException($"{mismatches} lot source mismatches.");
                 return (int)mismatches;
             }), static x => x);
             await Measure("sale-lines-after-lot-expiry", () => Task.Run(() =>

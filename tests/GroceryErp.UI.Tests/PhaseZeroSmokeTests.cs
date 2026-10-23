@@ -201,11 +201,17 @@ public sealed class PhaseZeroSmokeTests
                     """{"GroceryErp.App.Presentation.ProductsPage/ProductsGrid/0:DataGridTextColumn:OldTemplate|1:DataGridTextColumn:Sku|2:DataGridTextColumn:OldName|3:DataGridTextColumn:Category|4:DataGridTextColumn:Stock|5:DataGridTextColumn:SellingPrice|6:DataGridTextColumn:Mrp|7:DataGridTextColumn:IsActive":[80,120,200,150,90,90,90,80]}""");
                 GroceryErp.App.App application = new();
                 application.InitializeComponent();
+                // WPF queues Application startup on the dispatcher. This test hosts pages
+                // only, so that startup must never run: it would open the real data store.
+                ConsumeApplicationStartup();
                 Type layouts = typeof(GroceryErp.App.App).Assembly.GetType(
                     "GroceryErp.App.Presentation.TableColumnLayouts")!;
                 layouts.GetMethod("Register", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, null);
                 Environment.SetEnvironmentVariable("GROCERY_ERP_TEST_DATA_ROOT", previousTestRoot);
                 TranslationSource translations = TranslationSource.Instance;
+                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                // Runs first, while no other window has queued work on this dispatcher.
+                VerifyPhaseSixScreens(translations);
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 DisplayFormatter formatter = new();
                 ShellViewModel viewModel = new(translations, formatter);
@@ -429,7 +435,7 @@ public sealed class PhaseZeroSmokeTests
                 restoredHost.Close();
 
                 var inventory = new InventoryService(database, new StockLedger(settings),
-                    new DocNumberService(settings), new PeriodGuard(settings), new AuditLog());
+                    new DocNumberService(settings), new PeriodGuard(settings, new SystemClock(settings)), new AuditLog());
                 var stock = new ProductStockWindow(inventory,
                     new ProductListItem { Id = 1, Sku = "SALT001", Name = "Tata Salt 1 kg" },
                     showLedger: false, loadOnShow: false);
@@ -630,7 +636,7 @@ public sealed class PhaseZeroSmokeTests
                 label.Close();
 
                 var purchasing = new PurchasingService(database, new StockLedger(settings),
-                    new DocNumberService(settings), new PeriodGuard(settings), settings, new AuditLog());
+                    new DocNumberService(settings), new PeriodGuard(settings, new SystemClock(settings)), settings, new AuditLog());
                 var vendorEditor = new VendorEditorWindow(purchasing);
                 vendorEditor.Show();
                 Capture(vendorEditor, "vendor-editor.en.png");
@@ -705,24 +711,8 @@ public sealed class PhaseZeroSmokeTests
                 Capture(purchaseEntry, "purchase-entry-warnings.en.png");
                 purchaseEntry.Close();
 
-                var countWindow = new StockCountWindow(inventory, loadOnShow: false);
-                ((DataGrid)countWindow.FindName("CountGrid")).ItemsSource = new object[]
-                {
-                    new { ProductName = "Tata Salt 1 kg", LotCode = "L2627-000014", Expected = new Quantity(11),
-                        Counted = "10", Movement = Quantity.Zero, Difference = new Quantity(-1), DifferenceValue = new Money(-250) },
-                    new { ProductName = "Wheat flour 5 kg", LotCode = "L2627-000015", Expected = new Quantity(8),
-                        Counted = "", Movement = Quantity.Zero, Difference = (Quantity?)null, DifferenceValue = (Money?)null },
-                };
-                ((TextBlock)countWindow.FindName("ProgressText")).Text = "1 of 2 lots counted";
-                countWindow.Show();
-                Capture(countWindow, "stock-count.en.png");
-                translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
-                Capture(countWindow, "stock-count.gu.png");
-                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
-                countWindow.Close();
-
                 var directCount = new DirectCountReviewWindow(
-                    new DirectStockCountService(database, new DirectStockEngine(), new PeriodGuard(settings)),
+                    new DirectStockCountService(database, new DirectStockEngine(), new PeriodGuard(settings, new SystemClock(settings))),
                     [1], new SystemClock(settings), loadOnShow: false);
                 ((DataGrid)directCount.FindName("CountGrid")).ItemsSource = new object[]
                 {
@@ -743,17 +733,6 @@ public sealed class PhaseZeroSmokeTests
                 Capture(directCount, "direct-count-review.gu.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 directCount.Close();
-
-                var countScope = new StockCountScopeWindow(catalog, loadOnShow: false);
-                ((ListBox)countScope.FindName("CategoriesBox")).ItemsSource = new[]
-                {
-                    new MasterItem { Id = 1, Name = "Staples" },
-                    new MasterItem { Id = 2, Name = "Dairy" },
-                    new MasterItem { Id = 3, Name = "Household" },
-                };
-                countScope.Show();
-                Capture(countScope, "stock-count-scope.en.png");
-                countScope.Close();
 
                 var openingPreview = new OpeningStockPreviewWindow(new OpeningStockImportPreview(
                 [
@@ -868,7 +847,7 @@ public sealed class PhaseZeroSmokeTests
 
                 IClock phase5Clock = new SystemClock(settings);
                 var moneyOutService = new MoneyOutService(database, new StockLedger(settings),
-                    new DocNumberService(settings), new PeriodGuard(settings), new AuditLog());
+                    new DocNumberService(settings), new PeriodGuard(settings, new SystemClock(settings)), new AuditLog());
                 var moneyOutPage = new MoneyOutPage(moneyOutService, inventory, phase5Clock, loadOnShow: false);
                 var moneyOutHost = new Window { Content = moneyOutPage, Width = 1120, Height = 700 };
                 ((DataGrid)moneyOutPage.FindName("ExpiredList")).ItemsSource = new[]
@@ -910,8 +889,16 @@ public sealed class PhaseZeroSmokeTests
                 Capture(moneyOutHost, "damages.en.png");
                 ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 2;
                 Capture(moneyOutHost, "expenses.en.png");
+                // A selected expense opens its details panel; the entry form stays closed. Its
+                // history loads asynchronously and resumes on this dispatcher, as in the app.
+                SynchronizationContext? moneyOutContext = SynchronizationContext.Current;
+                SynchronizationContext.SetSynchronizationContext(
+                    new System.Windows.Threading.DispatcherSynchronizationContext(application.Dispatcher));
                 ((DataGrid)moneyOutPage.FindName("ExpenseGrid")).SelectedIndex = 0;
-                ((System.Windows.Controls.Primitives.ToggleButton)moneyOutPage.FindName("ExpenseEntryTab")).IsChecked.ShouldBe(true);
+                SynchronizationContext.SetSynchronizationContext(moneyOutContext);
+                var expenseEntryTab = (System.Windows.Controls.Primitives.ToggleButton)moneyOutPage.FindName("ExpenseEntryTab");
+                expenseEntryTab.IsChecked.ShouldBe(false);
+                expenseEntryTab.IsChecked = true;
                 var categoryTab = (System.Windows.Controls.Primitives.ToggleButton)moneyOutPage.FindName("ExpenseCategoryTab");
                 categoryTab.IsChecked = true;
                 categoryTab.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
@@ -925,14 +912,14 @@ public sealed class PhaseZeroSmokeTests
                 ((Button)moneyOutPage.FindName("PostSalaryButton")).IsEnabled.ShouldBeFalse();
                 ((StackPanel)moneyOutPage.FindName("PageControls")).Visibility.ShouldBe(Visibility.Collapsed);
                 payrollTabs.SelectedIndex = 2;
-                ((Button)moneyOutPage.FindName("CorrectSalaryButton")).IsEnabled.ShouldBeFalse();
+                ((FrameworkElement)moneyOutPage.FindName("SalaryDetails")).Visibility.ShouldBe(Visibility.Collapsed);
                 payrollTabs.SelectedIndex = 0;
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 Capture(moneyOutHost, "payroll.gu.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 moneyOutHost.Close();
 
-                var assetService = new AssetService(database, settings, new PeriodGuard(settings), new AuditLog(), phase5Clock);
+                var assetService = new AssetService(database, settings, new PeriodGuard(settings, new SystemClock(settings)), new AuditLog(), phase5Clock);
                 var assetsPage = new AssetsPage(assetService, phase5Clock, purchasing, loadOnShow: false);
                 ((DataGrid)assetsPage.FindName("AssetGrid")).ItemsSource = new[]
                 {
@@ -983,7 +970,7 @@ public sealed class PhaseZeroSmokeTests
 
                 IClock posClock = new SystemClock(settings);
                 var sales = new SalesService(database, new StockLedger(settings), new DocNumberService(settings),
-                    new PeriodGuard(settings), settings, new AuditLog(), posClock);
+                    new PeriodGuard(settings, new SystemClock(settings)), settings, new AuditLog(), posClock);
                 var printer = new ReceiptPrinter(settings);
                 SaleLine[] lines =
                 [
@@ -1073,6 +1060,17 @@ public sealed class PhaseZeroSmokeTests
                 };
                 ((DataGrid)history.FindName("DetailGrid")).ItemsSource = lines;
                 ((TextBlock)history.FindName("DetailHeading")).Text = "S2627-000041 · Cash ₹109.000";
+                ((DataGrid)history.FindName("HistoryGrid")).ItemsSource = new[]
+                {
+                    new SaleHistoryItem(1, "S2627-000041", new DateOnly(2026, 10, 3), SaleStatus.Completed,
+                        2, new Money(109), "CASH", new DateTime(2026, 10, 3, 11, 15, 0), null),
+                    new SaleHistoryItem(3, "S2627-000039", new DateOnly(2026, 10, 2), SaleStatus.PartiallyRefunded,
+                        3, new Money(240), "UPI", new DateTime(2026, 10, 2, 18, 5, 0), null),
+                    new SaleHistoryItem(4, "S2627-000038", new DateOnly(2026, 10, 2), SaleStatus.Refunded,
+                        1, new Money(30), "CASH", new DateTime(2026, 10, 2, 17, 45, 0), null),
+                    new SaleHistoryItem(2, "S2627-000040", new DateOnly(2026, 10, 3), SaleStatus.Void,
+                        1, new Money(59), "UPI", new DateTime(2026, 10, 3, 10, 20, 0), "Mistake"),
+                };
                 var historyHost = new Window { Content = history, Width = 1120, Height = 720 };
                 historyHost.Show();
                 Capture(historyHost, "sales-history.en.png");
@@ -1082,13 +1080,46 @@ public sealed class PhaseZeroSmokeTests
                 TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 historyHost.Close();
 
-                var returning = new SaleActionWindow(true, [new ReturnableSaleLine(lines[0], Quantity.One),
-                    new ReturnableSaleLine(lines[1], new Quantity(1.25m))]);
+                ReturnableSaleLine[] returnable =
+                [
+                    new(lines[0], Quantity.One) { Refundable = new Money(56), RemainingRefund = new Money(28),
+                        OriginalLotAvailable = true },
+                    // The lot that would take this line back has expired since the sale.
+                    new(lines[1] with { ExpiryDate = new DateOnly(2026, 10, 10) }, new Quantity(1.25m))
+                        { Refundable = new Money(53), RemainingRefund = new Money(53), ResaleExpired = true },
+                ];
+                var returning = new SaleActionWindow(true, returnable, "Bill S2627-000041 · 03-10-2026 · ₹109.00");
+                ((TextBox)returning.FindName("ReasonBox")).Text = "Customer changed mind";
                 returning.Show();
+                ((DataGrid)returning.FindName("ReturnGrid")).UpdateLayout();
                 Capture(returning, "return.en.png");
+                TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                Capture(returning, "return.gu.png");
+                TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 returning.Close();
 
-                var voidDialog = new SaleActionWindow(false);
+                var recreation = new ReturnRecreationWindow(new ReturnRecreationDraft(lines[0].Id, "SALT-1",
+                    "Tata Salt 1 kg", "ટાટા મીઠું", null, null, null, null, null, new Percent(5), null, true,
+                    null, false, "SALEABLE", null, null, new Money(20), new Money(30), new Money(32),
+                    ["category", "unit", "tax rate", "tax mode", "HSN", "expiry tracking"]),
+                    new ReturnRecreationOptions([new(1, "Staples")], [new(1, "PCS — Pieces")],
+                        [new(1, "GST 5%", 5000)]));
+                recreation.Show();
+                Capture(recreation, "return-recreation.en.png");
+                TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                recreation.Close();
+                var guRecreation = new ReturnRecreationWindow(new ReturnRecreationDraft(lines[0].Id, "SALT-1",
+                    "Tata Salt 1 kg", "ટાટા મીઠું", null, null, null, null, null, new Percent(5), null, true,
+                    null, false, "SALEABLE", null, null, new Money(20), new Money(30), new Money(32),
+                    ["category", "tax mode"]),
+                    new ReturnRecreationOptions([new(1, "Staples")], [new(1, "PCS — Pieces")],
+                        [new(1, "GST 5%", 5000)]));
+                guRecreation.Show();
+                Capture(guRecreation, "return-recreation.gu.png");
+                guRecreation.Close();
+                TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+
+                var voidDialog = new SaleActionWindow(false, context: "Bill S2627-000041 · 03-10-2026 · ₹109.00");
                 voidDialog.Title.ShouldBe("Void");
                 voidDialog.Show();
                 Capture(voidDialog, "void.en.png");
@@ -1278,8 +1309,279 @@ public sealed class PhaseZeroSmokeTests
         thread.Start();
 
         await completion.Task.WaitAsync(
-            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(60),
             TestContext.Current.CancellationToken);
+    }
+
+    // Revision Phase 6 screens on real services: money-out entries in a finalized and an
+    // open year with their correction history, the correction dialog, asset term
+    // previews and Open and Finalized annual P&L at the 1366x768 desktop size.
+    private static void VerifyPhaseSixScreens(TranslationSource translations)
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"grocery-erp-ui-phase6-{Guid.NewGuid():N}");
+        // Page handlers await services; their continuations must return to this dispatcher.
+        SynchronizationContext? previousContext = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(
+            new System.Windows.Threading.DispatcherSynchronizationContext(System.Windows.Threading.Dispatcher.CurrentDispatcher));
+        try
+        {
+            var paths = new AppPaths(new SettingsBootstrap(root));
+            var factory = new SqliteConnectionFactory(paths);
+            using var database = new DbExecutor(factory);
+            new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
+            using var settings = new SettingsService(database, paths, new AuditLog());
+            Run(() => settings.LoadAsync());
+            var clock = new MutableClock(new DateOnly(2026, 2, 20));
+            var periods = new PeriodGuard(settings, clock);
+            var ledger = new StockLedger(settings);
+            var numbers = new DocNumberService(settings);
+            var moneyOut = new MoneyOutService(database, ledger, numbers, periods, new AuditLog());
+            var inventory = new InventoryService(database, ledger, numbers, periods, new AuditLog());
+            var purchasing = new PurchasingService(database, ledger, numbers, periods, settings, new AuditLog());
+            var assets = new AssetService(database, settings, periods, new AuditLog(), clock);
+            var reports = new ReportService(database, settings, clock, translations);
+            long lot;
+            using (var connection = factory.Open())
+            {
+                long category = connection.ExecuteScalar<long>("INSERT INTO category(name) VALUES ('Staples') RETURNING id");
+                long product = connection.ExecuteScalar<long>("""
+                    INSERT INTO product(sku,name,name_local,category_id,uom_id,tax_rate_id,track_expiry,default_selling_price)
+                    SELECT 'SALT001','Tata Salt 1 kg','ટાટા મીઠું 1 કિલો',@category,u.id,t.id,1,30000
+                    FROM uom u,tax_rate t WHERE u.code='PCS' ORDER BY t.id LIMIT 1 RETURNING id
+                    """, new { category });
+                lot = connection.ExecuteScalar<long>("""
+                    INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,unit_cost,selling_price,qty_received)
+                    VALUES (@product,'L-0001','B-17','2026-01-15','2027-06-30',20000,30000,50000) RETURNING id
+                    """, new { product });
+                connection.Execute("UPDATE product_lot SET qty_on_hand=qty_received WHERE id=@lot", new { lot });
+            }
+            long electricity = Run(() => moneyOut.GetExpenseCategoriesAsync())[0].Id;
+            Run(() => moneyOut.RecordExpenseAsync(new(new DateOnly(2026, 2, 10), electricity, new Money(1500), "UPI",
+                "Power Co", "FEB-26", null), OperationGuard.NewId()));
+            Run(() => moneyOut.RecordDamageAsync(new(lot, new DateOnly(2026, 2, 12), new Quantity(2), "BROKEN",
+                Money.Zero, "Dropped carton"), OperationGuard.NewId()));
+            Run(() => assets.SaveAssetAsync(null, new AssetInput("Visi-cooler 300 L", "Equipment", new DateOnly(2026, 1, 1),
+                new DateOnly(2026, 1, 1), new Money(45000), null, DepreciationMethod.Wdv, new Percent(15), Money.Zero, null)));
+            Run(() => assets.PostDueDepreciationAsync());
+
+            clock.BusinessDate = new DateOnly(2026, 10, 23);
+            Run(() => moneyOut.RecordExpenseAsync(new(new DateOnly(2026, 10, 20), electricity, new Money(1800), "UPI",
+                "Power Co", "OCT-26", null), OperationGuard.NewId()));
+            long employee = Run(() => moneyOut.SaveEmployeeAsync(null, new("Asha Patel", "9999999999", "Cashier",
+                new DateOnly(2026, 4, 1), null, new Money(12000), true, null)));
+            Run(() => moneyOut.PostSalaryRunAsync(new(new YearMonth(2026, 9), new DateOnly(2026, 10, 5), "BANK",
+                [new(employee, new Money(12000), Money.Zero, Money.Zero, new Money(500), "September")]), OperationGuard.NewId()));
+            Run(() => assets.PostDueDepreciationAsync()).CurrentDatedPeriods.Count.ShouldBe(2);
+            ExpenseItem february = Run(() => moneyOut.GetExpensesAsync(new DateOnly(2026, 2, 10), new DateOnly(2026, 2, 10))).Single();
+            Run(() => moneyOut.CorrectExpenseAsync(february, new ExpenseInput(february.Date, february.CategoryId, new Money(1650),
+                february.Mode, february.PaidTo, february.Reference, "Late fee"),
+                "Bill had a late fee", OperationGuard.NewId()));
+            Run(() => new AnnualCloseService(database, periods, clock).EnsureFinalizedAsync()).ShouldBe(1);
+
+            var moneyOutPage = new MoneyOutPage(moneyOut, inventory, clock);
+            var moneyOutHost = new Window { Content = moneyOutPage, Width = 1366, Height = 768, Language = AppLanguage };
+            moneyOutHost.Show();
+            var damageGrid = (DataGrid)moneyOutPage.FindName("DamageGrid");
+            PumpUntil(() => damageGrid.Items.Count == 1);
+            damageGrid.SelectedIndex = 0;
+            var damageDetails = (CorrectionDetailsPanel)moneyOutPage.FindName("DamageDetails");
+            PumpUntil(() => damageDetails.Visibility == Visibility.Visible);
+            TextOf(damageDetails).ShouldContain("FY 2025-26 is finalized");
+            CaptureRevision(moneyOutHost, "damage-details.en.png");
+
+            ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 2;
+            var expenseGrid = (DataGrid)moneyOutPage.FindName("ExpenseGrid");
+            PumpUntil(() => expenseGrid.Items.Count == 2);
+            var expenseDetails = (CorrectionDetailsPanel)moneyOutPage.FindName("ExpenseDetails");
+            expenseGrid.SelectedItem = expenseGrid.Items.Cast<ExpenseItem>().Single(item => item.Date.Month == 2);
+            PumpUntil(() => expenseDetails.Visibility == Visibility.Visible && TextOf(expenseDetails).Contains("Bill had a late fee"));
+            TextOf(expenseDetails).ShouldContain("posts a correction dated 23-10-2026");
+            CaptureRevision(moneyOutHost, "expense-details-finalized.en.png");
+            expenseGrid.SelectedItem = expenseGrid.Items.Cast<ExpenseItem>().Single(item => item.Date.Month == 10);
+            PumpUntil(() => TextOf(expenseDetails).Contains("Both annual periods of 20-10-2026 are open"));
+            CaptureRevision(moneyOutHost, "expense-details-open.en.png");
+            translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+            // The open details panel re-renders in the new language.
+            TextOf(expenseDetails).ShouldContain(translations.Format("MoneyOut_TreatmentOpen", "20-10-2026"));
+            TextOf(expenseDetails).ShouldNotContain("Both annual periods");
+            CaptureRevision(moneyOutHost, "expense-details-open.gu.png");
+            translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+
+            ExpenseItem corrected = expenseGrid.Items.Cast<ExpenseItem>().Single(item => item.Date.Month == 2);
+            CorrectionDating dating = Run(() => moneyOut.PreviewCorrectionAsync(corrected.Date));
+            var correction = new MoneyOutCorrectionWindow(moneyOut, corrected, Run(() => moneyOut.GetExpenseCategoriesAsync()),
+                dating, voidEntry: false);
+            correction.Language = AppLanguage;
+            correction.Show();
+            TextOf(correction).ShouldContain("posts a correction dated 23-10-2026");
+            CaptureRevision(correction, "expense-correction.en.png");
+            correction.Close();
+            var voidWindow = new MoneyOutCorrectionWindow(moneyOut, corrected, Run(() => moneyOut.GetExpenseCategoriesAsync()),
+                dating, voidEntry: true);
+            voidWindow.Language = AppLanguage;
+            voidWindow.Show();
+            CaptureRevision(voidWindow, "expense-void.en.png");
+            voidWindow.Close();
+
+            ((TextBox)moneyOutPage.FindName("SalaryRegisterPeriod")).Text = "2026-09";
+            ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 3;
+            ((TabControl)moneyOutPage.FindName("PayrollTabs")).SelectedIndex = 2;
+            var salaryGrid = (DataGrid)moneyOutPage.FindName("SalaryRegisterGrid");
+            PumpUntil(() => salaryGrid.Items.Count == 2);
+            salaryGrid.SelectedIndex = 0;
+            var salaryDetails = (CorrectionDetailsPanel)moneyOutPage.FindName("SalaryDetails");
+            PumpUntil(() => salaryDetails.Visibility == Visibility.Visible);
+            TextOf(salaryDetails).ShouldContain("Both annual periods of 30-09-2026 are open");
+            CaptureRevision(moneyOutHost, "payroll-register.en.png");
+            moneyOutHost.Close();
+
+            var assetsPage = new AssetsPage(assets, clock, purchasing);
+            var assetsHost = new Window { Content = assetsPage, Width = 1366, Height = 768, Language = AppLanguage };
+            assetsHost.Show();
+            var assetGrid = (DataGrid)assetsPage.FindName("AssetGrid");
+            PumpUntil(() => assetGrid.Items.Count == 1);
+            assetGrid.SelectedIndex = 0;
+            ((ToggleButton)assetsPage.FindName("AssetDetailsTab")).IsChecked = true;
+            ((TextBox)assetsPage.FindName("AssetRate")).Text = "20";
+            var assetPreview = (TextBlock)assetsPage.FindName("AssetFinancialLockText");
+            PumpUntil(() => assetPreview.Text.Contains("New terms apply from 2026-04", StringComparison.Ordinal));
+            ((FrameworkElement)assetsPage.FindName("AssetEffectivePanel")).Visibility.ShouldBe(Visibility.Visible);
+            CaptureRevision(assetsHost, "asset-terms-preview.en.png");
+            ((TextBox)assetsPage.FindName("AssetRate")).Text = "15";
+            ((TextBox)assetsPage.FindName("AssetCost")).Text = "46000";
+            PumpUntil(() => assetPreview.Text.Contains("Cost and in-use date are fixed", StringComparison.Ordinal));
+            ((Button)assetsPage.FindName("SaveAssetButton")).IsEnabled.ShouldBeFalse();
+            CaptureRevision(assetsHost, "asset-terms-blocked.en.png");
+            assetsHost.Close();
+
+            var reportsPage = new ReportsPage(reports, new ReportOutputService(settings, translations), clock,
+                new DisplayFormatter(), new ReportNavigationState());
+            var reportsHost = new Window { Content = reportsPage, Width = 1366, Height = 768, Language = AppLanguage };
+            reportsHost.Show();
+            var status = (TextBlock)reportsPage.FindName("PnlStatusText");
+            PumpUntil(() => status.Text.StartsWith("Open · editable through 07-01-2027", StringComparison.Ordinal));
+            ((ComboBox)reportsPage.FindName("ScopePicker")).SelectedIndex = 2;
+            var periodPicker = (ComboBox)reportsPage.FindName("PnlPeriodPicker");
+            PumpUntil(() => periodPicker.Items.Count == 2);
+            periodPicker.SelectedIndex = 1;
+            PumpUntil(() => status.Text.StartsWith("Finalized · FY 2025-26", StringComparison.Ordinal));
+            var pnlGrid = (DataGrid)reportsPage.FindName("PnlGrid");
+            pnlGrid.Items.Count.ShouldBeGreaterThan(5);
+            CaptureRevision(reportsHost, "pnl-fiscal-finalized.en.png");
+            translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+            PumpUntil(() => status.Text.StartsWith("અંતિમ", StringComparison.Ordinal) || !status.Text.StartsWith("Finalized", StringComparison.Ordinal));
+            CaptureRevision(reportsHost, "pnl-fiscal-finalized.gu.png");
+            translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+            ((ComboBox)reportsPage.FindName("ScopePicker")).SelectedIndex = 1;
+            PumpUntil(() => status.Text.StartsWith("Open · editable through 07-01-2027", StringComparison.Ordinal));
+            ((CheckBox)reportsPage.FindName("MonthsCheck")).IsChecked = true;
+            ((CheckBox)reportsPage.FindName("MonthsCheck")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            PumpUntil(() => ((DataGrid)reportsPage.FindName("ReportGrid")).Visibility == Visibility.Visible);
+            CaptureRevision(reportsHost, "pnl-calendar-open-months.en.png");
+            reportsHost.Close();
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previousContext);
+            SqliteConnectionFactory.ClearPoolForDataRoot(root);
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    // Service work runs off this thread; the dispatcher keeps pumping so pages that
+    // receive change messages can still marshal back to it.
+    private static T Run<T>(Func<Task<T>> action)
+    {
+        Task<T> task = Task.Run(action);
+        PumpUntil(() => task.IsCompleted, 30_000);
+        return task.GetAwaiter().GetResult();
+    }
+
+    private static void Run(Func<Task> action)
+    {
+        Task task = Task.Run(action);
+        PumpUntil(() => task.IsCompleted, 30_000);
+        task.GetAwaiter().GetResult();
+    }
+
+    // The app formats dates and numbers in this culture; the test skips its startup, so the
+    // Phase 6 windows set it themselves.
+    private static System.Windows.Markup.XmlLanguage AppLanguage =>
+        System.Windows.Markup.XmlLanguage.GetLanguage(TranslationSource.FormatCulture.IetfLanguageTag);
+
+    // Runs the queued Startup callback while WPF reports shutdown, so it returns without
+    // calling App.OnStartup; later dispatcher pumping then runs only this test's work.
+    private static void ConsumeApplicationStartup()
+    {
+        PropertyInfo shuttingDown = typeof(Application).GetProperty("IsShuttingDown",
+            BindingFlags.Static | BindingFlags.NonPublic) ?? throw new InvalidOperationException("WPF startup guard missing.");
+        shuttingDown.SetValue(null, true);
+        try
+        {
+            var frame = new System.Windows.Threading.DispatcherFrame();
+            System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
+                System.Windows.Threading.DispatcherPriority.Background, () => frame.Continue = false);
+            System.Windows.Threading.Dispatcher.PushFrame(frame);
+        }
+        finally { shuttingDown.SetValue(null, false); }
+    }
+
+    // Lets queued async page work finish on this STA thread until the condition holds.
+    private static void PumpUntil(Func<bool> condition, int timeoutMilliseconds = 5000,
+        [System.Runtime.CompilerServices.CallerLineNumber] int line = 0)
+    {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        while (!condition() && watch.ElapsedMilliseconds < timeoutMilliseconds)
+        {
+            var frame = new System.Windows.Threading.DispatcherFrame();
+            System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
+                System.Windows.Threading.DispatcherPriority.Background, () => frame.Continue = false);
+            System.Windows.Threading.Dispatcher.PushFrame(frame);
+            Thread.Sleep(10);
+        }
+        condition().ShouldBeTrue($"waited at line {line}");
+    }
+
+    private static string TextOf(DependencyObject root)
+    {
+        var text = new System.Text.StringBuilder();
+        void Walk(DependencyObject node)
+        {
+            if (node is TextBlock block) text.Append(block.Text).Append('\n');
+            if (node is ItemsControl items && items.ItemsSource is not null)
+                foreach (object item in items.Items)
+                    if (item is DependencyObject element) Walk(element);
+            foreach (object child in LogicalTreeHelper.GetChildren(node))
+                if (child is DependencyObject element) Walk(element);
+        }
+        Walk(root);
+        return text.ToString();
+    }
+
+    private static void CaptureRevision(Window window, string fileName)
+    {
+        string? directory = Environment.GetEnvironmentVariable("GROCERY_REVISION_SCREENSHOT_DIR");
+        if (string.IsNullOrEmpty(directory)) return;
+        Directory.CreateDirectory(directory);
+        window.UpdateLayout();
+        int width = (int)Math.Ceiling(window.ActualWidth);
+        int height = (int)Math.Ceiling(window.ActualHeight);
+        var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        var background = new DrawingVisual();
+        using (DrawingContext context = background.RenderOpen())
+            context.DrawRectangle(Brushes.White, null, new Rect(0, 0, width, height));
+        bitmap.Render(background);
+        bitmap.Render((Visual)window.Content);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var output = File.Create(Path.Combine(directory, fileName));
+        encoder.Save(output);
+    }
+
+    private sealed class MutableClock(DateOnly date) : IClock
+    {
+        public DateOnly BusinessDate { get; set; } = date;
+        public DateTime Now => BusinessDate.ToDateTime(new TimeOnly(12, 0));
     }
 
     private static void VerifyWheelScrolling()
@@ -1639,7 +1941,7 @@ public sealed class PhaseZeroSmokeTests
 
     private sealed class TestSettings : ISettings
     {
-        public AppSettings Current { get; } = new("Test Store", 4, 0, null, 15, 30, "");
+        public AppSettings Current { get; } = new("Test Store", 4, 0, 15, 30, "");
     }
 }
 

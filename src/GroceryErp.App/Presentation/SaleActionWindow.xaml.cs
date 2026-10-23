@@ -1,4 +1,6 @@
+using System.ComponentModel;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using GroceryErp.Core;
@@ -10,25 +12,33 @@ namespace GroceryErp.App.Presentation;
 
 public partial class SaleActionWindow : Window
 {
+    private static readonly CultureInfo Digits = CultureInfo.GetCultureInfo("en-IN");
     private readonly bool _isReturn;
     private readonly IReadOnlyList<ReturnEntry> _entries;
 
-    public SaleActionWindow(bool isReturn, IReadOnlyList<ReturnableSaleLine>? lines = null)
+    public SaleActionWindow(bool isReturn, IReadOnlyList<ReturnableSaleLine>? lines = null, string? context = null)
     {
         InitializeComponent();
         _isReturn = isReturn;
         Title = TranslationSource.Instance[isReturn ? "Sales_Return" : "Sales_Void"];
-        ReturnFields.Visibility = isReturn ? Visibility.Visible : Visibility.Collapsed;
+        ContextText.Text = context ?? string.Empty;
+        ContextText.Visibility = context is null ? Visibility.Collapsed : Visibility.Visible;
         if (!isReturn)
         {
+            ReturnFields.Visibility = Visibility.Collapsed;
+            RefundModePanel.Visibility = Visibility.Collapsed;
+            TotalText.Visibility = Visibility.Collapsed;
             LayoutGrid.RowDefinitions[2].Height = new GridLength(0);
             Width = 520;
-            Height = 240;
+            Height = context is null ? 230 : 260;
             MinWidth = 480;
             MinHeight = 220;
         }
         _entries = lines?.Select(static line => new ReturnEntry(line)).ToArray() ?? [];
+        foreach (ReturnEntry entry in _entries) entry.PropertyChanged += (_, _) => UpdateTotal();
         ReturnGrid.ItemsSource = _entries;
+        UpdateTotal();
+        Loaded += (_, _) => ReasonBox.Focus();
     }
 
     public string Reason => ReasonBox.Text.Trim();
@@ -40,25 +50,50 @@ public partial class SaleActionWindow : Window
         _ => RefundMode.Cash,
     };
 
+    private void ReturnAll_OnClick(object sender, RoutedEventArgs e)
+    {
+        ReturnGrid.CommitEdit(DataGridEditingUnit.Row, true);
+        foreach (ReturnEntry entry in _entries) entry.QuantityText = entry.Remaining;
+    }
+
+    private void UpdateTotal()
+    {
+        if (!_isReturn) return;
+        int lines = 0;
+        decimal refund = 0;
+        foreach (ReturnEntry entry in _entries)
+            if (entry.Refund is { } amount)
+            {
+                lines++;
+                refund += amount;
+            }
+        TotalText.Text = TranslationSource.Instance.Format("Sales_ReturnTotal",
+            refund.ToString("0.00", Digits), lines);
+    }
+
     private void Save_OnClick(object sender, RoutedEventArgs e)
     {
         ErrorText.Text = "";
         if (Reason.Length == 0)
         {
             ErrorText.Text = TranslationSource.Instance["Sales_ReasonRequired"];
+            ReasonBox.Focus();
             return;
         }
         if (_isReturn)
         {
+            ReturnGrid.CommitEdit(DataGridEditingUnit.Row, true);
             var selected = new List<ReturnLineInput>();
             foreach (ReturnEntry entry in _entries)
             {
                 string text = InputNormalizer.Normalize(entry.QuantityText).Trim();
                 if (text.Length == 0) continue;
-                if (!decimal.TryParse(text, NumberStyles.Number, CultureInfo.GetCultureInfo("en-IN"), out decimal value) ||
+                if (!decimal.TryParse(text, NumberStyles.Number, Digits, out decimal value) ||
                     value <= 0 || new Quantity(value) > entry.Line.Remaining)
                 {
                     ErrorText.Text = TranslationSource.Instance["Sales_ReturnQuantityInvalid"];
+                    ReturnGrid.SelectedItem = entry;
+                    ReturnGrid.ScrollIntoView(entry);
                     return;
                 }
                 selected.Add(new(entry.Line.Line.Id, new Quantity(value), entry.Resellable));
@@ -73,12 +108,54 @@ public partial class SaleActionWindow : Window
         DialogResult = true;
     }
 
-    private sealed class ReturnEntry(ReturnableSaleLine line)
+    // One sold line: what was sold and returned so far, what this return refunds,
+    // and where its units go. An expired lot cannot take units back.
+    private sealed class ReturnEntry(ReturnableSaleLine line) : INotifyPropertyChanged
     {
+        public event PropertyChangedEventHandler? PropertyChanged;
+        private string _quantityText = "";
+        private bool _resellable = !line.ResaleExpired;
         public ReturnableSaleLine Line { get; } = line;
         public string Name => Line.Line.ProductName;
-        public string Remaining => Line.Remaining.Value.ToString("0.###", CultureInfo.GetCultureInfo("en-IN"));
-        public string QuantityText { get; set; } = "";
-        public bool Resellable { get; set; } = true;
+        public string Lot => Line.Line.LotCode ?? Line.Line.BatchDisplay;
+        public string Expiry => Line.Line.ExpiryDisplay;
+        public string Sold => Format(Line.Line.Quantity.Value);
+        public string AlreadyReturned => Format(Line.AlreadyReturned.Value);
+        public string Remaining => Format(Line.Remaining.Value);
+        public string QuantityText
+        {
+            get => _quantityText;
+            set { _quantityText = value; Changed(); Changed(nameof(RefundPreview)); }
+        }
+        public bool Resellable
+        {
+            get => _resellable;
+            set
+            {
+                _resellable = value && !Line.ResaleExpired;
+                Changed();
+                Changed(nameof(RestockDisposition));
+            }
+        }
+        public string RestockDisposition => TranslationSource.Instance[
+            Line.ResaleExpired ? "Sales_ReturnExpiredDamage" :
+            !Resellable ? "Sales_Activity_RETURN_DAMAGED" :
+            Line.OriginalLotAvailable ? "Sales_ReturnOriginalLot" : "Sales_ReturnNewLot"];
+        // Mirrors the server: the last units of a line refund what is left of it.
+        public decimal? Refund
+        {
+            get
+            {
+                if (!decimal.TryParse(InputNormalizer.Normalize(QuantityText), NumberStyles.Number,
+                        Digits, out decimal amount) || amount <= 0 || amount > Line.Remaining.Value) return null;
+                return amount == Line.Remaining.Value ? Line.RemainingRefund.Value :
+                    decimal.Round(Line.Refundable.Value * amount / Line.Line.Quantity.Value, 3,
+                        MidpointRounding.AwayFromZero);
+            }
+        }
+        public string RefundPreview => Refund is { } refund ? Format(refund) : "—";
+        private static string Format(decimal value) => value.ToString("0.###", Digits);
+        private void Changed([CallerMemberName] string? name = null) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 }

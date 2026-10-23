@@ -26,7 +26,6 @@
   <Folder Name="/tools/">
     <Project Path="tools/GroceryErp.Benchmarks/GroceryErp.Benchmarks.csproj" />
     <Project Path="tools/GroceryErp.DataGen/GroceryErp.DataGen.csproj" />
-    <Project Path="tools/GroceryErp.Phase2StockReview/GroceryErp.Phase2StockReview.csproj" />
   </Folder>
 </Solution>
 

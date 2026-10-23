@@ -24,15 +24,16 @@
       <StackPanel Width="174" Margin="0,0,8,4"><TextBlock Text="{l:Tr Catalog_Name}"/><TextBox x:Name="AssetName"/></StackPanel>
       <StackPanel Width="132" Margin="0,0,8,4"><TextBlock Text="{l:Tr Catalog_Category}"/><ComboBox x:Name="AssetCategory" SelectedIndex="0" SelectionChanged="AssetCategory_OnSelectionChanged"><ComboBoxItem Tag="Furniture" Content="{l:Tr Assets_Furniture}"/><ComboBoxItem Tag="Equipment" Content="{l:Tr Assets_Equipment}"/><ComboBoxItem Tag="Electronics" Content="{l:Tr Assets_Electronics}"/><ComboBoxItem Tag="Vehicle" Content="{l:Tr Assets_Vehicle}"/><ComboBoxItem Tag="Other" Content="{l:Tr Assets_Other}"/></ComboBox></StackPanel>
       <StackPanel Width="130" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_PurchaseDate}"/><DatePicker x:Name="PurchaseDate" SelectedDateFormat="Short"/></StackPanel>
-      <StackPanel Width="130" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_InUseDate}"/><DatePicker x:Name="InUseDate" SelectedDateFormat="Short"/></StackPanel>
-      <StackPanel Width="104" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_Cost}"/><TextBox x:Name="AssetCost"/></StackPanel>
-      <StackPanel Width="84" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_Method}"/><ComboBox x:Name="AssetMethod" SelectedIndex="0"><ComboBoxItem Tag="WDV" Content="WDV"/><ComboBoxItem Tag="SLM" Content="SLM"/></ComboBox></StackPanel>
-      <StackPanel Width="82" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_Rate}"/><TextBox x:Name="AssetRate" Text="15"/></StackPanel>
-      <StackPanel Width="110" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_Salvage}"/><TextBox x:Name="AssetSalvage" Text="0"/></StackPanel>
+      <StackPanel Width="130" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_InUseDate}"/><DatePicker x:Name="InUseDate" SelectedDateFormat="Short" SelectedDateChanged="AssetTerms_OnChanged"/></StackPanel>
+      <StackPanel Width="104" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_Cost}"/><TextBox x:Name="AssetCost" TextChanged="AssetTerms_OnChanged"/></StackPanel>
+      <StackPanel Width="84" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_Method}"/><ComboBox x:Name="AssetMethod" SelectedIndex="0" SelectionChanged="AssetTerms_OnChanged"><ComboBoxItem Tag="WDV" Content="WDV"/><ComboBoxItem Tag="SLM" Content="SLM"/></ComboBox></StackPanel>
+      <StackPanel Width="82" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_Rate}"/><TextBox x:Name="AssetRate" Text="15" TextChanged="AssetTerms_OnChanged"/></StackPanel>
+      <StackPanel Width="110" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_Salvage}"/><TextBox x:Name="AssetSalvage" Text="0" TextChanged="AssetTerms_OnChanged"/></StackPanel>
+      <StackPanel x:Name="AssetEffectivePanel" Width="120" Margin="0,0,8,4" Visibility="Collapsed"><TextBlock Text="{l:Tr Assets_EffectiveFrom}"/><TextBox x:Name="AssetEffectiveFrom" ToolTip="YYYY-MM" TextChanged="AssetTerms_OnChanged" AutomationProperties.Name="{l:Tr Assets_EffectiveFrom}"/></StackPanel>
       <StackPanel Width="150" Margin="0,0,8,4"><TextBlock Text="{l:Tr Purchasing_Vendor}"/><ComboBox x:Name="AssetVendor" DisplayMemberPath="Name" SelectedValuePath="Id"/></StackPanel>
       <StackPanel Width="168" Margin="0,0,8,4"><TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="AssetNotes"/></StackPanel>
       </WrapPanel>
-      <TextBlock x:Name="AssetFinancialLockText" Margin="0,0,0,8" Visibility="Collapsed" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="{l:Tr Assets_FinancialLocked}"/>
+      <TextBlock x:Name="AssetFinancialLockText" Margin="0,0,0,8" Visibility="Collapsed" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
       <WrapPanel>
         <Button x:Name="SaveAssetButton" Click="AddAsset_OnClick" Content="{l:Tr Common_Save}"/>
       </WrapPanel>
@@ -86,15 +87,18 @@
       <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
         <Border x:Name="TimelinePanel" Grid.Column="1" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1,0,0,0" Padding="18">
-          <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
               <TextBlock x:Name="TimelineHeading" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
               <Button Grid.Column="1" Margin="12,0,0,0" Click="CloseTimeline_OnClick" Content="{l:Tr Common_Close}"/>
             </Grid>
-            <DataGrid x:Name="ScheduleGrid" Grid.Row="1" Margin="0,14,0,0" Style="{StaticResource CatalogGrid}">
-              <DataGrid.Columns><DataGridTextColumn Width="140" Header="{l:Tr Assets_Period}" Binding="{Binding Period}"/><DataGridTextColumn Width="160" Header="{l:Tr Assets_Opening}" Binding="{Binding OpeningValue}"/><DataGridTextColumn Width="160" Header="{l:Tr Assets_Depreciation}" Binding="{Binding Amount}"/><DataGridTextColumn Width="160" Header="{l:Tr Assets_Closing}" Binding="{Binding ClosingValue}"/></DataGrid.Columns>
+            <Expander Grid.Row="1" Margin="0,10,0,0" Header="{l:Tr Assets_TermHistory}">
+              <ItemsControl x:Name="TermsList" MaxHeight="150" Margin="0,4,0,0"/>
+            </Expander>
+            <DataGrid x:Name="ScheduleGrid" Grid.Row="2" Margin="0,10,0,0" Style="{StaticResource CatalogGrid}">
+              <DataGrid.Columns><DataGridTextColumn Width="120" Header="{l:Tr Assets_Period}" Binding="{Binding Period}"/><DataGridTextColumn Width="150" Header="{l:Tr Assets_Opening}" Binding="{Binding OpeningValue}"/><DataGridTextColumn Width="150" Header="{l:Tr Assets_Depreciation}" Binding="{Binding Amount}"/><DataGridTextColumn Width="150" Header="{l:Tr Assets_Closing}" Binding="{Binding ClosingValue}"/><DataGridTextColumn Width="130" Header="{l:Tr Assets_ChargedOn}" Binding="{Binding ChargedOn}"/></DataGrid.Columns>
             </DataGrid>
-            <StackPanel Grid.Row="2" Margin="0,12,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+            <StackPanel Grid.Row="3" Margin="0,12,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
               <TextBlock x:Name="TimelinePageText" VerticalAlignment="Center" Margin="0,0,12,0"/>
               <Button x:Name="PreviousTimelineButton" Click="PreviousTimeline_OnClick" Content="{l:Tr Sales_Previous}"/>
               <Button x:Name="NextTimelineButton" Margin="6,0,0,0" Click="NextTimeline_OnClick" Content="{l:Tr Sales_Next}"/>

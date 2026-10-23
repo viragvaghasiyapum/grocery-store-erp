@@ -61,7 +61,7 @@ try
 
         string integrity = connection.ExecuteScalar<string>("PRAGMA integrity_check;") ?? "";
         long foreignKeys = connection.Query("PRAGMA foreign_key_check;").LongCount();
-        long cacheMismatches = connection.ExecuteScalar<long>("SELECT COUNT(*) FROM v_lot_cache_mismatch;");
+        long cacheMismatches = LotSourceReconciliation.CheckAll(connection, null).LongCount();
         long expiredSaleLines = connection.ExecuteScalar<long>("""
             SELECT COUNT(*) FROM sale_line sl
             JOIN sale s ON s.id=sl.sale_id
@@ -178,8 +178,7 @@ void InsertPurchasesAndLots(SqliteConnection connection)
                     INSERT INTO product_lot(id,product_id,lot_code,batch_no,purchase_line_id,vendor_id,received_date,
                       expiry_date,unit_cost,mrp,selling_price,qty_received)
                     VALUES (@id,@product,@lot,@batch,@id,@vendor,@received,@expiry,@cost,@mrp,@price,1000000);
-                    INSERT INTO stock_movement(move_date,product_id,lot_id,type_code,qty,unit_cost,ref_type,ref_id)
-                    VALUES (@received,@product,@id,'PURCHASE',1000000,@cost,'purchase_line',@id);
+                    UPDATE product_lot SET qty_on_hand=1000000 WHERE id=@id;
                     """, new
                 {
                     id = nextLot,
@@ -232,7 +231,6 @@ int[] BuildPurchaseLineCounts()
 void InsertSales(SqliteConnection connection)
 {
     int daySpan = end.DayNumber - start.DayNumber + 1;
-    long movementId = lots;
     for (int batchStart = 1; batchStart <= bills; batchStart += 5_000)
     {
         using SqliteTransaction transaction = connection.BeginTransaction();
@@ -269,8 +267,7 @@ void InsertSales(SqliteConnection connection)
                     INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,mrp,tax_rate_pct,
                       taxable_amount,tax_amount,line_total,unit_cost,cost_amount,product_name_local,hsn_code,price_includes_tax)
                     VALUES (@sale,@line,@product,@lot,@name,@qty,@price,@mrp,5000,@taxable,@tax,@total,@cost,@costAmount,@local,'1001',1);
-                    INSERT INTO stock_movement(id,move_date,product_id,lot_id,type_code,qty,unit_cost,ref_type,ref_id)
-                    VALUES (@movement,@date,@product,@lot,'SALE',@moveQty,@cost,'sale_line',last_insert_rowid());
+                    UPDATE product_lot SET qty_on_hand=qty_on_hand-@qty WHERE id=@lot;
                     """, new
                 {
                     sale = saleId,
@@ -287,9 +284,6 @@ void InsertSales(SqliteConnection connection)
                     cost = unitCost,
                     costAmount = lineCost,
                     local = localNames[productId],
-                    movement = ++movementId,
-                    date = Iso(date),
-                    moveQty = -qty
                 }, transaction);
             }
             connection.Execute("""

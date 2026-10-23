@@ -40,6 +40,30 @@ public sealed record PnlMatrixRow(string Section, string HeadCode, long? Referen
 public sealed record PnlMatrix(DateRange Period, IReadOnlyList<string> MonthKeys,
     IReadOnlyList<PnlMatrixRow> Rows);
 
+/// The P&L period selector: one month, a calendar year, a fiscal year, or any range.
+public enum PnlScope { Month, CalendarYear, FiscalYear, Custom }
+
+public sealed record PnlPeriod(PnlScope Scope, DateRange Range, string Label);
+
+/// One saved or live P&L figure for a month, head and expense category.
+public sealed record PnlReportLine(string Month, string Section, string HeadCode, long CategoryId, string Label,
+    Money Amount, long SourceCount);
+
+/// Status is FINALIZED (read from a locked year's saved snapshot), OPEN (live source
+/// records of an open period, as of the cutoff date) or LIVE (a custom range).
+public sealed record PnlReport(PnlPeriod Period, string Status, DateOnly Cutoff, string? FinalizedYear,
+    int? FormatVersion, string? Checksum, string? GeneratedAt, IReadOnlyList<PnlReportLine> Lines,
+    PnlStatement Statement, PnlMatrix Matrix, IReadOnlyList<PnlLayoutRow> Rows);
+
+/// One displayed or exported P&L row. Kind is SECTION, HEAD, CATEGORY (under its
+/// ParentCode head) or TOTAL; Months aligns with the report's matrix month keys.
+public sealed record PnlLayoutRow(string Kind, string Code, string? ParentCode, string Label, Money Amount,
+    IReadOnlyList<Money> Months);
+
+/// Bounds for the period pickers and the years already finalized.
+public sealed record PnlPeriodRange(DateOnly? FirstEntry, DateOnly Today, int FiscalStartMonth,
+    IReadOnlyList<string> FinalizedYears);
+
 public sealed record DashboardSummary(
     DateOnly AsOf,
     Money TodaySales,
@@ -71,7 +95,7 @@ public enum ReportKind
 {
     SalesRegister, ItemSales, CategorySales, HourlySales, StockValue, StockLedger, LowStock,
     SlowMovers, Expiry, Damages, Expenses, SalaryRegister, AssetRegister, VendorPayables,
-    PurchaseRegister, GstSummary, AuditLog, AssetSchedule
+    PurchaseRegister, GstSummary, AuditLog, AssetSchedule, StockReconciliation
 }
 
 public enum ReportValueKind { Text, Date, Count, Quantity, Money, Percent }
@@ -79,9 +103,10 @@ public enum ReportValueKind { Text, Date, Count, Quantity, Money, Percent }
 public sealed record ReportColumn(string Key, string Heading, ReportValueKind Kind);
 public sealed record ReportRow(IReadOnlyDictionary<string, object?> Values);
 public sealed record TabularReport(string Title, DateRange? Period, IReadOnlyList<ReportColumn> Columns,
-    IReadOnlyList<ReportRow> Rows, IReadOnlyDictionary<string, decimal> Totals, bool IsTruncated = false);
+    IReadOnlyList<ReportRow> Rows, IReadOnlyDictionary<string, decimal> Totals, bool IsTruncated = false,
+    string? Summary = null);
 
 public sealed record ReportFilter(DateOnly? From = null, DateOnly? To = null, long? ProductId = null,
     long? LotId = null, long? VendorId = null, long? AssetId = null, string? Status = null, string? PaymentMode = null,
     string? Entity = null, string? Action = null, int SlowMoverDays = 90, int Limit = 5000,
-    bool IncludeExpired = true);
+    bool IncludeExpired = true, bool MismatchesOnly = false);

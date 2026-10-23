@@ -26,8 +26,10 @@ public partial class ReportsPage : Page
     private readonly IClock _clock;
     private readonly DisplayFormatter _formatter;
     private readonly ReportNavigationState _navigation;
+    private readonly HashSet<string> _expandedHeads = new(StringComparer.Ordinal);
     private TabularReport? _currentReport;
-    private PnlStatement? _currentPnl;
+    private PnlReport? _currentPnl;
+    private PnlPeriodRange? _periodRange;
     private bool _suppressRefresh;
     private readonly bool _loadOnShow;
     private int _refreshVersion;
@@ -54,8 +56,11 @@ public partial class ReportsPage : Page
         _clock = clock;
         _formatter = formatter;
         _navigation = navigation;
+        _suppressRefresh = true;
         ReportPicker.ItemsSource = ReportChoices();
         ReportPicker.SelectedIndex = 0;
+        ScopePicker.ItemsSource = ScopeChoices();
+        ScopePicker.SelectedIndex = 0;
         PeriodPicker.ItemsSource = Enum.GetValues<PnlPeriodKind>().Select(kind => new PeriodChoice(kind)).ToList();
         PeriodPicker.SelectedIndex = 0;
         StatusPicker.ItemsSource = SalesStatusChoices();
@@ -65,6 +70,9 @@ public partial class ReportsPage : Page
         DateOnly today = _clock.BusinessDate;
         FromPicker.SelectedDate = new DateTime(today.Year, today.Month, 1);
         ToPicker.SelectedDate = today.ToDateTime(TimeOnly.MinValue);
+        RebuildPnlPeriods(null);
+        _suppressRefresh = false;
+        UpdateFilterAvailability();
         PreviewKeyDown += async (_, args) =>
         {
             if (args.Key == Key.F5)
@@ -86,10 +94,13 @@ public partial class ReportsPage : Page
         if (loadOnShow) Loaded += async (_, _) =>
         {
             TranslationSource.Instance.PropertyChanged += OnTranslationChanged;
+            try { _periodRange = await _reports.GetPnlPeriodRangeAsync(); }
+            catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
             if (_navigation.Consume() is { } request)
             {
                 _suppressRefresh = true;
-                ReportPicker.SelectedIndex = 1 + (int)request.Kind;
+                ReportPicker.SelectedItem = ((IEnumerable<ReportChoice>)ReportPicker.ItemsSource)
+                    .FirstOrDefault(choice => choice.Kind == request.Kind);
                 FromPicker.SelectedDate = request.From.ToDateTime(TimeOnly.MinValue);
                 ToPicker.SelectedDate = request.To.ToDateTime(TimeOnly.MinValue);
                 PeriodPicker.SelectedIndex = (int)PnlPeriodKind.Custom;
@@ -112,12 +123,15 @@ public partial class ReportsPage : Page
         };
     }
 
+    private bool IsPnl => ReportPicker.SelectedItem is ReportChoice { Kind: null };
+    private PnlScope SelectedScope => (ScopePicker.SelectedItem as ScopeChoice)?.Scope ?? PnlScope.Month;
+
     private async Task RefreshAsync()
     {
         DateTime selectedFrom = FromPicker.SelectedDate ?? _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
         DateTime selectedTo = ToPicker.SelectedDate ?? _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
-        string timingPage = ReportPicker.SelectedIndex == 0 && MatrixCheck.IsChecked != true
-            ? (selectedTo - selectedFrom).TotalDays > 45 ? "reports-pnl-long" : "reports-pnl-short"
+        string timingPage = IsPnl && MonthsCheck.IsChecked != true
+            ? SelectedScope == PnlScope.Month || (selectedTo - selectedFrom).TotalDays <= 45 ? "reports-pnl-short" : "reports-pnl-long"
             : "reports";
         using var timing = UiRefreshProbe.Track(timingPage, this);
         _refreshCancellation?.Cancel();
@@ -131,61 +145,44 @@ public partial class ReportsPage : Page
             DateOnly from = FromPicker.SelectedDate is { } fromDate ? DateOnly.FromDateTime(fromDate) : _clock.BusinessDate;
             DateOnly to = ToPicker.SelectedDate is { } toDate ? DateOnly.FromDateTime(toDate) : _clock.BusinessDate;
             if (to < from) throw new ArgumentException(TranslationSource.Instance["Reports_InvalidDates"]);
-            if (ReportPicker.SelectedIndex == 0)
+            if (IsPnl)
             {
-                if (MatrixCheck.IsChecked == true)
-                {
-                    PnlMatrix matrix = await _reports.GetPnlMatrixAsync(from, to, cancellation.Token);
-                    if (version != _refreshVersion) return;
-                    _currentReport = ToReport(matrix);
-                    _currentPnl = null;
-                    ConfigureColumns(_currentReport);
-                    timing.Bind(() => ReportGrid.ItemsSource = _currentReport.Rows.Select(row => new DisplayRow(_currentReport.Columns, row)).ToList());
-                    PnlPanel.Visibility = Visibility.Collapsed;
-                    HourlyPanel.Visibility = Visibility.Collapsed;
-                    ReportGrid.Visibility = Visibility.Visible;
-                    StatusText.Text = TranslationSource.Instance.Format("Reports_MonthCount", matrix.MonthKeys.Count);
-                    TotalsText.Text = "";
-                    return;
-                }
-                PnlComparison? comparison = CompareCheck.IsChecked == true
-                    ? await _reports.GetPnlComparisonAsync(from, to, cancellation.Token)
-                    : null;
+                PnlPeriod period = SelectedScope == PnlScope.Custom || PnlPeriodPicker.SelectedItem is not PnlPeriodItem item
+                    ? ReportService.CustomPeriod(from, to) : item.Period;
+                PnlReport report = await _reports.GetPnlReportAsync(period, cancellation.Token);
                 if (version != _refreshVersion) return;
-                _currentPnl = comparison?.Current ?? await _reports.GetPnlAsync(from, to, cancellation.Token);
+                PnlReport? previous = CompareCheck.IsChecked == true
+                    ? await _reports.GetPnlReportAsync(PreviousPeriod(period), cancellation.Token) : null;
                 if (version != _refreshVersion) return;
-                _currentReport = null;
-                timing.Bind(() => PnlGrid.ItemsSource = PnlRows(_currentPnl));
-                PnlTotals.Text = TranslationSource.Instance.Format("Reports_PnlSummary", _currentPnl.GrossProfit.Value,
-                    _currentPnl.GrossMargin.Value, _currentPnl.NetProfit.Value, _currentPnl.NetMargin.Value);
-                if (comparison is not null)
-                    PnlTotals.Text += TranslationSource.Instance.Format("Reports_PreviousNet", comparison.Previous.NetProfit.Value);
-                PnlPanel.Visibility = Visibility.Visible;
-                HourlyPanel.Visibility = Visibility.Collapsed;
-                ReportGrid.Visibility = Visibility.Collapsed;
-                StatusText.Text = $"{from:dd-MM-yyyy} — {to:dd-MM-yyyy}";
+                _currentPnl = report;
+                timing.Bind(() => ShowPnl(report));
+                PnlTotals.Text = TranslationSource.Instance.Format("Reports_PnlSummary", report.Statement.GrossProfit.Value,
+                    report.Statement.GrossMargin.Value, report.Statement.NetProfit.Value, report.Statement.NetMargin.Value);
+                if (previous is not null)
+                    PnlTotals.Text += TranslationSource.Instance.Format("Reports_PreviousNet", previous.Statement.NetProfit.Value);
+                StatusText.Text = report.Period.Label + (period.Scope == PnlScope.Custom
+                    ? " · " + TranslationSource.Instance["Reports_PnlCutMonthNote"] : "");
                 TotalsText.Text = "";
                 return;
             }
             ReportKind kind = ((ReportChoice)ReportPicker.SelectedItem).Kind!.Value;
-            MatrixCheck.IsChecked = false;
-            CompareCheck.IsChecked = false;
             string? status = ((FilterChoice?)StatusPicker.SelectedItem)?.Code;
             string? payment = ((FilterChoice?)PaymentPicker.SelectedItem)?.Code;
             if (!int.TryParse(SlowDaysFilter.Text, NumberStyles.None, CultureInfo.InvariantCulture, out int slowDays) || slowDays is < 1 or > 3650)
                 throw new ArgumentException(TranslationSource.Instance["Reports_InvalidFilter"]);
-            TabularReport report = await _reports.GetReportAsync(kind, new(From: from, To: to,
+            TabularReport report2 = await _reports.GetReportAsync(kind, new(From: from, To: to,
                 ProductId: ParseId(ProductFilter.Text), LotId: ParseId(LotFilter.Text), VendorId: ParseId(VendorFilter.Text),
                 AssetId: ParseId(AssetFilter.Text), Status: status, PaymentMode: payment,
                 Entity: Clean(EntityFilter.Text), Action: Clean(ActionFilter.Text), SlowMoverDays: slowDays,
-                Limit: 500, IncludeExpired: IncludeExpiredCheck.IsChecked == true),
+                Limit: 500, IncludeExpired: IncludeExpiredCheck.IsChecked == true,
+                MismatchesOnly: MismatchesCheck.IsChecked == true),
                 cancellation.Token);
             if (version != _refreshVersion) return;
-            _currentReport = report with { Title = ((ReportChoice)ReportPicker.SelectedItem).ToString() };
-            _currentPnl = null;
+            _currentReport = report2 with { Title = ((ReportChoice)ReportPicker.SelectedItem).ToString() };
             ConfigureColumns(_currentReport);
             timing.Bind(() => ReportGrid.ItemsSource = _currentReport.Rows.Select(row => new DisplayRow(_currentReport.Columns, row)).ToList());
             PnlPanel.Visibility = Visibility.Collapsed;
+            PnlStatusBadge.Visibility = Visibility.Collapsed;
             if (kind == ReportKind.HourlySales)
             {
                 ShowHourlyReport(_currentReport);
@@ -195,11 +192,12 @@ public partial class ReportsPage : Page
                 HourlyPanel.Visibility = Visibility.Collapsed;
                 ReportGrid.Visibility = Visibility.Visible;
             }
-            StatusText.Text = _currentReport.IsTruncated
+            string rows = _currentReport.IsTruncated
                 ? TranslationSource.Instance.Format("Reports_TruncatedRows", _currentReport.Rows.Count)
                 : TranslationSource.Instance.Format("Reports_RowCount", _currentReport.Rows.Count);
+            StatusText.Text = _currentReport.Summary is { } summary ? rows + " · " + summary : rows;
             TotalsText.Text = string.Join(" · ", _currentReport.Columns.Where(column => _currentReport.Totals.ContainsKey(column.Key))
-                .Select(column => $"{column.Heading}: {_currentReport.Totals[column.Key].ToString("N3", CultureInfo.GetCultureInfo("en-IN"))}"));
+                .Select(column => $"{column.Heading}: {_currentReport.Totals[column.Key].ToString("N3", NumberCulture)}"));
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception exception)
@@ -217,6 +215,144 @@ public partial class ReportsPage : Page
         }
     }
 
+    // Head totals come first; selecting a head with categories expands its detail.
+    private void ShowPnl(PnlReport report)
+    {
+        PnlStatusText.Text = _output.PnlStatusText(report);
+        PnlStatusBadge.Visibility = Visibility.Visible;
+        HourlyPanel.Visibility = Visibility.Collapsed;
+        List<PnlLayoutRow> visible = VisibleRows(report);
+        if (MonthsCheck.IsChecked == true)
+        {
+            var table = new TabularReport(report.Period.Label, report.Period.Range, MatrixColumns(report),
+                visible.Select(row => MatrixRow(report, row)).ToList(), new Dictionary<string, decimal>());
+            _currentReport = null;
+            ConfigureColumns(table);
+            ReportGrid.ItemsSource = table.Rows.Select(row => new DisplayRow(table.Columns, row)).ToList();
+            ReportGrid.Visibility = Visibility.Visible;
+            PnlPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+        PnlGrid.ItemsSource = visible.Select(row => new PnlDisplayRow(row, DisplayLabel(report, row),
+            row.Kind == "SECTION" ? "" : row.Amount.Value.ToString("N3", NumberCulture),
+            row.Kind is "SECTION" or "TOTAL")).ToList();
+        PnlPanel.Visibility = Visibility.Visible;
+        ReportGrid.Visibility = Visibility.Collapsed;
+    }
+
+    private List<PnlLayoutRow> VisibleRows(PnlReport report) => report.Rows
+        .Where(row => row.Kind != "CATEGORY" || row.ParentCode is { } parent && _expandedHeads.Contains(parent))
+        .ToList();
+
+    private string DisplayLabel(PnlReport report, PnlLayoutRow row) => row.Kind switch
+    {
+        "HEAD" when HasDetail(report, row.Code) => (_expandedHeads.Contains(row.Code) ? "▾ " : "▸ ") + row.Label,
+        "HEAD" => "   " + row.Label,
+        "CATEGORY" => "        " + row.Label,
+        _ => row.Label,
+    };
+
+    private static bool HasDetail(PnlReport report, string head) =>
+        report.Rows.Any(row => row.Kind == "CATEGORY" && row.ParentCode == head);
+
+    private List<ReportColumn> MatrixColumns(PnlReport report)
+    {
+        var columns = new List<ReportColumn> { new("Label", TranslationSource.Instance["Reports_Particulars"], ReportValueKind.Text) };
+        columns.AddRange(report.Matrix.MonthKeys.Select(month => new ReportColumn(month, MonthHeading(month), ReportValueKind.Money)));
+        columns.Add(new("Total", TranslationSource.Instance["Reports_Column_Total"], ReportValueKind.Money));
+        return columns;
+    }
+
+    private ReportRow MatrixRow(PnlReport report, PnlLayoutRow row)
+    {
+        var values = new Dictionary<string, object?>
+        {
+            ["Label"] = DisplayLabel(report, row),
+            ["Total"] = row.Kind == "SECTION" ? null : row.Amount.Scaled,
+        };
+        for (int index = 0; index < report.Matrix.MonthKeys.Count; index++)
+            values[report.Matrix.MonthKeys[index]] = row.Kind == "SECTION" ? null : row.Months[index].Scaled;
+        return new ReportRow(values);
+    }
+
+    private void PnlGrid_OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e) => ToggleSelectedHead();
+
+    private void PnlGrid_OnPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Space)) return;
+        e.Handled = ToggleSelectedHead();
+    }
+
+    private bool ToggleSelectedHead()
+    {
+        if (_currentPnl is not { } report || PnlGrid.SelectedItem is not PnlDisplayRow { Row.Kind: "HEAD" } selected ||
+            !HasDetail(report, selected.Row.Code)) return false;
+        if (!_expandedHeads.Remove(selected.Row.Code)) _expandedHeads.Add(selected.Row.Code);
+        string code = selected.Row.Code;
+        ShowPnl(report);
+        PnlGrid.SelectedItem = PnlGrid.Items.OfType<PnlDisplayRow>().FirstOrDefault(row => row.Row.Kind == "HEAD" && row.Row.Code == code);
+        return true;
+    }
+
+    private PnlPeriod PreviousPeriod(PnlPeriod period) => period.Scope switch
+    {
+        PnlScope.Month => _reports.MonthPeriod(YearMonth.From(period.Range.From).AddMonths(-1)),
+        PnlScope.CalendarYear => _reports.CalendarYearPeriod(period.Range.From.Year - 1),
+        PnlScope.FiscalYear => _reports.FiscalYearPeriod(period.Range.From.Year - 1),
+        _ => ReportService.CustomPeriod(
+            period.Range.From.AddDays(period.Range.From.DayNumber - period.Range.To.DayNumber - 1),
+            period.Range.From.AddDays(-1)),
+    };
+
+    // Months back to the first P&L entry, and each calendar and fiscal year, newest first.
+    // A finalized year is marked so the saved version is visible before it opens.
+    private void RebuildPnlPeriods(PnlPeriod? keep)
+    {
+        DateOnly today = _clock.BusinessDate;
+        DateOnly first = _periodRange?.FirstEntry is { } entry && entry < today ? entry : today;
+        int fiscalStart = _periodRange?.FiscalStartMonth ?? 4;
+        IReadOnlyList<string> finalized = _periodRange?.FinalizedYears ?? [];
+        string mark = " · " + TranslationSource.Instance["Reports_PnlStatus_FINALIZED"];
+        var items = new List<PnlPeriodItem>();
+        switch (SelectedScope)
+        {
+            case PnlScope.Month:
+                for (YearMonth month = YearMonth.From(today); month >= YearMonth.From(first) && items.Count < 240; month = month.AddMonths(-1))
+                {
+                    bool closed = finalized.Contains($"CALENDAR:{AnnualPeriod.Calendar(month.FirstDay).Label}") ||
+                        finalized.Contains($"FISCAL:{AnnualPeriod.Fiscal(month.FirstDay, fiscalStart).Label}");
+                    PnlPeriod period = _reports.MonthPeriod(month);
+                    items.Add(new(period, closed ? period.Label + mark : period.Label));
+                }
+                break;
+            case PnlScope.CalendarYear:
+                for (int year = today.Year; year >= first.Year; year--)
+                {
+                    PnlPeriod period = _reports.CalendarYearPeriod(year);
+                    bool closed = finalized.Contains($"CALENDAR:{AnnualPeriod.Calendar(period.Range.From).Label}");
+                    items.Add(new(period, closed ? period.Label + mark : period.Label));
+                }
+                break;
+            case PnlScope.FiscalYear:
+                for (int year = FiscalYear.StartYear(today, fiscalStart); year >= FiscalYear.StartYear(first, fiscalStart); year--)
+                {
+                    PnlPeriod period = _reports.FiscalYearPeriod(year);
+                    bool closed = finalized.Contains($"FISCAL:{AnnualPeriod.Fiscal(period.Range.From, fiscalStart).Label}");
+                    items.Add(new(period, closed ? period.Label + mark : period.Label));
+                }
+                break;
+        }
+        bool wasSuppressed = _suppressRefresh;
+        _suppressRefresh = true;
+        try
+        {
+            PnlPeriodPicker.ItemsSource = items;
+            PnlPeriodPicker.SelectedItem = items.FirstOrDefault(item => keep is not null &&
+                item.Period.Scope == keep.Scope && item.Period.Range == keep.Range) ?? items.FirstOrDefault();
+        }
+        finally { _suppressRefresh = wasSuppressed; }
+    }
+
     private void ConfigureColumns(TabularReport report)
     {
         ReportGrid.Columns.Clear();
@@ -226,7 +362,7 @@ public partial class ReportsPage : Page
             var style = new Style(typeof(TextBlock));
             style.Setters.Add(new Setter(TextBlock.TextAlignmentProperty, numeric ? TextAlignment.Right : TextAlignment.Left));
             style.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
-            double width = column.Key is "Product" or "LocalName" or "Details" ? 200 : numeric ? 125 : 145;
+            double width = column.Key is "Product" or "LocalName" or "Details" or "Label" ? 220 : numeric ? 118 : 140;
             ReportGrid.Columns.Add(new DataGridTextColumn
             {
                 Header = column.Heading,
@@ -241,6 +377,7 @@ public partial class ReportsPage : Page
     {
         ArgumentNullException.ThrowIfNull(report);
         PnlPanel.Visibility = Visibility.Collapsed;
+        PnlStatusBadge.Visibility = Visibility.Collapsed;
         ReportGrid.Visibility = Visibility.Collapsed;
         HourlyPanel.Visibility = Visibility.Visible;
         HourlyGrid.Children.Clear();
@@ -295,16 +432,19 @@ public partial class ReportsPage : Page
     }
 
     private async void Refresh_OnClick(object sender, RoutedEventArgs e) => await RefreshAsync();
+
     private async void ReportPicker_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         UpdateFilterAvailability();
         if (_loadOnShow && IsLoaded && !_suppressRefresh) await RefreshAsync();
     }
 
+    // Each report shows only the filters that apply to it.
     private void UpdateFilterAvailability()
     {
-        if (ReportPicker.SelectedItem is not ReportChoice choice) return;
+        if (ReportPicker.SelectedItem is not ReportChoice choice || PnlPeriodControls is null) return;
         ReportKind? kind = choice.Kind;
+        bool pnl = kind is null;
         bool sales = kind == ReportKind.SalesRegister;
         bool expiry = kind == ReportKind.Expiry;
         if (_expiryStatusChoices != expiry)
@@ -313,23 +453,46 @@ public partial class ReportsPage : Page
             StatusPicker.ItemsSource = expiry ? ExpiryStatusChoices() : SalesStatusChoices();
             StatusPicker.SelectedIndex = 0;
         }
+        bool custom = SelectedScope == PnlScope.Custom;
+        PnlPeriodControls.Visibility = pnl ? Visibility.Visible : Visibility.Collapsed;
+        PnlPeriodPicker.Visibility = pnl && !custom ? Visibility.Visible : Visibility.Collapsed;
+        RangeControls.Visibility = !pnl || custom ? Visibility.Visible : Visibility.Collapsed;
+        PeriodPicker.Visibility = pnl ? Visibility.Collapsed : Visibility.Visible;
+        MonthsCheck.Visibility = pnl ? Visibility.Visible : Visibility.Collapsed;
+        CompareCheck.Visibility = pnl ? Visibility.Visible : Visibility.Collapsed;
+        MoreFiltersExpander.Visibility = pnl || kind is ReportKind.StockValue ? Visibility.Collapsed : Visibility.Visible;
         StatusPicker.IsEnabled = sales || expiry;
         PaymentPicker.IsEnabled = sales;
-        ProductFilter.IsEnabled = kind is ReportKind.StockLedger or ReportKind.ItemSales;
+        ProductFilter.IsEnabled = kind is ReportKind.StockLedger or ReportKind.ItemSales or ReportKind.StockReconciliation;
         LotFilter.IsEnabled = kind == ReportKind.StockLedger;
         VendorFilter.IsEnabled = kind is ReportKind.VendorPayables or ReportKind.PurchaseRegister;
         AssetFilter.IsEnabled = kind == ReportKind.AssetSchedule;
         SlowDaysFilter.IsEnabled = kind == ReportKind.SlowMovers;
         EntityFilter.IsEnabled = kind == ReportKind.AuditLog;
         ActionFilter.IsEnabled = kind == ReportKind.AuditLog;
-        MatrixCheck.IsEnabled = kind is null;
-        CompareCheck.IsEnabled = kind is null && MatrixCheck.IsChecked != true;
         IncludeExpiredCheck.Visibility = kind == ReportKind.StockValue ? Visibility.Visible : Visibility.Collapsed;
+        MismatchesCheck.Visibility = kind == ReportKind.StockReconciliation ? Visibility.Visible : Visibility.Collapsed;
+        PnlCsvButton.IsEnabled = pnl;
+        FullCsvButton.IsEnabled = !pnl;
+        if (!pnl) PnlStatusBadge.Visibility = Visibility.Collapsed;
     }
 
     private async void IncludeExpired_OnClick(object sender, RoutedEventArgs e)
     {
         if (_loadOnShow && IsLoaded) await RefreshAsync();
+    }
+
+    private async void ScopePicker_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (PnlPeriodPicker is null) return;
+        RebuildPnlPeriods(null);
+        UpdateFilterAvailability();
+        if (_loadOnShow && IsLoaded && !_suppressRefresh) await RefreshAsync();
+    }
+
+    private async void PnlPeriodPicker_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadOnShow && IsLoaded && !_suppressRefresh && IsPnl) await RefreshAsync();
     }
 
     private static FilterChoice[] SalesStatusChoices() =>
@@ -347,11 +510,16 @@ public partial class ReportsPage : Page
         new("SOON", "Reports_StatusSoon"),
     ];
 
+    // Lot quantities no longer come from movements, so the ledger report is not offered.
     private static List<ReportChoice> ReportChoices() =>
     [
         new(null, "Reports_Kind_ProfitAndLoss"),
-        .. Enum.GetValues<ReportKind>().Select(kind => new ReportChoice(kind, $"Reports_Kind_{kind}")),
+        .. Enum.GetValues<ReportKind>().Where(static kind => kind != ReportKind.StockLedger)
+            .Select(static kind => new ReportChoice(kind, $"Reports_Kind_{kind}")),
     ];
+
+    private static List<ScopeChoice> ScopeChoices() =>
+        [.. Enum.GetValues<PnlScope>().Select(static scope => new ScopeChoice(scope))];
 
     private static FilterChoice[] PaymentChoices() =>
     [
@@ -364,7 +532,9 @@ public partial class ReportsPage : Page
 
     public void RefreshLocalizedChoices()
     {
-        int reportIndex = ReportPicker.SelectedIndex;
+        ReportKind? selectedReport = (ReportPicker.SelectedItem as ReportChoice)?.Kind;
+        PnlScope scope = SelectedScope;
+        PnlPeriod? period = (PnlPeriodPicker.SelectedItem as PnlPeriodItem)?.Period;
         int periodIndex = PeriodPicker.SelectedIndex;
         string? status = ((FilterChoice?)StatusPicker.SelectedItem)?.Code;
         string? payment = ((FilterChoice?)PaymentPicker.SelectedItem)?.Code;
@@ -373,7 +543,11 @@ public partial class ReportsPage : Page
         try
         {
             ReportPicker.ItemsSource = ReportChoices();
-            ReportPicker.SelectedIndex = reportIndex;
+            ReportPicker.SelectedItem = ((IEnumerable<ReportChoice>)ReportPicker.ItemsSource)
+                .FirstOrDefault(choice => choice.Kind == selectedReport);
+            ScopePicker.ItemsSource = ScopeChoices();
+            ScopePicker.SelectedItem = ((IEnumerable<ScopeChoice>)ScopePicker.ItemsSource).First(choice => choice.Scope == scope);
+            RebuildPnlPeriods(period);
             PeriodPicker.ItemsSource = Enum.GetValues<PnlPeriodKind>().Select(kind => new PeriodChoice(kind)).ToList();
             PeriodPicker.SelectedIndex = periodIndex;
             StatusPicker.ItemsSource = _expiryStatusChoices ? ExpiryStatusChoices() : SalesStatusChoices();
@@ -410,23 +584,22 @@ public partial class ReportsPage : Page
 
     private void DatePicker_OnSelectedDateChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_loadOnShow && IsLoaded && !_suppressRefresh) PeriodPicker.SelectedIndex = (int)PnlPeriodKind.Custom;
+        if (_loadOnShow && IsLoaded && !_suppressRefresh && !IsPnl) PeriodPicker.SelectedIndex = (int)PnlPeriodKind.Custom;
     }
 
     private async void FilterPicker_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_loadOnShow && IsLoaded && !_suppressRefresh && ReportPicker.SelectedIndex > 0) await RefreshAsync();
+        if (_loadOnShow && IsLoaded && !_suppressRefresh && !IsPnl) await RefreshAsync();
     }
 
-    private async void MatrixCheck_OnClick(object sender, RoutedEventArgs e)
+    private void MonthsCheck_OnClick(object sender, RoutedEventArgs e)
     {
-        UpdateFilterAvailability();
-        if (_loadOnShow && ReportPicker.SelectedIndex == 0) await RefreshAsync();
+        if (_currentPnl is { } report) ShowPnl(report);
     }
 
     private async void CompareCheck_OnClick(object sender, RoutedEventArgs e)
     {
-        if (_loadOnShow && ReportPicker.SelectedIndex == 0 && MatrixCheck.IsChecked != true) await RefreshAsync();
+        if (_loadOnShow && IsPnl) await RefreshAsync();
     }
 
     private async void Export_OnClick(object sender, RoutedEventArgs e)
@@ -436,20 +609,13 @@ public partial class ReportsPage : Page
         if (dialog.ShowDialog() != true) return;
         using var cancellation = new CancellationTokenSource();
         _exportCancellation = cancellation;
-        CancelExportButton.IsEnabled = true;
-        CancelExportButton.Visibility = Visibility.Visible;
-        ExportProgress.Visibility = Visibility.Visible;
-        PnlStatement? pnl = _currentPnl;
-        TabularReport? report = _currentReport;
+        ShowExportProgress(true);
+        TabularReport? report = _currentPnl is { } pnl ? _output.BuildPnlReport(pnl, MonthsCheck.IsChecked == true) : _currentReport;
         try
         {
             var progress = new Progress<int>(count =>
                 StatusText.Text = TranslationSource.Instance.Format("Reports_ExportedRows", count));
-            await Task.Run(() =>
-            {
-                if (pnl is not null) _output.ExportPnlExcel(pnl, dialog.FileName, progress, cancellation.Token);
-                else if (report is not null) _output.ExportExcel(report, dialog.FileName, progress, cancellation.Token);
-            }, cancellation.Token);
+            await Task.Run(() => _output.ExportExcel(report!, dialog.FileName, progress, cancellation.Token), cancellation.Token);
             StatusText.Text = dialog.FileName;
         }
         catch (OperationCanceledException) { StatusText.Text = TranslationSource.Instance["Reports_CancelExport"]; }
@@ -457,9 +623,30 @@ public partial class ReportsPage : Page
         finally
         {
             _exportCancellation = null;
-            CancelExportButton.IsEnabled = false;
-            CancelExportButton.Visibility = Visibility.Collapsed;
-            ExportProgress.Visibility = Visibility.Collapsed;
+            ShowExportProgress(false);
+        }
+    }
+
+    // The CSV of a finalized year holds only saved values, so repeated exports match byte for byte.
+    private async void ExportPnlCsv_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_exportCancellation is not null || _currentPnl is not { } report) return;
+        var dialog = new SaveFileDialog { Filter = "CSV (*.csv)|*.csv", FileName = "profit-and-loss.csv" };
+        if (dialog.ShowDialog() != true) return;
+        using var cancellation = new CancellationTokenSource();
+        _exportCancellation = cancellation;
+        ShowExportProgress(true);
+        try
+        {
+            await _reports.ExportPnlCsvAsync(report, MonthsCheck.IsChecked == true, dialog.FileName, cancellation.Token);
+            StatusText.Text = dialog.FileName;
+        }
+        catch (OperationCanceledException) { StatusText.Text = TranslationSource.Instance["Reports_CancelExport"]; }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        finally
+        {
+            _exportCancellation = null;
+            ShowExportProgress(false);
         }
     }
 
@@ -472,9 +659,7 @@ public partial class ReportsPage : Page
         using var cancellation = new CancellationTokenSource();
         _exportCancellation = cancellation;
         FullCsvButton.IsEnabled = false;
-        CancelExportButton.IsEnabled = true;
-        CancelExportButton.Visibility = Visibility.Visible;
-        ExportProgress.Visibility = Visibility.Visible;
+        ShowExportProgress(true);
         try
         {
             DateOnly from = FromPicker.SelectedDate is { } fromDate
@@ -489,7 +674,8 @@ public partial class ReportsPage : Page
                 Status: ((FilterChoice?)StatusPicker.SelectedItem)?.Code,
                 PaymentMode: ((FilterChoice?)PaymentPicker.SelectedItem)?.Code,
                 Entity: Clean(EntityFilter.Text), Action: Clean(ActionFilter.Text),
-                SlowMoverDays: slowDays, IncludeExpired: IncludeExpiredCheck.IsChecked == true);
+                SlowMoverDays: slowDays, IncludeExpired: IncludeExpiredCheck.IsChecked == true,
+                MismatchesOnly: MismatchesCheck.IsChecked == true);
             var progress = new Progress<long>(count =>
                 StatusText.Text = TranslationSource.Instance.Format("Reports_ExportedRows", count));
             long rows = await _reports.ExportCsvAsync(kind, filter, dialog.FileName,
@@ -505,10 +691,15 @@ public partial class ReportsPage : Page
         {
             _exportCancellation = null;
             FullCsvButton.IsEnabled = true;
-            CancelExportButton.IsEnabled = false;
-            CancelExportButton.Visibility = Visibility.Collapsed;
-            ExportProgress.Visibility = Visibility.Collapsed;
+            ShowExportProgress(false);
         }
+    }
+
+    private void ShowExportProgress(bool running)
+    {
+        CancelExportButton.IsEnabled = running;
+        CancelExportButton.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+        ExportProgress.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void CancelExport_OnClick(object sender, RoutedEventArgs e) => _exportCancellation?.Cancel();
@@ -516,7 +707,7 @@ public partial class ReportsPage : Page
     private async void Preview_OnClick(object sender, RoutedEventArgs e)
     {
         if (_previewOpen) return;
-        TabularReport? report = _currentReport ?? (_currentPnl is null ? null : _output.BuildPnlReport(_currentPnl));
+        TabularReport? report = _currentPnl is { } pnl ? _output.BuildPnlReport(pnl, MonthsCheck.IsChecked == true) : _currentReport;
         if (report is null) return;
         _previewOpen = true;
         DateTime printedAt = _clock.Now;
@@ -580,40 +771,6 @@ public partial class ReportsPage : Page
         }
     }
 
-    private static List<PnlDisplayRow> PnlRows(PnlStatement statement)
-    {
-        var rows = new List<PnlDisplayRow>();
-        Add(rows, "Reports_Section_Income", statement.Income);
-        rows.Add(new(TranslationSource.Instance["Reports_Section_NetSales"], statement.NetSales.Value.ToString("N3", NumberCulture)));
-        Add(rows, "Reports_Section_Cogs", statement.CostOfGoodsSold);
-        rows.Add(new(TranslationSource.Instance["Reports_Section_GrossProfit"], statement.GrossProfit.Value.ToString("N3", NumberCulture)));
-        Add(rows, "Reports_Section_Expenses", statement.Expenses);
-        rows.Add(new(TranslationSource.Instance["Reports_Section_TotalExpenses"], statement.TotalExpenses.Value.ToString("N3", NumberCulture)));
-        Add(rows, "Reports_Section_OtherIncome", statement.OtherIncome);
-        rows.Add(new(TranslationSource.Instance["Reports_Section_NetProfit"], statement.NetProfit.Value.ToString("N3", NumberCulture)));
-        return rows;
-    }
-
-    private static void Add(List<PnlDisplayRow> target, string headingKey, IReadOnlyList<PnlLine> lines)
-    {
-        target.Add(new(TranslationSource.Instance[headingKey], ""));
-        target.AddRange(lines.Select(line => new PnlDisplayRow("  " + line.Label, line.Amount.Value.ToString("N3", NumberCulture))));
-    }
-
-    private TabularReport ToReport(PnlMatrix matrix)
-    {
-        var columns = new List<ReportColumn> { new("Label", TranslationSource.Instance["Reports_Particulars"], ReportValueKind.Text) };
-        columns.AddRange(matrix.MonthKeys.Select(month => new ReportColumn(month, MonthHeading(month), ReportValueKind.Money)));
-        columns.Add(new("Total", TranslationSource.Instance["Reports_Column_Total"], ReportValueKind.Money));
-        List<ReportRow> rows = matrix.Rows.Select(row =>
-        {
-            var values = new Dictionary<string, object?> { ["Label"] = row.Label, ["Total"] = row.Total.Scaled };
-            for (int index = 0; index < matrix.MonthKeys.Count; index++) values[matrix.MonthKeys[index]] = row.Months[index].Scaled;
-            return new ReportRow(values);
-        }).ToList();
-        return new(TranslationSource.Instance["Reports_MatrixTitle"], matrix.Period, columns, rows, new Dictionary<string, decimal>());
-    }
-
     private string MonthHeading(string month)
     {
         DateOnly date = DateOnly.ParseExact(month + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -628,13 +785,24 @@ public partial class ReportsPage : Page
     }
     private static string? Clean(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private sealed record PnlDisplayRow(string Label, string Amount);
+    private sealed record PnlDisplayRow(PnlLayoutRow Row, string Label, string Amount, bool IsBold);
+
+    private sealed record PnlPeriodItem(PnlPeriod Period, string Display)
+    {
+        public override string ToString() => Display;
+    }
 
     private sealed class ReportChoice(ReportKind? kind, string key)
     {
         public ReportKind? Kind { get; } = kind;
         public string Key { get; } = key;
         public override string ToString() => TranslationSource.Instance[Key];
+    }
+
+    private sealed class ScopeChoice(PnlScope scope)
+    {
+        public PnlScope Scope { get; } = scope;
+        public override string ToString() => TranslationSource.Instance[$"Reports_PnlScope_{Scope}"];
     }
 
     private sealed class PeriodChoice(PnlPeriodKind kind)
@@ -662,7 +830,7 @@ public partial class ReportsPage : Page
                 return column.Kind switch
                 {
                     ReportValueKind.Money or ReportValueKind.Quantity or ReportValueKind.Percent =>
-                        (value switch { long x => Fx3.FromScaled(x), int x => Fx3.FromScaled(x), decimal x => x, _ => 0m }).ToString("N3", CultureInfo.GetCultureInfo("en-IN")),
+                        (value switch { long x => Fx3.FromScaled(x), int x => Fx3.FromScaled(x), decimal x => x, _ => 0m }).ToString("N3", NumberCulture),
                     ReportValueKind.Date when DateOnly.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), CultureInfo.InvariantCulture, out DateOnly date) => date.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture),
                     _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? ""
                 };

@@ -50,10 +50,6 @@ public partial class ProductsPage : Page
             if (!loadOnShow) return;
             try
             {
-                bool directCountsAvailable = await ((App)Application.Current).Services
-                    .GetRequiredService<DirectStockCountService>().IsAvailableAsync();
-                ReconcileButton.Visibility = directCountsAvailable ? Visibility.Visible : Visibility.Collapsed;
-                BulkReconcileButton.Visibility = ReconcileButton.Visibility;
                 await LoadMastersAsync();
                 await RefreshAsync();
             }
@@ -431,11 +427,6 @@ public partial class ProductsPage : Page
         {
             IServiceProvider services = ((App)Application.Current).Services;
             var counts = services.GetRequiredService<DirectStockCountService>();
-            if (!await counts.IsAvailableAsync())
-            {
-                StatusText.Text = TranslationSource.Instance["Stock_DirectUnavailable"];
-                return;
-            }
             var window = new DirectCountReviewWindow(counts, ids, services.GetRequiredService<IClock>())
             { Owner = Window.GetWindow(this) };
             window.ShowDialog();

@@ -49,10 +49,7 @@ public sealed class CatalogTests
                         unit_cost,selling_price,qty_received)
                     VALUES (@expired,@Item2,'2026-08-01',@Item3,1000,2000,1000) RETURNING id
                     """, new { expired = row.Item1, row.Item2, row.Item3 });
-                connection.Execute("""
-                    INSERT INTO stock_movement(move_date,product_id,lot_id,type_code,qty,unit_cost)
-                    VALUES ('2026-08-01',@product,@lot,'OPENING',1000,1000)
-                    """, new { product = row.Item1, lot });
+                connection.Execute("UPDATE product_lot SET qty_on_hand=1000 WHERE id=@lot", new { lot });
             }
         }
         (await fixture.Service.SearchAsync(new ProductSearchFilter(ExpiryFilter: "EXPIRED",
@@ -79,8 +76,9 @@ public sealed class CatalogTests
         long deleted = await fixture.Service.CreateAsync(fixture.Product("New", "new"), ct);
         using (var connection = fixture.Factory.Open())
             connection.Execute("""
-                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,selling_price)
-                VALUES (@archived,'BULK-LOT','2026-09-26',1000,2000)
+                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,selling_price,qty_received)
+                VALUES (@archived,'BULK-LOT','2026-09-26',1000,2000,1000);
+                UPDATE product_lot SET qty_on_hand=1000 WHERE lot_code='BULK-LOT';
                 """, new { archived });
         (await fixture.Service.BulkRemoveAsync([archived, deleted], ct)).ShouldBe(2);
         using (var connection = fixture.Factory.Open())
@@ -169,20 +167,46 @@ public sealed class CatalogTests
     }
 
     [Fact]
-    public async Task Product_WithStockHistoryIsArchivedAndCanBeRestored()
+    public async Task Product_WithStockIsArchived_ButZeroStockHistoryIsDeletedWithItsLots()
     {
         using var fixture = new CatalogFixture();
-        long productId = await fixture.Service.CreateAsync(fixture.Product("Fresh Milk 1 L", "milk"), TestContext.Current.CancellationToken);
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long productId = await fixture.Service.CreateAsync(fixture.Product("Fresh Milk 1 L", "milk"), ct);
+        long historic = await fixture.Service.CreateAsync(fixture.Product("Old Butter", "butter"), ct);
+        long historicLot;
         using (var connection = fixture.Factory.Open())
+        {
             connection.Execute("""
-                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,mrp,selling_price)
-                VALUES (@productId,'L000001','2026-09-26',50000,60000,55000)
+                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,mrp,selling_price,qty_received)
+                VALUES (@productId,'L000001','2026-09-26',50000,60000,55000,1000);
+                UPDATE product_lot SET qty_on_hand=1000 WHERE lot_code='L000001';
                 """, new { productId });
+            historicLot = connection.ExecuteScalar<long>("""
+                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,mrp,selling_price,qty_received)
+                VALUES (@historic,'L000002','2026-09-20',50000,60000,55000,1000) RETURNING id
+                """, new { historic });
+            long sale = connection.ExecuteScalar<long>(
+                "INSERT INTO sale(sale_date,status) VALUES ('2026-09-21','DRAFT') RETURNING id");
+            connection.Execute("""
+                INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,
+                    taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+                VALUES (@sale,1,@historic,@historicLot,'Old Butter',1000,55000,55000,0,55000,50000,50000);
+                UPDATE sale SET status='COMPLETED',invoice_no='S-OLD',taxable_total=55000,grand_total=55000,
+                    cost_total=50000 WHERE id=@sale;
+                """, new { sale, historic, historicLot });
+        }
 
-        (await fixture.Service.RemoveAsync(productId, TestContext.Current.CancellationToken)).ShouldBe(ProductRemoval.Archived);
-        (await fixture.Service.SearchAsync(new ProductSearchFilter("Fresh", IncludeArchived: false), TestContext.Current.CancellationToken)).ShouldBeEmpty();
-        await fixture.Service.RestoreAsync(productId, TestContext.Current.CancellationToken);
-        (await fixture.Service.SearchAsync(new ProductSearchFilter("Fresh"), TestContext.Current.CancellationToken)).Count.ShouldBe(1);
+        (await fixture.Service.RemoveAsync(productId, ct)).ShouldBe(ProductRemoval.Archived);
+        (await fixture.Service.SearchAsync(new ProductSearchFilter("Fresh", IncludeArchived: false), ct)).ShouldBeEmpty();
+        await fixture.Service.RestoreAsync(productId, ct);
+        (await fixture.Service.SearchAsync(new ProductSearchFilter("Fresh"), ct)).Count.ShouldBe(1);
+
+        (await fixture.Service.RemoveAsync(historic, ct)).ShouldBe(ProductRemoval.Deleted);
+        using var check = fixture.Factory.Open();
+        check.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot WHERE id=@historicLot", new { historicLot }).ShouldBe(0);
+        check.ExecuteScalar<string>("SELECT product_name FROM sale_line WHERE lot_id=@historicLot",
+            new { historicLot }).ShouldBe("Old Butter");
+        check.ExecuteScalar<long>("SELECT COUNT(*) FROM pragma_foreign_key_check").ShouldBe(0);
     }
 
     [Fact]

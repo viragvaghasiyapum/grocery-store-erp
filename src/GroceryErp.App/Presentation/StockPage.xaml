@@ -13,16 +13,14 @@
         <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8" VerticalAlignment="Center">
           <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{l:Tr Stock_OverviewSearch}"/>
           <TextBox x:Name="OverviewSearchBox" Width="210" Margin="0,0,6,0" ToolTip="{l:Tr Stock_OverviewSearch}" AutomationProperties.Name="{l:Tr Stock_OverviewSearch}"/>
-          <Button Margin="0,0,12,0" Click="OverviewSearch_OnClick" Content="Search"/>
-          <Button x:Name="ResumeCountButton" Margin="0,0,8,0" Click="Count_OnClick" Content="{l:Tr Stock_ResumeCount}" />
-          <Button Margin="0,0,8,0" Click="NewCount_OnClick" Content="{l:Tr Stock_NewCount}" />
+          <Button Margin="0,0,12,0" Click="OverviewSearch_OnClick" Content="{l:Tr Sales_Search}"/>
           <Menu VerticalAlignment="Center" Margin="0,0,8,0" MinHeight="36" Padding="2" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"><MenuItem Header="{l:Tr Common_Actions}">
             <MenuItem Click="OpeningImport_OnClick" Header="{l:Tr Stock_OpeningImport}" />
             <MenuItem Click="OpeningTemplate_OnClick" Header="{l:Tr Stock_OpeningTemplate}" />
           </MenuItem></Menu>
           <Button Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
         </WrapPanel>
-        <DataGrid Style="{StaticResource CatalogGrid}" x:Name="OverviewGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="OverviewGrid_OnSelectionChanged">
+        <DataGrid Style="{StaticResource CompactTableGrid}" x:Name="OverviewGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="OverviewGrid_OnSelectionChanged">
           <DataGrid.Columns>
             <DataGridTextColumn Width="120" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}" />
             <DataGridTextColumn Width="260" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}" />
@@ -54,7 +52,7 @@
           <Button x:Name="BulkWriteOffLotsButton" IsEnabled="False" Visibility="Collapsed" Margin="0,0,8,0" Click="BulkWriteOffLots_OnClick" Content="{l:Tr Stock_WriteOffSelectedExpired}"/>
           <TextBlock x:Name="LotSelectedCountText" VerticalAlignment="Center" Text="0 selected"/>
         </StackPanel>
-        <DataGrid Style="{StaticResource CatalogGrid}" x:Name="LotsGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Single" SelectionChanged="LotsGrid_OnSelectionChanged">
+        <DataGrid Style="{StaticResource CompactTableGrid}" x:Name="LotsGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Single" SelectionChanged="LotsGrid_OnSelectionChanged">
           <DataGrid.Columns>
             <DataGridTemplateColumn Width="42">
               <DataGridTemplateColumn.HeaderTemplate><DataTemplate>
@@ -87,6 +85,8 @@
         <Grid Margin="0,8,0,0">
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <StackPanel Grid.Row="0" Margin="0,8,0,10">
+          <TextBlock Margin="0,0,0,8" TextWrapping="Wrap" Text="{l:Tr Stock_HistoricalLedgerNote}"
+                     Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
           <TextBlock x:Name="LedgerProductText" Text="{l:Tr Stock_LedgerSelectProduct}" Margin="0,0,0,8"
                      Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
           <WrapPanel>
@@ -100,7 +100,7 @@
             <Button x:Name="OpenSourceButton" IsEnabled="False" Click="OpenSource_OnClick" Content="{l:Tr Stock_OpenSource}"/>
           </WrapPanel>
           </StackPanel>
-          <DataGrid Style="{StaticResource CatalogGrid}" x:Name="LedgerGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="LedgerGrid_OnSelectionChanged">
+          <DataGrid Style="{StaticResource CompactTableGrid}" x:Name="LedgerGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="LedgerGrid_OnSelectionChanged">
           <DataGrid.Columns>
             <DataGridTextColumn Width="110" Header="{l:Tr Stock_MoveDate}" Binding="{Binding MoveDate}"/>
             <DataGridTextColumn Width="130" Header="{l:Tr Stock_MovementType}" Binding="{Binding Type}"/>
@@ -117,7 +117,7 @@
       <TabItem Header="{l:Tr Stock_Valuation}">
         <DockPanel Margin="0,8,0,0">
         <Button DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
-        <DataGrid Style="{StaticResource CatalogGrid}" x:Name="ValuationGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+        <DataGrid Style="{StaticResource CompactTableGrid}" x:Name="ValuationGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
           <DataGrid.Columns>
             <DataGridTextColumn Width="260" Header="{l:Tr Catalog_Category}" Binding="{Binding CategoryName}"/>
             <DataGridTextColumn Width="120" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>

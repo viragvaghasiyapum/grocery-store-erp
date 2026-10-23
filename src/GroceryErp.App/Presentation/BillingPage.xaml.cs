@@ -442,7 +442,7 @@ public partial class BillingPage : Page, IDisposable
         try
         {
             var picker = new LotPickerWindow(_inventory, line.ProductId, line.LotId)
-                { Owner = Window.GetWindow(this) };
+            { Owner = Window.GetWindow(this) };
             if (picker.ShowDialog() != true || picker.SelectedLot is not { } selected) return;
             await _sales.ChangeLineLotAsync(_saleId.Value, line.Id, selected.Id);
             await RefreshAsync();

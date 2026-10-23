@@ -8,6 +8,7 @@ using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
 using GroceryErp.Inventory;
 using GroceryErp.Inventory.Contracts;
+using GroceryErp.Reports;
 using GroceryErp.Sales;
 using Shouldly;
 using Xunit;
@@ -241,6 +242,245 @@ public sealed class SalesTests
     }
 
     [Fact]
+    public async Task PartialAndFullRefundStates_FollowLinkedReturnsWithoutChangingSaleValues()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId,
+            new Quantity(2), cancellationToken: ct);
+        await fixture.Sales.CompleteAsync(new(saleId,
+            [new(PaymentMode.Cash, new Money(236))], OperationGuard.NewId()), ct);
+        SaleDetails completed = await fixture.Sales.GetAsync(saleId, ct);
+        long lineId = completed.Lines.Single().Id;
+        await fixture.Sales.ReturnAsync(new(saleId, fixture.Clock.BusinessDate, "First",
+            RefundMode.Cash, [new ReturnLineInput(lineId, Quantity.One, true)],
+            OperationGuard.NewId()), ct);
+
+        (await fixture.Sales.GetAsync(saleId, ct)).Status.ShouldBe(SaleStatus.PartiallyRefunded);
+        ReturnableSaleLine remaining = (await fixture.Sales.GetReturnableLinesAsync(saleId, ct)).Single();
+        remaining.AlreadyReturned.ShouldBe(Quantity.One);
+        remaining.RemainingRefund.ShouldBe(new Money(118));
+        remaining.OriginalLotAvailable.ShouldBeTrue();
+        (await fixture.Sales.GetHistoryAsync(new SaleHistoryFilter(
+            Status: SaleStatus.PartiallyRefunded), ct)).Single().Id.ShouldBe(saleId);
+        (await fixture.Sales.GetHistoryAsync(new SaleHistoryFilter(
+            Product: "Sales Pro", Customer: "nobody"), ct)).ShouldBeEmpty();
+
+        await fixture.Sales.ReturnAsync(new(saleId, fixture.Clock.BusinessDate, "Second",
+            RefundMode.Cash, [new ReturnLineInput(lineId, Quantity.One, true)],
+            OperationGuard.NewId()), ct);
+        SaleDetails refunded = await fixture.Sales.GetAsync(saleId, ct);
+        refunded.Status.ShouldBe(SaleStatus.Refunded);
+        refunded.Totals.GrandTotal.ShouldBe(completed.Totals.GrandTotal);
+        (await fixture.Sales.GetReturnableLinesAsync(saleId, ct)).ShouldBeEmpty();
+        (await fixture.Sales.GetHistoryAsync(new SaleHistoryFilter(
+            Status: SaleStatus.Refunded, Product: "Sales Pro"), ct)).Single().Id.ShouldBe(saleId);
+        (await fixture.Sales.GetReceiptAsync(saleId, duplicate: true, cancellationToken: ct))
+            .GrandTotal.ShouldBe(completed.Totals.GrandTotal);
+        SaleHistoryActivity activity = await fixture.Sales.GetHistoryActivityAsync(saleId, ct);
+        activity.Returns.Count.ShouldBe(2);
+        activity.Movements.Select(static item => item.Type)
+            .ShouldBe(["COMPLETED", "PARTIAL_RETURN", "REFUNDED"]);
+    }
+
+    [Fact]
+    public async Task ReturnAfterLotEdit_CreatesLinkedReturnLotFromSaleSnapshot()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId,
+            Quantity.One, cancellationToken: ct);
+        await fixture.Sales.CompleteAsync(new(saleId,
+            [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+        SaleLine line = (await fixture.Sales.GetAsync(saleId, ct)).Lines.Single();
+        using (var db = fixture.Factory.Open())
+            db.Execute("UPDATE product_lot SET selling_price=110000 WHERE id=@lotId",
+                new { lotId = fixture.LotId });
+        (await fixture.Sales.GetReturnableLinesAsync(saleId, ct)).Single()
+            .OriginalLotAvailable.ShouldBeFalse();
+
+        string operationId = OperationGuard.NewId();
+        CompletedReturn posted = await fixture.Sales.ReturnAsync(new(saleId,
+            fixture.Clock.BusinessDate, "Changed lot", RefundMode.Cash,
+            [new ReturnLineInput(line.Id, Quantity.One, true)], operationId), ct);
+        (await fixture.Sales.ReturnAsync(new(saleId, fixture.Clock.BusinessDate,
+            "Changed lot", RefundMode.Cash,
+            [new ReturnLineInput(line.Id, Quantity.One, true)], operationId), ct)).WasReplay.ShouldBeTrue();
+        using var connection = fixture.Factory.Open();
+        long returnLotId = connection.ExecuteScalar<long>("""
+            SELECT restock_lot_id FROM sale_return_line WHERE sale_return_id=@id
+            """, new { id = posted.ReturnId });
+        returnLotId.ShouldNotBe(fixture.LotId);
+        connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id",
+            new { id = fixture.LotId }).ShouldBe(9000L);
+        connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id",
+            new { id = returnLotId }).ShouldBe(1000L);
+        connection.ExecuteScalar<string>("SELECT origin_kind FROM product_lot WHERE id=@id",
+            new { id = returnLotId }).ShouldBe("CUSTOMER_RETURN");
+        connection.ExecuteScalar<long>("SELECT origin_ref_id FROM product_lot WHERE id=@id",
+            new { id = returnLotId }).ShouldBe(connection.ExecuteScalar<long>(
+                "SELECT id FROM sale_return_line WHERE sale_return_id=@id", new { id = posted.ReturnId }));
+        connection.ExecuteScalar<long>("SELECT selling_price FROM product_lot WHERE id=@id",
+            new { id = returnLotId }).ShouldBe(line.UnitPrice.Scaled);
+        (await fixture.Sales.GetHistoryActivityAsync(saleId, ct)).Returns.Single()
+            .DispositionCode.ShouldBe("RETURN_NEW_LOT");
+        Should.Throw<Microsoft.Data.Sqlite.SqliteException>(() => connection.Execute("""
+            UPDATE sale_return_line SET qty=2000 WHERE sale_return_id=@id
+            """, new { id = posted.ReturnId }));
+        Should.Throw<Microsoft.Data.Sqlite.SqliteException>(() => connection.Execute("""
+            UPDATE sale_return SET refund_total=0 WHERE id=@id
+            """, new { id = posted.ReturnId }));
+    }
+
+    [Fact]
+    public async Task DamagedReturnAndVoid_NeverRestockDamage_AndWriteNoMovements()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId,
+            Quantity.One, cancellationToken: ct);
+        await fixture.Sales.CompleteAsync(new(saleId,
+            [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+        long lineId = (await fixture.Sales.GetAsync(saleId, ct)).Lines.Single().Id;
+        using (var edit = fixture.Factory.Open())
+            edit.Execute("UPDATE product_lot SET selling_price=110000 WHERE id=@id",
+                new { id = fixture.LotId });
+        CompletedReturn damaged = await fixture.Sales.ReturnAsync(new(saleId, fixture.Clock.BusinessDate,
+            "Opened", RefundMode.Cash, [new ReturnLineInput(lineId, Quantity.One, false)],
+            OperationGuard.NewId()), ct);
+        long secondSale = await fixture.Sales.AddProductAsync(null, fixture.ProductId,
+            Quantity.One, cancellationToken: ct);
+        await fixture.Sales.CompleteAsync(new(secondSale,
+            [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+        await fixture.Sales.VoidAsync(secondSale, "Mistake", OperationGuard.NewId(), ct);
+        using var after = fixture.Factory.Open();
+        after.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement").ShouldBe(0L);
+        after.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id",
+            new { id = fixture.LotId }).ShouldBe(9000L);
+        after.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot WHERE origin_kind='CUSTOMER_RETURN'")
+            .ShouldBe(0L);
+        after.QuerySingle<(long LotId, string Reason, long Cost)>("""
+            SELECT d.lot_id AS LotId,d.reason AS Reason,d.cost_value AS Cost
+            FROM damage d JOIN sale_return_line rl ON rl.damage_id=d.id
+            WHERE rl.sale_return_id=@id AND rl.restock_lot_id IS NULL
+            """, new { id = damaged.ReturnId }).ShouldBe((fixture.LotId, "CUSTOMER_RETURN", 70000L));
+        (await fixture.Sales.GetHistoryActivityAsync(saleId, ct)).Returns.Single()
+            .DispositionCode.ShouldBe("RETURN_DAMAGED");
+        await fixture.Database.WriteAsync(tx =>
+            new DirectStockEngine().CheckAll(tx).ToArray().ShouldBeEmpty(), ct);
+    }
+
+    [Theory]
+    [InlineData(118500L, 119000L)]
+    [InlineData(118200L, 118000L)]
+    public async Task FullReturnRefundsExactRoundedBill(long unitPrice, long expectedRefund)
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using (var db = fixture.Factory.Open())
+            db.Execute("UPDATE product_lot SET selling_price=@unitPrice WHERE id=@id",
+                new { unitPrice, id = fixture.LotId });
+        long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId,
+            Quantity.One, cancellationToken: ct);
+        SaleDetails draft = await fixture.Sales.GetAsync(saleId, ct);
+        await fixture.Sales.CompleteAsync(new(saleId,
+            [new(PaymentMode.Cash, draft.Totals.GrandTotal)], OperationGuard.NewId()), ct);
+        SaleDetails sale = await fixture.Sales.GetAsync(saleId, ct);
+        sale.Totals.GrandTotal.Scaled.ShouldBe(expectedRefund);
+        ReturnableSaleLine returnable = (await fixture.Sales.GetReturnableLinesAsync(saleId, ct)).Single();
+        returnable.RemainingRefund.Scaled.ShouldBe(expectedRefund);
+        CompletedReturn posted = await fixture.Sales.ReturnAsync(new(saleId,
+            fixture.Clock.BusinessDate, "Full refund", RefundMode.Cash,
+            [new ReturnLineInput(sale.Lines.Single().Id, Quantity.One, true)],
+            OperationGuard.NewId()), ct);
+        posted.Refund.Scaled.ShouldBe(expectedRefund);
+        (await fixture.Sales.GetAsync(saleId, ct)).Status.ShouldBe(SaleStatus.Refunded);
+        TabularReport hourly = await new ReportService(fixture.Database, fixture.Settings, fixture.Clock)
+            .GetReportAsync(ReportKind.HourlySales,
+                new(From: fixture.Clock.BusinessDate, To: fixture.Clock.BusinessDate), ct);
+        hourly.Rows.Sum(static row => Convert.ToInt64(row.Values["Revenue"],
+            System.Globalization.CultureInfo.InvariantCulture)).ShouldBe(0L);
+    }
+
+    [Fact]
+    public async Task DirectReturn_RecreatesDeletedProductAndLotFromCompletedSale()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        SalesService directSales = fixture.Sales;
+        long productId;
+        long lotId;
+        using (var db = fixture.Factory.Open())
+        {
+            productId = db.ExecuteScalar<long>("""
+                INSERT INTO product(sku,name,category_id,uom_id,tax_rate_id,
+                    hsn_code,price_includes_tax,track_expiry,default_selling_price,default_mrp)
+                VALUES ('RETURN-DELETE','Deleted item',@category,@unit,@tax,'1006',1,0,118000,120000)
+                RETURNING id
+                """, new { category = fixture.CategoryId, unit = fixture.UnitId, tax = fixture.TaxId });
+            lotId = db.ExecuteScalar<long>("""
+                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,
+                    selling_price,mrp,qty_received)
+                VALUES (@productId,'L-RETURN-DELETE','2026-09-01',70000,118000,120000,1000)
+                RETURNING id
+                """, new { productId });
+        }
+        await fixture.ReceiveDirectAsync(productId, lotId, Quantity.One, ct);
+        long saleId = await directSales.AddProductAsync(null, productId,
+            Quantity.One, cancellationToken: ct);
+        await directSales.CompleteAsync(new(saleId,
+            [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+        SaleDetails original = await directSales.GetAsync(saleId, ct);
+        long version;
+        using (var db = fixture.Factory.Open())
+            version = db.ExecuteScalar<long>(
+                "SELECT detail_version FROM product_lot WHERE id=@lotId", new { lotId });
+        await fixture.Inventory.DeleteZeroLotAsync(lotId, version, ct);
+        (await fixture.Catalog.RemoveAsync(productId, ct)).ShouldBe(ProductRemoval.Deleted);
+
+        CompletedReturn result = await directSales.ReturnAsync(new(saleId,
+            fixture.Clock.BusinessDate, "Refund", RefundMode.Cash,
+            [new ReturnLineInput(original.Lines.Single().Id, Quantity.One, true)],
+            OperationGuard.NewId()), ct);
+        using var after = fixture.Factory.Open();
+        (long NewProductId, long NewLotId) recreated = after.QuerySingle<(long NewProductId, long NewLotId)>("""
+            SELECT restock_product_id_snapshot AS NewProductId,restock_lot_id AS NewLotId
+            FROM sale_return_line WHERE sale_return_id=@id
+            """, new { id = result.ReturnId });
+        recreated.NewProductId.ShouldNotBe(productId);
+        recreated.NewLotId.ShouldNotBe(lotId);
+        (await directSales.GetHistoryActivityAsync(saleId, ct)).Returns.Single()
+            .DispositionCode.ShouldBe("RETURN_NEW_LOT");
+        after.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id",
+            new { id = recreated.NewLotId }).ShouldBe(1000L);
+        (await directSales.GetReceiptAsync(saleId, duplicate: true, cancellationToken: ct))
+            .GrandTotal.ShouldBe(original.Totals.GrandTotal);
+        var pnl = after.QuerySingle<(long Taxable, long Returned, long Cost, long ReturnCost)>("""
+            SELECT taxable AS Taxable,return_taxable AS Returned,
+                   cost AS Cost,return_cost AS ReturnCost
+            FROM pnl_day WHERE day=@date
+            """, new
+        {
+            date = fixture.Clock.BusinessDate.ToString("yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture)
+        });
+        pnl.Returned.ShouldBe(pnl.Taxable);
+        pnl.ReturnCost.ShouldBe(pnl.Cost);
+        after.ExecuteScalar<long>("""
+            SELECT COALESCE(SUM(quantity),0) FROM sale_report_day
+            WHERE day=@day AND category_id=@category
+            """, new
+        {
+            day = fixture.Clock.BusinessDate.ToString("yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture),
+            category = fixture.CategoryId
+        })
+            .ShouldBe(0L);
+        await fixture.Database.WriteAsync(tx =>
+            new DirectStockEngine().CheckAll(tx).ToArray().ShouldBeEmpty(), ct);
+    }
+
+    [Fact]
     public async Task CompletedSale_SavesFieldsNeededForReviewedReturnRecreation()
     {
         using var fixture = new SalesFixture();
@@ -266,6 +506,190 @@ public sealed class SalesTests
         draft.ExpiryDate.ShouldBe(new DateOnly(2026, 12, 31));
         draft.MissingFields.ShouldBeEmpty();
         draft.SuggestedSku.ShouldNotBe("SALE-001");
+    }
+
+    [Fact]
+    public async Task LegacyReturn_RequiresReviewedFieldsBeforeRecreatingDeletedProduct()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        SalesService sales = fixture.Sales;
+        long productId;
+        long lotId;
+        using (var db = fixture.Factory.Open())
+        {
+            productId = db.ExecuteScalar<long>("""
+                INSERT INTO product(sku,name,category_id,uom_id,tax_rate_id,hsn_code,
+                    price_includes_tax,track_expiry,default_selling_price)
+                VALUES ('LEGACY-REVIEW','Legacy review',@category,@unit,@tax,'1006',1,0,118000)
+                RETURNING id
+                """, new { category = fixture.CategoryId, unit = fixture.UnitId, tax = fixture.TaxId });
+            lotId = db.ExecuteScalar<long>("""
+                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,selling_price,qty_received)
+                VALUES (@productId,'LEGACY-LOT','2026-09-01',70000,118000,1000) RETURNING id
+                """, new { productId });
+        }
+        await fixture.ReceiveDirectAsync(productId, lotId, Quantity.One, ct);
+        long saleId = await sales.AddProductAsync(null, productId, Quantity.One, cancellationToken: ct);
+        await sales.CompleteAsync(new(saleId,
+            [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+        long lineId;
+        using (var db = fixture.Factory.Open())
+        {
+            lineId = db.ExecuteScalar<long>("SELECT id FROM sale_line WHERE sale_id=@saleId", new { saleId });
+            db.Execute("DROP TRIGGER trg_sale_line_lock_upd");
+            db.Execute("""
+                UPDATE sale_line SET product_sku_snapshot=NULL,category_id_snapshot=NULL,
+                    uom_id_snapshot=NULL,tax_rate_id_snapshot=NULL,tax_mode_snapshot=NULL,
+                    track_expiry_snapshot=NULL,is_loose_snapshot=NULL,product_class_snapshot=NULL
+                WHERE id=@lineId
+                """, new { lineId });
+            db.Execute("DELETE FROM product_lot WHERE id=@lotId", new { lotId });
+            db.Execute("DELETE FROM product WHERE id=@productId", new { productId });
+        }
+        ReturnRecreationDraft draft = await sales.GetReturnRecreationDraftAsync(lineId, ct);
+        draft.ProductMissing.ShouldBeTrue();
+        draft.MissingFields.ShouldContain("category");
+        await Should.ThrowAsync<DomainException>(() => sales.ReturnAsync(new(saleId,
+            fixture.Clock.BusinessDate, "Legacy refund", RefundMode.Cash,
+            [new(lineId, Quantity.One, true)], OperationGuard.NewId()), ct));
+        var reviewed = new ReturnRecreationInput(draft.SuggestedSku, draft.ProductName,
+            draft.ProductNameLocal, fixture.CategoryId, fixture.UnitId, fixture.TaxId,
+            "REGULAR", "1006", true, false, false, "SALEABLE", null);
+        CompletedReturn posted = await sales.ReturnAsync(new(saleId,
+            fixture.Clock.BusinessDate, "Legacy refund", RefundMode.Cash,
+            [new(lineId, Quantity.One, true, reviewed)], OperationGuard.NewId()), ct);
+        using var after = fixture.Factory.Open();
+        after.ExecuteScalar<string>("""
+            SELECT snapshot_provenance FROM sale_return_line WHERE sale_return_id=@id
+            """, new { id = posted.ReturnId }).ShouldBe("OPERATOR_REVIEW");
+        after.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE sku=@sku",
+            new { sku = draft.SuggestedSku }).ShouldBe(1L);
+    }
+
+    [Fact]
+    public async Task SaleReturnVoidAndAdjustment_WriteDocumentsButNoMovements()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long first = await fixture.Sales.AddProductAsync(null, fixture.ProductId,
+            Quantity.One, cancellationToken: ct);
+        await fixture.Sales.CompleteAsync(new(first,
+            [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+        SaleDetails completed = await fixture.Sales.GetAsync(first, ct);
+        await fixture.Sales.ReturnAsync(new(first, fixture.Clock.BusinessDate,
+            "Customer changed mind", RefundMode.Cash,
+            [new ReturnLineInput(completed.Lines.Single().Id, Quantity.One, true)],
+            OperationGuard.NewId()), ct);
+        long second = await fixture.Sales.AddProductAsync(null, fixture.ProductId,
+            Quantity.One, cancellationToken: ct);
+        await fixture.Sales.CompleteAsync(new(second,
+            [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+        await fixture.Sales.VoidAsync(second, "Entry mistake", OperationGuard.NewId(), ct);
+        await fixture.Inventory.AdjustAsync(fixture.LotId, fixture.Clock.BusinessDate,
+            Quantity.One, "Reviewed correction", OperationGuard.NewId(), ct);
+        using (var db = fixture.Factory.Open())
+        {
+            db.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement").ShouldBe(0L);
+            db.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id",
+                new { id = fixture.LotId }).ShouldBe(11000L);
+            db.QuerySingle<(string Kind, long Delta, string Reason)>("""
+                SELECT source_kind AS Kind,quantity_delta AS Delta,reason AS Reason FROM stock_correction
+                """).ShouldBe(("MANUAL", 1000L, "Reviewed correction"));
+            db.ExecuteScalar<long>("""
+                SELECT amount FROM v_pnl_entry WHERE head_code='STOCK_ADJUSTMENT'
+                """).ShouldBe(-70000L);
+        }
+        await fixture.Database.WriteAsync(tx => new DirectStockEngine().CheckAll(tx)
+            .ToArray().ShouldBeEmpty(), ct);
+    }
+
+    [Fact]
+    public async Task ReturnAfterLotExpiry_CanOnlyBeDamaged()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using (var db = fixture.Factory.Open())
+            db.Execute("UPDATE product_lot SET expiry_date='2026-09-30' WHERE id=@id", new { id = fixture.LotId });
+        long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One,
+            preferredLotId: fixture.LotId, cancellationToken: ct);
+        await fixture.Sales.CompleteAsync(new(saleId,
+            [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+        SalesService later = fixture.ServiceAt(new DateTime(2026, 10, 5, 11, 0, 0));
+        ReturnableSaleLine line = (await later.GetReturnableLinesAsync(saleId, ct)).Single();
+        line.OriginalLotAvailable.ShouldBeTrue();
+        line.ResaleExpired.ShouldBeTrue();
+        DateOnly returnDate = new(2026, 10, 5);
+        (await Should.ThrowAsync<DomainException>(() => later.ReturnAsync(new(saleId, returnDate,
+            "Expired", RefundMode.Cash, [new ReturnLineInput(line.Line.Id, Quantity.One, true)],
+            OperationGuard.NewId()), ct))).Code.ShouldBe(ErrorCode.ExpiredLot);
+        await later.ReturnAsync(new(saleId, returnDate, "Expired", RefundMode.Cash,
+            [new ReturnLineInput(line.Line.Id, Quantity.One, false)], OperationGuard.NewId()), ct);
+        using var after = fixture.Factory.Open();
+        after.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id",
+            new { id = fixture.LotId }).ShouldBe(9000L);
+        after.ExecuteScalar<long>("SELECT COUNT(*) FROM damage WHERE reason='CUSTOMER_RETURN'").ShouldBe(1L);
+        (await later.GetAsync(saleId, ct)).Status.ShouldBe(SaleStatus.Refunded);
+    }
+
+    [Fact]
+    public async Task Void_AfterTheSoldLotWasDeleted_IsRejected()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        (long productId, long[] lots) = await fixture.AddProductWithLotsAsync("VOID-GONE", 1, ct);
+        long saleId = await fixture.Sales.AddProductAsync(null, productId, Quantity.One, cancellationToken: ct);
+        await fixture.Sales.CompleteAsync(new(saleId,
+            [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+        await fixture.Inventory.DeleteZeroLotAsync(lots[0], fixture.DetailVersion(lots[0]), ct);
+        (await Should.ThrowAsync<DomainException>(() => fixture.Sales.VoidAsync(saleId, "Mistake",
+            OperationGuard.NewId(), ct))).Code.ShouldBe(ErrorCode.VoidNotAllowed);
+        (await fixture.Sales.GetAsync(saleId, ct)).Status.ShouldBe(SaleStatus.Completed);
+    }
+
+    [Fact]
+    public async Task ReturnOfDeletedProductSplitAcrossLots_RecreatesItOnce_AndNeverRestocksDamage()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        (long productId, long[] lots) = await fixture.AddProductWithLotsAsync("SPLIT-GONE", 3, ct);
+        long saleId = await fixture.Sales.AddProductAsync(null, productId, new Quantity(3), cancellationToken: ct);
+        SaleDetails draft = await fixture.Sales.GetAsync(saleId, ct);
+        draft.Lines.Count.ShouldBe(3);
+        await fixture.Sales.CompleteAsync(new(saleId,
+            [new(PaymentMode.Cash, draft.Totals.GrandTotal)], OperationGuard.NewId()), ct);
+        foreach (long lot in lots)
+            await fixture.Inventory.DeleteZeroLotAsync(lot, fixture.DetailVersion(lot), ct);
+        (await fixture.Catalog.RemoveAsync(productId, ct)).ShouldBe(ProductRemoval.Deleted);
+        SaleDetails sold = await fixture.Sales.GetAsync(saleId, ct);
+        (await fixture.Sales.GetReturnableLinesAsync(saleId, ct)).All(static line => !line.OriginalLotAvailable)
+            .ShouldBeTrue();
+        CompletedReturn returned = await fixture.Sales.ReturnAsync(new(saleId, fixture.Clock.BusinessDate,
+            "Customer refund", RefundMode.Cash,
+            [
+                new ReturnLineInput(sold.Lines[0].Id, Quantity.One, true),
+                new ReturnLineInput(sold.Lines[1].Id, Quantity.One, true),
+                new ReturnLineInput(sold.Lines[2].Id, Quantity.One, false),
+            ], OperationGuard.NewId()), ct);
+        returned.Refund.ShouldBe(draft.Totals.GrandTotal);
+        using var after = fixture.Factory.Open();
+        after.ExecuteScalar<long>("""
+            SELECT COUNT(DISTINCT restock_product_id_snapshot) FROM sale_return_line
+            WHERE sale_return_id=@id AND restock_lot_id IS NOT NULL
+            """, new { id = returned.ReturnId }).ShouldBe(1L);
+        after.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE sku='SPLIT-GONE'").ShouldBe(1L);
+        after.ExecuteScalar<long>("""
+            SELECT SUM(qty_on_hand) FROM product_lot WHERE origin_kind='CUSTOMER_RETURN'
+            """).ShouldBe(2000L);
+        after.QuerySingle<(long? Restock, long DamagedLot)>("""
+            SELECT rl.restock_lot_id AS Restock,d.lot_id AS DamagedLot
+            FROM sale_return_line rl JOIN damage d ON d.id=rl.damage_id
+            WHERE rl.sale_return_id=@id
+            """, new { id = returned.ReturnId }).ShouldBe(((long?)null, sold.Lines[2].LotId));
+        (await fixture.Sales.GetReceiptAsync(saleId, duplicate: true, cancellationToken: ct))
+            .GrandTotal.ShouldBe(draft.Totals.GrandTotal);
+        await fixture.Database.WriteAsync(tx =>
+            new DirectStockEngine().CheckAll(tx).ToArray().ShouldBeEmpty(), ct);
     }
 
     [Fact]
@@ -528,27 +952,10 @@ public sealed class SalesTests
             [lines[0], lines[0]], OperationGuard.NewId()), ct));
     }
 
-    [Fact]
-    public async Task StockLedger_OpensSaleSourceWithAllDocumentLines()
-    {
-        using var fixture = new SalesFixture();
-        CancellationToken ct = TestContext.Current.CancellationToken;
-        long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, new Quantity(12), cancellationToken: ct);
-        SaleDetails draft = await fixture.Sales.GetAsync(saleId, ct);
-        CompletedSale completed = await fixture.Sales.CompleteAsync(new(saleId,
-            [new(PaymentMode.Cash, draft.Totals.GrandTotal)], OperationGuard.NewId()), ct);
-        LedgerItem movement = (await fixture.Inventory.GetLedgerAsync(fixture.ProductId,
-            fixture.Clock.BusinessDate, fixture.Clock.BusinessDate, ct))
-            .First(item => item.Type == "SALE");
-        StockSourceDocument source = await fixture.Inventory.GetSourceDocumentAsync(movement, ct);
-        source.Type.ShouldBe("Sale");
-        source.Number.ShouldBe(completed.InvoiceNumber);
-        source.Lines.Count.ShouldBe(2);
-    }
-
     private sealed class SalesFixture : IDisposable
     {
         private readonly string _root;
+        private readonly StockLedger _ledger;
 
         public SalesFixture()
         {
@@ -562,10 +969,11 @@ public sealed class SalesTests
             SettingsService settings = Settings;
             Clock = new FixedClock(new DateTime(2026, 9, 27, 10, 30, 0));
             var ledger = new StockLedger(settings);
+            _ledger = ledger;
             Catalog = new CatalogService(Database, new AuditLog(), settings);
-            Inventory = new InventoryService(Database, ledger, new DocNumberService(settings), new PeriodGuard(settings), new AuditLog());
+            Inventory = new InventoryService(Database, ledger, new DocNumberService(settings), new PeriodGuard(settings, Clock), new AuditLog());
             Sales = new SalesService(Database, ledger, new DocNumberService(settings),
-                new PeriodGuard(settings), settings, new AuditLog(), Clock);
+                new PeriodGuard(settings, Clock), settings, new AuditLog(), Clock);
 
             using var connection = Factory.Open();
             CategoryId = connection.ExecuteScalar<long>("INSERT INTO category(name) VALUES ('Food') RETURNING id");
@@ -577,12 +985,12 @@ public sealed class SalesTests
                 VALUES ('SALE-001','Sales Product',@category,@unit,@tax,1,118000,120000) RETURNING id
                 """, new { category = CategoryId, unit = UnitId, tax = TaxId });
             LotId = connection.ExecuteScalar<long>("""
-                INSERT INTO product_lot(lot_code,product_id,received_date,unit_cost,selling_price,mrp)
-                VALUES ('L-SALE',@productId,'2026-09-01',70000,118000,120000) RETURNING id
+                INSERT INTO product_lot(lot_code,product_id,received_date,unit_cost,selling_price,mrp,qty_received)
+                VALUES ('L-SALE',@productId,'2026-09-01',70000,118000,120000,10000) RETURNING id
                 """, new { productId = ProductId });
             AlternateLotId = connection.ExecuteScalar<long>("""
-                INSERT INTO product_lot(lot_code,product_id,received_date,unit_cost,selling_price,mrp)
-                VALUES ('L-SALE-ALT',@productId,'2026-09-02',80000,125000,130000) RETURNING id
+                INSERT INTO product_lot(lot_code,product_id,received_date,unit_cost,selling_price,mrp,qty_received)
+                VALUES ('L-SALE-ALT',@productId,'2026-09-02',80000,125000,130000,5000) RETURNING id
                 """, new { productId = ProductId });
             using var transaction = connection.BeginTransaction();
             ledger.Post(new(connection, transaction), new(Clock.BusinessDate, ProductId, LotId, "OPENING",
@@ -591,6 +999,43 @@ public sealed class SalesTests
                 new Quantity(5), new Money(80), "test", 2));
             transaction.Commit();
         }
+
+        // A lot inserted with qty_received becomes saleable through its direct origin.
+        public Task ReceiveDirectAsync(long productId, long lotId, Quantity quantity, CancellationToken ct) =>
+            Database.WriteAsync(tx => _ledger.Post(tx, new(Clock.BusinessDate, productId, lotId,
+                "DIRECT_ENTRY", quantity, new Money(70), "direct_stock_origin", lotId)), ct);
+
+        // A product with one-unit lots received on consecutive days, in FEFO order.
+        public async Task<(long ProductId, long[] Lots)> AddProductWithLotsAsync(string sku, int lots,
+            CancellationToken ct)
+        {
+            long productId;
+            var ids = new long[lots];
+            using (var db = Factory.Open())
+            {
+                productId = db.ExecuteScalar<long>("""
+                    INSERT INTO product(sku,name,category_id,uom_id,tax_rate_id,hsn_code,
+                        price_includes_tax,track_expiry,default_selling_price,default_mrp)
+                    VALUES (@sku,@sku,@category,@unit,@tax,'1006',1,0,118000,120000) RETURNING id
+                    """, new { sku, category = CategoryId, unit = UnitId, tax = TaxId });
+                for (int index = 0; index < lots; index++)
+                    ids[index] = db.ExecuteScalar<long>("""
+                        INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,selling_price,mrp,qty_received)
+                        VALUES (@productId,@code,@received,70000,118000,120000,1000) RETURNING id
+                        """, new { productId, code = $"{sku}-{index}", received = $"2026-09-0{index + 1}" });
+            }
+            foreach (long lot in ids) await ReceiveDirectAsync(productId, lot, Quantity.One, ct);
+            return (productId, ids);
+        }
+
+        public long DetailVersion(long lotId)
+        {
+            using var db = Factory.Open();
+            return db.ExecuteScalar<long>("SELECT detail_version FROM product_lot WHERE id=@lotId", new { lotId });
+        }
+
+        public SalesService ServiceAt(DateTime now) => new(Database, _ledger, new DocNumberService(Settings),
+            new PeriodGuard(Settings, new FixedClock(now)), Settings, new AuditLog(), new FixedClock(now));
 
         public SqliteConnectionFactory Factory { get; }
         public DbExecutor Database { get; }

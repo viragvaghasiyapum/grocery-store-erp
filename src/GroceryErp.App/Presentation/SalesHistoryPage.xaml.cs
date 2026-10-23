@@ -132,6 +132,8 @@ public partial class SalesHistoryPage : Page
         SaleStatus? status = ((ComboBoxItem)StatusBox.SelectedItem).Tag?.ToString() switch
         {
             "Completed" => SaleStatus.Completed,
+            "PartiallyRefunded" => SaleStatus.PartiallyRefunded,
+            "Refunded" => SaleStatus.Refunded,
             "Void" => SaleStatus.Void,
             _ => null,
         };
@@ -146,7 +148,9 @@ public partial class SalesHistoryPage : Page
                 FromPicker.SelectedDate is { } from ? DateOnly.FromDateTime(from) : null,
                 ToPicker.SelectedDate is { } to ? DateOnly.FromDateTime(to) : null,
                 status, payment, minimum, maximum, InputNormalizer.Normalize(InvoiceBox.Text).Trim(),
-                beforeDate, beforeId, limit);
+                beforeDate, beforeId, limit,
+                InputNormalizer.Normalize(ProductBox.Text).Trim(),
+                InputNormalizer.Normalize(CustomerBox.Text).Trim());
     }
 
     private static Money? ParseOptionalMoney(string text)
@@ -158,6 +162,27 @@ public partial class SalesHistoryPage : Page
     }
 
     private async void Refresh_OnClick(object sender, RoutedEventArgs e) => await RefreshAsync();
+
+    private async void Filter_OnKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        e.Handled = true;
+        await RefreshAsync();
+    }
+
+    private async void ClearFilters_OnClick(object sender, RoutedEventArgs e)
+    {
+        FromPicker.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
+        ToPicker.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
+        foreach (TextBox box in new[] { InvoiceBox, ProductBox, CustomerBox, MinimumBox, MaximumBox }) box.Clear();
+        StatusBox.SelectedIndex = 0;
+        PaymentBox.SelectedIndex = 0;
+        await RefreshAsync();
+    }
+
+    private static string BillContext(SaleHistoryItem sale) => TranslationSource.Instance.Format("Sales_ReturnContext",
+        sale.InvoiceNumber ?? sale.Id.ToString(Digits), sale.SaleDate.ToString("dd-MM-yyyy", Digits),
+        sale.GrandTotal.Value.ToString("N2", Digits));
 
     private async void Next_OnClick(object sender, RoutedEventArgs e)
     {
@@ -289,10 +314,10 @@ public partial class SalesHistoryPage : Page
     private void UpdateActions()
     {
         if (ReprintButton is null) return;
-        bool completed = HistoryGrid.SelectedItem is SaleHistoryItem { Status: SaleStatus.Completed };
-        ReprintButton.IsEnabled = completed;
-        VoidButton.IsEnabled = completed;
-        ReturnButton.IsEnabled = completed;
+        SaleStatus? status = (HistoryGrid.SelectedItem as SaleHistoryItem)?.Status;
+        ReprintButton.IsEnabled = status is SaleStatus.Completed or SaleStatus.PartiallyRefunded or SaleStatus.Refunded or SaleStatus.Void;
+        VoidButton.IsEnabled = status == SaleStatus.Completed;
+        ReturnButton.IsEnabled = status is SaleStatus.Completed or SaleStatus.PartiallyRefunded;
     }
 
     private async void Reprint_OnClick(object sender, RoutedEventArgs e)
@@ -309,7 +334,7 @@ public partial class SalesHistoryPage : Page
     private async void Void_OnClick(object sender, RoutedEventArgs e)
     {
         if (HistoryGrid.SelectedItem is not SaleHistoryItem { Status: SaleStatus.Completed } sale) return;
-        var dialog = new SaleActionWindow(false) { Owner = Window.GetWindow(this) };
+        var dialog = new SaleActionWindow(false, context: BillContext(sale)) { Owner = Window.GetWindow(this) };
         if (dialog.ShowDialog() != true) return;
         try { await _sales.VoidAsync(sale.Id, dialog.Reason, OperationGuard.NewId()); await RefreshAsync(); }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
@@ -317,7 +342,8 @@ public partial class SalesHistoryPage : Page
 
     private async void Return_OnClick(object sender, RoutedEventArgs e)
     {
-        if (HistoryGrid.SelectedItem is not SaleHistoryItem { Status: SaleStatus.Completed } item) return;
+        if (HistoryGrid.SelectedItem is not SaleHistoryItem
+            { Status: SaleStatus.Completed or SaleStatus.PartiallyRefunded } item) return;
         try
         {
             IReadOnlyList<ReturnableSaleLine> lines = await _sales.GetReturnableLinesAsync(item.Id);
@@ -326,10 +352,33 @@ public partial class SalesHistoryPage : Page
                 StatusText.Text = TranslationSource.Instance["Sales_NothingToReturn"];
                 return;
             }
-            var dialog = new SaleActionWindow(true, lines) { Owner = Window.GetWindow(this) };
+            var dialog = new SaleActionWindow(true, lines, BillContext(item)) { Owner = Window.GetWindow(this) };
             if (dialog.ShowDialog() != true) return;
+            var reviewedLines = new List<ReturnLineInput>(dialog.ReturnLines.Count);
+            ReturnRecreationOptions? recreationOptions = null;
+            foreach (ReturnLineInput selected in dialog.ReturnLines)
+            {
+                // Only resold units can need a recreated product; damage keeps the sale snapshot.
+                ReturnableSaleLine source = lines.Single(line => line.Line.Id == selected.SaleLineId);
+                if (source.OriginalLotAvailable || !selected.Resellable)
+                {
+                    reviewedLines.Add(selected);
+                    continue;
+                }
+                ReturnRecreationDraft draft = await _sales.GetReturnRecreationDraftAsync(selected.SaleLineId);
+                if (!draft.ProductMissing || draft.MissingFields.Count == 0)
+                {
+                    reviewedLines.Add(selected);
+                    continue;
+                }
+                recreationOptions ??= await _sales.GetReturnRecreationOptionsAsync();
+                var review = new ReturnRecreationWindow(draft, recreationOptions)
+                { Owner = Window.GetWindow(this) };
+                if (review.ShowDialog() != true) return;
+                reviewedLines.Add(selected with { Recreation = review.Result });
+            }
             CompletedReturn returned = await _sales.ReturnAsync(new(item.Id, _clock.BusinessDate, dialog.Reason, dialog.SelectedRefundMode,
-                dialog.ReturnLines, OperationGuard.NewId()));
+                reviewedLines, OperationGuard.NewId()));
             await RefreshAsync();
             try { await _printer.PrintAsync(await _sales.GetReturnReceiptAsync(returned.ReturnId)); }
             catch (Exception exception)
@@ -376,38 +425,38 @@ public partial class SalesHistoryPage : Page
                 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
             await using (var writer = new StreamWriter(file, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true), 64 * 1024))
             {
-            await writer.WriteLineAsync(string.Join(',', headings.Select(Csv)));
-            DateOnly? beforeDate = null;
-            long? beforeId = null;
-            while (true)
-            {
-                cancellation.Token.ThrowIfCancellationRequested();
-                IReadOnlyList<SaleHistoryItem> page = await _sales.GetHistoryAsync(
-                    filter with { BeforeDate = beforeDate, BeforeId = beforeId }, cancellation.Token);
-                var chunk = new StringBuilder(page.Count * 96);
-                foreach (SaleHistoryItem item in page)
+                await writer.WriteLineAsync(string.Join(',', headings.Select(Csv)));
+                DateOnly? beforeDate = null;
+                long? beforeId = null;
+                while (true)
                 {
-                    chunk.Append(Csv(item.SaleDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))).Append(',')
-                        .Append(Csv(item.InvoiceNumber)).Append(',')
-                        .Append(Csv(statusNames[item.Status])).Append(',')
-                        .Append(item.LineCount.ToString(CultureInfo.InvariantCulture)).Append(',')
-                        .Append(Csv(item.PaymentModes)).Append(',')
-                        .Append(item.GrandTotal.Value.ToString("0.00", CultureInfo.InvariantCulture)).AppendLine();
+                    cancellation.Token.ThrowIfCancellationRequested();
+                    IReadOnlyList<SaleHistoryItem> page = await _sales.GetHistoryAsync(
+                        filter with { BeforeDate = beforeDate, BeforeId = beforeId }, cancellation.Token);
+                    var chunk = new StringBuilder(page.Count * 96);
+                    foreach (SaleHistoryItem item in page)
+                    {
+                        chunk.Append(Csv(item.SaleDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))).Append(',')
+                            .Append(Csv(item.InvoiceNumber)).Append(',')
+                            .Append(Csv(statusNames[item.Status])).Append(',')
+                            .Append(item.LineCount.ToString(CultureInfo.InvariantCulture)).Append(',')
+                            .Append(Csv(item.PaymentModes)).Append(',')
+                            .Append(item.GrandTotal.Value.ToString("0.00", CultureInfo.InvariantCulture)).AppendLine();
+                    }
+                    await writer.WriteAsync(chunk.ToString().AsMemory(), cancellation.Token);
+                    exported += page.Count;
+                    if (exported % 5000 == 0) StatusText.Text = TranslationSource.Instance.Format("Sales_Exported", exported);
+                    if (page.Count < 500) break;
+                    beforeDate = page[^1].SaleDate;
+                    beforeId = page[^1].Id;
                 }
-                await writer.WriteAsync(chunk.ToString().AsMemory(), cancellation.Token);
-                exported += page.Count;
-                if (exported % 5000 == 0) StatusText.Text = TranslationSource.Instance.Format("Sales_Exported", exported);
-                if (page.Count < 500) break;
-                beforeDate = page[^1].SaleDate;
-                beforeId = page[^1].Id;
-            }
-            await writer.FlushAsync(cancellation.Token);
-            await file.FlushAsync(cancellation.Token);
+                await writer.FlushAsync(cancellation.Token);
+                await file.FlushAsync(cancellation.Token);
             }
             File.Move(temporary, picker.FileName, overwrite: true);
             StatusText.Text = TranslationSource.Instance.Format("Sales_Exported", exported);
         }
-        catch (OperationCanceledException) { StatusText.Text = "Export cancelled."; }
+        catch (OperationCanceledException) { StatusText.Text = TranslationSource.Instance["Sales_ExportCancelled"]; }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
         finally
         {

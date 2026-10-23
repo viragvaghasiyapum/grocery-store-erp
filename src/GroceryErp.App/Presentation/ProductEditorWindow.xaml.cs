@@ -109,7 +109,7 @@ public partial class ProductEditorWindow : Window
                 TrackExpiryBox.IsChecked == true, ParseNullableInt(ShelfLifeBox.Text), ParseNullableInt(ExpiryAlertBox.Text, allowZero: true),
                 new Quantity(ParseDecimal(ReorderBox.Text, required: true) ?? 0),
                 ParseMoney(PriceBox.Text), ParseMoney(MrpBox.Text), barcodes)
-                { ProductClass = ProductClassBox.SelectedValue as string ?? "SALEABLE" };
+            { ProductClass = ProductClassBox.SelectedValue as string ?? "SALEABLE" };
             if (_productId is null && AddFirstLotBox.IsChecked == true)
             {
                 DateOnly date = DateOnly.FromDateTime(FirstLotDateBox.SelectedDate ??

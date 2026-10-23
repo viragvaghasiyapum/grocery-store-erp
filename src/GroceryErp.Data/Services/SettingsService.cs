@@ -13,7 +13,6 @@ public sealed record AppSettings(
     string StoreName,
     int FyStartMonth,
     int BusinessDayStartHour,
-    DateOnly? BooksLockedUntil,
     int IdleLockMinutes,
     int BackupKeep,
     string BackupDirectory) : IBusinessClockSettings
@@ -26,7 +25,6 @@ public sealed record AppSettings(
     public string TaxMode => Get("tax.mode", "REGULAR");
     public bool PricesIncludeTax => GetBool("tax.prices_include_tax", true);
     public int BillRoundTo => GetInt("bill.round_to", 1000, 0, int.MaxValue);
-    public bool AllowNegativeStock => GetBool("stock.allow_negative", false);
     public int ExpiryDefaultAlertDays => GetInt("expiry.default_alert_days", 30, 0, 3650);
     public bool ExpiryPopupOnLogin => GetBool("expiry.popup_on_login", true);
     public bool BlockExpiredLots => GetBool("pos.block_expired", true);
@@ -128,7 +126,7 @@ public sealed class SettingsService(DbExecutor database, AppPaths paths, IAuditL
 
     public void Dispose() => _mutationGate.Dispose();
 
-    private static AppSettings Defaults(AppPaths paths) => new("", 4, 0, null, 15, 30, paths.DefaultBackupDir);
+    private static AppSettings Defaults(AppPaths paths) => new("", 4, 0, 15, 30, paths.DefaultBackupDir);
 
     private static AppSettings CreateSnapshot(IReadOnlyDictionary<string, string> values, AppPaths paths)
     {
@@ -141,29 +139,16 @@ public sealed class SettingsService(DbExecutor database, AppPaths paths, IAuditL
                 ? parsed : fallback;
         }
 
-        string locked = Get(values, "books.locked_until", "");
-        DateOnly? lockedUntil = DateOnly.TryParseExact(locked, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly date)
-            ? date : null;
         string backup = Get(values, "backup.dir", "");
         return new AppSettings(
             Get(values, "store.name", ""),
             GetInt(values, "fy.start_month", 4, 1, 12),
             GetInt(values, "business.day_start_hour", 0, 0, 23),
-            lockedUntil,
             GetInt(values, "security.idle_lock_minutes", 15, 1, 1440),
             GetInt(values, "backup.keep", 30, 1, 365),
             string.IsNullOrWhiteSpace(backup) ? paths.DefaultBackupDir : backup)
         {
             Values = values.ToImmutableDictionary(StringComparer.Ordinal),
         };
-    }
-}
-
-public sealed class PeriodGuard(ISettings settings)
-{
-    public void EnsureOpen(DateOnly date)
-    {
-        if (settings.Current.BooksLockedUntil is { } locked && date <= locked)
-            throw new DomainException(ErrorCode.PeriodLocked, date, locked);
     }
 }

@@ -13,11 +13,30 @@ internal static class ReportDefinitions
           GROUP BY l.product_id
         )
         SELECT c.name AS Category,p.sku AS Sku,p.name AS Product,p.name_local AS LocalName,
-               t.quantity AS Quantity,t.cost_value AS CostValue,
+               p.product_class AS Class,t.quantity AS Quantity,t.cost_value AS CostValue,
                t.selling_value AS SellingValue,t.mrp_value AS MrpValue
         FROM available t JOIN product p ON p.id=t.product_id
         JOIN category c ON c.id=p.category_id
         ORDER BY c.name,p.name LIMIT @Limit
+        """;
+
+    // Unsold stock in lots that expired before the as-of date. The current-stock
+    // report states it either way so both of its totals can be read side by side.
+    public const string ExpiredStockTotals = """
+        SELECT COUNT(*) AS Lots,COALESCE(SUM(qty_on_hand),0) AS Quantity,
+               COALESCE(SUM(CAST(ROUND(qty_on_hand*unit_cost/1000.0) AS INTEGER)),0) AS CostValue
+        FROM product_lot INDEXED BY ix_lot_expiry
+        WHERE qty_on_hand>0 AND expiry_date IS NOT NULL AND expiry_date<@stockAsOf
+        """;
+
+    // Expense heads are read from the P&L source contract so the report agrees with P&L,
+    // including dated corrections, voids and reversed purchase expense lines.
+    public const string ExpensesFromPnl = """
+        SELECT substr(e.entry_date,1,7) AS Month,ec.name AS Category,ec.name_local AS LocalName,
+               SUM(e.source_count) AS Entries,SUM(e.amount) AS Amount
+        FROM v_pnl_entry e JOIN expense_category ec ON ec.id=e.category_id
+        WHERE e.head_code='EXPENSE_CATEGORY' AND e.entry_date BETWEEN @from AND @to
+        GROUP BY substr(e.entry_date,1,7),ec.id ORDER BY Month,ec.name LIMIT @Limit
         """;
 
     public const string CategorySalesFromDay = """
@@ -32,11 +51,11 @@ internal static class ReportDefinitions
           FROM sale_report_day WHERE day BETWEEN @previousFrom AND @to
           GROUP BY category_id
         )
-        SELECT c.name AS Category,c.name_local AS LocalName,
+        SELECT COALESCE(c.name,'Legacy unknown') AS Category,c.name_local AS LocalName,
                t.quantity AS Quantity,t.revenue AS Revenue,t.cost AS Cost,t.margin AS Margin,
                CASE WHEN t.revenue=0 THEN 0 ELSE CAST(ROUND(t.margin*100000.0/t.revenue) AS INTEGER) END AS MarginPercent,
                t.previous_revenue AS PreviousRevenue,t.previous_margin AS PreviousMargin
-        FROM totals t JOIN category c ON c.id=t.category_id
+        FROM totals t LEFT JOIN category c ON c.id=t.category_id
         ORDER BY Revenue DESC LIMIT @Limit
         """;
 
@@ -67,7 +86,13 @@ internal static class ReportDefinitions
                     WHEN 2 THEN 'Tue' WHEN 3 THEN 'Wed' WHEN 4 THEN 'Thu'
                     WHEN 5 THEN 'Fri' ELSE 'Sat' END AS Weekday,
                hour AS Hour,SUM(bills) AS Bills,SUM(revenue) AS Revenue
-        FROM sale_hour_day WHERE day BETWEEN @from AND @to
+        FROM (
+          SELECT weekday,hour,bills,revenue FROM sale_hour_day
+          WHERE day BETWEEN @from AND @to
+          UNION ALL
+          SELECT weekday,hour,0,-refund_total FROM sale_hour_return_day
+          WHERE day BETWEEN @from AND @to
+        )
         GROUP BY weekday,hour ORDER BY weekday,hour LIMIT @Limit
         """;
 
@@ -235,30 +260,29 @@ internal static class ReportDefinitions
 
             [ReportKind.CategorySales] = new("Category-wise sales and margin", true, """
                 WITH movements AS (
-                  SELECT sl.product_id,s.sale_date AS entry_date,sl.qty,sl.taxable_amount,sl.cost_amount
-                  FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
+                  SELECT COALESCE(sl.category_id_snapshot,p.category_id,0) AS category_id,
+                         s.sale_date AS entry_date,sl.qty,sl.taxable_amount,sl.cost_amount
+                  FROM sale_line sl JOIN sale s ON s.id=sl.sale_id LEFT JOIN product p ON p.id=sl.product_id
                   WHERE s.status='COMPLETED' AND s.sale_date BETWEEN @previousFrom AND @to
                   UNION ALL
-                  SELECT sl.product_id,r.return_date,-rl.qty,-rl.taxable_amount,-rl.cost_amount
+                  SELECT COALESCE(sl.category_id_snapshot,p.category_id,0),r.return_date,
+                         -rl.qty,-rl.taxable_amount,-rl.cost_amount
                   FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
-                  JOIN sale_line sl ON sl.id=rl.sale_line_id WHERE r.return_date BETWEEN @previousFrom AND @to
-                ), product_totals AS (
-                  SELECT m.product_id,
+                  JOIN sale_line sl ON sl.id=rl.sale_line_id LEFT JOIN product p ON p.id=sl.product_id
+                  WHERE r.return_date BETWEEN @previousFrom AND @to
+                ), category_totals AS (
+                  SELECT m.category_id,
                          SUM(CASE WHEN m.entry_date BETWEEN @from AND @to THEN m.qty ELSE 0 END) AS quantity,
                          SUM(CASE WHEN m.entry_date BETWEEN @from AND @to THEN m.taxable_amount ELSE 0 END) AS revenue,
                          SUM(CASE WHEN m.entry_date BETWEEN @from AND @to THEN m.cost_amount ELSE 0 END) AS cost,
                          SUM(CASE WHEN m.entry_date BETWEEN @from AND @to THEN m.taxable_amount-m.cost_amount ELSE 0 END) AS margin,
                          SUM(CASE WHEN m.entry_date BETWEEN @previousFrom AND @previousTo THEN m.taxable_amount ELSE 0 END) AS previous_revenue,
                          SUM(CASE WHEN m.entry_date BETWEEN @previousFrom AND @previousTo THEN m.taxable_amount-m.cost_amount ELSE 0 END) AS previous_margin
-                  FROM movements m GROUP BY m.product_id
+                  FROM movements m GROUP BY m.category_id
                 ), totals AS (
-                  SELECT c.id,c.name,c.name_local,
-                         SUM(m.quantity) AS quantity,SUM(m.revenue) AS revenue,
-                         SUM(m.cost) AS cost,SUM(m.margin) AS margin,
-                         SUM(m.previous_revenue) AS previous_revenue,
-                         SUM(m.previous_margin) AS previous_margin
-                  FROM product_totals m JOIN product p ON p.id=m.product_id JOIN category c ON c.id=p.category_id
-                  GROUP BY c.id
+                  SELECT COALESCE(c.name,'Legacy unknown') AS name,c.name_local,
+                         m.quantity,m.revenue,m.cost,m.margin,m.previous_revenue,m.previous_margin
+                  FROM category_totals m LEFT JOIN category c ON c.id=m.category_id
                 )
                 SELECT name AS Category,name_local AS LocalName,
                        quantity AS Quantity,revenue AS Revenue,cost AS Cost,margin AS Margin,
@@ -276,13 +300,20 @@ internal static class ReportDefinitions
 
             [ReportKind.StockValue] = new("Stock value", false, """
                 SELECT c.name AS Category,p.sku AS Sku,p.name AS Product,p.name_local AS LocalName,
-                       t.quantity AS Quantity,t.cost_value AS CostValue,
+                       p.product_class AS Class,t.quantity AS Quantity,t.cost_value AS CostValue,
                        t.selling_value AS SellingValue,t.mrp_value AS MrpValue
                 FROM product_stock_total t JOIN product p ON p.id=t.product_id
                 JOIN category c ON c.id=p.category_id
                 WHERE t.quantity<>0 OR t.cost_value<>0 OR t.selling_value<>0 OR t.mrp_value<>0
                 ORDER BY c.name,p.name LIMIT @Limit
-                """, [T("Category", "Category"), T("Sku", "SKU"), T("Product", "Product"), T("LocalName", "Local name"), Q("Quantity", "Quantity"), M("CostValue", "Cost value"), M("SellingValue", "Selling value"), M("MrpValue", "MRP value")]),
+                """, [T("Category", "Category"), T("Sku", "SKU"), T("Product", "Product"), T("LocalName", "Local name"), T("Class", "Type"), Q("Quantity", "Quantity"), M("CostValue", "Cost value"), M("SellingValue", "Selling value"), M("MrpValue", "MRP value")]),
+
+            // Computed per lot from source documents by ReportService; the columns are fixed here.
+            [ReportKind.StockReconciliation] = new("Purchased vs used reconciliation", false, "",
+                [T("Product", "Product"), T("Sku", "SKU"), T("Lot", "Lot"), T("Source", "Source"), D("Received", "Received"),
+                 Q("ReceivedQty", "Received qty"), Q("Sold", "Sold"), Q("Returned", "Returned to stock"), Q("Damaged", "Damaged"),
+                 Q("InternalUse", "Internal use"), Q("VendorReturned", "Returned to vendor"), Q("Corrections", "Corrections"),
+                 Q("Expected", "Expected"), Q("Available", "Available"), Q("Difference", "Difference")]),
 
             [ReportKind.StockLedger] = new("Stock ledger", true, """
                 SELECT m.move_date AS Date,p.sku AS Sku,p.name AS Product,l.lot_code AS Lot,m.type_code AS Type,
@@ -300,9 +331,12 @@ internal static class ReportDefinitions
                 )
                 SELECT page.sku AS Sku,page.name AS Product,page.name_local AS LocalName,
                        page.quantity AS Quantity,page.reorder_level AS ReorderLevel,
-                       COALESCE((SELECT SUM(d.qty)/30 FROM sale_product_day d
-                                 WHERE d.product_id=page.id
-                                   AND d.day BETWEEN date(@to,'-29 day') AND @to),0) AS AverageDailySales,
+                       MAX(0,COALESCE((SELECT SUM(d.qty) FROM sale_product_day d
+                                       WHERE d.product_id=page.id
+                                         AND d.day BETWEEN date(@to,'-29 day') AND @to),0)
+                             -COALESCE((SELECT SUM(r.returned_qty) FROM sale_product_return_day r
+                                        WHERE r.product_id=page.id
+                                          AND r.day BETWEEN date(@to,'-29 day') AND @to),0))/30 AS AverageDailySales,
                        CASE WHEN page.reorder_level>page.quantity THEN page.reorder_level-page.quantity ELSE 0 END AS SuggestedOrder
                 FROM page ORDER BY page.name
                 """, [T("Sku", "SKU"), T("Product", "Product"), T("LocalName", "Local name"), Q("Quantity", "Quantity"), Q("ReorderLevel", "Reorder level"), Q("AverageDailySales", "30-day avg/day"), Q("SuggestedOrder", "Suggested order")]),
@@ -329,31 +363,29 @@ internal static class ReportDefinitions
             [ReportKind.Damages] = new("Damages", true, """
                 SELECT Date,Document,Product,LocalName,Category,Reason,Vendor,Quantity,CostValue,Recovered
                 FROM (
-                    SELECT d.damage_date AS Date,d.doc_no AS Document,p.name AS Product,p.name_local AS LocalName,
+                    SELECT d.damage_date AS Date,d.doc_no AS Document,
+                           COALESCE(d.product_name_snapshot,p.name) AS Product,
+                           COALESCE(d.product_name_local_snapshot,p.name_local) AS LocalName,
                            c.name AS Category,d.reason AS Reason,v.name AS Vendor,d.qty AS Quantity,
                            d.cost_value AS CostValue,d.recovered_amount AS Recovered,d.id AS SortId
-                    FROM damage d JOIN product p ON p.id=d.product_id JOIN category c ON c.id=p.category_id
-                    JOIN product_lot l ON l.id=d.lot_id LEFT JOIN vendor v ON v.id=l.vendor_id
+                    FROM damage d LEFT JOIN product p ON p.id=d.product_id LEFT JOIN category c ON c.id=p.category_id
+                    LEFT JOIN product_lot l ON l.id=d.lot_id LEFT JOIN vendor v ON v.id=l.vendor_id
                     WHERE d.damage_date BETWEEN @from AND @to
                     UNION ALL
-                    SELECT dc.correction_date,d.doc_no || ' / correction',p.name,p.name_local,c.name,
-                           dc.new_reason,v.name,dc.new_qty-dc.previous_qty,
+                    SELECT dc.effective_date,d.doc_no || ' / correction',
+                           COALESCE(d.product_name_snapshot,p.name),COALESCE(d.product_name_local_snapshot,p.name_local),
+                           c.name,dc.new_reason,v.name,dc.new_qty-dc.previous_qty,
                            CAST(ROUND(dc.new_qty*d.unit_cost/1000.0) AS INTEGER)
                              -CAST(ROUND(dc.previous_qty*d.unit_cost/1000.0) AS INTEGER),
                            dc.new_recovered-dc.previous_recovered,dc.id
                     FROM damage_correction dc JOIN damage d ON d.id=dc.damage_id
-                    JOIN product p ON p.id=d.product_id JOIN category c ON c.id=p.category_id
-                    JOIN product_lot l ON l.id=d.lot_id LEFT JOIN vendor v ON v.id=l.vendor_id
-                    WHERE dc.correction_date BETWEEN @from AND @to
+                    LEFT JOIN product p ON p.id=d.product_id LEFT JOIN category c ON c.id=p.category_id
+                    LEFT JOIN product_lot l ON l.id=d.lot_id LEFT JOIN vendor v ON v.id=l.vendor_id
+                    WHERE dc.effective_date BETWEEN @from AND @to
                 ) ORDER BY Date,SortId LIMIT @Limit
                 """, [D("Date", "Date"), T("Document", "Document"), T("Product", "Product"), T("LocalName", "Local name"), T("Category", "Category"), T("Reason", "Reason"), T("Vendor", "Vendor"), Q("Quantity", "Quantity"), M("CostValue", "Cost value"), M("Recovered", "Recovered")]),
 
-            [ReportKind.Expenses] = new("Expenses by category", true, """
-                SELECT strftime('%Y-%m',e.expense_date) AS Month,ec.name AS Category,ec.name_local AS LocalName,
-                       COUNT(*) AS Entries,SUM(e.amount) AS Amount
-                FROM expense e JOIN expense_category ec ON ec.id=e.category_id WHERE e.expense_date BETWEEN @from AND @to
-                GROUP BY Month,ec.id ORDER BY Month,ec.name LIMIT @Limit
-                """, [T("Month", "Month"), T("Category", "Category"), T("LocalName", "Local name"), I("Entries", "Entries"), M("Amount", "Amount")]),
+            [ReportKind.Expenses] = new("Expenses by category", true, ExpensesFromPnl, [T("Month", "Month"), T("Category", "Category"), T("LocalName", "Local name"), I("Entries", "Entries"), M("Amount", "Amount")]),
 
             [ReportKind.SalaryRegister] = new("Salary register", true, """
                 SELECT e.name AS Employee,e.role AS Role,sp.period_month AS Month,

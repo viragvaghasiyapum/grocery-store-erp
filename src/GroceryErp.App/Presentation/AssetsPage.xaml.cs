@@ -25,6 +25,8 @@ public partial class AssetsPage : Page
     private bool _loadingPage;
     private bool _changingAssetSection;
     private IReadOnlyList<DepreciationEntry> _timeline = [];
+    private bool _settingAsset;
+    private int _previewVersion;
     private int _timelinePage;
     private const int TimelinePageSize = 50;
 
@@ -60,20 +62,97 @@ public partial class AssetsPage : Page
 
     private async void AddAsset_OnClick(object sender, RoutedEventArgs e)
     {
-        if (PurchaseDate.SelectedDate is not { } purchase || InUseDate.SelectedDate is not { } inUse) return;
         try
         {
-            string category = ((ComboBoxItem)AssetCategory.SelectedItem).Tag?.ToString() ?? "Other";
-            string method = ((ComboBoxItem)AssetMethod.SelectedItem).Tag?.ToString() ?? "WDV";
-            await _assets.SaveAssetAsync(_editingAsset?.Id, new(AssetName.Text, category, DateOnly.FromDateTime(purchase), DateOnly.FromDateTime(inUse),
-                new Money(Parse(AssetCost.Text)), AssetVendor.SelectedValue is long vendorId ? vendorId : null,
-                method == "WDV" ? DepreciationMethod.Wdv : DepreciationMethod.Slm,
-                new Percent(Parse(AssetRate.Text)), new Money(Parse(AssetSalvage.Text)), AssetNotes.Text));
+            if (ReadInput() is not { } input) return;
+            if (_editingAsset is { } editing)
+            {
+                AssetChangePreview preview = await _assets.PreviewChangeAsync(editing.Id, input, EffectiveMonth());
+                if (preview.Treatment == "BLOCKED")
+                {
+                    StatusText.Text = DescribePreview(preview);
+                    return;
+                }
+                if (preview.Treatment != "DETAILS" && MessageBox.Show(DescribePreview(preview),
+                        TranslationSource.Instance["Assets_ConfirmChange"], MessageBoxButton.OKCancel,
+                        MessageBoxImage.Information) != MessageBoxResult.OK) return;
+            }
+            await _assets.SaveAssetAsync(_editingAsset?.Id, input, EffectiveMonth());
             NewAsset_OnClick(sender, e);
             AssetDetailsTab.IsChecked = false;
             await RefreshAsync();
         }
+        catch (FormatException exception) { StatusText.Text = exception.Message; }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private AssetInput? ReadInput()
+    {
+        if (PurchaseDate.SelectedDate is not { } purchase || InUseDate.SelectedDate is not { } inUse) return null;
+        string category = (AssetCategory.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Other";
+        string method = (AssetMethod.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "WDV";
+        return new(AssetName.Text, category, DateOnly.FromDateTime(purchase), DateOnly.FromDateTime(inUse),
+            new Money(Parse(AssetCost.Text)), AssetVendor.SelectedValue is long vendorId ? vendorId : null,
+            method == "WDV" ? DepreciationMethod.Wdv : DepreciationMethod.Slm,
+            new Percent(Parse(AssetRate.Text)), new Money(Parse(AssetSalvage.Text)), AssetNotes.Text);
+    }
+
+    private YearMonth? EffectiveMonth() =>
+        AssetEffectivePanel.Visibility == Visibility.Visible && !string.IsNullOrWhiteSpace(AssetEffectiveFrom.Text)
+            ? YearMonth.Parse(AssetEffectiveFrom.Text.Trim()) : null;
+
+    // Shows, before saving, which months a financial change recalculates and its effect.
+    private async void AssetTerms_OnChanged(object sender, RoutedEventArgs e)
+    {
+        if (!IsInitialized || _editingAsset is not { } asset || _settingAsset) return;
+        int version = ++_previewVersion;
+        try
+        {
+            await Task.Delay(250);
+            if (version != _previewVersion || ReadInput() is not { } input) return;
+            AssetChangePreview preview = await _assets.PreviewChangeAsync(asset.Id, input, EffectiveMonth());
+            if (version != _previewVersion) return;
+            bool terms = preview.Treatment == "TERMS";
+            if (terms && AssetEffectivePanel.Visibility != Visibility.Visible)
+            {
+                AssetEffectivePanel.Visibility = Visibility.Visible;
+                _settingAsset = true;
+                AssetEffectiveFrom.Text = preview.EffectiveMonth?.ToString() ?? "";
+                _settingAsset = false;
+            }
+            else if (!terms && AssetEffectivePanel.Visibility == Visibility.Visible && sender != AssetEffectiveFrom)
+                AssetEffectivePanel.Visibility = Visibility.Collapsed;
+            AssetFinancialLockText.Text = preview.Treatment == "DETAILS" ? "" : DescribePreview(preview);
+            AssetFinancialLockText.Visibility = preview.Treatment == "DETAILS" ? Visibility.Collapsed : Visibility.Visible;
+            SaveAssetButton.IsEnabled = preview.Treatment != "BLOCKED";
+        }
+        catch (FormatException)
+        {
+            if (version != _previewVersion) return;
+            AssetFinancialLockText.Text = TranslationSource.Instance["Assets_PreviewNeedsValues"];
+            AssetFinancialLockText.Visibility = Visibility.Visible;
+        }
+        catch (Exception exception)
+        {
+            if (version != _previewVersion) return;
+            AssetFinancialLockText.Text = UserError.Message(exception);
+            AssetFinancialLockText.Visibility = Visibility.Visible;
+        }
+    }
+
+    private static string DescribePreview(AssetChangePreview preview)
+    {
+        string Money(Money value) => value.Value.ToString("N3", TranslationSource.FormatCulture);
+        return preview.Treatment switch
+        {
+            "BLOCKED" => TranslationSource.Instance.Format("Assets_PreviewBlocked", preview.FirstOpenMonth.ToString()),
+            "RECALCULATION" => TranslationSource.Instance.Format("Assets_PreviewRecalculation",
+                preview.EffectiveMonth?.ToString() ?? "", preview.MonthsRecalculated, Money(preview.DepreciationBefore),
+                Money(preview.DepreciationAfter), Money(preview.BookValueBefore), Money(preview.BookValueAfter)),
+            _ => TranslationSource.Instance.Format("Assets_PreviewTerms", preview.EffectiveMonth?.ToString() ?? "",
+                preview.FirstOpenMonth.ToString(), preview.MonthsRecalculated, Money(preview.DepreciationBefore),
+                Money(preview.DepreciationAfter), Money(preview.BookValueBefore), Money(preview.BookValueAfter)),
+        };
     }
 
     private void AssetCategory_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -109,14 +188,14 @@ public partial class AssetsPage : Page
         {
             DepreciationPostResult result = await _assets.PostDueDepreciationAsync();
             await RefreshAsync();
-            StatusText.Text = TranslationSource.Instance.Format("Assets_PostResult", result.PostedCount, result.LockedPeriods.Count);
+            StatusText.Text = TranslationSource.Instance.Format("Assets_PostResult", result.PostedCount, result.CurrentDatedPeriods.Count);
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
     }
 
     private async void Refresh_OnClick(object sender, RoutedEventArgs e) => await RefreshAsync();
 
-    private async void AssetGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void AssetGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         CloseTimeline();
         AssetItem? asset = AssetGrid.SelectedItem as AssetItem;
@@ -129,6 +208,7 @@ public partial class AssetsPage : Page
         }
         SaveAssetButton.IsEnabled = false;
         EditAssetButton.IsEnabled = false;
+        _settingAsset = true;
         try
         {
             _editingAsset = asset;
@@ -142,13 +222,15 @@ public partial class AssetsPage : Page
             AssetSalvage.Text = asset.SalvageValue.Value.ToString("0.000", TranslationSource.FormatCulture);
             AssetVendor.SelectedValue = asset.VendorId;
             AssetNotes.Text = asset.Notes ?? "";
-            IReadOnlyList<DepreciationEntry> schedule = await _assets.GetScheduleAsync(asset.Id);
-            if (AssetGrid.SelectedItem is not AssetItem selected || selected.Id != asset.Id) return;
-            SetFinancialFieldsEnabled(asset.DisposedDate is null && schedule.Count == 0);
+            AssetEffectiveFrom.Text = "";
+            AssetEffectivePanel.Visibility = Visibility.Collapsed;
+            // A disposed asset keeps its final terms; others show a preview before saving.
+            SetFinancialFieldsEnabled(asset.DisposedDate is null);
             SaveAssetButton.IsEnabled = true;
             EditAssetButton.IsEnabled = true;
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        finally { _settingAsset = false; }
     }
 
     private void UpdateDisposalTarget(AssetItem? asset)
@@ -213,6 +295,7 @@ public partial class AssetsPage : Page
         AssetMethod.IsEnabled = enabled;
         AssetRate.IsEnabled = enabled;
         AssetSalvage.IsEnabled = enabled;
+        AssetFinancialLockText.Text = enabled ? "" : TranslationSource.Instance["Assets_FinancialLocked"];
         AssetFinancialLockText.Visibility = enabled ? Visibility.Collapsed : Visibility.Visible;
     }
 
@@ -297,7 +380,20 @@ public partial class AssetsPage : Page
         try
         {
             IReadOnlyList<DepreciationEntry> schedule = await _assets.GetScheduleAsync(asset.Id);
+            IReadOnlyList<AssetTermItem> terms = await _assets.GetTermsAsync(asset.Id);
             if (AssetGrid.SelectedItem is not AssetItem selected || selected.Id != asset.Id) return;
+            TermsList.ItemsSource = terms.Select(static term => new TextBlock
+            {
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 4),
+                Text = TranslationSource.Instance.Format("Assets_TermLine", term.EffectiveMonth.ToString(),
+                    term.Method == DepreciationMethod.Wdv ? "WDV" : "SLM",
+                    term.Rate.Value.ToString("0.###", TranslationSource.FormatCulture),
+                    term.SalvageValue.Value.ToString("N3", TranslationSource.FormatCulture),
+                    term.Cost.Value.ToString("N3", TranslationSource.FormatCulture),
+                    TranslationSource.Instance[$"MoneyOut_TermReason_{term.Reason}"],
+                    term.CreatedAt.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture)),
+            }).ToList();
             _timeline = schedule;
             _timelinePage = 0;
             TimelineHeading.Text = $"{asset.Name} · {TranslationSource.Instance["Assets_ViewTimeline"]}";

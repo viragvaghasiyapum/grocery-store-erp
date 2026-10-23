@@ -95,7 +95,8 @@ public sealed partial class MoneyOutService(
                    CAST(ROUND(COALESCE(dc.new_qty,d.qty)*d.unit_cost/1000.0) AS INTEGER) AS CostValue,
                    COALESCE(dc.new_recovered,d.recovered_amount) AS RecoveredAmount,
                    COALESCE(dc.new_reason,d.reason) AS Reason,
-                   CASE WHEN dc.id IS NULL THEN d.notes ELSE dc.new_notes END AS Notes
+                   CASE WHEN dc.id IS NULL THEN d.notes ELSE dc.new_notes END AS Notes,
+                   CASE WHEN dc.id IS NULL THEN 'ACTIVE' WHEN dc.new_qty=0 THEN 'VOID' ELSE 'CORRECTED' END AS Status
             FROM damage d
             LEFT JOIN damage_correction dc ON dc.id=(SELECT MAX(id) FROM damage_correction WHERE damage_id=d.id)
             WHERE d.damage_date BETWEEN @from AND @to ORDER BY d.damage_date DESC,d.id DESC
@@ -118,7 +119,8 @@ public sealed partial class MoneyOutService(
                        CAST(ROUND(COALESCE(dc.new_qty,d.qty)*d.unit_cost/1000.0) AS INTEGER) AS CostValue,
                        COALESCE(dc.new_recovered,d.recovered_amount) AS RecoveredAmount,
                        COALESCE(dc.new_reason,d.reason) AS Reason,
-                       CASE WHEN dc.id IS NULL THEN d.notes ELSE dc.new_notes END AS Notes
+                       CASE WHEN dc.id IS NULL THEN d.notes ELSE dc.new_notes END AS Notes,
+                       CASE WHEN dc.id IS NULL THEN 'ACTIVE' WHEN dc.new_qty=0 THEN 'VOID' ELSE 'CORRECTED' END AS Status
                 FROM damage d
                 LEFT JOIN damage_correction dc ON dc.id=(SELECT MAX(id) FROM damage_correction WHERE damage_id=d.id)
                 WHERE d.damage_date BETWEEN @from AND @to
@@ -134,64 +136,6 @@ public sealed partial class MoneyOutService(
         }, cancellationToken);
     }
 
-    public async Task<long> CorrectDamageAsync(DamageItem original, DamageCorrection replacement,
-        DateOnly correctionDate, string reason, string operationId, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(original);
-        ArgumentNullException.ThrowIfNull(replacement);
-        if (replacement.Quantity < Quantity.Zero || replacement.RecoveredAmount < Money.Zero ||
-            !DamageReasons.Contains(replacement.Reason))
-            throw new DomainException(ErrorCode.Validation, "Invalid damage correction.");
-        string correctionReason = Required(reason, 240);
-        string? notes = Optional(replacement.Notes, 500);
-        long productId = 0;
-        long result = await database.WriteAsync(transaction =>
-        {
-            OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.DamageCorrection);
-            if (replay is not null) return replay.RefId ?? 0;
-            periods.EnsureOpen(correctionDate);
-            DamageStateRow? current = transaction.Connection.QuerySingleOrDefault<DamageStateRow>("""
-                SELECT d.product_id AS ProductId,d.lot_id AS LotId,d.unit_cost AS UnitCost,
-                       COALESCE(dc.new_qty,d.qty) AS Quantity,
-                       COALESCE(dc.new_recovered,d.recovered_amount) AS RecoveredAmount,
-                       COALESCE(dc.new_reason,d.reason) AS Reason,
-                       CASE WHEN dc.id IS NULL THEN d.notes ELSE dc.new_notes END AS Notes
-                FROM damage d
-                LEFT JOIN damage_correction dc ON dc.id=(SELECT MAX(id) FROM damage_correction WHERE damage_id=d.id)
-                WHERE d.id=@id
-                """, new { id = original.Id }, transaction.Transaction);
-            if (current is null) throw new DomainException(ErrorCode.NotFound, "damage", original.Id);
-            if (current.Quantity != original.Quantity.Scaled || current.RecoveredAmount != original.RecoveredAmount.Scaled ||
-                current.UnitCost != original.UnitCost.Scaled || current.Reason != original.Reason || current.Notes != original.Notes)
-                throw new DomainException(ErrorCode.Validation, "This damage entry changed since it was loaded. Refresh and try again.");
-            productId = current.ProductId;
-            Quantity previousQty = Quantity.FromScaled(current.Quantity);
-            Money unitCost = Money.FromScaled(current.UnitCost);
-            Money previousExpense = unitCost * previousQty - Money.FromScaled(current.RecoveredAmount);
-            Money newExpense = unitCost * replacement.Quantity - replacement.RecoveredAmount;
-            long id = transaction.Connection.ExecuteScalar<long>("""
-                INSERT INTO damage_correction(damage_id,correction_date,previous_qty,new_qty,
-                    previous_recovered,new_recovered,new_reason,new_notes,expense_delta,correction_reason)
-                VALUES (@damageId,@date,@previousQty,@newQty,@previousRecovered,@newRecovered,
-                    @newReason,@notes,@delta,@correctionReason) RETURNING id
-                """, new { damageId = original.Id, date = Format(correctionDate), previousQty = current.Quantity,
-                    newQty = replacement.Quantity.Scaled, previousRecovered = current.RecoveredAmount,
-                    newRecovered = replacement.RecoveredAmount.Scaled, newReason = replacement.Reason,
-                    notes, delta = (newExpense - previousExpense).Scaled, correctionReason }, transaction.Transaction);
-            Quantity stockChange = new(previousQty.Value - replacement.Quantity.Value);
-            if (stockChange != Quantity.Zero)
-                stock.Post(transaction, new(correctionDate, current.ProductId, current.LotId, "ADJUSTMENT",
-                    stockChange, unitCost, "damage_correction", id, correctionReason));
-            audit.Write(transaction, "damage", original.Id, "CORRECT", new { correctionId = id,
-                reason = correctionReason, before = original, after = replacement,
-                expenseDelta = (newExpense - previousExpense).Scaled });
-            OperationGuard.Complete(transaction, operationId, "damage_correction", id);
-            return id;
-        }, cancellationToken);
-        if (productId > 0) WeakReferenceMessenger.Default.Send(new StockChangedMessage([productId]));
-        return result;
-    }
-
     public async Task<long> RecordDamageAsync(DamageInput input, string operationId, CancellationToken cancellationToken = default)
     {
         ValidateDamage(input);
@@ -200,7 +144,7 @@ public sealed partial class MoneyOutService(
         {
             OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.Damage);
             if (replay is not null) return replay.RefId ?? 0;
-            periods.EnsureOpen(input.Date);
+            periods.EnsureOpen(transaction, input.Date);
             LotRow? lot = transaction.Connection.QuerySingleOrDefault<LotRow>("""
                 SELECT product_id AS ProductId,qty_on_hand AS OnHand,unit_cost AS UnitCost
                 FROM product_lot WHERE id=@id
@@ -256,7 +200,7 @@ public sealed partial class MoneyOutService(
             if (replay is not null)
                 return (IReadOnlyList<long>)transaction.Connection.Query<long>(
                     "SELECT id FROM damage WHERE bulk_operation_id=@operationId ORDER BY id", new { operationId }, transaction.Transaction).ToList();
-            periods.EnsureOpen(date);
+            periods.EnsureOpen(transaction, date);
             List<BulkLotRow> lots = transaction.Connection.Query<BulkLotRow>("""
                 SELECT id AS LotId,product_id AS ProductId,qty_on_hand AS OnHand,unit_cost AS UnitCost,expiry_date AS ExpiryDate
                 FROM product_lot WHERE id IN @lotIds ORDER BY id
@@ -336,15 +280,38 @@ public sealed partial class MoneyOutService(
         }, cancellationToken);
     }
 
+    // An expense's current values are its newest correction or, when never corrected,
+    // the original row. Both branches read their own date index.
+    private const string CurrentExpenseSql = """
+        WITH current AS (
+          SELECT e.id,e.expense_date AS date,e.category_id,e.amount,e.mode,e.paid_to,e.reference,e.notes,
+                 CASE WHEN EXISTS(SELECT 1 FROM purchase_expense_reversal r WHERE r.expense_id=e.id) THEN 'VOID'
+                      WHEN e.purchase_line_id IS NOT NULL THEN 'PURCHASE' ELSE 'ACTIVE' END AS status
+          FROM expense e
+          WHERE e.expense_date BETWEEN @from AND @to
+            AND NOT EXISTS(SELECT 1 FROM expense_correction c WHERE c.expense_id=e.id)
+          UNION ALL
+          SELECT c.expense_id,c.new_date,c.new_category_id,c.new_amount,c.new_mode,c.new_paid_to,
+                 c.new_reference,c.new_notes,CASE c.kind WHEN 'VOID' THEN 'VOID' ELSE 'CORRECTED' END
+          FROM expense_correction c
+          WHERE c.new_date BETWEEN @from AND @to
+            AND c.id=(SELECT MAX(id) FROM expense_correction x WHERE x.expense_id=c.expense_id)
+        )
+        """;
+
+    private const string CurrentExpenseColumns = """
+        SELECT x.id AS Id,x.date AS Date,x.category_id AS CategoryId,c.name AS CategoryName,
+               x.amount AS Amount,x.mode AS Mode,x.paid_to AS PaidTo,x.reference AS Reference,x.notes AS Notes,
+               x.status AS Status
+        FROM current x JOIN expense_category c ON c.id=x.category_id
+        """;
+
     public Task<IReadOnlyList<ExpenseItem>> GetExpensesAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
     {
         EnsureRange(from, to);
-        return database.ReadAsync(connection => (IReadOnlyList<ExpenseItem>)connection.Query<ExpenseRow>("""
-            SELECT e.id AS Id,e.expense_date AS Date,e.category_id AS CategoryId,c.name AS CategoryName,
-                   e.amount AS Amount,e.mode AS Mode,e.paid_to AS PaidTo,e.reference AS Reference,e.notes AS Notes
-            FROM expense e JOIN expense_category c ON c.id=e.category_id
-            WHERE e.expense_date BETWEEN @from AND @to ORDER BY e.expense_date DESC,e.id DESC
-            """, new { from, to }).Select(static row => row.ToModel()).ToList(), cancellationToken);
+        return database.ReadAsync(connection => (IReadOnlyList<ExpenseItem>)connection.Query<ExpenseRow>(
+            CurrentExpenseSql + CurrentExpenseColumns + " ORDER BY x.date DESC,x.id DESC",
+            new { from, to }).Select(static row => row.ToModel()).ToList(), cancellationToken);
     }
 
     public Task<ExpensePage> GetExpensePageAsync(DateOnly from, DateOnly to, DateOnly? beforeDate = null,
@@ -355,14 +322,9 @@ public sealed partial class MoneyOutService(
             throw new DomainException(ErrorCode.Validation, "Invalid expense page filter.");
         return database.ReadAsync(connection =>
         {
-            List<ExpenseItem> rows = connection.Query<ExpenseRow>("""
-                SELECT e.id AS Id,e.expense_date AS Date,e.category_id AS CategoryId,c.name AS CategoryName,
-                       e.amount AS Amount,e.mode AS Mode,e.paid_to AS PaidTo,e.reference AS Reference,e.notes AS Notes
-                FROM expense e JOIN expense_category c ON c.id=e.category_id
-                WHERE e.expense_date BETWEEN @from AND @to
-                  AND (@beforeDate IS NULL OR e.expense_date<@beforeDate
-                       OR (e.expense_date=@beforeDate AND e.id<@beforeId))
-                ORDER BY e.expense_date DESC,e.id DESC LIMIT @take
+            List<ExpenseItem> rows = connection.Query<ExpenseRow>(CurrentExpenseSql + CurrentExpenseColumns + """
+                 WHERE @beforeDate IS NULL OR x.date<@beforeDate OR (x.date=@beforeDate AND x.id<@beforeId)
+                ORDER BY x.date DESC,x.id DESC LIMIT @take
                 """, new { from, to, beforeDate, beforeId, take = limit + 1 })
                 .Select(static row => row.ToModel()).ToList();
             bool hasMore = rows.Count > limit;
@@ -379,7 +341,7 @@ public sealed partial class MoneyOutService(
         {
             OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.Expense);
             if (replay is not null) return replay.RefId ?? 0;
-            periods.EnsureOpen(input.Date);
+            periods.EnsureOpen(transaction, input.Date);
             long? id = transaction.Connection.QuerySingleOrDefault<long?>("""
                 INSERT INTO expense(expense_date,category_id,amount,mode,paid_to,reference,notes)
                 SELECT @date,id,@amount,@mode,@paidTo,@reference,@notes FROM expense_category
@@ -401,52 +363,18 @@ public sealed partial class MoneyOutService(
         }, cancellationToken);
     }
 
-    public Task CorrectExpenseAsync(ExpenseItem original, ExpenseInput replacement, string reason,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(original);
-        ValidateExpense(replacement);
-        string note = Required(reason, 240);
-        return database.WriteAsync(transaction =>
-        {
-            periods.EnsureOpen(original.Date);
-            periods.EnsureOpen(replacement.Date);
-            ExpenseRow? current = transaction.Connection.QuerySingleOrDefault<ExpenseRow>("""
-                SELECT e.id AS Id,e.expense_date AS Date,e.category_id AS CategoryId,c.name AS CategoryName,
-                       e.amount AS Amount,e.mode AS Mode,e.paid_to AS PaidTo,e.reference AS Reference,e.notes AS Notes
-                FROM expense e JOIN expense_category c ON c.id=e.category_id WHERE e.id=@id
-                """, new { id = original.Id }, transaction.Transaction);
-            if (current is null) throw new DomainException(ErrorCode.NotFound, "expense", original.Id);
-            if (transaction.Connection.ExecuteScalar<long>(
-                "SELECT COUNT(*) FROM expense WHERE id=@id AND purchase_line_id IS NOT NULL",
-                new { id = original.Id }, transaction.Transaction) != 0)
-                throw new DomainException(ErrorCode.Validation, "Purchase expense lines cannot be edited; void the untouched purchase.");
-            if (current.ToModel() != original)
-                throw new DomainException(ErrorCode.Validation, "This expense changed since it was loaded. Refresh and try again.");
-            int changed = transaction.Connection.Execute("""
-                UPDATE expense SET expense_date=@date,category_id=@categoryId,amount=@amount,
-                    mode=@mode,paid_to=@paidTo,reference=@reference,notes=@notes
-                WHERE id=@id AND EXISTS(SELECT 1 FROM expense_category
-                                        WHERE id=@categoryId AND is_active=1)
-                """, new { id = original.Id, date = Format(replacement.Date), categoryId = replacement.CategoryId,
-                    amount = replacement.Amount.Scaled, mode = replacement.Mode,
-                    paidTo = Optional(replacement.PaidTo, 150), reference = Optional(replacement.Reference, 100),
-                    notes = Optional(replacement.Notes, 500) }, transaction.Transaction);
-            if (changed != 1) throw new DomainException(ErrorCode.NotFound, "active expense category", replacement.CategoryId);
-            audit.Write(transaction, "expense", original.Id, "CORRECT", new { reason = note, before = original, after = replacement });
-        }, cancellationToken);
-    }
-
     public Task<IReadOnlyList<ExpenseInput>> RepeatLastMonthAsync(
         YearMonth target, IReadOnlyCollection<long> categoryIds, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(categoryIds);
         if (categoryIds.Count == 0) return Task.FromResult<IReadOnlyList<ExpenseInput>>([]);
         YearMonth source = target.AddMonths(-1);
-        return database.ReadAsync(connection => (IReadOnlyList<ExpenseInput>)connection.Query<ExpenseDraftRow>("""
+        return database.ReadAsync(connection => (IReadOnlyList<ExpenseInput>)connection.Query<ExpenseDraftRow>(
+            CurrentExpenseSql + """
             SELECT category_id AS CategoryId,amount AS Amount,mode AS Mode,paid_to AS PaidTo,
-                   reference AS Reference,notes AS Notes,CAST(strftime('%d',expense_date) AS INTEGER) AS Day
-            FROM expense WHERE expense_date BETWEEN @from AND @to AND category_id IN @categoryIds ORDER BY expense_date,id
+                   reference AS Reference,notes AS Notes,CAST(strftime('%d',date) AS INTEGER) AS Day
+            FROM current WHERE category_id IN @categoryIds AND status IN ('ACTIVE','CORRECTED')
+            ORDER BY date,id
             """, new { from = source.FirstDay, to = source.LastDay, categoryIds }).Select(row => row.ToModel(target)).ToList(), cancellationToken);
     }
 
@@ -457,11 +385,30 @@ public sealed partial class MoneyOutService(
             WHERE @includeInactive=1 OR is_active=1 ORDER BY name COLLATE NOCASE
             """, new { includeInactive = includeInactive ? 1 : 0 }).Select(static row => row.ToModel()).ToList(), cancellationToken);
 
-    public Task<long> SaveEmployeeAsync(long? id, EmployeeInput input, CancellationToken cancellationToken = default)
+    public Task<long> SaveEmployeeAsync(long? id, EmployeeInput input, CancellationToken cancellationToken = default) =>
+        SaveEmployeeAsync(id, input, null, cancellationToken);
+
+    // A salary change is a dated term. It may start no earlier than the first month
+    // whose calendar and fiscal years are both open; posted payments never change.
+    public Task<long> SaveEmployeeAsync(long? id, EmployeeInput input, YearMonth? salaryEffectiveFrom,
+        CancellationToken cancellationToken = default)
     {
         ValidateEmployee(input);
         return database.WriteAsync(transaction =>
         {
+            long? previousSalary = id is null ? null : transaction.Connection.ExecuteScalar<long?>(
+                "SELECT monthly_salary FROM employee WHERE id=@id", new { id }, transaction.Transaction);
+            if (id is not null && previousSalary is null) throw new DomainException(ErrorCode.NotFound, "employee", id);
+            YearMonth? termMonth = null;
+            if (id is null)
+                termMonth = input.JoinDate is { } joined ? YearMonth.From(joined) : YearMonth.From(periods.Today);
+            else if (previousSalary != input.MonthlySalary.Scaled)
+            {
+                YearMonth firstOpen = periods.FirstOpenMonth(transaction.Connection, transaction.Transaction);
+                termMonth = salaryEffectiveFrom ?? YearMonth.From(periods.Today);
+                if (termMonth < firstOpen)
+                    throw new DomainException(ErrorCode.EffectiveMonthClosed, firstOpen.ToString());
+            }
             var parameters = new
             {
                 id,
@@ -489,17 +436,58 @@ public sealed partial class MoneyOutService(
                     """, parameters, transaction.Transaction);
                 if (changed == 0) throw new DomainException(ErrorCode.NotFound, "employee", id);
             }
-            audit.Write(transaction, "employee", result, id is null ? "CREATE" : "UPDATE", new { input.Name, salary = input.MonthlySalary.Scaled });
+            if (termMonth is { } effective)
+                transaction.Connection.Execute("""
+                    INSERT INTO employee_salary_term(employee_id,effective_month,monthly_salary,reason)
+                    VALUES (@result,@month,@salary,@reason)
+                    """, new
+                {
+                    result,
+                    month = effective.ToString(),
+                    salary = input.MonthlySalary.Scaled,
+                    reason = id is null ? "INITIAL" : "CHANGE"
+                }, transaction.Transaction);
+            audit.Write(transaction, "employee", result, id is null ? "CREATE" : "UPDATE", new
+            {
+                input.Name,
+                salary = input.MonthlySalary.Scaled,
+                previousSalary,
+                salaryEffectiveFrom = termMonth?.ToString(),
+            });
             return result;
         }, cancellationToken);
     }
 
+    public Task<IReadOnlyList<SalaryTermItem>> GetSalaryTermsAsync(long employeeId, CancellationToken cancellationToken = default) =>
+        database.ReadAsync(connection => (IReadOnlyList<SalaryTermItem>)connection.Query<SalaryTermRow>("""
+            SELECT id AS Id,effective_month AS EffectiveMonth,monthly_salary AS MonthlySalary,reason AS Reason,
+                   created_at AS CreatedAt
+            FROM employee_salary_term WHERE employee_id=@employeeId ORDER BY id DESC LIMIT 100
+            """, new { employeeId }).Select(static row => row.ToModel()).ToList(), cancellationToken);
+
+    public Task<SalaryTermPreview> PreviewSalaryTermAsync(long employeeId, YearMonth? effectiveFrom,
+        CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
+    {
+        YearMonth firstOpen = periods.FirstOpenMonth(connection, null);
+        YearMonth effective = effectiveFrom ?? YearMonth.From(periods.Today);
+        int posted = connection.ExecuteScalar<int>("""
+            SELECT COUNT(DISTINCT period_month) FROM salary_payment
+            WHERE employee_id=@employeeId AND period_month>=@month AND kind='SALARY'
+            """, new { employeeId, month = effective.ToString() });
+        return new SalaryTermPreview(effective, firstOpen, posted);
+    }, cancellationToken);
+
+    // The newest term effective on or before the month pre-fills it.
     public Task<IReadOnlyList<SalaryRunLine>> PrepareSalaryRunAsync(YearMonth period, CancellationToken cancellationToken = default) =>
         database.ReadAsync(connection => (IReadOnlyList<SalaryRunLine>)connection.Query<SalaryPrepareRow>("""
-            SELECT id AS EmployeeId,monthly_salary AS BaseSalary FROM employee
-            WHERE is_active=1 AND (join_date IS NULL OR join_date<=@to) AND (leave_date IS NULL OR leave_date>=@from)
-              AND NOT EXISTS (SELECT 1 FROM salary_payment s WHERE s.employee_id=employee.id AND s.period_month=@period AND s.kind IN ('SALARY','BONUS','OVERTIME'))
-            ORDER BY name COLLATE NOCASE
+            SELECT e.id AS EmployeeId,
+                   COALESCE((SELECT t.monthly_salary FROM employee_salary_term t
+                             WHERE t.employee_id=e.id AND t.effective_month<=@period
+                             ORDER BY t.id DESC LIMIT 1),e.monthly_salary) AS BaseSalary
+            FROM employee e
+            WHERE e.is_active=1 AND (e.join_date IS NULL OR e.join_date<=@to) AND (e.leave_date IS NULL OR e.leave_date>=@from)
+              AND NOT EXISTS (SELECT 1 FROM salary_payment s WHERE s.employee_id=e.id AND s.period_month=@period AND s.kind IN ('SALARY','BONUS','OVERTIME'))
+            ORDER BY e.name COLLATE NOCASE
             """, new { from = period.FirstDay, to = period.LastDay, period = period.ToString() })
             .Select(static row => new SalaryRunLine(row.EmployeeId, Money.FromScaled(row.BaseSalary), Money.Zero, Money.Zero, Money.Zero, null)).ToList(), cancellationToken);
 
@@ -510,7 +498,7 @@ public sealed partial class MoneyOutService(
         {
             OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.SalaryRun);
             if (replay is not null) return replay.RefId ?? 0;
-            periods.EnsureOpen(input.Period.LastDay);
+            periods.EnsureOpen(transaction, input.Period.LastDay);
             long firstId = 0;
             foreach (SalaryRunLine line in input.Lines)
             {
@@ -547,7 +535,7 @@ public sealed partial class MoneyOutService(
         {
             OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.SalaryRun);
             if (replay is not null) return replay.RefId ?? 0;
-            periods.EnsureOpen(payDate);
+            periods.EnsureOpen(transaction, payDate);
             var run = new SalaryRunInput(YearMonth.From(payDate), payDate, mode, []);
             long id = InsertSalary(transaction, employeeId, run, "OTHER", amount, cleanNotes, 0);
             audit.Write(transaction, "salary_payment", id, "OTHER", new { employeeId, amount = amount.Scaled });
@@ -563,56 +551,12 @@ public sealed partial class MoneyOutService(
             SELECT s.id AS Id,s.employee_id AS EmployeeId,e.name AS EmployeeName,s.period_month AS Period,
                    COALESCE(sc.new_pay_date,s.pay_date) AS PayDate,s.kind AS Kind,
                    COALESCE(sc.new_amount,s.amount) AS Amount,COALESCE(sc.new_mode,s.mode) AS Mode,
-                   CASE WHEN sc.id IS NULL THEN s.notes ELSE sc.new_notes END AS Notes
+                   CASE WHEN sc.id IS NULL THEN s.notes ELSE sc.new_notes END AS Notes,
+                   CASE WHEN sc.id IS NULL THEN 'ACTIVE' WHEN sc.kind='VOID' THEN 'VOID' ELSE 'CORRECTED' END AS Status
             FROM salary_payment s JOIN employee e ON e.id=s.employee_id
             LEFT JOIN salary_correction sc ON sc.id=(SELECT MAX(id) FROM salary_correction WHERE salary_payment_id=s.id)
             WHERE s.period_month BETWEEN @from AND @to ORDER BY s.period_month DESC,e.name,s.kind
             """, new { from = from.ToString(), to = to.ToString() }).Select(static row => row.ToModel()).ToList(), cancellationToken);
-    }
-
-    public Task<long> CorrectSalaryPaymentAsync(SalaryPaymentItem original, SalaryCorrection replacement,
-        DateOnly correctionDate, string reason, string operationId, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(original);
-        ArgumentNullException.ThrowIfNull(replacement);
-        if (replacement.Amount <= Money.Zero || !SalaryModes.Contains(replacement.Mode))
-            throw new DomainException(ErrorCode.Validation, "Invalid salary correction.");
-        string correctionReason = Required(reason, 240);
-        string? notes = Optional(replacement.Notes, 500);
-        return database.WriteAsync(transaction =>
-        {
-            OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.SalaryCorrection);
-            if (replay is not null) return replay.RefId ?? 0;
-            periods.EnsureOpen(correctionDate);
-            SalaryRow? current = transaction.Connection.QuerySingleOrDefault<SalaryRow>("""
-                SELECT s.id AS Id,s.employee_id AS EmployeeId,e.name AS EmployeeName,s.period_month AS Period,
-                       COALESCE(sc.new_pay_date,s.pay_date) AS PayDate,s.kind AS Kind,
-                       COALESCE(sc.new_amount,s.amount) AS Amount,COALESCE(sc.new_mode,s.mode) AS Mode,
-                       CASE WHEN sc.id IS NULL THEN s.notes ELSE sc.new_notes END AS Notes
-                FROM salary_payment s JOIN employee e ON e.id=s.employee_id
-                LEFT JOIN salary_correction sc ON sc.id=(SELECT MAX(id) FROM salary_correction WHERE salary_payment_id=s.id)
-                WHERE s.id=@id
-                """, new { id = original.Id }, transaction.Transaction);
-            if (current is null) throw new DomainException(ErrorCode.NotFound, "salary_payment", original.Id);
-            SalaryPaymentItem posted = current.ToModel();
-            if (posted.Amount != original.Amount || posted.PayDate != original.PayDate ||
-                posted.Mode != original.Mode || posted.Notes != original.Notes ||
-                posted.EmployeeId != original.EmployeeId || posted.Period != original.Period || posted.Kind != original.Kind)
-                throw new DomainException(ErrorCode.Validation, "This payment changed since it was loaded. Refresh and try again.");
-            long id = transaction.Connection.ExecuteScalar<long>("""
-                INSERT INTO salary_correction(salary_payment_id,correction_date,previous_amount,new_amount,
-                    new_pay_date,new_mode,new_notes,amount_delta,correction_reason)
-                VALUES (@paymentId,@date,@previousAmount,@newAmount,@newPayDate,@newMode,@notes,@delta,@correctionReason)
-                RETURNING id
-                """, new { paymentId = original.Id, date = Format(correctionDate),
-                    previousAmount = original.Amount.Scaled, newAmount = replacement.Amount.Scaled,
-                    newPayDate = Format(replacement.PayDate), newMode = replacement.Mode, notes,
-                    delta = (replacement.Amount - original.Amount).Scaled, correctionReason }, transaction.Transaction);
-            audit.Write(transaction, "salary_payment", original.Id, "CORRECT", new { correctionId = id,
-                reason = correctionReason, before = original, after = replacement });
-            OperationGuard.Complete(transaction, operationId, "salary_correction", id);
-            return id;
-        }, cancellationToken);
     }
 
     private static long InsertSalary(DbTx transaction, long employeeId, SalaryRunInput run, string kind, Money amount, string? notes, long firstId)
@@ -691,12 +635,12 @@ public sealed partial class MoneyOutService(
     private sealed class ExpiryRow { public long LotId { get; init; } public long ProductId { get; init; } public string Sku { get; init; } = ""; public string ProductName { get; init; } = ""; public string? ProductNameLocal { get; init; } public string LotCode { get; init; } = ""; public string? BatchNumber { get; init; } public DateOnly ExpiryDate { get; init; } public int DaysLeft { get; init; } public long Quantity { get; init; } public long CostValue { get; init; } public string Bucket { get; init; } = ""; public long? VendorId { get; init; } public string? VendorName { get; init; } public ExpiryLot ToModel() => new(LotId, ProductId, Sku, ProductName, ProductNameLocal, LotCode, BatchNumber, ExpiryDate, DaysLeft, GroceryErp.Core.Numerics.Quantity.FromScaled(Quantity), Money.FromScaled(CostValue), Bucket, VendorId, VendorName); }
     private sealed class LotRow { public long ProductId { get; init; } public long OnHand { get; init; } public long UnitCost { get; init; } }
     private sealed class BulkLotRow { public long LotId { get; init; } public long ProductId { get; init; } public long OnHand { get; init; } public long UnitCost { get; init; } public DateOnly? ExpiryDate { get; init; } }
-    private sealed class DamageRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public DateOnly Date { get; init; } public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public long Quantity { get; init; } public long UnitCost { get; init; } public long CostValue { get; init; } public long RecoveredAmount { get; init; } public string Reason { get; init; } = ""; public string? Notes { get; init; } public DamageItem ToModel() => new(Id, DocumentNumber, Date, ProductName, LotCode, GroceryErp.Core.Numerics.Quantity.FromScaled(Quantity), Money.FromScaled(UnitCost), Money.FromScaled(CostValue), Money.FromScaled(RecoveredAmount), Reason, Notes); }
-    private sealed class DamageStateRow { public long ProductId { get; init; } public long LotId { get; init; } public long UnitCost { get; init; } public long Quantity { get; init; } public long RecoveredAmount { get; init; } public string Reason { get; init; } = ""; public string? Notes { get; init; } }
+    private sealed class DamageRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public DateOnly Date { get; init; } public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public long Quantity { get; init; } public long UnitCost { get; init; } public long CostValue { get; init; } public long RecoveredAmount { get; init; } public string Reason { get; init; } = ""; public string? Notes { get; init; } public string Status { get; init; } = "ACTIVE"; public DamageItem ToModel() => new(Id, DocumentNumber, Date, ProductName, LotCode, GroceryErp.Core.Numerics.Quantity.FromScaled(Quantity), Money.FromScaled(UnitCost), Money.FromScaled(CostValue), Money.FromScaled(RecoveredAmount), Reason, Notes, Status); }
     private sealed class CategoryRow { public long Id { get; init; } public string Name { get; init; } = ""; public string? LocalName { get; init; } public bool IsActive { get; init; } public ExpenseCategoryItem ToModel() => new(Id, Name, LocalName, IsActive); }
-    private sealed class ExpenseRow { public long Id { get; init; } public DateOnly Date { get; init; } public long CategoryId { get; init; } public string CategoryName { get; init; } = ""; public long Amount { get; init; } public string Mode { get; init; } = ""; public string? PaidTo { get; init; } public string? Reference { get; init; } public string? Notes { get; init; } public ExpenseItem ToModel() => new(Id, Date, CategoryId, CategoryName, Money.FromScaled(Amount), Mode, PaidTo, Reference, Notes); }
+    private sealed class ExpenseRow { public long Id { get; init; } public DateOnly Date { get; init; } public long CategoryId { get; init; } public string CategoryName { get; init; } = ""; public long Amount { get; init; } public string Mode { get; init; } = ""; public string? PaidTo { get; init; } public string? Reference { get; init; } public string? Notes { get; init; } public string Status { get; init; } = "ACTIVE"; public ExpenseItem ToModel() => new(Id, Date, CategoryId, CategoryName, Money.FromScaled(Amount), Mode, PaidTo, Reference, Notes, Status); }
     private sealed class ExpenseDraftRow { public long CategoryId { get; init; } public long Amount { get; init; } public string Mode { get; init; } = ""; public string? PaidTo { get; init; } public string? Reference { get; init; } public string? Notes { get; init; } public int Day { get; init; } public ExpenseInput ToModel(YearMonth target) => new(new DateOnly(target.Year, target.Month, Math.Min(Day, DateTime.DaysInMonth(target.Year, target.Month))), CategoryId, Money.FromScaled(Amount), Mode, PaidTo, Reference, Notes); }
     private sealed class EmployeeRow { public long Id { get; init; } public string Name { get; init; } = ""; public string? Phone { get; init; } public string? Role { get; init; } public DateOnly? JoinDate { get; init; } public DateOnly? LeaveDate { get; init; } public long MonthlySalary { get; init; } public bool IsActive { get; init; } public string? Notes { get; init; } public EmployeeItem ToModel() => new(Id, Name, Phone, Role, JoinDate, LeaveDate, Money.FromScaled(MonthlySalary), IsActive, Notes); }
     private sealed class SalaryPrepareRow { public long EmployeeId { get; init; } public long BaseSalary { get; init; } }
-    private sealed class SalaryRow { public long Id { get; init; } public long EmployeeId { get; init; } public string EmployeeName { get; init; } = ""; public string Period { get; init; } = ""; public DateOnly PayDate { get; init; } public string Kind { get; init; } = ""; public long Amount { get; init; } public string Mode { get; init; } = ""; public string? Notes { get; init; } public SalaryPaymentItem ToModel() => new(Id, EmployeeId, EmployeeName, YearMonth.Parse(Period), PayDate, Kind, Money.FromScaled(Amount), Mode, Notes); }
+    private sealed class SalaryRow { public long Id { get; init; } public long EmployeeId { get; init; } public string EmployeeName { get; init; } = ""; public string Period { get; init; } = ""; public DateOnly PayDate { get; init; } public string Kind { get; init; } = ""; public long Amount { get; init; } public string Mode { get; init; } = ""; public string? Notes { get; init; } public string Status { get; init; } = "ACTIVE"; public SalaryPaymentItem ToModel() => new(Id, EmployeeId, EmployeeName, YearMonth.Parse(Period), PayDate, Kind, Money.FromScaled(Amount), Mode, Notes, Status); }
+    private sealed class SalaryTermRow { public long Id { get; init; } public string EffectiveMonth { get; init; } = ""; public long MonthlySalary { get; init; } public string? Reason { get; init; } public DateTime CreatedAt { get; init; } public SalaryTermItem ToModel() => new(Id, YearMonth.Parse(EffectiveMonth), Money.FromScaled(MonthlySalary), Reason, CreatedAt); }
 }

@@ -66,7 +66,7 @@ public sealed class ReportsTests
             VALUES (2,1,1,1,'Rice',3000,100000,300000,0,300000,100000,300000);
             """);
         AssertSourceParity();
-        connection.Execute("UPDATE sale SET status='COMPLETED' WHERE id=2");
+        connection.Execute("UPDATE sale SET status='COMPLETED',taxable_total=300000,grand_total=300000 WHERE id=2");
         AssertSourceParity();
         connection.QuerySingle<long>("SELECT qty FROM sale_product_day WHERE product_id=1 AND day='2026-09-10'")
             .ShouldBe(3000L);
@@ -97,18 +97,21 @@ public sealed class ReportsTests
         using var fixture = new ReportFixture();
         fixture.SeedGoldenScenario();
         using var connection = fixture.Factory.Open();
+        // A line keeps its sale-time category; a legacy line without one follows the
+        // live product, or 0 once that product is deleted.
         void AssertSourceParity() => connection.ExecuteScalar<long>("""
             WITH movements AS (
-              SELECT s.sale_date AS day,p.category_id,COALESCE(sl.hsn_code,'') AS hsn,
+              SELECT s.sale_date AS day,COALESCE(sl.category_id_snapshot,p.category_id,0) AS category_id,
+                     COALESCE(sl.hsn_code,'') AS hsn,
                      sl.tax_rate_pct AS rate,sl.qty AS quantity,sl.taxable_amount AS revenue,
                      sl.tax_amount AS tax,sl.cost_amount AS cost
-              FROM sale_line sl JOIN sale s ON s.id=sl.sale_id JOIN product p ON p.id=sl.product_id
+              FROM sale_line sl JOIN sale s ON s.id=sl.sale_id LEFT JOIN product p ON p.id=sl.product_id
               WHERE s.status='COMPLETED'
               UNION ALL
-              SELECT r.return_date,p.category_id,COALESCE(sl.hsn_code,''),sl.tax_rate_pct,
-                     -rl.qty,-rl.taxable_amount,-rl.tax_amount,-rl.cost_amount
+              SELECT r.return_date,COALESCE(sl.category_id_snapshot,p.category_id,0),COALESCE(sl.hsn_code,''),
+                     sl.tax_rate_pct,-rl.qty,-rl.taxable_amount,-rl.tax_amount,-rl.cost_amount
               FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
-              JOIN sale_line sl ON sl.id=rl.sale_line_id JOIN product p ON p.id=sl.product_id
+              JOIN sale_line sl ON sl.id=rl.sale_line_id LEFT JOIN product p ON p.id=sl.product_id
             ), expected AS (
               SELECT day,category_id,hsn,rate,COUNT(*) AS entries,
                      SUM(quantity) AS quantity,SUM(revenue) AS revenue,SUM(tax) AS tax,SUM(cost) AS cost
@@ -130,7 +133,7 @@ public sealed class ReportsTests
             """);
         AssertSourceParity();
         connection.Execute("UPDATE sale_line SET hsn_code='1234',tax_rate_pct=12000,taxable_amount=120000,tax_amount=12000,line_total=132000 WHERE id=1");
-        connection.Execute("UPDATE sale SET status='COMPLETED' WHERE id=2");
+        connection.Execute("UPDATE sale SET status='COMPLETED',taxable_total=120000,tax_total=12000,grand_total=132000 WHERE id=2");
         AssertSourceParity();
         connection.Execute("""
             INSERT INTO sale_return(return_no,sale_id,return_date,refund_mode,taxable_total,tax_total,refund_total,cost_total)
@@ -149,6 +152,59 @@ public sealed class ReportsTests
         AssertSourceParity();
         connection.Execute("DELETE FROM sale_return_line WHERE id=1");
         AssertSourceParity();
+
+        // A sale saved with its category, returned after the product moved, stays in that category.
+        long saved = connection.ExecuteScalar<long>("""
+            INSERT INTO sale(invoice_no,sale_date,status) VALUES ('S3','2026-09-15','DRAFT') RETURNING id
+            """);
+        long savedLine = connection.ExecuteScalar<long>("""
+            INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,
+                tax_rate_pct,hsn_code,taxable_amount,tax_amount,line_total,unit_cost,cost_amount,category_id_snapshot)
+            VALUES (@saved,1,1,1,'Rice',1000,105000,5000,'1006',100000,5000,105000,60000,60000,@category)
+            RETURNING id
+            """, new { saved, category });
+        connection.Execute("UPDATE sale SET status='COMPLETED',taxable_total=100000,tax_total=5000,grand_total=105000 WHERE id=@saved",
+            new { saved });
+        long original = connection.ExecuteScalar<long>("SELECT id FROM category WHERE id<>@category ORDER BY id LIMIT 1",
+            new { category });
+        connection.Execute("UPDATE product SET category_id=@original WHERE id=1", new { original });
+        AssertSourceParity();
+        connection.Execute("""
+            INSERT INTO sale_return(return_no,sale_id,return_date,refund_mode,taxable_total,tax_total,refund_total,cost_total)
+            VALUES ('R3',@saved,'2026-09-16','CASH',100000,5000,105000,60000);
+            INSERT INTO sale_return_line(sale_return_id,sale_line_id,qty,taxable_amount,tax_amount,refund_amount,cost_amount)
+            VALUES (last_insert_rowid(),@savedLine,1000,100000,5000,105000,60000);
+            """, new { saved, savedLine });
+        AssertSourceParity();
+        connection.ExecuteScalar<long>("""
+            SELECT COALESCE(SUM(revenue),0) FROM sale_report_day
+            WHERE category_id=@category AND day BETWEEN '2026-09-15' AND '2026-09-16'
+            """, new { category }).ShouldBe(0L);
+
+        // Deleting a product moves only its legacy, unsaved-category rows to bucket 0.
+        long legacyProduct = connection.ExecuteScalar<long>("""
+            INSERT INTO product(sku,name,category_id,uom_id) SELECT 'GONE','Gone',category_id,uom_id
+            FROM product WHERE id=1 RETURNING id
+            """);
+        long legacyLot = connection.ExecuteScalar<long>("""
+            INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,selling_price)
+            VALUES (@legacyProduct,'GONE-LOT','2026-09-01',1000,2000) RETURNING id
+            """, new { legacyProduct });
+        long legacySale = connection.ExecuteScalar<long>("""
+            INSERT INTO sale(invoice_no,sale_date,status) VALUES ('S4','2026-09-17','DRAFT') RETURNING id
+            """);
+        connection.Execute("""
+            INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,
+                taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+            VALUES (@legacySale,1,@legacyProduct,@legacyLot,'Gone',1000,2000,2000,0,2000,1000,1000);
+            UPDATE sale SET status='COMPLETED',taxable_total=2000,grand_total=2000 WHERE id=@legacySale;
+            """, new { legacySale, legacyProduct, legacyLot });
+        AssertSourceParity();
+        connection.Execute("DELETE FROM product_lot WHERE id=@legacyLot; DELETE FROM product WHERE id=@legacyProduct;",
+            new { legacyLot, legacyProduct });
+        AssertSourceParity();
+        connection.ExecuteScalar<long>("SELECT revenue FROM sale_report_day WHERE category_id=0 AND day='2026-09-17'")
+            .ShouldBe(2000L);
     }
 
     [Fact]
@@ -248,9 +304,9 @@ public sealed class ReportsTests
                     line => $"{line.Section}:{line.HeadCode}:{line.ReferenceId}", line => line.Amount.Scaled);
             using var connection = fixture.Factory.Open();
             var expected = connection.Query<PnlAggregateRow>("""
-                SELECT section AS Section,head_code AS HeadCode,ref_id AS ReferenceId,SUM(amount) AS Amount
+                SELECT section AS Section,head_code AS HeadCode,NULLIF(category_id,0) AS ReferenceId,SUM(amount) AS Amount
                 FROM v_pnl_entry WHERE entry_date BETWEEN @from AND @to
-                GROUP BY section,head_code,ref_id
+                GROUP BY section,head_code,category_id
                 """, new
             {
                 from = from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
@@ -291,17 +347,20 @@ public sealed class ReportsTests
             PnlMatrix actual = await fixture.Reports.GetPnlMatrixAsync(from, to, TestContext.Current.CancellationToken);
             using var connection = fixture.Factory.Open();
             var expected = connection.Query<PnlMatrixReferenceRow>("""
-                SELECT section AS Section,head_code AS HeadCode,ref_id AS ReferenceId,
+                SELECT section AS Section,head_code AS HeadCode,NULLIF(category_id,0) AS ReferenceId,
                        substr(entry_date,1,7) AS Month,SUM(amount) AS Amount
                 FROM v_pnl_entry WHERE entry_date BETWEEN @from AND @to
-                GROUP BY section,head_code,ref_id,substr(entry_date,1,7)
-                """, new { from = from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                    to = to.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) })
+                GROUP BY section,head_code,category_id,substr(entry_date,1,7)
+                """, new
+            {
+                from = from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                to = to.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+            })
                 .ToDictionary(row => (row.Section, row.HeadCode, row.ReferenceId, row.Month), row => row.Amount);
             var allCells = actual.Rows
                 .Where(row => row.HeadCode is not ("NET_SALES" or "GROSS_PROFIT" or "TOTAL_EXPENSES" or "NET_PROFIT"))
                 .SelectMany(row => actual.MonthKeys.Select((month, index) => new
-                    { Key = (row.Section, row.HeadCode, row.ReferenceId, month), Amount = row.Months[index].Scaled }))
+                { Key = (row.Section, row.HeadCode, row.ReferenceId, month), Amount = row.Months[index].Scaled }))
                 .ToList();
             allCells.Where(cell => !expected.ContainsKey(cell.Key))
                 .ShouldAllBe(cell => cell.Amount == 0);
@@ -357,34 +416,29 @@ public sealed class ReportsTests
     }
 
     [Fact]
-    public async Task StockLedger_SelectiveQueriesKeepProductLotAndCsvResults()
+    public async Task StockCorrections_FeedTheStockAdjustmentHead_ButBalanceAndDamageCorrectionsDoNot()
     {
         using var fixture = new ReportFixture();
         fixture.SeedGoldenScenario();
         using (var connection = fixture.Factory.Open())
             connection.Execute("""
-                INSERT INTO stock_movement(lot_id,product_id,move_date,type_code,qty,unit_cost,ref_type)
-                VALUES (1,1,'2026-09-20','ADJUSTMENT',1000,100000,'test');
+                INSERT INTO stock_correction(correction_date,product_id,lot_id,quantity_delta,unit_cost,source_kind,reason)
+                VALUES ('2026-09-20',1,1,1000,100000,'MANUAL','Found on shelf'),
+                       ('2026-09-21',1,1,-500,100000,'LOT_CORRECTION','Receiving count'),
+                       ('2026-09-21',1,1,1000,100000,'CUTOVER_BALANCE','Upgrade'),
+                       ('2026-09-22',1,1,1000,100000,'DAMAGE_CORRECTION','Recount');
                 """);
-        var filter = new ReportFilter(From: new(2026, 9, 1), To: new(2026, 9, 30), Limit: 10);
-        TabularReport broad = await fixture.Reports.GetReportAsync(ReportKind.StockLedger,
-            filter, TestContext.Current.CancellationToken);
-        TabularReport product = await fixture.Reports.GetReportAsync(ReportKind.StockLedger,
-            filter with { ProductId = 1 }, TestContext.Current.CancellationToken);
-        TabularReport lot = await fixture.Reports.GetReportAsync(ReportKind.StockLedger,
-            filter with { ProductId = 1, LotId = 1 }, TestContext.Current.CancellationToken);
-        broad.Rows.Count.ShouldBe(1);
-        System.Text.Json.JsonSerializer.Serialize(product.Rows).ShouldBe(
-            System.Text.Json.JsonSerializer.Serialize(broad.Rows));
-        System.Text.Json.JsonSerializer.Serialize(lot.Rows).ShouldBe(
-            System.Text.Json.JsonSerializer.Serialize(broad.Rows));
-        (await fixture.Reports.GetReportAsync(ReportKind.StockLedger,
-            filter with { ProductId = 999, LotId = 1 }, TestContext.Current.CancellationToken)).Rows.ShouldBeEmpty();
-        string csv = Path.Combine(fixture.Root, "selected-stock-ledger.csv");
-        (await fixture.Reports.ExportCsvAsync(ReportKind.StockLedger,
-            filter with { ProductId = 1, LotId = 1 }, csv,
-            cancellationToken: TestContext.Current.CancellationToken)).ShouldBe(1);
-        File.ReadLines(csv).Count().ShouldBe(2);
+        PnlStatement pnl = await fixture.Reports.GetPnlAsync(new(2026, 9, 20), new(2026, 9, 22),
+            TestContext.Current.CancellationToken);
+        PnlMatrix matrix = await fixture.Reports.GetPnlMatrixAsync(new(2026, 9, 20), new(2026, 9, 22),
+            TestContext.Current.CancellationToken);
+        using var check = fixture.Factory.Open();
+        check.ExecuteScalar<long>("""
+            SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='STOCK_ADJUSTMENT'
+              AND entry_date BETWEEN '2026-09-20' AND '2026-09-22'
+            """).ShouldBe(-50000L);
+        pnl.Expenses.Single(static line => line.HeadCode == "STOCK_ADJUSTMENT").Amount.ShouldBe(new Money(-50));
+        matrix.Rows.Single(static row => row.HeadCode == "STOCK_ADJUSTMENT").Total.ShouldBe(new Money(-50));
     }
 
     private sealed class PnlMatrixReferenceRow

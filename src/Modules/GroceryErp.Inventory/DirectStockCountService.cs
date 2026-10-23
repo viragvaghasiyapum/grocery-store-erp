@@ -11,17 +11,9 @@ public sealed record DirectCountLot(long LotId, long ProductId, string ProductNa
 public sealed record DirectCountLotPage(IReadOnlyList<DirectCountLot> Items, bool HasMore,
     long? NextLotId, long MaxLotId);
 
-// This service is opt-in for the isolated direct-stock schema. The production app
-// continues to use its ledger-backed stock count until the document cutover.
+// Reviewed physical counts for selected products, one bounded lot page at a time.
 public sealed class DirectStockCountService(DbExecutor database, IDirectStockEngine engine, PeriodGuard periods)
 {
-    public Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default) =>
-        database.ReadAsync(connection => connection.ExecuteScalar<long>("PRAGMA user_version") is 31 or 32 &&
-            connection.ExecuteScalar<long>("""
-                SELECT COUNT(*) FROM sqlite_master
-                WHERE type='table' AND name='direct_stock_sandbox'
-                """) == 1, cancellationToken);
-
     public Task<DirectCountLotPage> GetPageAsync(IReadOnlyCollection<long> productIds,
         long? afterLotId = null, long? maxLotId = null, int limit = 50,
         CancellationToken cancellationToken = default)
@@ -33,8 +25,6 @@ public sealed class DirectStockCountService(DbExecutor database, IDirectStockEng
         long[] ids = productIds.Distinct().ToArray();
         return database.ReadAsync(connection =>
         {
-            if (connection.ExecuteScalar<long>("PRAGMA user_version") is not (31 or 32))
-                throw new InvalidOperationException("Direct stock is inactive on this database.");
             long ceiling = maxLotId ?? connection.ExecuteScalar<long>("SELECT COALESCE(MAX(id),0) FROM product_lot");
             List<DirectCountLot> rows = connection.Query<DirectCountLot>("""
                 SELECT l.id AS LotId,l.product_id AS ProductId,p.name AS ProductName,
@@ -63,7 +53,7 @@ public sealed class DirectStockCountService(DbExecutor database, IDirectStockEng
             throw new DomainException(ErrorCode.Validation, "Review one count page at a time.");
         return database.WriteAsync(tx =>
         {
-            periods.EnsureOpen(reviews[0].BusinessDate);
+            periods.EnsureOpen(tx, reviews[0].BusinessDate);
             return engine.ReviewCountBatch(tx, reviews);
         }, cancellationToken);
     }

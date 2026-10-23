@@ -149,10 +149,14 @@ internal sealed class PhaseOneMigration
                 @saleTotal,@returnTotal,@purchaseTotal,@receiptBytes)
             """, new
         {
-            saleLines = _counts["sale_line"], returnLines = _counts["sale_return_line"],
-            purchaseLines = _counts["purchase_line"], lotCount = _counts["product_lot"],
-            saleTotal = _saleTotal, returnTotal = _returnTotal,
-            purchaseTotal = _purchaseTotal, receiptBytes = _receiptBytes,
+            saleLines = _counts["sale_line"],
+            returnLines = _counts["sale_return_line"],
+            purchaseLines = _counts["purchase_line"],
+            lotCount = _counts["product_lot"],
+            saleTotal = _saleTotal,
+            returnTotal = _returnTotal,
+            purchaseTotal = _purchaseTotal,
+            receiptBytes = _receiptBytes,
         }, transaction);
     }
 

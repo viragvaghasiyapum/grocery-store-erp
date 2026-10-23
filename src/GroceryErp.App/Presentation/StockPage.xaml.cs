@@ -118,29 +118,6 @@ public partial class StockPage : Page
         if (window.ShowDialog() == true) await RefreshAsync();
     }
 
-    private async void Count_OnClick(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var picker = new DraftCountPickerWindow(_inventory) { Owner = Window.GetWindow(this) };
-            if (picker.ShowDialog() != true || picker.SelectedCountId is not long countId) return;
-            var window = new StockCountWindow(_inventory, countId) { Owner = Window.GetWindow(this) };
-            if (window.ShowDialog() == true) await RefreshAsync();
-        }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
-    }
-
-    private async void NewCount_OnClick(object sender, RoutedEventArgs e)
-    {
-        IServiceProvider services = ((App)Application.Current).Services;
-        var scope = new StockCountScopeWindow(services.GetRequiredService<CatalogService>())
-        { Owner = Window.GetWindow(this) };
-        if (scope.ShowDialog() != true) return;
-        var window = new StockCountWindow(_inventory, categoryIds: scope.CategoryIds, notes: scope.Notes)
-        { Owner = Window.GetWindow(this) };
-        if (window.ShowDialog() == true) await RefreshAsync();
-    }
-
     private async void Price_OnClick(object sender, RoutedEventArgs e)
     {
         if (SelectedSingleLot() is not LotItem lot) return;

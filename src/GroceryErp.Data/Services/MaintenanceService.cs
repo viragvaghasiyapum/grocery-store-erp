@@ -26,26 +26,12 @@ public sealed class MaintenanceService(
         (string? lastSaleDate, bool lotCacheHealthy) = await database.ReadAsync(connection =>
         {
             string? lastDate = connection.ExecuteScalar<string?>("SELECT MAX(sale_date) FROM sale WHERE status = 'COMPLETED'");
-            string? clean = connection.ExecuteScalar<string?>(
-                "SELECT value FROM setting WHERE key='maintenance.clean_shutdown'");
-            if (connection.ExecuteScalar<string?>(
-                    "SELECT value FROM setting WHERE key='maintenance.stock_rebuild_pending'") == "1")
-                return (lastDate, false);
-            if (clean == "1") return (lastDate, true);
-            // An interrupted session needs a bounded pre-login check. The full
-            // reconciliation runs after the shell has been idle.
+            // Each lot quantity commits with its document, so an interrupted session
+            // needs no repair. A movement written after the upgrade is a defect.
             bool healthy = connection.ExecuteScalar<long>("""
-                WITH recent_lots AS MATERIALIZED (
-                    SELECT DISTINCT lot_id FROM (
-                        SELECT lot_id FROM stock_movement ORDER BY id DESC LIMIT 512
-                    )
-                )
-                SELECT NOT EXISTS (
-                    SELECT 1 FROM recent_lots r JOIN product_lot l ON l.id=r.lot_id
-                    WHERE l.qty_on_hand <> COALESCE(
-                        (SELECT SUM(m.qty) FROM stock_movement m WHERE m.lot_id=r.lot_id),0)
-                )
-                """) != 0;
+                SELECT movement_high_water=(SELECT COALESCE(MAX(id),0) FROM stock_movement)
+                FROM direct_stock_live
+                """) == 1;
             return (lastDate, healthy);
         }, cancellationToken).ConfigureAwait(false);
 
@@ -105,20 +91,56 @@ public sealed class MaintenanceService(
                    previous.AddDays(7) <= clock.BusinessDate;
         }, cancellationToken);
 
+    // At most this many differing lots are kept for the reconciliation report.
+    private const int RecordedLotIssues = 200;
+
     private async Task RunWeeklyIntegrityChecksAsync(CancellationToken cancellationToken)
     {
         using var timing = PerformanceMetrics.TrackMaintenance("weekly-integrity");
-        await database.ReadAsync(connection =>
+        (List<LotSourceMismatch> lotIssues, int differingLots) = await database.ReadAsync(connection =>
         {
             string integrity = connection.ExecuteScalar<string>("PRAGMA integrity_check;") ?? "";
             if (!string.Equals(integrity, "ok", StringComparison.OrdinalIgnoreCase))
                 throw new DomainException(ErrorCode.BackupInvalid, integrity);
             if (connection.Query("PRAGMA foreign_key_check;").Any())
                 throw new DomainException(ErrorCode.BackupInvalid, "foreign key check failed");
-            if (connection.Query("SELECT lot_id FROM v_lot_cache_mismatch LIMIT 1").Any())
-                throw new DomainException(ErrorCode.BackupInvalid, "stock cache mismatch");
-            return true;
+            var issues = new List<LotSourceMismatch>();
+            int count = 0;
+            foreach (LotSourceMismatch mismatch in LotSourceReconciliation.CheckAll(connection, null,
+                         cancellationToken: cancellationToken))
+            {
+                if (issues.Count < RecordedLotIssues) issues.Add(mismatch);
+                count++;
+            }
+            if (AnnualCloseService.VerifyAll(connection) is [var invalidYear, ..])
+                throw new DomainException(ErrorCode.AnnualReportInvalid, invalidYear);
+            if (PnlReconciliation.CheckOpenDays(connection, clock.BusinessDate, cancellationToken)
+                    .FirstOrDefault() is { } drift)
+                throw new DomainException(ErrorCode.BackupInvalid, $"P&L day {drift} differs from its sales and returns");
+            return (issues, count);
         }, cancellationToken).ConfigureAwait(false);
+
+        // The full lot check is kept even when it finds differences, so the report can
+        // list them; maintenance still fails afterwards so the difference is logged.
+        await database.WriteAsync(transaction =>
+        {
+            string date = clock.BusinessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            transaction.Connection.Execute("DELETE FROM lot_source_issue", transaction: transaction.Transaction);
+            transaction.Connection.Execute("""
+                INSERT INTO lot_source_issue(lot_id,product_id,actual,expected,found_on)
+                VALUES (@LotId,@ProductId,@Actual,@Expected,@date)
+                """, lotIssues.Select(issue => new { issue.LotId, issue.ProductId, issue.Actual, issue.Expected, date }),
+                transaction.Transaction);
+            transaction.Connection.Execute("""
+                INSERT INTO setting(key,value) VALUES ('maintenance.lot_check_last_run',@date)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+                INSERT INTO setting(key,value) VALUES ('maintenance.lot_check_differences',@count)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+                """, new { date, count = differingLots.ToString(CultureInfo.InvariantCulture) }, transaction.Transaction);
+        }, cancellationToken).ConfigureAwait(false);
+        if (lotIssues.Count > 0)
+            throw new DomainException(ErrorCode.BackupInvalid,
+                $"{differingLots} lots differ from their source documents, first lot {lotIssues[0].LotId}");
 
         await database.WriteAsync(transaction =>
         {
@@ -210,13 +232,16 @@ public sealed class StartupPipeline(
     SqliteConnectionFactory factory,
     MigrationRunner migrations,
     SettingsService settings,
-    MaintenanceService maintenance)
+    MaintenanceService maintenance,
+    AnnualCloseService annualClose)
 {
     public async Task<StartupState> RunAsync(CancellationToken cancellationToken = default)
     {
         DatabaseCapabilities.Verify(factory);
         migrations.Run();
         await settings.LoadAsync(cancellationToken).ConfigureAwait(false);
+        // A year that locked since the last launch is finalized before any report reads it.
+        await annualClose.EnsureFinalizedAsync(cancellationToken).ConfigureAwait(false);
         StartupHealth health = await maintenance.CheckBeforeShellAsync(cancellationToken).ConfigureAwait(false);
         await maintenance.BeginSessionAsync(cancellationToken).ConfigureAwait(false);
         return new(health, settings.Current);

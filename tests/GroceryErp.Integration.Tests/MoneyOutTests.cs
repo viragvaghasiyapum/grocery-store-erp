@@ -3,6 +3,7 @@ using GroceryErp.Assets;
 using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
+using GroceryErp.Data.Backup;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
 using GroceryErp.Expenses;
@@ -16,6 +17,38 @@ namespace GroceryErp.Integration.Tests;
 
 public sealed class MoneyOutTests
 {
+    [Fact]
+    public async Task DamageAndCorrection_KeepTheLotReconciledWithoutMovements()
+    {
+        using var fixture = new Fixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long damageId = await fixture.MoneyOut.RecordDamageAsync(
+            new(fixture.LotId, fixture.Today, new Quantity(2), "BROKEN", Money.Zero, "Handling"),
+            OperationGuard.NewId(), ct);
+        DamageItem original = (await fixture.MoneyOut.GetDamagesAsync(fixture.Today,
+            fixture.Today, ct)).Single();
+        await fixture.MoneyOut.CorrectDamageAsync(original,
+            new(Quantity.One, Money.Zero, "BROKEN", null), "Recount", OperationGuard.NewId(), ct);
+        using (var db = fixture.Factory.Open())
+        {
+            db.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement").ShouldBe(0L);
+            db.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id",
+                new { id = fixture.LotId }).ShouldBe(9000L);
+            db.ExecuteScalar<long>("SELECT COUNT(*) FROM damage WHERE id=@damageId",
+                new { damageId }).ShouldBe(1L);
+            db.ExecuteScalar<string>("SELECT source_kind FROM stock_correction WHERE lot_id=@id",
+                new { id = fixture.LotId }).ShouldBe("DAMAGE_CORRECTION");
+        }
+        await fixture.Database.WriteAsync(tx => new DirectStockEngine().CheckAll(tx)
+            .ToArray().ShouldBeEmpty(), ct);
+        var paths = new AppPaths(new SettingsBootstrap(fixture.Root));
+        var clock = new FixedClock(fixture.Today);
+        var backups = new BackupService(paths, fixture.Factory, clock, fixture.Settings);
+        StartupHealth health = await new MaintenanceService(paths, fixture.Factory,
+            fixture.Database, backups, clock, new AuditLog()).CheckBeforeShellAsync(ct);
+        health.LotCacheHealthy.ShouldBeTrue();
+    }
+
     [Fact]
     public async Task Damage_IsIdempotentReducesStockAndFlowsToPnl()
     {
@@ -34,7 +67,7 @@ public sealed class MoneyOutTests
     }
 
     [Fact]
-    public async Task PostedDamageCorrection_RestoresStockAndBooksOnlyDatedDifference()
+    public async Task OpenPeriodDamageCorrection_RestatesOriginalDateAndRestoresStock()
     {
         using var fixture = new Fixture();
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -42,30 +75,125 @@ public sealed class MoneyOutTests
             new(fixture.LotId, fixture.Today, new Quantity(2), "BROKEN", new Money(10), "Original"),
             OperationGuard.NewId(), ct);
         DamageItem original = (await fixture.MoneyOut.GetDamagesAsync(fixture.Today, fixture.Today, ct)).Single();
-        DateOnly correctionDate = fixture.Today.AddDays(1);
+        (await fixture.MoneyOut.PreviewCorrectionAsync(original.Date, ct)).Treatment.ShouldBe(PeriodTreatment.OpenPeriod);
         string operation = OperationGuard.NewId();
         long correctionId = await fixture.MoneyOut.CorrectDamageAsync(original,
-            new(new Quantity(1), new Money(5), "SPOILED", null), correctionDate,
-            "Counted one twice", operation, ct);
+            new(new Quantity(1), new Money(5), "SPOILED", null), "Counted one twice", operation, ct);
         (await fixture.MoneyOut.CorrectDamageAsync(original,
-            new(new Quantity(1), new Money(5), "SPOILED", null), correctionDate,
-            "Counted one twice", operation, ct)).ShouldBe(correctionId);
+            new(new Quantity(1), new Money(5), "SPOILED", null), "Counted one twice", operation, ct))
+            .ShouldBe(correctionId);
 
         using var connection = fixture.Factory.Open();
         connection.ExecuteScalar<long>("SELECT qty FROM damage WHERE id=@damageId", new { damageId }).ShouldBe(2000L);
         connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = fixture.LotId }).ShouldBe(9000L);
-        connection.ExecuteScalar<long>("SELECT amount FROM v_pnl_entry WHERE head_code='DAMAGES' AND entry_date=@date",
-            new { date = correctionDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) }).ShouldBe(-45000L);
+        connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='DAMAGES' AND entry_date=@date",
+            new { date = Iso(fixture.Today) }).ShouldBe(45000L);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM v_pnl_entry WHERE head_code='DAMAGES' AND entry_date<>@date",
+            new { date = Iso(fixture.Today) }).ShouldBe(0L);
+        connection.ExecuteScalar<string>("SELECT treatment FROM damage_correction WHERE id=@correctionId",
+            new { correctionId }).ShouldBe("OPEN_PERIOD");
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM v_pnl_entry WHERE head_code='STOCK_ADJUSTMENT'").ShouldBe(0L);
-        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM damage_correction WHERE damage_id=@damageId", new { damageId }).ShouldBe(1L);
-        var reports = new ReportService(fixture.Database, fixture.Settings, new FixedClock(fixture.Today));
-        (await reports.GetPnlAsync(correctionDate, correctionDate, ct)).TotalExpenses.ShouldBe(new Money(-45));
+        var reports = new ReportService(fixture.Database, fixture.Settings, fixture.Clock);
+        (await reports.GetPnlAsync(fixture.Today, fixture.Today, ct)).TotalExpenses.ShouldBe(new Money(45));
         DamageItem corrected = (await fixture.MoneyOut.GetDamagesAsync(fixture.Today, fixture.Today, ct)).Single();
         corrected.Quantity.ShouldBe(new Quantity(1));
         corrected.Notes.ShouldBeNull();
-        await Should.ThrowAsync<DomainException>(() => fixture.MoneyOut.CorrectDamageAsync(original,
-            new(new Quantity(3), Money.Zero, "BROKEN", null), correctionDate,
-            "Stale", OperationGuard.NewId(), ct));
+        corrected.Status.ShouldBe("CORRECTED");
+        (await fixture.MoneyOut.GetDamageHistoryAsync(damageId, ct)).Select(static row => row.Kind)
+            .ShouldBe(["ORIGINAL", "EDIT"]);
+        (await Should.ThrowAsync<DomainException>(() => fixture.MoneyOut.CorrectDamageAsync(original,
+            new(new Quantity(3), Money.Zero, "BROKEN", null), "Stale", OperationGuard.NewId(), ct)))
+            .Code.ShouldBe(ErrorCode.EntryChanged);
+
+        await fixture.MoneyOut.VoidDamageAsync(corrected, "Not damaged", OperationGuard.NewId(), ct);
+        connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = fixture.LotId }).ShouldBe(10000L);
+        connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='DAMAGES'").ShouldBe(0L);
+        (await fixture.MoneyOut.GetDamagesAsync(fixture.Today, fixture.Today, ct)).Single().Status.ShouldBe("VOID");
+        await fixture.Database.WriteAsync(tx => new DirectStockEngine().CheckAll(tx).ToArray().ShouldBeEmpty(), ct);
+    }
+
+    [Fact]
+    public async Task DamageCorrectionAfterFiscalLock_IsDatedTodayAndLeavesFinalizedYear()
+    {
+        using var fixture = new Fixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        var damageDate = new DateOnly(2026, 3, 15);
+        fixture.Clock.BusinessDate = new DateOnly(2026, 3, 20);
+        long damageId = await fixture.MoneyOut.RecordDamageAsync(
+            new(fixture.LotId, damageDate, new Quantity(2), "BROKEN", Money.Zero, null), OperationGuard.NewId(), ct);
+
+        fixture.Clock.BusinessDate = fixture.Today;
+        var closes = new AnnualCloseService(fixture.Database, fixture.Periods, fixture.Clock);
+        (await closes.EnsureFinalizedAsync(ct)).ShouldBe(1);
+        var reports = new ReportService(fixture.Database, fixture.Settings, fixture.Clock);
+        PnlReport frozen = await reports.GetPnlReportAsync(reports.FiscalYearPeriod(2025), ct);
+        frozen.Status.ShouldBe("FINALIZED");
+        frozen.Statement.TotalExpenses.ShouldBe(new Money(100));
+
+        DamageItem original = (await fixture.MoneyOut.GetDamagesAsync(damageDate, damageDate, ct)).Single();
+        CorrectionDating dating = await fixture.MoneyOut.PreviewCorrectionAsync(damageDate, ct);
+        dating.Treatment.ShouldBe(PeriodTreatment.CurrentDated);
+        dating.FiscalLocked.ShouldBeTrue();
+        dating.CalendarLocked.ShouldBeFalse();
+        dating.EffectiveDate.ShouldBe(fixture.Today);
+        await fixture.MoneyOut.CorrectDamageAsync(original, new(Quantity.One, Money.Zero, "BROKEN", null),
+            "Recount", OperationGuard.NewId(), ct);
+
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = fixture.LotId }).ShouldBe(9000L);
+        connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='DAMAGES' AND entry_date=@date",
+            new { date = Iso(damageDate) }).ShouldBe(100_000L);
+        connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='DAMAGES' AND entry_date=@date",
+            new { date = Iso(fixture.Today) }).ShouldBe(-50_000L);
+        connection.ExecuteScalar<string>("SELECT treatment FROM damage_correction WHERE damage_id=@damageId",
+            new { damageId }).ShouldBe("CURRENT_DATED");
+        PnlReport after = await reports.GetPnlReportAsync(reports.FiscalYearPeriod(2025), ct);
+        after.Checksum.ShouldBe(frozen.Checksum);
+        after.Statement.TotalExpenses.ShouldBe(new Money(100));
+        PnlReport calendar = await reports.GetPnlReportAsync(reports.CalendarYearPeriod(2026), ct);
+        calendar.Status.ShouldBe("OPEN");
+        calendar.Statement.TotalExpenses.ShouldBe(new Money(50));
+        (await reports.GetPnlReportAsync(reports.FiscalYearPeriod(2026), ct)).Statement.TotalExpenses
+            .ShouldBe(new Money(-50));
+    }
+
+    [Fact]
+    public async Task DamageCorrection_RecreatesDeletedZeroLotFromSnapshot()
+    {
+        using var fixture = new Fixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        await fixture.MoneyOut.RecordDamageAsync(
+            new(fixture.LotId, fixture.Today, new Quantity(10), "SPOILED", Money.Zero, null), OperationGuard.NewId(), ct);
+        using var connection = fixture.Factory.Open();
+        long product = connection.ExecuteScalar<long>("SELECT product_id FROM product_lot WHERE id=@id", new { id = fixture.LotId });
+        connection.Execute("DELETE FROM product_lot WHERE id=@id", new { id = fixture.LotId });
+        DamageItem original = (await fixture.MoneyOut.GetDamagesAsync(fixture.Today, fixture.Today, ct)).Single();
+
+        await fixture.MoneyOut.CorrectDamageAsync(original, new(new Quantity(6), Money.Zero, "SPOILED", null),
+            "Four were fine", OperationGuard.NewId(), ct);
+
+        long restored = connection.ExecuteScalar<long>("SELECT restored_lot_id FROM damage_correction");
+        restored.ShouldNotBe(fixture.LotId);
+        connection.QuerySingle<(long ProductId, long OnHand, long Cost, string Origin)>("""
+            SELECT product_id AS ProductId,qty_on_hand AS OnHand,unit_cost AS Cost,origin_kind AS Origin
+            FROM product_lot WHERE id=@restored
+            """, new { restored }).ShouldBe((product, 4000L, 50000L, "DIRECT"));
+        connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='DAMAGES'").ShouldBe(300_000L);
+        await fixture.Database.WriteAsync(tx => new DirectStockEngine().CheckAll(tx).ToArray().ShouldBeEmpty(), ct);
+    }
+
+    [Fact]
+    public async Task InternalUseDamage_HasNoPnlHead()
+    {
+        using var fixture = new Fixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using var connection = fixture.Factory.Open();
+        connection.Execute("UPDATE product SET product_class='INTERNAL'");
+        await fixture.MoneyOut.RecordDamageAsync(
+            new(fixture.LotId, fixture.Today, new Quantity(2), "SPOILED", Money.Zero, null), OperationGuard.NewId(), ct);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM damage").ShouldBe(1L);
+        connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = fixture.LotId }).ShouldBe(8000L);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM v_pnl_entry WHERE head_code='DAMAGES'").ShouldBe(0L);
     }
 
     [Fact]
@@ -100,10 +228,7 @@ public sealed class MoneyOutTests
             INSERT INTO product_lot(product_id,lot_code,received_date,expiry_date,unit_cost,selling_price,qty_received)
             VALUES (@product,'L-MONEY-2','2026-04-01','2027-09-01',50000,150000,5000) RETURNING id
             """, new { product });
-        connection.Execute("""
-            INSERT INTO stock_movement(move_date,product_id,lot_id,type_code,qty,unit_cost)
-            VALUES ('2026-04-01',@product,@secondId,'OPENING',5000,50000)
-            """, new { product, secondId });
+        connection.Execute("UPDATE product_lot SET qty_on_hand=5000 WHERE id=@secondId", new { secondId });
         long secondVersion = connection.ExecuteScalar<long>(
             "SELECT detail_version FROM product_lot WHERE id=@secondId", new { secondId });
         BulkDamageInput[] lines =
@@ -188,7 +313,7 @@ public sealed class MoneyOutTests
     }
 
     [Fact]
-    public async Task PostedSalaryCorrection_PreservesOriginalPostingAndAdjustsPnl()
+    public async Task PostedSalaryCorrection_PreservesOriginalPostingAndRestatesOpenMonth()
     {
         using var fixture = new Fixture();
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -198,25 +323,36 @@ public sealed class MoneyOutTests
             "BANK", "Advance", OperationGuard.NewId(), ct);
         YearMonth month = YearMonth.From(fixture.Today);
         SalaryPaymentItem original = (await fixture.MoneyOut.GetSalaryRegisterAsync(month, month, ct)).Single();
-        DateOnly correctionDate = fixture.Today.AddDays(1);
         long correctionId = await fixture.MoneyOut.CorrectSalaryPaymentAsync(original,
-            new(fixture.Today.AddDays(2), new Money(900), "CASH", null), correctionDate,
+            new(fixture.Today.AddDays(2), new Money(900), "CASH", null),
             "Bank transfer was returned", OperationGuard.NewId(), ct);
         using var connection = fixture.Factory.Open();
         connection.ExecuteScalar<long>("SELECT amount FROM salary_payment WHERE id=@id", new { id = original.Id }).ShouldBe(1_000_000L);
-        connection.ExecuteScalar<long>("SELECT amount_delta FROM salary_correction WHERE id=@correctionId", new { correctionId }).ShouldBe(-100_000L);
-        connection.ExecuteScalar<long>("SELECT amount FROM v_pnl_entry WHERE head_code='SALARIES' AND entry_date=@date",
-            new { date = correctionDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) }).ShouldBe(-100_000L);
-        var reports = new ReportService(fixture.Database, fixture.Settings, new FixedClock(fixture.Today));
-        (await reports.GetPnlAsync(correctionDate, correctionDate, ct)).TotalExpenses.ShouldBe(new Money(-100));
+        connection.QuerySingle<(long Delta, string Treatment, string Effective)>("""
+            SELECT amount_delta AS Delta,treatment AS Treatment,effective_date AS Effective
+            FROM salary_correction WHERE id=@correctionId
+            """, new { correctionId }).ShouldBe((-100_000L, "OPEN_PERIOD", Iso(month.LastDay)));
+        connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='SALARIES' AND entry_date=@date",
+            new { date = Iso(month.LastDay) }).ShouldBe(900_000L);
+        var reports = new ReportService(fixture.Database, fixture.Settings, fixture.Clock);
+        (await reports.GetPnlAsync(month.FirstDay, month.LastDay, ct)).TotalExpenses.ShouldBe(new Money(900));
         SalaryPaymentItem corrected = (await fixture.MoneyOut.GetSalaryRegisterAsync(month, month, ct)).Single();
         corrected.Amount.ShouldBe(new Money(900));
         corrected.Mode.ShouldBe("CASH");
         corrected.PayDate.ShouldBe(fixture.Today.AddDays(2));
         corrected.Notes.ShouldBeNull();
+        corrected.Status.ShouldBe("CORRECTED");
         await Should.ThrowAsync<DomainException>(() => fixture.MoneyOut.CorrectSalaryPaymentAsync(original,
-            new(fixture.Today, new Money(800), "BANK", null), correctionDate,
-            "Stale", OperationGuard.NewId(), ct));
+            new(fixture.Today, new Money(800), "BANK", null), "Stale", OperationGuard.NewId(), ct));
+
+        await fixture.MoneyOut.VoidSalaryPaymentAsync(corrected, "Paid by mistake", OperationGuard.NewId(), ct);
+        connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='SALARIES'").ShouldBe(0L);
+        SalaryPaymentItem voided = (await fixture.MoneyOut.GetSalaryRegisterAsync(month, month, ct)).Single();
+        voided.Status.ShouldBe("VOID");
+        (await Should.ThrowAsync<DomainException>(() => fixture.MoneyOut.VoidSalaryPaymentAsync(voided,
+            "Again", OperationGuard.NewId(), ct))).Code.ShouldBe(ErrorCode.EntryVoided);
+        (await fixture.MoneyOut.GetSalaryHistoryAsync(original.Id, ct)).Select(static row => row.Kind)
+            .ShouldBe(["ORIGINAL", "EDIT", "VOID"]);
     }
 
     [Fact]
@@ -229,15 +365,75 @@ public sealed class MoneyOutTests
             new(fixture.Today, category, new Money(500), "UPI", "Power Co", "OLD", null),
             OperationGuard.NewId(), ct);
         ExpenseItem original = (await fixture.MoneyOut.GetExpensesAsync(fixture.Today, fixture.Today, ct)).Single();
-        await fixture.MoneyOut.CorrectExpenseAsync(original,
-            new(fixture.Today, category, new Money(450), "BANK", "Power Co", "FIXED", "Invoice correction"),
-            "Wrong amount and payment mode", ct);
+        string operation = OperationGuard.NewId();
+        var replacement = new ExpenseInput(fixture.Today, category, new Money(450), "BANK", "Power Co", "FIXED",
+            "Invoice correction");
+        long correctionId = await fixture.MoneyOut.CorrectExpenseAsync(original, replacement,
+            "Wrong amount and payment mode", operation, ct);
+        (await fixture.MoneyOut.CorrectExpenseAsync(original, replacement, "Wrong amount and payment mode",
+            operation, ct)).ShouldBe(correctionId);
         using var connection = fixture.Factory.Open();
-        connection.ExecuteScalar<long>("SELECT amount FROM v_pnl_entry WHERE head_code='EXPENSE_CATEGORY'").ShouldBe(450_000L);
+        connection.ExecuteScalar<long>("SELECT amount FROM expense WHERE id=@id", new { id = original.Id }).ShouldBe(500_000L);
+        connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='EXPENSE_CATEGORY' AND entry_date=@date",
+            new { date = Iso(fixture.Today) }).ShouldBe(450_000L);
         connection.ExecuteScalar<string>("SELECT changes FROM audit_log WHERE entity='expense' AND entity_id=@id AND action='CORRECT'",
             new { id = original.Id })!.ShouldContain("Wrong amount and payment mode");
         await Should.ThrowAsync<DomainException>(() => fixture.MoneyOut.CorrectExpenseAsync(original,
-            new(fixture.Today, category, new Money(400), "BANK", null, null, null), "Stale", ct));
+            new(fixture.Today, category, new Money(400), "BANK", null, null, null), "Stale", OperationGuard.NewId(), ct));
+        Should.Throw<Microsoft.Data.Sqlite.SqliteException>(() =>
+            connection.Execute("DELETE FROM expense WHERE id=@id", new { id = original.Id }));
+
+        ExpenseItem corrected = (await fixture.MoneyOut.GetExpensesAsync(fixture.Today, fixture.Today, ct)).Single();
+        corrected.Status.ShouldBe("CORRECTED");
+        DateOnly moved = fixture.Today.AddDays(-3);
+        await fixture.MoneyOut.CorrectExpenseAsync(corrected, replacement with { Date = moved },
+            "Bill was dated earlier", OperationGuard.NewId(), ct);
+        connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='EXPENSE_CATEGORY' AND entry_date=@date",
+            new { date = Iso(fixture.Today) }).ShouldBe(0L);
+        connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='EXPENSE_CATEGORY' AND entry_date=@date",
+            new { date = Iso(moved) }).ShouldBe(450_000L);
+        (await fixture.MoneyOut.GetExpensesAsync(fixture.Today, fixture.Today, ct)).ShouldBeEmpty();
+        ExpenseItem movedItem = (await fixture.MoneyOut.GetExpensesAsync(moved, moved, ct)).Single();
+
+        await fixture.MoneyOut.VoidExpenseAsync(movedItem, "Duplicate entry", OperationGuard.NewId(), ct);
+        connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='EXPENSE_CATEGORY'").ShouldBe(0L);
+        ExpenseItem voided = (await fixture.MoneyOut.GetExpensesAsync(moved, moved, ct)).Single();
+        voided.Status.ShouldBe("VOID");
+        (await Should.ThrowAsync<DomainException>(() => fixture.MoneyOut.VoidExpenseAsync(voided, "Again",
+            OperationGuard.NewId(), ct))).Code.ShouldBe(ErrorCode.EntryVoided);
+        (await fixture.MoneyOut.GetExpenseHistoryAsync(original.Id, ct)).Select(static row => row.Kind)
+            .ShouldBe(["ORIGINAL", "EDIT", "EDIT", "VOID"]);
+    }
+
+    [Fact]
+    public async Task SalaryTerms_AreEffectiveDatedAndLeavePostedPaymentsAlone()
+    {
+        using var fixture = new Fixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long employee = await fixture.MoneyOut.SaveEmployeeAsync(null,
+            new("Asha", null, null, new DateOnly(2026, 1, 1), null, new Money(1000), true, null), ct);
+        var august = new YearMonth(2026, 8);
+        await fixture.MoneyOut.PostSalaryRunAsync(new(august, fixture.Today, "BANK",
+            [new(employee, new Money(1000), Money.Zero, Money.Zero, Money.Zero, null)]), OperationGuard.NewId(), ct);
+        EmployeeItem saved = (await fixture.MoneyOut.GetEmployeesAsync(cancellationToken: ct)).Single();
+        EmployeeInput raise = new(saved.Name, saved.Phone, saved.Role, saved.JoinDate, saved.LeaveDate,
+            new Money(1200), true, saved.Notes);
+
+        SalaryTermPreview preview = await fixture.MoneyOut.PreviewSalaryTermAsync(employee, new YearMonth(2026, 7), ct);
+        preview.FirstOpenMonth.ShouldBe(new YearMonth(2026, 4));
+        preview.PostedMonths.ShouldBe(1);
+        (await Should.ThrowAsync<DomainException>(() => fixture.MoneyOut.SaveEmployeeAsync(employee, raise,
+            new YearMonth(2026, 3), ct))).Code.ShouldBe(ErrorCode.EffectiveMonthClosed);
+        await fixture.MoneyOut.SaveEmployeeAsync(employee, raise, new YearMonth(2026, 7), ct);
+
+        using var connection = fixture.Factory.Open();
+        connection.ExecuteScalar<long>("SELECT SUM(amount) FROM salary_payment").ShouldBe(1_000_000L);
+        (await fixture.MoneyOut.PrepareSalaryRunAsync(new YearMonth(2026, 6), ct)).Single().BaseSalary.ShouldBe(new Money(1000));
+        (await fixture.MoneyOut.PrepareSalaryRunAsync(new YearMonth(2026, 9), ct)).Single().BaseSalary.ShouldBe(new Money(1200));
+        (await fixture.MoneyOut.PrepareSalaryRunAsync(august, ct)).ShouldBeEmpty();
+        (await fixture.MoneyOut.GetSalaryTermsAsync(employee, ct)).Select(static term => term.EffectiveMonth)
+            .ShouldBe([new YearMonth(2026, 7), new YearMonth(2026, 1)]);
+        Should.Throw<Microsoft.Data.Sqlite.SqliteException>(() => connection.Execute("DELETE FROM employee_salary_term"));
     }
 
     [Fact]
@@ -262,32 +458,65 @@ public sealed class MoneyOutTests
             OperationGuard.NewId(), TestContext.Current.CancellationToken);
         using var connection = fixture.Factory.Open();
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM asset_depreciation WHERE asset_id=@asset", new { asset }).ShouldBe(13L);
-        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM v_pnl_entry WHERE head_code='ASSET_DISPOSAL' AND ref_id=@asset", new { asset }).ShouldBe(1L);
+        long bookValue = connection.ExecuteScalar<long>(
+            "SELECT closing_value FROM asset_depreciation WHERE asset_id=@asset ORDER BY period_month DESC LIMIT 1", new { asset });
+        connection.ExecuteScalar<long>("SELECT disposal_book_value FROM asset WHERE id=@asset", new { asset }).ShouldBe(bookValue);
+        connection.QuerySingle<(string Date, long Amount)>(
+            "SELECT entry_date AS Date,amount AS Amount FROM v_pnl_entry WHERE head_code='ASSET_DISPOSAL'")
+            .ShouldBe(("2027-04-15", 40_000_000L - bookValue));
     }
 
     [Fact]
-    public async Task PostedAsset_AllowsDescriptionEditsButKeepsFinancialHistoryLocked()
+    public async Task OpenAssetTerms_RecalculateWithoutChoiceAndFinalizedMonthsStayFixed()
     {
         using var fixture = new Fixture();
         CancellationToken ct = TestContext.Current.CancellationToken;
-        var original = new AssetInput("Freezer", "Equipment", new DateOnly(2026, 4, 1),
-            new DateOnly(2026, 4, 1), new Money(45000), null,
-            DepreciationMethod.Wdv, new Percent(15), Money.Zero, null);
+        var original = new AssetInput("Freezer", "Equipment", new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 1, 1), new Money(45000), null,
+            DepreciationMethod.Slm, new Percent(12), Money.Zero, null);
+        fixture.Clock.BusinessDate = new DateOnly(2026, 2, 10);
         long id = await fixture.Assets.SaveAssetAsync(null, original, ct);
-        await fixture.Assets.PostThroughAsync(new YearMonth(2026, 4), ct);
-        var revised = original with { Name = "Main freezer", Category = "Electronics", Notes = "Back room" };
+        (await fixture.Assets.PostDueDepreciationAsync(ct)).PostedCount.ShouldBe(1);
 
+        // While every posted month is open, a cost correction rebuilds the schedule.
+        await fixture.Assets.SaveAssetAsync(id, original with { Cost = new Money(48000) }, ct);
+        (await fixture.Assets.GetScheduleAsync(id, ct)).Single().Amount.ShouldBe(new Money(48000m * 0.12m * 31 / 365));
+
+        // Nothing posted in February or March before FY 2025-26 locked: those months are
+        // still charged, in the open period of the posting date.
+        fixture.Clock.BusinessDate = fixture.Today;
+        DepreciationPostResult catchUp = await fixture.Assets.PostDueDepreciationAsync(ct);
+        catchUp.PostedCount.ShouldBe(7);
+        catchUp.CurrentDatedPeriods.ShouldBe([new YearMonth(2026, 2), new YearMonth(2026, 3)]);
+        using var connection = fixture.Factory.Open();
+        connection.Query<string?>("SELECT pnl_date FROM asset_depreciation ORDER BY period_month").ToArray()
+            .ShouldBe([null, Iso(fixture.Today), Iso(fixture.Today), null, null, null, null, null]);
+
+        var revised = original with { Cost = new Money(48000), Name = "Main freezer", Notes = "Back room" };
         await fixture.Assets.SaveAssetAsync(id, revised, ct);
-        AssetItem asset = (await fixture.Assets.GetAssetsAsync(cancellationToken: ct)).Single(item => item.Id == id);
-        asset.Name.ShouldBe("Main freezer");
-        asset.Category.ShouldBe("Electronics");
-        asset.Notes.ShouldBe("Back room");
-        (await fixture.Assets.GetScheduleAsync(id, ct)).Count.ShouldBe(1);
+        (await fixture.Assets.GetAssetsAsync(cancellationToken: ct)).Single().Name.ShouldBe("Main freezer");
+        AssetChangePreview blocked = await fixture.Assets.PreviewChangeAsync(id, revised with { Cost = new Money(50000) }, null, ct);
+        blocked.Treatment.ShouldBe("BLOCKED");
+        (await Should.ThrowAsync<DomainException>(() => fixture.Assets.SaveAssetAsync(id,
+            revised with { Cost = new Money(50000) }, ct))).Code.ShouldBe(ErrorCode.AssetTermsFinalized);
+        (await Should.ThrowAsync<DomainException>(() => fixture.Assets.SaveAssetAsync(id,
+            revised with { Rate = new Percent(24) }, new YearMonth(2026, 3), ct))).Code.ShouldBe(ErrorCode.EffectiveMonthClosed);
 
-        await Should.ThrowAsync<DomainException>(() => fixture.Assets.SaveAssetAsync(id,
-            revised with { Cost = new Money(46000) }, ct));
-        (await fixture.Assets.GetAssetsAsync(cancellationToken: ct)).Single(item => item.Id == id)
-            .Cost.ShouldBe(new Money(45000));
+        Money[] before = (await fixture.Assets.GetScheduleAsync(id, ct)).Select(static row => row.Amount).ToArray();
+        AssetChangePreview preview = await fixture.Assets.PreviewChangeAsync(id, revised with { Rate = new Percent(24) }, null, ct);
+        preview.Treatment.ShouldBe("TERMS");
+        preview.EffectiveMonth.ShouldBe(new YearMonth(2026, 4));
+        preview.MonthsRecalculated.ShouldBe(5);
+        await fixture.Assets.SaveAssetAsync(id, revised with { Rate = new Percent(24) }, ct);
+        IReadOnlyList<DepreciationEntry> after = await fixture.Assets.GetScheduleAsync(id, ct);
+        after.Take(3).Select(static row => row.Amount).ShouldBe(before.Take(3));
+        after.Skip(3).Select(static row => row.Amount).ShouldAllBe(amount => amount > new Money(900));
+        after.Skip(3).Sum(static row => row.Amount.Scaled).ShouldBe(preview.DepreciationAfter.Scaled);
+        after[^1].ClosingValue.ShouldBe(preview.BookValueAfter);
+        (await fixture.Assets.GetTermsAsync(id, ct)).Select(static term => term.Reason)
+            .ShouldBe(["CHANGE", "RECALCULATION", "INITIAL"]);
+        Should.Throw<Microsoft.Data.Sqlite.SqliteException>(() =>
+            connection.Execute("DELETE FROM asset_depreciation WHERE period_month='2026-02'"));
     }
 
     [Fact]
@@ -341,9 +570,11 @@ public sealed class MoneyOutTests
             Settings = new SettingsService(Database, paths, new AuditLog());
             Settings.LoadAsync().GetAwaiter().GetResult();
             Today = new DateOnly(2026, 9, 27);
+            Clock = new MutableClock(Today);
+            Periods = new PeriodGuard(Settings, Clock);
             var ledger = new StockLedger(Settings);
-            MoneyOut = new MoneyOutService(Database, ledger, new DocNumberService(Settings), new PeriodGuard(Settings), new AuditLog());
-            Assets = new AssetService(Database, Settings, new PeriodGuard(Settings), new AuditLog(), new FixedClock(Today));
+            MoneyOut = new MoneyOutService(Database, ledger, new DocNumberService(Settings), Periods, new AuditLog());
+            Assets = new AssetService(Database, Settings, Periods, new AuditLog(), Clock);
 
             using var connection = Factory.Open();
             long category = connection.ExecuteScalar<long>("INSERT INTO category(name) VALUES ('Food') RETURNING id");
@@ -357,10 +588,10 @@ public sealed class MoneyOutTests
                 INSERT INTO product_lot(product_id,lot_code,received_date,expiry_date,unit_cost,selling_price,qty_received)
                 VALUES (@product,'L-MONEY','2026-04-01',@expiry,50000,150000,10000) RETURNING id
                 """, new { product, expiry = (expiry ?? new DateOnly(2027, 9, 1)).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) });
-            connection.Execute("""
-                INSERT INTO stock_movement(move_date,product_id,lot_id,type_code,qty,unit_cost)
-                VALUES ('2026-04-01',@product,@lot,'OPENING',10000,50000)
-                """, new { product, lot = LotId });
+            using var transaction = connection.BeginTransaction();
+            ledger.Post(new(connection, transaction), new(new DateOnly(2026, 4, 1), product, LotId,
+                "OPENING", new Quantity(10), new Money(50), "opening_import", LotId));
+            transaction.Commit();
         }
 
         public string Root { get; }
@@ -369,6 +600,8 @@ public sealed class MoneyOutTests
         public SettingsService Settings { get; }
         public MoneyOutService MoneyOut { get; }
         public AssetService Assets { get; }
+        public MutableClock Clock { get; }
+        public PeriodGuard Periods { get; }
         public DateOnly Today { get; }
         public long LotId { get; }
 
@@ -380,9 +613,17 @@ public sealed class MoneyOutTests
         }
     }
 
+    private static string Iso(DateOnly date) => date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
     private sealed class FixedClock(DateOnly date) : IClock
     {
         public DateTime Now => date.ToDateTime(new TimeOnly(12, 0));
         public DateOnly BusinessDate => date;
+    }
+
+    private sealed class MutableClock(DateOnly date) : IClock
+    {
+        public DateOnly BusinessDate { get; set; } = date;
+        public DateTime Now => BusinessDate.ToDateTime(new TimeOnly(12, 0));
     }
 }

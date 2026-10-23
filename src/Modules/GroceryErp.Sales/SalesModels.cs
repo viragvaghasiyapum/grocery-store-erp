@@ -2,7 +2,7 @@ using GroceryErp.Core.Numerics;
 
 namespace GroceryErp.Sales;
 
-public enum SaleStatus { Draft, Held, Completed, Void }
+public enum SaleStatus { Draft, Held, Completed, PartiallyRefunded, Refunded, Void }
 public enum PaymentMode { Cash, Upi, Card, Other }
 public enum RefundMode { Cash, Upi, Card, CreditNote, Other }
 
@@ -90,7 +90,16 @@ public sealed record HeldBillReviewLine(long LineId, string ProductName, Quantit
 
 public sealed record HeldBillReview(long SaleId, IReadOnlyList<HeldBillReviewLine> Lines);
 
-public sealed record ReturnableSaleLine(SaleLine Line, Quantity Remaining);
+public sealed record ReturnableSaleLine(SaleLine Line, Quantity Remaining)
+{
+    public Quantity AlreadyReturned => Line.Quantity - Remaining;
+    public Money Refundable { get; init; }
+    public Money RemainingRefund { get; init; }
+    public Money AlreadyRefunded => Refundable - RemainingRefund;
+    public bool OriginalLotAvailable { get; init; }
+    // The lot that would take the units back has expired, so they can only be damaged.
+    public bool ResaleExpired { get; init; }
+}
 
 public sealed record CustomerItem(long Id, string Name, string? Phone, string? Gstin);
 
@@ -104,7 +113,9 @@ public sealed record SaleHistoryFilter(
     string? InvoiceNumber = null,
     DateOnly? BeforeDate = null,
     long? BeforeId = null,
-    int Limit = 100);
+    int Limit = 100,
+    string? Product = null,
+    string? Customer = null);
 
 public sealed record SaleHistoryItem(
     long Id,
@@ -118,7 +129,11 @@ public sealed record SaleHistoryItem(
     string? VoidReason);
 
 public sealed record SaleReturnHistoryItem(string ReturnNumber, DateOnly Date, string ProductName,
-    Quantity Quantity, Money Refund, bool Resellable, string Reason);
+    Quantity Quantity, Money Refund, bool Resellable, string Reason)
+{
+    public string? RestockLotCode { get; init; }
+    public string DispositionCode { get; init; } = "RETURN_ORIGINAL";
+}
 
 public sealed record SaleMovementHistoryItem(DateOnly Date, string ProductName, string LotCode,
     string Type, Quantity Quantity);
@@ -126,7 +141,19 @@ public sealed record SaleMovementHistoryItem(DateOnly Date, string ProductName, 
 public sealed record SaleHistoryActivity(IReadOnlyList<SaleReturnHistoryItem> Returns,
     IReadOnlyList<SaleMovementHistoryItem> Movements);
 
-public sealed record ReturnLineInput(long SaleLineId, Quantity Quantity, bool Resellable);
+public sealed record ReturnLineInput(long SaleLineId, Quantity Quantity, bool Resellable,
+    ReturnRecreationInput? Recreation = null);
+
+public sealed record ReturnRecreationInput(string Sku, string ProductName, string? ProductNameLocal,
+    long CategoryId, long UnitId, long TaxRateId, string TaxMode, string? HsnCode,
+    bool PriceIncludesTax, bool TrackExpiry, bool IsLoose, string ProductClass,
+    DateOnly? ExpiryDate);
+
+public sealed record ReturnRecreationOption(long Id, string Label, long? RateScaled = null);
+public sealed record ReturnRecreationOptions(
+    IReadOnlyList<ReturnRecreationOption> Categories,
+    IReadOnlyList<ReturnRecreationOption> Units,
+    IReadOnlyList<ReturnRecreationOption> TaxRates);
 
 public sealed record ReturnRecreationDraft(
     long SaleLineId, string SuggestedSku, string ProductName, string? ProductNameLocal,
@@ -134,7 +161,11 @@ public sealed record ReturnRecreationDraft(
     long? TaxRateId, Percent TaxRate, string? HsnCode, bool PriceIncludesTax,
     bool? TrackExpiry, bool? IsLoose, string? ProductClass,
     string? BatchNumber, DateOnly? ExpiryDate, Money UnitCost, Money SellingPrice,
-    Money? Mrp, IReadOnlyList<string> MissingFields);
+    Money? Mrp, IReadOnlyList<string> MissingFields)
+{
+    public string? TaxMode { get; init; }
+    public bool ProductMissing { get; init; }
+}
 public sealed record CreateReturnCommand(
     long SaleId,
     DateOnly ReturnDate,

@@ -133,7 +133,7 @@
   <data name="Lock_Action" xml:space="preserve"><value>અનલૉક</value><comment>MT - needs review</comment></data>
   <data name="Lock_Command" xml:space="preserve"><value>લૉક</value><comment>MT - needs review</comment></data>
   <data name="Startup_LowDisk" xml:space="preserve"><value>ડિસ્કમાં 1 GB કરતાં ઓછી જગ્યા છે. ચાલુ રાખતા પહેલાં જગ્યા ખાલી કરો.</value><comment>MT - needs review</comment></data>
-  <data name="Startup_LotCache" xml:space="preserve"><value>સાચવેલ સ્ટોક જથ્થો ખાતાવહી સાથે મેળ ખાતો નથી. ખાતાવહીમાંથી કેશ ફરી બનાવવો છે?</value><comment>MT - needs review</comment></data>
+  <data name="Startup_LotCache" xml:space="preserve"><value>સ્ટોક તપાસમાં એપની બહાર થયેલો ફેરફાર મળ્યો. એપ વાપરતા રહો, બેકઅપ લો અને સપોર્ટનો સંપર્ક કરો.</value><comment>MT - needs review</comment></data>
   <data name="Startup_ClockWarning" xml:space="preserve"><value>કમ્પ્યુટર ઘડિયાળ છેલ્લી બિલ તારીખ {0:d} કરતાં પાછળ છે. તારીખ તપાસ્યા પછી જ ચાલુ રાખો.</value><comment>MT - needs review</comment></data>
   <data name="Startup_RestorePending" xml:space="preserve"><value>પુનઃસ્થાપિત ડેટાબેઝ પુષ્ટિની રાહ જોઈ રહ્યો છે. પુનઃસ્થાપિત ડેટા રાખવા માટે હા, પાછું ફેરવવા માટે ના, અથવા તેને બાકી રાખીને એપ્લિકેશન બંધ કરવા માટે રદ કરો પસંદ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Startup_RestoreUndone" xml:space="preserve"><value>પુનઃસ્થાપન રદ કરવામાં આવ્યું છે. અગાઉનો ડેટાબેઝ પાછો મૂકવામાં આવ્યો છે.</value><comment>MT - needs review</comment></data>
@@ -289,7 +289,7 @@
   <data name="Error_FractionalQtyNotAllowed" xml:space="preserve"><value>આ ઉત્પાદન માટે પૂર્ણ જથ્થો જરૂરી છે.</value><comment>MT - needs review</comment></data>
   <data name="Error_PurchaseFinalized" xml:space="preserve"><value>પોસ્ટ અથવા રદ કરેલી ખરીદી બદલી શકાતી નથી.</value><comment>MT - needs review</comment></data>
   <data name="Error_DuplicateVendorBill" xml:space="preserve"><value>આ વિક્રેતા ઇન્વોઇસ પહેલેથી દાખલ છે.</value><comment>MT - needs review</comment></data>
-  <data name="Error_PeriodLocked" xml:space="preserve"><value>આ તારીખ લોક કરેલા હિસાબી સમયગાળામાં છે.</value><comment>MT - needs review</comment></data>
+  <data name="Error_PeriodLocked" xml:space="preserve"><value>{0} લોક થયેલા વર્ષ ({1})માં આવે છે. ફેરફાર હાલના ખુલ્લા સમયગાળામાં સુધારા તરીકે દાખલ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Error_EmptyBill" xml:space="preserve"><value>પોસ્ટ કરતા પહેલાં ઓછામાં ઓછી એક લાઇન ઉમેરો.</value><comment>MT - needs review</comment></data>
   <data name="Error_CancelNotAllowed" xml:space="preserve"><value>એક અથવા વધુ લોટનો સ્ટોક બદલાયો હોવાથી આ ખરીદી રદ કરી શકાતી નથી.</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_NewVendor" xml:space="preserve"><value>નવો વિક્રેતા</value><comment>MT - needs review</comment></data>
@@ -353,30 +353,11 @@
   <data name="Stock_Count" xml:space="preserve"><value>સ્ટોક ગણતરી</value><comment>MT - needs review</comment></data>
   <data name="Stock_AdjustQuantity" xml:space="preserve"><value>જથ્થામાં ફેરફાર (+ અથવા −)</value><comment>MT - needs review</comment></data>
   <data name="Stock_Reason" xml:space="preserve"><value>કારણ</value><comment>MT - needs review</comment></data>
-  <data name="Stock_CountHint" xml:space="preserve"><value>દરેક લોટનો ભૌતિક જથ્થો દાખલ કરો. ગણતરી થાય ત્યાં સુધી ખાલી રાખો; પછી ચાલુ રાખવા ડ્રાફ્ટ સાચવો.</value><comment>MT - needs review</comment></data>
-  <data name="Stock_CountSearchHint" xml:space="preserve"><value>લોટ સ્કેન કરો અથવા વસ્તુ કે લોટ કોડથી શોધો.</value><comment>MT - needs review</comment></data>
-  <data name="Stock_FindLot" xml:space="preserve"><value>લોટ શોધો</value><comment>MT - needs review</comment></data>
-  <data name="Stock_CountLotNotFound" xml:space="preserve"><value>આ ગણતરી પત્રકમાં મેળ ખાતો લોટ નથી.</value><comment>MT - needs review</comment></data>
-  <data name="Stock_NewCount" xml:space="preserve"><value>નવી ગણતરી</value><comment>MT - needs review</comment></data>
-  <data name="Stock_ScopeHint" xml:space="preserve"><value>ગણવા માટે શ્રેણીઓ પસંદ કરો. બધી શ્રેણીઓની ગણતરી જાળવણીનું કામ છે; વેચાણના સમયની બહાર શરૂ કરો.</value><comment>MT - needs review</comment></data>
-  <data name="Stock_AllCategories" xml:space="preserve"><value>બધી શ્રેણીઓ</value><comment>MT - needs review</comment></data>
-  <data name="Stock_SelectCategory" xml:space="preserve"><value>ઓછામાં ઓછી એક શ્રેણી પસંદ કરો અથવા બધી શ્રેણીઓ પસંદ કરો.</value><comment>MT - needs review</comment></data>
-  <data name="Stock_CreateSheet" xml:space="preserve"><value>પત્રક બનાવો</value><comment>MT - needs review</comment></data>
-  <data name="Stock_ResumeCount" xml:space="preserve"><value>ગણતરી ચાલુ રાખો</value><comment>MT - needs review</comment></data>
-  <data name="Stock_NoDraftCount" xml:space="preserve"><value>સાચવેલી સ્ટોક ગણતરી ઉપલબ્ધ નથી.</value><comment>MT - needs review</comment></data>
-  <data name="Stock_SaveCount" xml:space="preserve"><value>ડ્રાફ્ટ સાચવો</value><comment>MT - needs review</comment></data>
   <data name="Stock_ReviewCount" xml:space="preserve"><value>તફાવત તપાસો</value><comment>MT - needs review</comment></data>
-  <data name="Stock_RefreshLots" xml:space="preserve"><value>લોટ ફરી તપાસો</value><comment>MT - needs review</comment></data>
   <data name="Stock_NewLotsAdded" xml:space="preserve"><value>{0} નવા લોટ ઉમેરાયા. સમીક્ષા પહેલાં તેમની ગણતરી કરો.</value><comment>MT - needs review</comment></data>
-  <data name="Stock_ReviewFirst" xml:space="preserve"><value>પોસ્ટ કરતા પહેલાં હાલનો તફાવત તપાસો.</value><comment>MT - needs review</comment></data>
-  <data name="Stock_MovementsChanged" xml:space="preserve"><value>તપાસ પછી સ્ટોક બદલાયો છે. નવો તફાવત તપાસી ફરી સમીક્ષા કરો.</value><comment>MT - needs review</comment></data>
   <data name="Stock_ReviewSummary" xml:space="preserve"><value>{0} લોટમાં તફાવત; ચોખ્ખું મૂલ્ય {1}</value><comment>MT - needs review</comment></data>
-  <data name="Stock_DiscardCount" xml:space="preserve"><value>ગણતરી રદ કરો</value><comment>MT - needs review</comment></data>
-  <data name="Stock_DiscardConfirm" xml:space="preserve"><value>આ ગણતરી પત્રક અને દાખલ કરેલા જથ્થા રદ કરવા છે?</value><comment>MT - needs review</comment></data>
   <data name="Stock_CountProgress" xml:space="preserve"><value>{1} માંથી {0} લોટ ગણાયા</value><comment>MT - needs review</comment></data>
-  <data name="Stock_CompleteEveryLot" xml:space="preserve"><value>પોસ્ટ કરતા પહેલાં દરેક લોટનો ભૌતિક જથ્થો દાખલ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Stock_InvalidCount" xml:space="preserve"><value>ગણેલો જથ્થો માન્ય અને ઋણ ન હોય એવો હોવો જોઈએ.</value><comment>MT - needs review</comment></data>
-  <data name="Stock_SinceSnapshot" xml:space="preserve"><value>પત્રક પછી</value><comment>MT - needs review</comment></data>
   <data name="Stock_DifferenceValue" xml:space="preserve"><value>તફાવતનું મૂલ્ય</value><comment>MT - needs review</comment></data>
   <data name="Stock_Expected" xml:space="preserve"><value>અપેક્ષિત</value><comment>MT - needs review</comment></data>
   <data name="Stock_Counted" xml:space="preserve"><value>ગણેલ</value><comment>MT - needs review</comment></data>
@@ -395,7 +376,6 @@
   <data name="Stock_SourceId" xml:space="preserve"><value>સ્ત્રોત ID</value><comment>MT - needs review</comment></data>
   <data name="Stock_ChangePrice" xml:space="preserve"><value>કિંમત બદલો</value><comment>MT - needs review</comment></data>
   <data name="Stock_BlockToggle" xml:space="preserve"><value>લોટ બ્લોક / અનબ્લોક</value><comment>MT - needs review</comment></data>
-  <data name="Stock_PrintCount" xml:space="preserve"><value>હાલનું પાનું છાપો</value><comment>MT - needs review</comment></data>
   <data name="Stock_Valuation" xml:space="preserve"><value>મૂલ્યાંકન</value><comment>MT - needs review</comment></data>
   <data name="Stock_SellingValue" xml:space="preserve"><value>વેચાણ કિંમતે મૂલ્ય</value><comment>MT - needs review</comment></data>
   <data name="Stock_MrpValue" xml:space="preserve"><value>MRP મુજબ મૂલ્ય</value><comment>MT - needs review</comment></data>
@@ -529,7 +509,7 @@
   <data name="Assets_Vehicle" xml:space="preserve"><value>વાહન</value></data>
   <data name="Assets_Other" xml:space="preserve"><value>અન્ય</value></data>
   <data name="Assets_DisposeConfirm" xml:space="preserve"><value>“{0}”નો નિકાલ કરવો? ઘસારો પોસ્ટ થશે અને મળેલી રકમ નોંધાશે.</value></data>
-  <data name="Assets_PostResult" xml:space="preserve"><value>{0} મહિના પોસ્ટ થયા; {1} મહિના બંધ છે.</value></data>
+  <data name="Assets_PostResult" xml:space="preserve"><value>{0} મહિના પોસ્ટ થયા; અંતિમ થયેલા વર્ષોના {1} મહિનાનો ખર્ચ આજની તારીખે નોંધાયો.</value><comment>MT - needs review</comment></data>
   <data name="Assets_Details" xml:space="preserve"><value>મિલકતની વિગતો</value></data>
   <data name="Assets_Search" xml:space="preserve"><value>મિલકત શોધો</value></data>
   <data name="Assets_SearchHint" xml:space="preserve"><value>મિલકતનું નામ અથવા શ્રેણી</value></data>
@@ -579,7 +559,6 @@
   <data name="Reports_Navigation" xml:space="preserve"><value>અહેવાલો</value></data>
   <data name="Reports_Title" xml:space="preserve"><value>અહેવાલો અને નફા-નુકસાન</value></data>
   <data name="Reports_ExportExcel" xml:space="preserve"><value>એક્સેલ નિકાસ</value></data>
-  <data name="Common_Open" xml:space="preserve"><value>ખોલો</value></data>
   <data name="Purchasing_Filter" xml:space="preserve"><value>ફિલ્ટર</value></data>
   <data name="Purchasing_ClearFilters" xml:space="preserve"><value>ફિલ્ટર હટાવો</value></data>
   <data name="Purchasing_ProductFilter" xml:space="preserve"><value>ઉત્પાદન</value></data>
@@ -598,7 +577,7 @@
   <data name="Reports_PrintA4" xml:space="preserve"><value>A4 પૂર્વદર્શન / છાપો</value></data>
   <data name="Reports_Particulars" xml:space="preserve"><value>વિગતો</value></data>
   <data name="Reports_Amount" xml:space="preserve"><value>રકમ</value></data>
-  <data name="Reports_MonthlyMatrix" xml:space="preserve"><value>માસિક કોષ્ટક</value></data>
+  <data name="Reports_MonthlyMatrix" xml:space="preserve"><value>મહિના બતાવો</value><comment>MT - needs review</comment></data>
   <data name="Reports_ComparePrevious" xml:space="preserve"><value>અગાઉના સમયગાળા સાથે સરખાવો</value></data>
   <data name="Reports_PnlExplanation" xml:space="preserve"><value>ખરીદી પહેલાં સ્ટોક બને છે. વેચાયેલી વસ્તુની કિંમત જ નફા-નુકસાનમાં આવે છે; ન વેચાયેલી ખરીદી સ્ટોક મૂલ્યના અહેવાલમાં રહે છે.</value></data>
   <data name="Reports_PnlCutMonthNote" xml:space="preserve"><value>મહિનાના ભાગને આવરી લેતી તારીખ શ્રેણીમાં પગાર અને ઘસારો ત્યારે જ દેખાશે જ્યારે મહિનાનો છેલ્લો દિવસ તેમાં સામેલ હોય.</value></data>
@@ -766,6 +745,8 @@
   <data name="Sales_Status_Draft" xml:space="preserve"><value>ડ્રાફ્ટ</value><comment>MT - needs review</comment></data>
   <data name="Sales_Status_Held" xml:space="preserve"><value>રોકેલું</value><comment>MT - needs review</comment></data>
   <data name="Sales_Status_Completed" xml:space="preserve"><value>પૂર્ણ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Status_PartiallyRefunded" xml:space="preserve"><value>આંશિક રિફંડ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Status_Refunded" xml:space="preserve"><value>રિફંડ થયેલ</value><comment>MT - needs review</comment></data>
   <data name="Sales_Status_Void" xml:space="preserve"><value>રદ</value><comment>MT - needs review</comment></data>
   <data name="Sales_Customer" xml:space="preserve"><value>ગ્રાહક</value><comment>MT - needs review</comment></data>
   <data name="Sales_CustomerShortcut" xml:space="preserve"><value>Ctrl+U ગ્રાહક</value><comment>MT - needs review</comment></data>
@@ -777,6 +758,17 @@
   <data name="Sales_UseCustomer" xml:space="preserve"><value>પસંદ કરેલો વાપરો</value><comment>MT - needs review</comment></data>
   <data name="Sales_SelectCustomer" xml:space="preserve"><value>ગ્રાહક પસંદ કરો અથવા સીધા આવેલા પસંદ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Sales_ReturnRemainingHeader" xml:space="preserve"><value>બાકી</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnSoldHeader" xml:space="preserve"><value>વેચાયેલ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnAlreadyHeader" xml:space="preserve"><value>પરત આવેલ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnRefundHeader" xml:space="preserve"><value>રિફંડ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnRestockHeader" xml:space="preserve"><value>સ્ટોક ક્યાં જશે</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnOriginalLot" xml:space="preserve"><value>મૂળ લોટ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnNewLot" xml:space="preserve"><value>નવો પરત લોટ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnExpiredDamage" xml:space="preserve"><value>સમાપ્ત: નુકસાન</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnAll" xml:space="preserve"><value>બાકી બધું પરત</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ExportCancelled" xml:space="preserve"><value>નિકાસ રદ થઈ.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnTotal" xml:space="preserve"><value>રિફંડ ₹{0} · {1} લાઇન</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnContext" xml:space="preserve"><value>બિલ {0} · {1} · ₹{2}</value><comment>MT - needs review</comment></data>
   <data name="Sales_ReviewHeld" xml:space="preserve"><value>રોકેલું બિલ તપાસો</value><comment>MT - needs review</comment></data>
   <data name="Sales_PreviousPrice" xml:space="preserve"><value>જૂની કિંમત</value><comment>MT - needs review</comment></data>
   <data name="Sales_CurrentPrice" xml:space="preserve"><value>હાલની કિંમત</value><comment>MT - needs review</comment></data>
@@ -794,7 +786,15 @@
   <data name="Sales_DiscountPreview" xml:space="preserve"><value>છૂટ: ₹{0}</value><comment>MT - needs review</comment></data>
   <data name="Sales_DiscountInvalid" xml:space="preserve"><value>કુલ રકમ સુધીની છૂટ અથવા 0 થી 100 ટકા દાખલ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Sales_ReturnsTab" xml:space="preserve"><value>પરત</value><comment>MT - needs review</comment></data>
-  <data name="Sales_MovementsTab" xml:space="preserve"><value>સ્ટોકની હિલચાલ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_MovementsTab" xml:space="preserve"><value>પ્રવૃત્તિ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Activity_COMPLETED" xml:space="preserve"><value>પૂર્ણ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Activity_PARTIAL_RETURN" xml:space="preserve"><value>આંશિક પરત</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Activity_REFUNDED" xml:space="preserve"><value>સંપૂર્ણ રિફંડ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Activity_DAMAGE" xml:space="preserve"><value>નુકસાનવાળી પરત</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Activity_VOID" xml:space="preserve"><value>રદ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Activity_RETURN_ORIGINAL" xml:space="preserve"><value>મૂળ લોટ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Activity_RETURN_NEW_LOT" xml:space="preserve"><value>નવો પરત લોટ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_Activity_RETURN_DAMAGED" xml:space="preserve"><value>નુકસાનવાળી</value><comment>MT - needs review</comment></data>
   <data name="Sales_Export" xml:space="preserve"><value>CSV નિકાસ</value><comment>MT - needs review</comment></data>
   <data name="Sales_Exported" xml:space="preserve"><value>{0} બિલ નિકાસ થયા.</value><comment>MT - needs review</comment></data>
   <data name="Sales_Bills" xml:space="preserve"><value>બિલ</value><comment>MT - needs review</comment></data>
@@ -955,7 +955,7 @@
   <data name="Reports_Kind_ItemSales" xml:space="preserve"><value>વસ્તુ મુજબ વેચાણ</value></data>
   <data name="Reports_Kind_CategorySales" xml:space="preserve"><value>શ્રેણી મુજબ વેચાણ અને માર્જિન</value></data>
   <data name="Reports_Kind_HourlySales" xml:space="preserve"><value>કલાક મુજબ વેચાણ</value></data>
-  <data name="Reports_Kind_StockValue" xml:space="preserve"><value>સ્ટોક મૂલ્ય</value></data>
+  <data name="Reports_Kind_StockValue" xml:space="preserve"><value>હાલનો ન વેચાયેલો સ્ટોક</value><comment>MT - needs review</comment></data>
   <data name="Reports_Kind_StockLedger" xml:space="preserve"><value>સ્ટોક ખાતાવહી</value></data>
   <data name="Reports_Kind_LowStock" xml:space="preserve"><value>ઓછો સ્ટોક અને પુનઃઓર્ડર</value></data>
   <data name="Reports_Kind_SlowMovers" xml:space="preserve"><value>ધીમા વેચાણની વસ્તુઓ</value></data>
@@ -1125,8 +1125,6 @@
   <data name="Stock_CorrectionReason" xml:space="preserve"><value>સુધારાનું કારણ</value></data>
   <data name="Stock_CompletedBillPrices" xml:space="preserve"><value>પૂર્ણ થયેલા બિલમાં મૂળ વેચાણ કિંમત જ રહેશે.</value></data>
   <data name="MoneyOut_NewEntry" xml:space="preserve"><value>નવી નોંધ</value></data>
-  <data name="MoneyOut_RequiredCorrectionReason" xml:space="preserve"><value>સુધારાનું કારણ (જરૂરી)</value></data>
-  <data name="MoneyOut_CorrectPosted" xml:space="preserve"><value>પસંદ કરેલી નોંધ સુધારો</value></data>
   <data name="MoneyOut_CorrectDamage" xml:space="preserve"><value>નુકસાનની નોંધ સુધારો</value></data>
   <data name="MoneyOut_CorrectSalary" xml:space="preserve"><value>પગાર ચુકવણી સુધારો</value></data>
   <data name="MoneyOut_PostedPayments" xml:space="preserve"><value>નોંધાયેલ ચુકવણીઓ</value></data>
@@ -1143,7 +1141,7 @@
   <data name="Stock_OverviewSearch" xml:space="preserve"><value>ઉત્પાદન અથવા SKU</value></data>
   <data name="Stock_LotSearch" xml:space="preserve"><value>ઉત્પાદન, લોટ અથવા બેચ</value></data>
   <data name="Assets_DisposalDetails" xml:space="preserve"><value>પસંદ કરેલી મિલકતનો નિકાલ</value></data>
-  <data name="Assets_FinancialLocked" xml:space="preserve"><value>આ મિલકત માટે ઘસારો નોંધાયેલો છે. તમે નામ, વર્ગ, વેચનાર અને નોંધ બદલી શકો છો; નાણાકીય વિગતો બંધ છે.</value></data>
+  <data name="Assets_FinancialLocked" xml:space="preserve"><value>આ મિલકતનો નિકાલ થઈ ગયો છે. નામ, વર્ગ, વેચનાર અને નોંધ બદલી શકાય; નાણાકીય શરતો અંતિમ છે.</value><comment>MT - needs review</comment></data>
   <data name="MoneyOut_ExpenseEntry" xml:space="preserve"><value>ખર્ચની નોંધ</value></data>
   <data name="MoneyOut_DamageEntry" xml:space="preserve"><value>નુકસાન નોંધો</value></data>
   <data name="MoneyOut_CategoryDetails" xml:space="preserve"><value>ખર્ચના વર્ગો</value></data>
@@ -1156,7 +1154,6 @@
   <data name="History_LegacyPurchaseSnapshot" xml:space="preserve"><value>જૂનું બિલ: ઉત્પાદનનું નામ અને SKU સ્થાનાંતરણ સમયે યાદીમાંથી લેવામાં આવ્યા છે; જૂના મૂલ્યોની ખાતરી કરી શકાઈ નથી.</value></data>
   <data name="History_LegacyUnknown" xml:space="preserve"><value>જૂની માહિતી ઉપલબ્ધ નથી</value></data>
   <data name="Stock_ReconcileSelected" xml:space="preserve"><value>પસંદ કરેલા સ્ટોકનું મિલાન કરો</value><comment>MT - needs review</comment></data>
-  <data name="Stock_DirectUnavailable" xml:space="preserve"><value>સીધા સ્ટોકની ગણતરી સ્ટોક લેખન બદલાયા પછી ઉપલબ્ધ થશે.</value><comment>MT - needs review</comment></data>
   <data name="Stock_CountPage" xml:space="preserve"><value>પાનું {0}: {1} લોટ</value><comment>MT - needs review</comment></data>
   <data name="Stock_CountNoLots" xml:space="preserve"><value>આ ઉત્પાદનો માટે કોઈ લોટ ઉપલબ્ધ નથી.</value><comment>MT - needs review</comment></data>
   <data name="Stock_ReasonRequired" xml:space="preserve"><value>સમીક્ષા પહેલાં કારણ દાખલ કરો.</value><comment>MT - needs review</comment></data>
@@ -1205,9 +1202,117 @@
   <data name="Stock_DeleteSelectedPreview" xml:space="preserve"><value>{0} પસંદ · {1} ખાલી લોટ યોગ્ય · {2} છોડ્યા. યોગ્ય લોટ કાઢી નાખવા?</value></data>
   <data name="Stock_DeleteNoneEligible" xml:space="preserve"><value>પસંદ કરેલો કોઈ લોટ કાઢી શકાતો નથી. લોટ ખાલી હોવો જોઈએ અને ઐતિહાસિક સંદર્ભ ન હોવો જોઈએ.</value></data>
   <data name="Stock_DeleteHasStock" xml:space="preserve"><value>આ લોટમાં હજી સ્ટોક છે.</value></data>
-  <data name="Stock_DeleteHistory" xml:space="preserve"><value>ઐતિહાસિક દસ્તાવેજોમાં આ લોટનો સંદર્ભ છે.</value></data>
+  <data name="Stock_DeleteOpenBill" xml:space="preserve"><value>રોકેલું અથવા ડ્રાફ્ટ બિલ હજી આ લોટ વાપરે છે.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_HistoricalLedgerNote" xml:space="preserve"><value>ડાયરેક્ટ-સ્ટોક અપગ્રેડ પહેલાં નોંધાયેલી હિલચાલ. હાલનો જથ્થો દરેક ઉત્પાદનના લોટમાં છે.</value><comment>MT - needs review</comment></data>
   <data name="Stock_NetLoss" xml:space="preserve"><value>ચોખ્ખું નુકસાન</value></data>
   <data name="Catalog_BulkPreview" xml:space="preserve"><value>{0} પસંદ · {1} યોગ્ય · {2} છોડેલા · {3} સ્ટોક એકમ · {4} કિંમત. આગળ વધવું?</value></data>
   <data name="Catalog_BulkNoneEligible" xml:space="preserve"><value>પસંદ કરેલા કોઈપણ ઉત્પાદનો આ ક્રિયા માટે યોગ્ય નથી.</value></data>
   <data name="Reports_IncludeExpired" xml:space="preserve"><value>સમાપ્ત થયેલો સ્ટોક સામેલ કરો</value></data>
+  <data name="Sales_RecreateTitle" xml:space="preserve"><value>પરત માટે ઉત્પાદન અને લોટની સમીક્ષા</value></data>
+  <data name="Sales_RecreateIntro" xml:space="preserve"><value>{0} | મૂળ GST {1}%&#10;પરત સ્વીકારતા પહેલાં ખૂટતી ઐતિહાસિક વિગતો ભરો. મૂળ બિલ અને રિફંડ બદલાશે નહીં.</value></data>
+  <data name="Sales_RecreateSku" xml:space="preserve"><value>SKU</value></data>
+  <data name="Sales_RecreateName" xml:space="preserve"><value>ઉત્પાદનનું નામ</value></data>
+  <data name="Sales_RecreateLocalName" xml:space="preserve"><value>સ્થાનિક નામ</value></data>
+  <data name="Sales_RecreateCategory" xml:space="preserve"><value>શ્રેણી</value></data>
+  <data name="Sales_RecreateUnit" xml:space="preserve"><value>એકમ</value></data>
+  <data name="Sales_RecreateTax" xml:space="preserve"><value>કર દર</value></data>
+  <data name="Sales_RecreateTaxMode" xml:space="preserve"><value>કર પદ્ધતિ</value></data>
+  <data name="Sales_RecreateHsn" xml:space="preserve"><value>HSN</value></data>
+  <data name="Sales_RecreatePricing" xml:space="preserve"><value>વેચાણ કિંમતમાં કર સામેલ છે</value></data>
+  <data name="Sales_RecreateTrackExpiry" xml:space="preserve"><value>સમાપ્તિ તારીખ ટ્રેક કરો</value></data>
+  <data name="Sales_RecreateFractional" xml:space="preserve"><value>અપૂર્ણાંક જથ્થો</value></data>
+  <data name="Sales_RecreateLotExpiry" xml:space="preserve"><value>લોટની સમાપ્તિ તારીખ</value></data>
+  <data name="Sales_RecreateSave" xml:space="preserve"><value>આ વિગતો વાપરો</value></data>
+  <data name="Sales_RecreateReview" xml:space="preserve"><value>ખૂટે છે</value><comment>MT - needs review</comment></data>
+  <data name="Sales_MoreFilters" xml:space="preserve"><value>વધુ ફિલ્ટર</value><comment>MT - needs review</comment></data>
+  <data name="Sales_RecreateRequired" xml:space="preserve"><value>SKU, નામ, શ્રેણી, એકમ, કર, કર પદ્ધતિ અને જરૂરી સમાપ્તિ અથવા HSN વિગતો ભરો.</value></data>
+  <data name="Error_AnnualReportInvalid" xml:space="preserve"><value>{0} નો અંતિમ અહેવાલ ચેકસમ તપાસમાં નિષ્ફળ થયો. તેના પર આધાર રાખતા પહેલાં ચકાસાયેલ બેકઅપ પુનઃસ્થાપિત કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Error_EntryChanged" xml:space="preserve"><value>આ નોંધ લોડ થયા પછી બદલાઈ છે. રિફ્રેશ કરીને ફરી પ્રયાસ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Error_EntryVoided" xml:space="preserve"><value>આ નોંધ રદ થયેલી છે અને બદલી શકાતી નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Error_EffectiveMonthClosed" xml:space="preserve"><value>ફેરફાર {0} પહેલાં શરૂ થઈ શકે નહીં; તે પહેલો મહિનો છે જેનું કેલેન્ડર અને નાણાકીય બંને વર્ષ ખુલ્લા છે.</value><comment>MT - needs review</comment></data>
+  <data name="Error_AssetTermsFinalized" xml:space="preserve"><value>અંતિમ થયેલા વર્ષનો ઘસારો પોસ્ટ થયો હોવાથી કિંમત અને ઉપયોગ શરૂ તારીખ બદલી શકાતી નથી. દર, પદ્ધતિ અને ભંગાર મૂલ્ય {0} થી બદલી શકાય.</value><comment>MT - needs review</comment></data>
+  <data name="Error_DamageProductDeleted" xml:space="preserve"><value>નુકસાન થયેલી પ્રોડક્ટ કાઢી નાખવામાં આવી છે. આ એકમો પાછા ઉમેરતાં પહેલાં પ્રોડક્ટ ફરી ઉમેરો.</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlScope" xml:space="preserve"><value>નફો-નુકસાન સમયગાળાનો પ્રકાર</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlScope_Month" xml:space="preserve"><value>મહિનો</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlScope_CalendarYear" xml:space="preserve"><value>કેલેન્ડર વર્ષ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlScope_FiscalYear" xml:space="preserve"><value>નાણાકીય વર્ષ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlScope_Custom" xml:space="preserve"><value>પસંદગીનો ગાળો</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlCalendarYear" xml:space="preserve"><value>કેલેન્ડર વર્ષ {0}</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlFiscalYear" xml:space="preserve"><value>નાણાકીય વર્ષ {0}</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlStatus" xml:space="preserve"><value>સ્થિતિ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlStatus_FINALIZED" xml:space="preserve"><value>અંતિમ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlStatus_OPEN" xml:space="preserve"><value>ખુલ્લું</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlStatus_LIVE" xml:space="preserve"><value>પસંદગીનો ગાળો</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlCutoff" xml:space="preserve"><value>કટઓફ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlFinalizedYear" xml:space="preserve"><value>અંતિમ વર્ષ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlVersion" xml:space="preserve"><value>આવૃત્તિ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlChecksum" xml:space="preserve"><value>ચેકસમ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlStatusFinalized" xml:space="preserve"><value>અંતિમ · {0} · {1} પછી ફેરફાર બંધ · આવૃત્તિ {2} · ચેકસમ {3}</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlStatusOpen" xml:space="preserve"><value>ખુલ્લું · {0} સુધી સુધારી શકાય · {1} સુધીની મૂળ નોંધો</value><comment>MT - needs review</comment></data>
+  <data name="Reports_PnlStatusLive" xml:space="preserve"><value>પસંદગીનો ગાળો · {0} સુધીની મૂળ નોંધો</value><comment>MT - needs review</comment></data>
+  <data name="Reports_ExportPnlCsv" xml:space="preserve"><value>નફો-નુકસાન CSV નિકાસ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_MismatchesOnly" xml:space="preserve"><value>ફક્ત તફાવત</value><comment>MT - needs review</comment></data>
+  <data name="Reports_StockExpiredIncluded" xml:space="preserve"><value>સમાપ્ત સ્ટોક સામેલ છે: {0} બેચ, જથ્થો {1}, કિંમત મૂલ્ય {2}.</value><comment>MT - needs review</comment></data>
+  <data name="Reports_StockExpiredExcluded" xml:space="preserve"><value>સમાપ્ત સ્ટોક બાકાત છે: {0} બેચ, જથ્થો {1}, કિંમત મૂલ્ય {2}.</value><comment>MT - needs review</comment></data>
+  <data name="Reports_ReconciliationSummary" xml:space="preserve"><value>{0} બેચ બતાવી, નવી પહેલાં; {1} તેમના દસ્તાવેજોથી અલગ છે.</value><comment>MT - needs review</comment></data>
+  <data name="Reports_ReconciliationNoCheck" xml:space="preserve"><value>બધી બેચની પૂરી તપાસ હજી થઈ નથી; સાપ્તાહિક જાળવણી તે કરે છે.</value><comment>MT - needs review</comment></data>
+  <data name="Reports_ReconciliationLastCheck" xml:space="preserve"><value>{0} ની પૂરી તપાસમાં {1} બેચ અલગ મળી; {2} હજી અલગ છે.</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Kind_StockReconciliation" xml:space="preserve"><value>ખરીદી અને વપરાશ મેળવણી</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Column_Class" xml:space="preserve"><value>પ્રકાર</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Column_Source" xml:space="preserve"><value>સ્રોત</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Column_Received" xml:space="preserve"><value>મળ્યાની તારીખ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Column_ReceivedQty" xml:space="preserve"><value>મળેલો જથ્થો</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Column_Sold" xml:space="preserve"><value>વેચાયેલ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Column_Returned" xml:space="preserve"><value>સ્ટોકમાં પરત</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Column_Damaged" xml:space="preserve"><value>નુકસાન</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Column_InternalUse" xml:space="preserve"><value>આંતરિક ઉપયોગ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Column_VendorReturned" xml:space="preserve"><value>વેચનારને પરત</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Column_Corrections" xml:space="preserve"><value>સુધારા</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Column_Expected" xml:space="preserve"><value>અપેક્ષિત</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Column_Available" xml:space="preserve"><value>ઉપલબ્ધ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Column_Difference" xml:space="preserve"><value>તફાવત</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Value_DIRECT" xml:space="preserve"><value>સીધી નોંધ</value><comment>MT - needs review</comment></data>
+  <data name="Reports_Value_MISMATCH" xml:space="preserve"><value>તફાવત</value><comment>MT - needs review</comment></data>
+  <data name="Pnl_Head_Expenses" xml:space="preserve"><value>ખર્ચ</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_History" xml:space="preserve"><value>ઇતિહાસ</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_Edit" xml:space="preserve"><value>ફેરફાર</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_Void" xml:space="preserve"><value>રદ કરો</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_TreatmentOpen" xml:space="preserve"><value>{0} ના બંને વાર્ષિક સમયગાળા ખુલ્લા છે: ફેરફાર એ તારીખના નફો-નુકસાનને સુધારશે.</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_TreatmentCurrent" xml:space="preserve"><value>{1} અંતિમ છે: {0} ની નોંધ જેમ છે તેમ રહેશે અને ફેરફાર {2} તારીખનો સુધારો નોંધશે.</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_CorrectExpense" xml:space="preserve"><value>ખર્ચમાં ફેરફાર</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_VoidExpense" xml:space="preserve"><value>ખર્ચ રદ કરો</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_VoidDamage" xml:space="preserve"><value>નુકસાન રદ કરો</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_VoidSalary" xml:space="preserve"><value>પગાર ચુકવણી રદ કરો</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_VoidExplanation" xml:space="preserve"><value>રદ કરવાથી નોંધ અને તેનો ઇતિહાસ રહે છે અને રકમ ઉલટાય છે. આ પાછું કરી શકાતું નથી.</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_Loss" xml:space="preserve"><value>નુકસાન</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_LossChange" xml:space="preserve"><value>નુકસાનમાં ફેરફાર</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_RestoredNewLot" xml:space="preserve"><value>એકમો નવી બેચમાં પાછા ઉમેરાયા</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_HistoryOriginal" xml:space="preserve"><value>{0} એ પોસ્ટ થયું · નફો-નુકસાન તારીખ {1}</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_HistoryEdit" xml:space="preserve"><value>{0} એ સુધાર્યું · નફો-નુકસાન તારીખ {1} ({2})</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_HistoryVoid" xml:space="preserve"><value>{0} એ રદ કર્યું · નફો-નુકસાન તારીખ {1} ({2})</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_Treatment_OPEN_PERIOD" xml:space="preserve"><value>મૂળ ખુલ્લો સમયગાળો</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_Treatment_CURRENT_DATED" xml:space="preserve"><value>આજની તારીખનો સુધારો</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_Status_ACTIVE" xml:space="preserve"><value>પોસ્ટ થયેલ</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_Status_CORRECTED" xml:space="preserve"><value>સુધારેલ</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_Status_VOID" xml:space="preserve"><value>રદ</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_Status_PURCHASE" xml:space="preserve"><value>ખરીદીમાંથી</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_EmployeeWorking" xml:space="preserve"><value>કાર્યરત</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_EmployeeRelieved" xml:space="preserve"><value>છૂટા થયેલ</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_SalaryFrom" xml:space="preserve"><value>પગાર લાગુ મહિનો</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_SalaryFromHint" xml:space="preserve"><value>નવો પગાર {0} થી લાગુ થશે. ત્યારથી પોસ્ટ થયેલા {2} પગાર મહિના ચૂકવ્યા પ્રમાણે રહેશે; જરૂર હોય તો પોસ્ટ થયેલી ચુકવણીમાં સુધારો.</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_SalaryFromClosed" xml:space="preserve"><value>{0} અંતિમ થયેલા વર્ષમાં છે. ફેરફાર વહેલામાં વહેલો {1} થી શરૂ થઈ શકે.</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_SalaryFromFormat" xml:space="preserve"><value>મહિનો YYYY-MM રૂપે લખો.</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_SalaryTermLine" xml:space="preserve"><value>{0} થી: ₹{1} · {2} · {3} એ નોંધ્યું</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_TermReason_INITIAL" xml:space="preserve"><value>શરૂઆતની</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_TermReason_CHANGE" xml:space="preserve"><value>ફેરફાર</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_TermReason_RECALCULATION" xml:space="preserve"><value>ફરી ગણતરી</value><comment>MT - needs review</comment></data>
+  <data name="Assets_EffectiveFrom" xml:space="preserve"><value>લાગુ થવાનો મહિનો</value><comment>MT - needs review</comment></data>
+  <data name="Assets_ConfirmChange" xml:space="preserve"><value>ઘસારામાં ફેરફારની પુષ્ટિ</value><comment>MT - needs review</comment></data>
+  <data name="Assets_PreviewNeedsValues" xml:space="preserve"><value>આ ફેરફારની અસર જોવા માટે માન્ય મૂલ્યો દાખલ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Assets_PreviewBlocked" xml:space="preserve"><value>અંતિમ થયેલા વર્ષનો ઘસારો પોસ્ટ થયો હોવાથી કિંમત અને ઉપયોગ શરૂ તારીખ બદલી શકાતી નથી. દર, પદ્ધતિ અને ભંગાર મૂલ્ય {0} થી બદલી શકાય.</value><comment>MT - needs review</comment></data>
+  <data name="Assets_PreviewRecalculation" xml:space="preserve"><value>{0} થી આખું સમયપત્રક ફરી ગણાશે: {1} પોસ્ટ થયેલા મહિનાનો ઘસારો ₹{2} થી ₹{3} થશે; પુસ્તક મૂલ્ય ₹{4} થી ₹{5} થશે.</value><comment>MT - needs review</comment></data>
+  <data name="Assets_PreviewTerms" xml:space="preserve"><value>નવી શરતો {0} થી લાગુ (પહેલો ખુલ્લો મહિનો {1}): {2} પોસ્ટ થયેલા મહિનાનો ઘસારો ₹{3} થી ₹{4} થશે; પુસ્તક મૂલ્ય ₹{5} થી ₹{6} થશે.</value><comment>MT - needs review</comment></data>
+  <data name="Assets_TermHistory" xml:space="preserve"><value>ઘસારાની શરતો</value><comment>MT - needs review</comment></data>
+  <data name="Assets_TermLine" xml:space="preserve"><value>{0} થી: {1} {2}% · ભંગાર ₹{3} · કિંમત ₹{4} · {5} · {6} એ નોંધ્યું</value><comment>MT - needs review</comment></data>
+  <data name="Assets_ChargedOn" xml:space="preserve"><value>ખર્ચ તારીખ</value><comment>MT - needs review</comment></data>
 </root>
