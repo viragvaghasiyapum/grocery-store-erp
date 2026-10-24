@@ -2,16 +2,20 @@
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
- Title="{l:Tr Sales_Customer}" Width="760" Height="570" MinWidth="670" MinHeight="500"
- WindowStartupLocation="CenterOwner" NumberSubstitution.Substitution="European">
- <Grid Margin="24">
-  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
+ xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+ Title="{l:Tr Sales_Customer}" Width="760" Height="590" MinWidth="670" MinHeight="520"
+ WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
+ NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+ <Grid Margin="20">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <Grid>
+  <TextBlock Style="{StaticResource FormTitle}" Margin="0,0,0,10" Text="{l:Tr Sales_Customer}"/>
+  <Grid Grid.Row="1">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <Grid>
-    <TextBox x:Name="SearchBox" Height="36" TextChanged="SearchBox_OnChanged" ToolTip="{l:Tr Sales_FindCustomer}"/>
-    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="Gray" IsHitTestVisible="False"
+    <TextBox x:Name="SearchBox" TextChanged="SearchBox_OnChanged" ToolTip="{l:Tr Sales_FindCustomer}"
+             AutomationProperties.Name="{l:Tr Sales_FindCustomer}"/>
+    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource SecondaryTextBrush}" IsHitTestVisible="False"
                Text="{l:Tr Sales_FindCustomer}">
      <TextBlock.Style>
       <Style TargetType="TextBlock">
@@ -27,39 +31,31 @@
    </Grid>
    <Button Grid.Column="1" Margin="8,0,0,0" Click="Search_OnClick" Content="{l:Tr Sales_Search}"/>
   </Grid>
-  <DataGrid x:Name="CustomersGrid" Grid.Row="1" Margin="0,12,0,16" Style="{StaticResource CatalogGrid}"
-            MouseDoubleClick="CustomersGrid_OnDoubleClick">
+  <DataGrid x:Name="CustomersGrid" Grid.Row="2" Margin="0,10,0,12" Style="{StaticResource CatalogGrid}"
+            MouseDoubleClick="CustomersGrid_OnDoubleClick" AutomationProperties.Name="{l:Tr Sales_Customer}">
    <DataGrid.Columns>
-    <DataGridTextColumn Width="250" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}"/>
+    <DataGridTextColumn Width="*" MinWidth="200" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}"/>
     <DataGridTextColumn Width="140" Header="{l:Tr Setup_Phone}" Binding="{Binding Phone}"/>
     <DataGridTextColumn Width="180" Header="{l:Tr Setup_Gstin}" Binding="{Binding Gstin}"/>
    </DataGrid.Columns>
   </DataGrid>
-  <TextBlock Grid.Row="2" FontWeight="SemiBold" Text="{l:Tr Sales_NewCustomer}"/>
-  <Grid Grid.Row="3" Margin="0,8,0,0">
-   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="150"/><ColumnDefinition Width="175"/></Grid.ColumnDefinitions>
-   <StackPanel>
-    <TextBlock Text="{l:Tr Catalog_Name}"/>
-    <TextBox x:Name="NameBox" Height="36" ToolTip="{l:Tr Catalog_Name}"/>
-   </StackPanel>
-   <StackPanel Grid.Column="1" Margin="8,0,0,0">
-    <TextBlock Text="{l:Tr Setup_Phone}"/>
-    <TextBox x:Name="PhoneBox" Height="36" ToolTip="{l:Tr Setup_Phone}"/>
-   </StackPanel>
-   <StackPanel Grid.Column="2" Margin="8,0,0,0">
-    <TextBlock Text="{l:Tr Setup_Gstin}"/>
-    <TextBox x:Name="GstinBox" Height="36" ToolTip="{l:Tr Setup_Gstin}"/>
-   </StackPanel>
-  </Grid>
-  <Grid Grid.Row="4" Margin="0,12,0,0">
-   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-   <TextBlock x:Name="ErrorText" VerticalAlignment="Center" TextWrapping="Wrap" Foreground="Firebrick"/>
-   <StackPanel Grid.Column="1" Orientation="Horizontal">
-    <Button Margin="0,0,8,0" Click="Create_OnClick" Content="{l:Tr Sales_CreateCustomer}"/>
+  <TextBlock Grid.Row="3" Style="{StaticResource FormSection}" Text="{l:Tr Sales_NewCustomer}"/>
+  <StackPanel Grid.Row="4">
+   <p:FormErrorSummary x:Name="Summary"/>
+   <Grid x:Name="Fields">
+    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="150"/><ColumnDefinition Width="175"/></Grid.ColumnDefinitions>
+    <p:FormField x:Name="NameField" Label="{l:Tr Catalog_Name}" IsRequired="True"><TextBox x:Name="NameBox" MaxLength="120"/></p:FormField>
+    <p:FormField x:Name="PhoneField" Grid.Column="1" Label="{l:Tr Setup_Phone}"><TextBox x:Name="PhoneBox" MaxLength="20"/></p:FormField>
+    <p:FormField x:Name="GstinField" Grid.Column="2" Margin="0,0,0,10" Label="{l:Tr Setup_Gstin}"><TextBox x:Name="GstinBox" MaxLength="15"/></p:FormField>
+   </Grid>
+  </StackPanel>
+  <DockPanel Grid.Row="5" Margin="0,2,0,0">
+   <Button x:Name="CreateButton" DockPanel.Dock="Left" Click="Create_OnClick" Content="{l:Tr Sales_CreateCustomer}"/>
+   <StackPanel Style="{StaticResource FormFooter}" Margin="0">
     <Button Margin="0,0,8,0" Click="WalkIn_OnClick" Content="{l:Tr Sales_WalkIn}"/>
     <Button Margin="0,0,8,0" IsCancel="True" Content="{l:Tr Common_Cancel}"/>
     <Button Click="Use_OnClick" IsDefault="True" Content="{l:Tr Sales_UseCustomer}"/>
    </StackPanel>
-  </Grid>
+  </DockPanel>
  </Grid>
 </Window>

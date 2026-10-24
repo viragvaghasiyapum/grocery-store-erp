@@ -2,99 +2,152 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
     Title="{l:Tr Catalog_Title}" FontFamily="{StaticResource AppFont}"
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European"
     ScrollViewer.CanContentScroll="False">
-  <Grid Margin="16,12,16,12">
+  <Grid Margin="14,8,14,8">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*" MinWidth="320"/>
+      <ColumnDefinition x:Name="DetailsColumn" Width="0"/>
+    </Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
-    <WrapPanel Margin="0,0,0,8">
-      <TextBlock Style="{StaticResource SectionTitle}" VerticalAlignment="Center" Margin="0,0,20,0"
-                 Text="{l:Tr Catalog_Title}"/>
-      <Button Margin="0,0,8,0" Click="Masters_OnClick" Content="{l:Tr Catalog_Masters}"/>
-      <Button Margin="0,0,8,0" Click="Import_OnClick" Content="{l:Tr Catalog_Import}"/>
-      <Button Click="New_OnClick" Content="{l:Tr Catalog_New}" FontWeight="SemiBold"/>
-    </WrapPanel>
-    <Border Grid.Row="1" Style="{StaticResource CatalogCard}" Padding="10" Margin="0,0,0,8">
-      <StackPanel>
-        <WrapPanel>
-          <StackPanel Width="420" Margin="0,0,12,0">
-            <TextBlock Margin="0,0,0,6" Text="{l:Tr Catalog_SearchHint}"/>
-            <TextBox x:Name="SearchBox" MinHeight="36" VerticalContentAlignment="Center" TextChanged="SearchBox_OnTextChanged" AutomationProperties.Name="{l:Tr Catalog_SearchHint}"/>
-          </StackPanel>
-          <StackPanel Width="190" Margin="0,0,12,0">
-            <TextBlock Margin="0,0,0,6" Text="{l:Tr Catalog_Category}"/>
-            <ComboBox x:Name="CategoryFilter" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="MasterFilter_OnChanged" ToolTip="{l:Tr Catalog_Category}"/>
-          </StackPanel>
-          <StackPanel Width="170" Margin="0,0,12,0">
-            <TextBlock Margin="0,0,0,6" Text="{l:Tr Catalog_Brand}"/>
-            <ComboBox x:Name="BrandFilter" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="MasterFilter_OnChanged" ToolTip="{l:Tr Catalog_Brand}"/>
-          </StackPanel>
-          <Menu Margin="0,18,0,0" VerticalAlignment="Center">
-            <MenuItem Header="{l:Tr Catalog_Filters}">
-              <MenuItem x:Name="LowStockFilter" IsCheckable="True" Click="Filter_OnChanged" Header="{l:Tr Catalog_LowStock}"/>
-              <MenuItem x:Name="NoBarcodeFilter" IsCheckable="True" Click="Filter_OnChanged" Header="{l:Tr Catalog_NoBarcode}"/>
-              <MenuItem x:Name="MissingLocalFilter" IsCheckable="True" Click="Filter_OnChanged" Header="{l:Tr Catalog_MissingLocal}"/>
-              <MenuItem x:Name="LooseFilter" IsCheckable="True" Click="Filter_OnChanged" Header="{l:Tr Catalog_Loose}"/>
-              <MenuItem x:Name="ArchivedFilter" IsCheckable="True" Click="Filter_OnChanged" Header="{l:Tr Catalog_IncludeArchived}"/>
-              <Separator/>
-              <MenuItem x:Name="ExpiredFilter" IsCheckable="True" Click="ExpiryFilter_OnChanged" Header="{l:Tr MoneyOut_Expired}"/>
-              <MenuItem x:Name="ExpiringFilter" IsCheckable="True" Click="ExpiryFilter_OnChanged" Header="{l:Tr Stock_Expiring}"/>
-            </MenuItem>
-          </Menu>
-        </WrapPanel>
+
+    <DockPanel Margin="0,0,0,6">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <Menu x:Name="ImportMenu" VerticalAlignment="Center" Margin="0,0,6,0" Background="Transparent">
+          <MenuItem Header="{l:Tr Catalog_ImportMenu}">
+            <MenuItem Click="Import_OnClick" Header="{l:Tr Catalog_Import}"/>
+            <MenuItem Click="OpeningImport_OnClick" Header="{l:Tr Stock_OpeningImport}"/>
+            <MenuItem Click="OpeningTemplate_OnClick" Header="{l:Tr Stock_OpeningTemplate}"/>
+          </MenuItem>
+        </Menu>
+        <Button x:Name="MastersButton" Style="{StaticResource ToolbarButton}" Click="Masters_OnClick" Content="{l:Tr Catalog_Masters}"/>
+        <Button Style="{StaticResource ToolbarButton}" Margin="0" Click="New_OnClick" Content="{l:Tr Catalog_New}" FontWeight="SemiBold"
+                ToolTip="Ctrl+N"/>
       </StackPanel>
-    </Border>
-    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,6">
-      <Button x:Name="EditButton" IsEnabled="False" Margin="0,0,8,0" Click="Edit_OnClick" Content="{l:Tr Catalog_Edit}"/>
-      <Menu VerticalAlignment="Center" Margin="0,0,8,0" MinHeight="36" Padding="2" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"><MenuItem Header="{l:Tr Common_Actions}">
-        <MenuItem x:Name="LotsButton" IsEnabled="False" Click="Lots_OnClick" Header="{l:Tr Stock_Lots}"/>
-        <MenuItem x:Name="ReconcileButton" IsEnabled="False" Click="Reconcile_OnClick" Header="{l:Tr Stock_ReconcileSelected}"/>
-        <MenuItem x:Name="LedgerButton" IsEnabled="False" Click="Ledger_OnClick" Header="{l:Tr Stock_Ledger}"/>
-        <MenuItem x:Name="LabelsButton" IsEnabled="False" Click="Labels_OnClick" Header="{l:Tr Catalog_PrintLabels}"/>
-        <MenuItem x:Name="BarcodeButton" IsEnabled="False" Click="GenerateBarcode_OnClick" Header="{l:Tr Catalog_GenerateBarcode}"/>
-        <MenuItem x:Name="RestoreButton" IsEnabled="False" Click="Restore_OnClick" Header="{l:Tr Catalog_Restore}"/>
-      </MenuItem></Menu>
-      <Menu x:Name="BulkActionsMenu" IsEnabled="False" Visibility="Collapsed" VerticalAlignment="Center" Margin="0,0,8,0" MinHeight="36" Padding="2" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-        <MenuItem Header="{l:Tr Catalog_BulkActions}">
-          <MenuItem x:Name="BulkRestoreButton" IsEnabled="False" Click="BulkRestore_OnClick" Header="{l:Tr Catalog_RestoreSelected}"/>
-          <MenuItem x:Name="BulkRemoveButton" IsEnabled="False" Click="BulkRemove_OnClick" Header="{l:Tr Catalog_RemoveSelected}"/>
-          <MenuItem x:Name="BulkButton" Click="Bulk_OnClick" Header="{l:Tr Catalog_BulkEdit}"/>
-          <MenuItem x:Name="BulkReconcileButton" Click="Reconcile_OnClick" Header="{l:Tr Stock_ReconcileSelected}"/>
-          <MenuItem Click="BulkLabels_OnClick" Header="{l:Tr Catalog_PrintLabelsSelected}"/>
-          <MenuItem x:Name="BulkBarcodeButton" IsEnabled="False" Click="BulkBarcode_OnClick" Header="{l:Tr Catalog_GenerateBarcodeSelected}"/>
-        </MenuItem>
-      </Menu>
-      <TextBlock x:Name="SelectedCountText" VerticalAlignment="Center" Text="0 selected"/>
-    </StackPanel>
+      <TextBlock Style="{StaticResource PageTitle}" Text="{l:Tr Catalog_Title}"/>
+    </DockPanel>
+
+    <WrapPanel x:Name="FilterBar" Grid.Row="1" Margin="0,0,0,2">
+      <ui:TextBox x:Name="SearchBox" Width="300" Margin="0,0,6,4" PlaceholderText="{l:Tr Catalog_SearchHint}"
+                  TextChanged="SearchBox_OnTextChanged" AutomationProperties.Name="{l:Tr Catalog_SearchHint}" ToolTip="Ctrl+F"/>
+      <ComboBox x:Name="ClassFilter" Width="130" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged"
+                AutomationProperties.Name="{l:Tr Catalog_ProductClass}">
+        <ComboBoxItem Tag="" Content="{l:Tr Catalog_AllTypes}"/>
+        <ComboBoxItem Tag="SALEABLE" Content="{l:Tr Catalog_Saleable}"/>
+        <ComboBoxItem Tag="INTERNAL" Content="{l:Tr Catalog_InternalUse}"/>
+      </ComboBox>
+      <ComboBox x:Name="StatusFilter" Width="120" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged"
+                AutomationProperties.Name="{l:Tr Catalog_StatusFilter}">
+        <ComboBoxItem Tag="ACTIVE" Content="{l:Tr Catalog_ActiveOnly}"/>
+        <ComboBoxItem Tag="ARCHIVED" Content="{l:Tr Catalog_ArchivedOnly}"/>
+        <ComboBoxItem Tag="ALL" Content="{l:Tr Catalog_AnyStatus}"/>
+      </ComboBox>
+      <ComboBox x:Name="CategoryFilter" Width="160" Margin="0,0,6,4" DisplayMemberPath="Name" SelectedValuePath="Id"
+                SelectionChanged="Filter_OnChanged" AutomationProperties.Name="{l:Tr Catalog_Category}"/>
+      <ComboBox x:Name="StockFilter" Width="125" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged"
+                AutomationProperties.Name="{l:Tr Catalog_Stock}">
+        <ComboBoxItem Tag="" Content="{l:Tr Catalog_AnyStock}"/>
+        <ComboBoxItem Tag="HAS" Content="{l:Tr Catalog_HasStock}"/>
+        <ComboBoxItem Tag="LOW" Content="{l:Tr Catalog_LowStock}"/>
+      </ComboBox>
+      <ComboBox x:Name="ExpiryFilter" Width="150" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged"
+                AutomationProperties.Name="{l:Tr Stock_ExpiryStatus}">
+        <ComboBoxItem Tag="ALL" Content="{l:Tr Stock_AnyExpiry}"/>
+        <ComboBoxItem Tag="EXPIRED" Content="{l:Tr Catalog_ExpiredStock}"/>
+        <ComboBoxItem Tag="EXPIRING" Content="{l:Tr Stock_Expiring}"/>
+      </ComboBox>
+      <ToggleButton x:Name="MoreFiltersToggle" Margin="0,0,6,4" MinHeight="32" Padding="10,4" Click="MoreFilters_OnClick"
+                    Content="{l:Tr Common_MoreFilters}"/>
+      <Button Style="{StaticResource ToolbarButton}" Margin="0,0,0,4" Click="ClearFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
+    </WrapPanel>
+
+    <WrapPanel x:Name="MoreFiltersPanel" Grid.Row="2" Margin="0,0,0,2" Visibility="Collapsed">
+      <ComboBox x:Name="BrandFilter" Width="150" Margin="0,0,6,4" DisplayMemberPath="Name" SelectedValuePath="Id"
+                SelectionChanged="Filter_OnChanged" AutomationProperties.Name="{l:Tr Catalog_Brand}"/>
+      <ComboBox x:Name="VendorFilter" Width="190" Margin="0,0,10,4" DisplayMemberPath="Name" SelectedValuePath="Id"
+                SelectionChanged="Filter_OnChanged" AutomationProperties.Name="{l:Tr Purchasing_Vendor}"/>
+      <CheckBox x:Name="NoBarcodeFilter" Margin="0,0,12,4" Click="CheckFilter_OnClick" Content="{l:Tr Catalog_NoBarcode}"/>
+      <CheckBox x:Name="MissingLocalFilter" Margin="0,0,12,4" Click="CheckFilter_OnClick" Content="{l:Tr Catalog_MissingLocal}"/>
+      <CheckBox x:Name="LooseFilter" Margin="0,0,12,4" Click="CheckFilter_OnClick" Content="{l:Tr Catalog_Loose}"/>
+    </WrapPanel>
+
+    <p:SelectionBar x:Name="Selection" Grid.Row="1" Covers="{Binding ElementName=FilterBar}">
+      <p:SelectionBar.Actions>
+        <Menu VerticalAlignment="Center" Background="Transparent">
+          <MenuItem Header="{l:Tr Catalog_BulkActions}">
+            <MenuItem Click="BulkRemove_OnClick" Header="{l:Tr Catalog_RemoveSelected}"/>
+            <MenuItem Click="BulkRestore_OnClick" Header="{l:Tr Catalog_RestoreSelected}"/>
+            <Separator/>
+            <MenuItem Click="BulkCategory_OnClick" Header="{l:Tr Catalog_SetCategory}"/>
+            <MenuItem Click="BulkTax_OnClick" Header="{l:Tr Catalog_SetTaxRate}"/>
+            <MenuItem Click="BulkClass_OnClick" Header="{l:Tr Catalog_SetProductClass}"/>
+            <Separator/>
+            <MenuItem Click="BulkLabels_OnClick" Header="{l:Tr Catalog_PrintLabelsSelected}"/>
+            <MenuItem Click="BulkBarcode_OnClick" Header="{l:Tr Catalog_GenerateBarcodeSelected}"/>
+            <Separator/>
+            <MenuItem Click="Reconcile_OnClick" Header="{l:Tr Stock_ReconcileSelected}"/>
+            <MenuItem Click="WriteOffExpired_OnClick" Header="{l:Tr Catalog_WriteOffExpiredSelected}"/>
+          </MenuItem>
+        </Menu>
+      </p:SelectionBar.Actions>
+    </p:SelectionBar>
+
     <Grid Grid.Row="3">
-      <DataGrid x:Name="ProductsGrid" Style="{StaticResource CompactTableGrid}" SelectionMode="Single" SelectionChanged="ProductsGrid_OnSelectionChanged" MouseDoubleClick="ProductsGrid_OnDoubleClick">
+      <DataGrid x:Name="ProductsGrid" Style="{StaticResource CompactTableGrid}" RowHeight="40" SelectionMode="Single"
+                SelectionChanged="ProductsGrid_OnSelectionChanged" MouseDoubleClick="ProductsGrid_OnDoubleClick"
+                PreviewKeyDown="ProductsGrid_OnPreviewKeyDown" AutomationProperties.Name="{l:Tr Catalog_Title}">
         <DataGrid.Columns>
-          <DataGridTemplateColumn Width="42">
+          <DataGridTemplateColumn Width="40" CanUserReorder="False" CanUserResize="False">
             <DataGridTemplateColumn.HeaderTemplate><DataTemplate>
               <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" IsThreeState="True"
                         Loaded="PageSelectionCheck_OnLoaded" Click="PageSelectionCheck_OnClick"
-                        AutomationProperties.Name="Select all products on this page"/>
+                        AutomationProperties.Name="{l:Tr Selection_ThisPage}"/>
             </DataTemplate></DataGridTemplateColumn.HeaderTemplate>
             <DataGridTemplateColumn.CellTemplate><DataTemplate>
               <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" Loaded="ProductCheck_OnLoaded"
-                        Click="ProductCheck_OnClick" AutomationProperties.Name="Select product"/>
+                        Click="ProductCheck_OnClick" AutomationProperties.Name="{l:Tr Catalog_SelectProduct}"/>
             </DataTemplate></DataGridTemplateColumn.CellTemplate>
           </DataGridTemplateColumn>
-          <DataGridTextColumn Width="110" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}"/>
-          <DataGridTemplateColumn Width="2*" MinWidth="170" Header="{l:Tr Catalog_Name}">
+          <DataGridTextColumn Width="105" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}"/>
+          <DataGridTemplateColumn Width="2*" MinWidth="170" Header="{l:Tr Catalog_Name}" SortMemberPath="Name">
             <DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel VerticalAlignment="Center">
               <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
-              <TextBlock Text="{Binding NameLocal}" Opacity="0.65" TextTrimming="CharacterEllipsis"/>
-            </StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate>
+              <TextBlock x:Name="LocalName" Text="{Binding NameLocal}" Opacity="0.65" FontSize="12" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+            <DataTemplate.Triggers>
+              <!-- An empty second line would push a one-line name off centre. -->
+              <DataTrigger Binding="{Binding NameLocal}" Value="{x:Null}">
+                <Setter TargetName="LocalName" Property="Visibility" Value="Collapsed"/>
+              </DataTrigger>
+              <DataTrigger Binding="{Binding NameLocal}" Value="">
+                <Setter TargetName="LocalName" Property="Visibility" Value="Collapsed"/>
+              </DataTrigger>
+            </DataTemplate.Triggers>
+            </DataTemplate></DataGridTemplateColumn.CellTemplate>
           </DataGridTemplateColumn>
-          <DataGridTextColumn Width="*" MinWidth="100" Header="{l:Tr Catalog_Category}" Binding="{Binding Category}"/>
-          <DataGridTextColumn Width="95" Header="{l:Tr Catalog_Stock}" Binding="{Binding Stock}"/>
-          <DataGridTextColumn Width="95" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}"/>
-          <DataGridTextColumn Width="95" Header="{l:Tr Catalog_Mrp}" Binding="{Binding Mrp}"/>
-          <DataGridTemplateColumn Width="80" Header="{l:Tr Catalog_Active}">
+          <DataGridTextColumn Width="*" MinWidth="90" Header="{l:Tr Catalog_Category}" Binding="{Binding Category}"/>
+          <DataGridTemplateColumn Width="100" Header="{l:Tr Catalog_Stock}" SortMemberPath="Stock">
+            <DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel VerticalAlignment="Center">
+              <TextBlock Text="{Binding Stock}"/>
+              <TextBlock x:Name="ExpiredMark" FontSize="11" Visibility="Collapsed" Foreground="{StaticResource ExpiryExpiredBrush}"
+                         Text="{l:Tr Catalog_ExpiredStock}"/>
+            </StackPanel>
+            <DataTemplate.Triggers>
+              <DataTrigger Binding="{Binding HasExpiredStock}" Value="True">
+                <Setter TargetName="ExpiredMark" Property="Visibility" Value="Visible"/>
+              </DataTrigger>
+            </DataTemplate.Triggers>
+            </DataTemplate></DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTextColumn Width="90" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}"/>
+          <DataGridTextColumn Width="105" Header="{l:Tr Catalog_Mrp}" Binding="{Binding Mrp}"/>
+          <DataGridTemplateColumn Width="70" Header="{l:Tr Catalog_Active}">
             <DataGridTemplateColumn.CellTemplate><DataTemplate>
               <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center"
                         IsChecked="{Binding IsActive, Mode=OneWay}" Click="ProductActive_OnClick"
@@ -103,18 +156,12 @@
           </DataGridTemplateColumn>
         </DataGrid.Columns>
       </DataGrid>
-      <TextBlock x:Name="EmptyText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" Text="{l:Tr Catalog_Empty}"/>
+      <TextBlock x:Name="EmptyText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
+                 TextWrapping="Wrap" TextAlignment="Center" MaxWidth="420" Text="{l:Tr Catalog_Empty}"/>
     </Grid>
-    <DockPanel Grid.Row="4">
-      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-        <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
-        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" SelectedIndex="2" SelectionChanged="PageSize_OnChanged">
-          <ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/>
-        </ComboBox>
-        <Button x:Name="PreviousPageButton" IsEnabled="False" Margin="8,0" Click="PreviousPage_OnClick" Content="{l:Tr Sales_Previous}"/>
-        <Button x:Name="NextPageButton" IsEnabled="False" Click="NextPage_OnClick" Content="{l:Tr Sales_Next}"/>
-      </StackPanel>
-      <TextBlock x:Name="StatusText" TextWrapping="Wrap" Opacity="0.75" VerticalAlignment="Center"/>
-    </DockPanel>
+
+    <p:PagerBar x:Name="Pager" Grid.Row="4"/>
+
+    <p:ProductDetailsPanel x:Name="Details" Grid.Column="1" Grid.RowSpan="5" Margin="10,-8,-14,-8" Visibility="Collapsed"/>
   </Grid>
 </Page>

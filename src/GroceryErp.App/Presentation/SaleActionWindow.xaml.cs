@@ -21,18 +21,20 @@ public partial class SaleActionWindow : Window
         InitializeComponent();
         _isReturn = isReturn;
         Title = TranslationSource.Instance[isReturn ? "Sales_Return" : "Sales_Void"];
+        TitleText.Text = Title;
         ContextText.Text = context ?? string.Empty;
         ContextText.Visibility = context is null ? Visibility.Collapsed : Visibility.Visible;
         if (!isReturn)
         {
             ReturnFields.Visibility = Visibility.Collapsed;
-            RefundModePanel.Visibility = Visibility.Collapsed;
+            RefundModeField.Visibility = Visibility.Collapsed;
             TotalText.Visibility = Visibility.Collapsed;
-            LayoutGrid.RowDefinitions[2].Height = new GridLength(0);
+            LayoutGrid.RowDefinitions[3].Height = new GridLength(0);
+            // A void asks only for its reason; the window grows if the summary appears.
             Width = 520;
-            Height = context is null ? 230 : 260;
             MinWidth = 480;
-            MinHeight = 220;
+            MinHeight = 0;
+            SizeToContent = SizeToContent.Height;
         }
         _entries = lines?.Select(static line => new ReturnEntry(line)).ToArray() ?? [];
         foreach (ReturnEntry entry in _entries) entry.PropertyChanged += (_, _) => UpdateTotal();
@@ -73,39 +75,34 @@ public partial class SaleActionWindow : Window
 
     private void Save_OnClick(object sender, RoutedEventArgs e)
     {
-        ErrorText.Text = "";
-        if (Reason.Length == 0)
-        {
-            ErrorText.Text = TranslationSource.Instance["Sales_ReasonRequired"];
-            ReasonBox.Focus();
-            return;
-        }
-        if (_isReturn)
-        {
-            ReturnGrid.CommitEdit(DataGridEditingUnit.Row, true);
-            var selected = new List<ReturnLineInput>();
-            foreach (ReturnEntry entry in _entries)
-            {
-                string text = InputNormalizer.Normalize(entry.QuantityText).Trim();
-                if (text.Length == 0) continue;
-                if (!decimal.TryParse(text, NumberStyles.Number, Digits, out decimal value) ||
-                    value <= 0 || new Quantity(value) > entry.Line.Remaining)
-                {
-                    ErrorText.Text = TranslationSource.Instance["Sales_ReturnQuantityInvalid"];
-                    ReturnGrid.SelectedItem = entry;
-                    ReturnGrid.ScrollIntoView(entry);
-                    return;
-                }
-                selected.Add(new(entry.Line.Line.Id, new Quantity(value), entry.Resellable));
-            }
-            if (selected.Count == 0)
-            {
-                ErrorText.Text = TranslationSource.Instance["Sales_ReturnQuantityInvalid"];
-                return;
-            }
-            ReturnLines = selected;
-        }
+        var form = new FormValidator();
+        if (form.Text(ReasonField, ReasonBox.Text, maxLength: 240) is null) form.AddKey(ReasonField, "Sales_ReasonRequired");
+        bool linesValid = !_isReturn || TryCollectLines();
+        if (!form.Apply(Fields, Summary,
+                linesValid ? null : [TranslationSource.Instance["Sales_ReturnQuantityInvalid"]])) return;
         DialogResult = true;
+    }
+
+    // Selects and scrolls to the first line whose quantity cannot be returned.
+    private bool TryCollectLines()
+    {
+        ReturnGrid.CommitEdit(DataGridEditingUnit.Row, true);
+        var selected = new List<ReturnLineInput>();
+        foreach (ReturnEntry entry in _entries)
+        {
+            string text = InputNormalizer.Normalize(entry.QuantityText).Trim();
+            if (text.Length == 0) continue;
+            if (!decimal.TryParse(text, NumberStyles.Number, Digits, out decimal value) ||
+                value <= 0 || new Quantity(value) > entry.Line.Remaining)
+            {
+                ReturnGrid.SelectedItem = entry;
+                ReturnGrid.ScrollIntoView(entry);
+                return false;
+            }
+            selected.Add(new(entry.Line.Line.Id, new Quantity(value), entry.Resellable));
+        }
+        ReturnLines = selected;
+        return selected.Count > 0;
     }
 
     // One sold line: what was sold and returned so far, what this return refunds,

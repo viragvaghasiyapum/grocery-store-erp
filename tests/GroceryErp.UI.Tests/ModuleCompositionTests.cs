@@ -22,8 +22,8 @@ public sealed class ModuleCompositionTests
         IModule[] modules =
         [
             new SalesModule(typeof(BillingPage), typeof(SalesHistoryPage)),
-            new PurchasingModule(typeof(PurchasesPage)),
-            new InventoryModule(typeof(StockPage)),
+            new PurchasingModule(typeof(PurchasesPage), typeof(VendorsPage)),
+            new InventoryModule(),
             new ExpensesModule(typeof(MoneyOutPage)),
             new AssetsModule(typeof(AssetsPage)),
             new ReportsModule(typeof(ReportsPage)),

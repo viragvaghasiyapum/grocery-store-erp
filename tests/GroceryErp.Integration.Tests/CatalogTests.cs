@@ -56,19 +56,22 @@ public sealed class CatalogTests
             ExpiryAsOf: new DateOnly(2026, 10, 19)), ct)).Select(static row => row.Id)
             .ShouldBe([expired]);
         long empty = await fixture.Service.CreateAsync(fixture.Product("Empty", "expiry"), ct);
-        CatalogBulkPreview preview = await fixture.Service.PreviewBulkAsync([expired, empty],
-            CatalogBulkAction.Classification, "INTERNAL", ct);
+        var toInternal = new CatalogBulkCommand(CatalogBulkAction.Classification, TargetCode: "INTERNAL");
+        CatalogBulkPreview preview = await fixture.Service.PreviewBulkAsync([expired, empty], toInternal, ct);
         preview.Selected.ShouldBe(2);
         preview.EligibleIds.ShouldBe([empty]);
         preview.Skipped.ShouldBe(1);
-        await Should.ThrowAsync<DomainException>(() => fixture.Service.BulkChangeClassificationAsync(
-            [expired, fresh], "INTERNAL", ct));
+        preview.Rows.Single(row => row.Id == expired).ReasonKey.ShouldBe("Bulk_Reason_HasStock");
+        // Stocked products are rechecked inside the batch and reported, never forced.
+        IReadOnlyList<BulkItemResult> results = await fixture.Service.RunBulkBatchAsync(toInternal, [expired, fresh],
+            BulkBatch.OperationId(OperationGuard.NewId(), 0), ct);
+        results.ShouldAllBe(result => result.Outcome == BulkItemOutcome.NotEligible && result.ReasonKey == "Bulk_Reason_HasStock");
         using var check = fixture.Factory.Open();
         check.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE product_class='INTERNAL'").ShouldBe(0);
     }
 
     [Fact]
-    public async Task BulkRemoveAndRestore_ApplyOnlyToEligibleProductsAtomically()
+    public async Task BulkRemoveAndRestoreBatches_ChangeEligibleRowsReplayAndReportMissing()
     {
         using var fixture = new CatalogFixture();
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -80,16 +83,26 @@ public sealed class CatalogTests
                 VALUES (@archived,'BULK-LOT','2026-09-26',1000,2000,1000);
                 UPDATE product_lot SET qty_on_hand=1000 WHERE lot_code='BULK-LOT';
                 """, new { archived });
-        (await fixture.Service.BulkRemoveAsync([archived, deleted], ct)).ShouldBe(2);
+        string removal = BulkBatch.OperationId(OperationGuard.NewId(), 0);
+        (await fixture.Service.RunBulkBatchAsync(new(CatalogBulkAction.Archive), [archived, deleted], removal, ct))
+            .ShouldAllBe(result => result.Outcome == BulkItemOutcome.Changed);
         using (var connection = fixture.Factory.Open())
         {
             connection.ExecuteScalar<long>("SELECT is_active FROM product WHERE id=@archived", new { archived }).ShouldBe(0);
             connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE id=@deleted", new { deleted }).ShouldBe(0);
         }
-        await Should.ThrowAsync<DomainException>(() => fixture.Service.BulkRestoreAsync([archived, deleted], ct));
+        // A resumed or retried batch replays under its operation ID and changes nothing.
+        (await fixture.Service.RunBulkBatchAsync(new(CatalogBulkAction.Archive), [archived, deleted], removal, ct))
+            .ShouldAllBe(result => result.Outcome == BulkItemOutcome.AlreadyDone);
+        IReadOnlyList<BulkItemResult> restored = await fixture.Service.RunBulkBatchAsync(new(CatalogBulkAction.Restore),
+            [archived, deleted], BulkBatch.OperationId(OperationGuard.NewId(), 0), ct);
+        restored.Single(result => result.Id == archived).Outcome.ShouldBe(BulkItemOutcome.Changed);
+        restored.Single(result => result.Id == deleted).Outcome.ShouldBe(BulkItemOutcome.Missing);
         using (var connection = fixture.Factory.Open())
-            connection.ExecuteScalar<long>("SELECT is_active FROM product WHERE id=@archived", new { archived }).ShouldBe(0);
-        (await fixture.Service.BulkRestoreAsync([archived], ct)).ShouldBe(1);
+            connection.ExecuteScalar<long>("SELECT is_active FROM product WHERE id=@archived", new { archived }).ShouldBe(1);
+        await Should.ThrowAsync<DomainException>(() => fixture.Service.RunBulkBatchAsync(new(CatalogBulkAction.Restore),
+            Enumerable.Range(1, BulkBatch.MaxBatchSize + 1).Select(static id => (long)id).ToArray(),
+            BulkBatch.OperationId(OperationGuard.NewId(), 0), ct));
     }
 
     [Fact]
@@ -630,15 +643,19 @@ public sealed class CatalogTests
         long category = await fixture.Service.CreateCategoryAsync(new("Bulk Category", null, null, null), TestContext.Current.CancellationToken);
         long tax = await fixture.Service.CreateTaxRateAsync("GST 9%", 9m, TestContext.Current.CancellationToken);
 
-        (await fixture.Service.BulkChangeCategoryAsync([first, second], category, TestContext.Current.CancellationToken)).ShouldBe(2);
-        (await fixture.Service.BulkChangeTaxRateAsync([first, second], tax, TestContext.Current.CancellationToken)).ShouldBe(2);
+        (await fixture.Service.RunBulkBatchAsync(new(CatalogBulkAction.Category, category), [first, second],
+            BulkBatch.OperationId(OperationGuard.NewId(), 0), TestContext.Current.CancellationToken))
+            .Count(static result => result.Outcome == BulkItemOutcome.Changed).ShouldBe(2);
+        (await fixture.Service.RunBulkBatchAsync(new(CatalogBulkAction.Tax, tax), [first, second],
+            BulkBatch.OperationId(OperationGuard.NewId(), 0), TestContext.Current.CancellationToken))
+            .Count(static result => result.Outcome == BulkItemOutcome.Changed).ShouldBe(2);
 
         using var connection = fixture.Factory.Open();
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE id IN (@first,@second) AND category_id=@category",
             new { first, second, category }).ShouldBe(2L);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE id IN (@first,@second) AND tax_rate_id=@tax",
             new { first, second, tax }).ShouldBe(2L);
-        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE action IN ('BULK_CATEGORY','BULK_TAX_RATE')")
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE action IN ('BULK_CATEGORY','BULK_TAX')")
             .ShouldBe(2L);
     }
 

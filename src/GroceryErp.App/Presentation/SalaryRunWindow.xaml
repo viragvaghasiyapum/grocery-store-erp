@@ -1,0 +1,52 @@
+<Window x:Class="GroceryErp.App.Presentation.SalaryRunWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+    Title="{l:Tr MoneyOut_PrepareSalary}" Width="820" Height="580" MinWidth="640" MinHeight="440"
+    WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+  <Grid Margin="20">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <StackPanel>
+      <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr MoneyOut_PrepareSalary}"/>
+      <TextBlock Style="{StaticResource FormContext}" Text="{l:Tr MoneyOut_SalaryRunContext}"/>
+    </StackPanel>
+    <p:FormErrorSummary x:Name="Summary" Grid.Row="1"/>
+    <WrapPanel x:Name="Fields" Grid.Row="2" Margin="0,8,0,0">
+      <p:FormField x:Name="PeriodField" Width="120" Label="{l:Tr Assets_Period}" IsRequired="True" Hint="YYYY-MM">
+        <TextBox x:Name="PeriodBox" MaxLength="7"/>
+      </p:FormField>
+      <p:FormField x:Name="PayDateField" Width="150" Label="{l:Tr MoneyOut_PayDate}" IsRequired="True">
+        <DatePicker x:Name="PayDateBox" SelectedDateFormat="Short" SelectedDateChanged="PayDate_OnChanged"/>
+      </p:FormField>
+      <p:FormField x:Name="ModeField" Width="130" Label="{l:Tr Purchasing_Mode}" IsRequired="True">
+        <ComboBox x:Name="ModeBox" SelectedIndex="2">
+          <ComboBoxItem Tag="CASH" Content="{l:Tr MoneyOut_ModeCash}"/>
+          <ComboBoxItem Tag="UPI" Content="UPI"/>
+          <ComboBoxItem Tag="BANK" Content="{l:Tr MoneyOut_ModeBank}"/>
+          <ComboBoxItem Tag="OTHER" Content="{l:Tr MoneyOut_ReasonOther}"/>
+        </ComboBox>
+      </p:FormField>
+      <Button Margin="0,21,0,10" VerticalAlignment="Top" Click="Prepare_OnClick" Content="{l:Tr MoneyOut_PrepareLines}"/>
+    </WrapPanel>
+    <DataGrid x:Name="SalaryGrid" Grid.Row="3" Style="{StaticResource CatalogGrid}" IsReadOnly="False" CanUserAddRows="False"
+              RowHeight="34" AutomationProperties.Name="{l:Tr MoneyOut_PrepareSalary}">
+      <DataGrid.Columns>
+        <DataGridCheckBoxColumn Width="44" Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"/>
+        <DataGridTextColumn Width="*" MinWidth="160" Header="{l:Tr MoneyOut_EmployeeName}" Binding="{Binding EmployeeName}" IsReadOnly="True"/>
+        <DataGridTextColumn Width="120" Header="{l:Tr MoneyOut_Salary}" Binding="{Binding BaseSalary}"/>
+        <DataGridTextColumn Width="130" Header="{l:Tr MoneyOut_LeaveDeduction}" Binding="{Binding LeaveDeduction}"/>
+        <DataGridTextColumn Width="110" Header="{l:Tr MoneyOut_Overtime}" Binding="{Binding Overtime}"/>
+        <DataGridTextColumn Width="110" Header="{l:Tr MoneyOut_Bonus}" Binding="{Binding Bonus}"/>
+      </DataGrid.Columns>
+    </DataGrid>
+    <DockPanel Grid.Row="4" Margin="0,12,0,0">
+      <TextBlock x:Name="PeriodText" Style="{StaticResource StatusText}" TextWrapping="Wrap" TextTrimming="None" MaxWidth="460"/>
+      <StackPanel Style="{StaticResource FormFooter}" Margin="0">
+        <Button Margin="0,0,8,0" IsCancel="True" Content="{l:Tr Common_Cancel}"/>
+        <Button x:Name="PostButton" IsEnabled="False" Click="Post_OnClick" Content="{l:Tr MoneyOut_PostSalary}"/>
+      </StackPanel>
+    </DockPanel>
+  </Grid>
+</Window>

@@ -8,11 +8,13 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace GroceryErp.Inventory;
 
-public sealed class InventoryModule(Type stockPage) : IModule
+// Stock work lives in Products (each product's Lots tab and bulk actions), so the module
+// contributes services but no navigation destination of its own.
+public sealed class InventoryModule : IModule
 {
     public string Key => "Stock";
     public ResourceManager Strings => SharedStrings.ResourceManager;
-    public IEnumerable<NavItem> Navigation => [new("Stock_Navigation", "Box24", stockPage, 50)];
+    public IEnumerable<NavItem> Navigation => [];
 
     public void Register(IServiceCollection services)
     {

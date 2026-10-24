@@ -104,37 +104,8 @@ public sealed partial class MoneyOutService(
     }
 
     public Task<DamagePage> GetDamagePageAsync(DateOnly from, DateOnly to, DateOnly? beforeDate = null,
-        long? beforeId = null, int limit = 100, CancellationToken cancellationToken = default)
-    {
-        EnsureRange(from, to);
-        if (beforeDate is null != (beforeId is null) || limit is < 1 or > 200)
-            throw new DomainException(ErrorCode.Validation, "Invalid damage page filter.");
-        return database.ReadAsync(connection =>
-        {
-            List<DamageItem> rows = connection.Query<DamageRow>("""
-                SELECT d.id AS Id,d.doc_no AS DocumentNumber,d.damage_date AS Date,
-                       COALESCE(d.product_name_snapshot,'Legacy unknown') AS ProductName,
-                       COALESCE(d.lot_code_snapshot,'Legacy unknown') AS LotCode,
-                       COALESCE(dc.new_qty,d.qty) AS Quantity,d.unit_cost AS UnitCost,
-                       CAST(ROUND(COALESCE(dc.new_qty,d.qty)*d.unit_cost/1000.0) AS INTEGER) AS CostValue,
-                       COALESCE(dc.new_recovered,d.recovered_amount) AS RecoveredAmount,
-                       COALESCE(dc.new_reason,d.reason) AS Reason,
-                       CASE WHEN dc.id IS NULL THEN d.notes ELSE dc.new_notes END AS Notes,
-                       CASE WHEN dc.id IS NULL THEN 'ACTIVE' WHEN dc.new_qty=0 THEN 'VOID' ELSE 'CORRECTED' END AS Status
-                FROM damage d
-                LEFT JOIN damage_correction dc ON dc.id=(SELECT MAX(id) FROM damage_correction WHERE damage_id=d.id)
-                WHERE d.damage_date BETWEEN @from AND @to
-                  AND (@beforeDate IS NULL OR d.damage_date<@beforeDate
-                       OR (d.damage_date=@beforeDate AND d.id<@beforeId))
-                ORDER BY d.damage_date DESC,d.id DESC LIMIT @take
-                """, new { from, to, beforeDate, beforeId, take = limit + 1 })
-                .Select(static row => row.ToModel()).ToList();
-            bool hasMore = rows.Count > limit;
-            if (hasMore) rows.RemoveAt(limit);
-            DamageItem? last = rows.LastOrDefault();
-            return new DamagePage(rows, hasMore, last?.Date, last?.Id);
-        }, cancellationToken);
-    }
+        long? beforeId = null, int limit = 100, CancellationToken cancellationToken = default) =>
+        GetDamagePageAsync(new DamageFilter(from, to), beforeDate, beforeId, limit, cancellationToken);
 
     public async Task<long> RecordDamageAsync(DamageInput input, string operationId, CancellationToken cancellationToken = default)
     {
@@ -184,69 +155,6 @@ public sealed partial class MoneyOutService(
             return id;
         }, cancellationToken);
         if (productId > 0) WeakReferenceMessenger.Default.Send(new StockChangedMessage([productId]));
-        return result;
-    }
-
-    public async Task<IReadOnlyList<long>> WriteOffExpiredAsync(
-        IReadOnlyCollection<long> lotIds, DateOnly date, string operationId, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(lotIds);
-        if (lotIds.Count == 0 || lotIds.Any(static id => id <= 0))
-            throw new DomainException(ErrorCode.Validation, "Select at least one lot.");
-        var products = new HashSet<long>();
-        IReadOnlyList<long> result = await database.WriteAsync(transaction =>
-        {
-            OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.DamageBulk);
-            if (replay is not null)
-                return (IReadOnlyList<long>)transaction.Connection.Query<long>(
-                    "SELECT id FROM damage WHERE bulk_operation_id=@operationId ORDER BY id", new { operationId }, transaction.Transaction).ToList();
-            periods.EnsureOpen(transaction, date);
-            List<BulkLotRow> lots = transaction.Connection.Query<BulkLotRow>("""
-                SELECT id AS LotId,product_id AS ProductId,qty_on_hand AS OnHand,unit_cost AS UnitCost,expiry_date AS ExpiryDate
-                FROM product_lot WHERE id IN @lotIds ORDER BY id
-                """, new { lotIds }, transaction.Transaction).ToList();
-            if (lots.Count != lotIds.Distinct().Count()) throw new DomainException(ErrorCode.NotFound, "lot");
-            var ids = new List<long>(lots.Count);
-            foreach (BulkLotRow lot in lots)
-            {
-                if (lot.OnHand <= 0 || lot.ExpiryDate is null || lot.ExpiryDate >= date)
-                    throw new DomainException(ErrorCode.Validation, "Only expired lots with stock can be written off in bulk.");
-                Quantity quantity = Quantity.FromScaled(lot.OnHand);
-                Money unitCost = Money.FromScaled(lot.UnitCost);
-                Money cost = unitCost * quantity;
-                string document = numbers.Next(transaction, DocType.Damage, date);
-                var parameters = new DynamicParameters();
-                parameters.Add("document", document);
-                parameters.Add("date", Format(date));
-                parameters.Add("productId", lot.ProductId);
-                parameters.Add("lotId", lot.LotId);
-                parameters.Add("qty", quantity.Scaled);
-                parameters.Add("unitCost", unitCost.Scaled);
-                parameters.Add("cost", cost.Scaled);
-                parameters.Add("notes", "Bulk expiry write-off");
-                parameters.Add("operationId", operationId);
-                long id = transaction.Connection.ExecuteScalar<long>("""
-                    INSERT INTO damage(doc_no,damage_date,product_id,lot_id,qty,unit_cost,cost_value,recovered_amount,
-                                       reason,notes,bulk_operation_id,product_name_snapshot,product_sku_snapshot,
-                                       product_name_local_snapshot,uom_snapshot,product_class_snapshot,lot_code_snapshot,
-                                       batch_no_snapshot,expiry_date_snapshot,snapshot_provenance)
-                    SELECT @document,@date,p.id,l.id,@qty,@unitCost,@cost,0,'EXPIRED',@notes,@operationId,
-                           p.name,p.sku,p.name_local,u.code,p.product_class,l.lot_code,l.batch_no,
-                           l.expiry_date,'AT_POST'
-                    FROM product_lot l JOIN product p ON p.id=l.product_id JOIN uom u ON u.id=p.uom_id
-                    WHERE l.id=@lotId
-                    RETURNING id
-                    """, parameters, transaction.Transaction);
-                stock.Post(transaction, new(date, lot.ProductId, lot.LotId, "DAMAGE", new Quantity(-quantity.Value),
-                    unitCost, "damage", id, "EXPIRED"));
-                audit.Write(transaction, "damage", id, "CREATE", new { document, bulk = operationId, quantity = quantity.Scaled });
-                ids.Add(id);
-                products.Add(lot.ProductId);
-            }
-            OperationGuard.Complete(transaction, operationId, "damage", ids[0]);
-            return (IReadOnlyList<long>)ids;
-        }, cancellationToken);
-        if (products.Count > 0) WeakReferenceMessenger.Default.Send(new StockChangedMessage(products.ToArray()));
         return result;
     }
 
@@ -315,24 +223,8 @@ public sealed partial class MoneyOutService(
     }
 
     public Task<ExpensePage> GetExpensePageAsync(DateOnly from, DateOnly to, DateOnly? beforeDate = null,
-        long? beforeId = null, int limit = 100, CancellationToken cancellationToken = default)
-    {
-        EnsureRange(from, to);
-        if (beforeDate is null != (beforeId is null) || limit is < 1 or > 200)
-            throw new DomainException(ErrorCode.Validation, "Invalid expense page filter.");
-        return database.ReadAsync(connection =>
-        {
-            List<ExpenseItem> rows = connection.Query<ExpenseRow>(CurrentExpenseSql + CurrentExpenseColumns + """
-                 WHERE @beforeDate IS NULL OR x.date<@beforeDate OR (x.date=@beforeDate AND x.id<@beforeId)
-                ORDER BY x.date DESC,x.id DESC LIMIT @take
-                """, new { from, to, beforeDate, beforeId, take = limit + 1 })
-                .Select(static row => row.ToModel()).ToList();
-            bool hasMore = rows.Count > limit;
-            if (hasMore) rows.RemoveAt(limit);
-            ExpenseItem? last = rows.LastOrDefault();
-            return new ExpensePage(rows, hasMore, last?.Date, last?.Id);
-        }, cancellationToken);
-    }
+        long? beforeId = null, int limit = 100, CancellationToken cancellationToken = default) =>
+        GetExpensePageAsync(new ExpenseFilter(from, to), beforeDate, beforeId, limit, cancellationToken);
 
     public Task<long> RecordExpenseAsync(ExpenseInput input, string operationId, CancellationToken cancellationToken = default)
     {
@@ -379,11 +271,7 @@ public sealed partial class MoneyOutService(
     }
 
     public Task<IReadOnlyList<EmployeeItem>> GetEmployeesAsync(bool includeInactive = false, CancellationToken cancellationToken = default) =>
-        database.ReadAsync(connection => (IReadOnlyList<EmployeeItem>)connection.Query<EmployeeRow>("""
-            SELECT id AS Id,name AS Name,phone AS Phone,role AS Role,join_date AS JoinDate,leave_date AS LeaveDate,
-                   monthly_salary AS MonthlySalary,is_active AS IsActive,notes AS Notes FROM employee
-            WHERE @includeInactive=1 OR is_active=1 ORDER BY name COLLATE NOCASE
-            """, new { includeInactive = includeInactive ? 1 : 0 }).Select(static row => row.ToModel()).ToList(), cancellationToken);
+        GetEmployeesAsync(new EmployeeFilter { Status = includeInactive ? "ALL" : "ACTIVE" }, cancellationToken);
 
     public Task<long> SaveEmployeeAsync(long? id, EmployeeInput input, CancellationToken cancellationToken = default) =>
         SaveEmployeeAsync(id, input, null, cancellationToken);
@@ -544,20 +432,8 @@ public sealed partial class MoneyOutService(
         }, cancellationToken);
     }
 
-    public Task<IReadOnlyList<SalaryPaymentItem>> GetSalaryRegisterAsync(YearMonth from, YearMonth to, CancellationToken cancellationToken = default)
-    {
-        if (from > to) throw new DomainException(ErrorCode.Validation, "Invalid salary period.");
-        return database.ReadAsync(connection => (IReadOnlyList<SalaryPaymentItem>)connection.Query<SalaryRow>("""
-            SELECT s.id AS Id,s.employee_id AS EmployeeId,e.name AS EmployeeName,s.period_month AS Period,
-                   COALESCE(sc.new_pay_date,s.pay_date) AS PayDate,s.kind AS Kind,
-                   COALESCE(sc.new_amount,s.amount) AS Amount,COALESCE(sc.new_mode,s.mode) AS Mode,
-                   CASE WHEN sc.id IS NULL THEN s.notes ELSE sc.new_notes END AS Notes,
-                   CASE WHEN sc.id IS NULL THEN 'ACTIVE' WHEN sc.kind='VOID' THEN 'VOID' ELSE 'CORRECTED' END AS Status
-            FROM salary_payment s JOIN employee e ON e.id=s.employee_id
-            LEFT JOIN salary_correction sc ON sc.id=(SELECT MAX(id) FROM salary_correction WHERE salary_payment_id=s.id)
-            WHERE s.period_month BETWEEN @from AND @to ORDER BY s.period_month DESC,e.name,s.kind
-            """, new { from = from.ToString(), to = to.ToString() }).Select(static row => row.ToModel()).ToList(), cancellationToken);
-    }
+    public Task<IReadOnlyList<SalaryPaymentItem>> GetSalaryRegisterAsync(YearMonth from, YearMonth to, CancellationToken cancellationToken = default) =>
+        GetSalaryRegisterAsync(from, to, null, null, cancellationToken);
 
     private static long InsertSalary(DbTx transaction, long employeeId, SalaryRunInput run, string kind, Money amount, string? notes, long firstId)
     {

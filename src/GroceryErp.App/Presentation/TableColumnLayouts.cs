@@ -252,6 +252,8 @@ internal static class TableColumnLayouts
                 for (int index = 0; index < layout.Widths.Length; index++)
                     if (layout.Widths[index] is { } width && double.IsFinite(width) && width >= 24)
                         grid.Columns[index].Width = new DataGridLength(width, DataGridLengthUnitType.Pixel);
+                    else if (layout.Widths[index] is { } share && double.IsFinite(share) && share < 0)
+                        grid.Columns[index].Width = new DataGridLength(-share, DataGridLengthUnitType.Star);
 
                 int[] order = layout.DisplayIndexes ?? [];
                 if (order.Length == grid.Columns.Count &&
@@ -273,8 +275,11 @@ internal static class TableColumnLayouts
         {
             if (_restoring || _pendingRestore || grid.Columns.Count == 0) return;
             grid.UpdateLayout();
+            // A filling (star) column is saved as its negative share so it keeps filling the table
+            // at other window sizes; other columns keep the width the user gave them.
             double?[] widths = grid.Columns.Select(column =>
-                double.IsFinite(column.ActualWidth) && column.ActualWidth >= 24
+                column.Width.IsStar && double.IsFinite(column.Width.Value) && column.Width.Value > 0 ? -column.Width.Value
+                : double.IsFinite(column.ActualWidth) && column.ActualWidth >= 24
                     ? (double?)column.ActualWidth : null).ToArray();
             if (widths.All(static width => width is null)) return;
             int[] order = grid.Columns.Select(static column => column.DisplayIndex).ToArray();

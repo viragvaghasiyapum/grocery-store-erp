@@ -1,0 +1,120 @@
+<UserControl x:Class="GroceryErp.App.Presentation.ProductForm"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+  <Grid>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <p:FormErrorSummary x:Name="Summary" Margin="0,0,0,8"/>
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel x:Name="Fields" Margin="0,0,10,0">
+        <TextBlock Style="{StaticResource FormSection}" Text="{l:Tr Catalog_SectionIdentity}"/>
+        <UniformGrid Columns="2">
+          <p:FormField x:Name="SkuField" Label="{l:Tr Catalog_Sku}" IsRequired="True">
+            <TextBox x:Name="SkuBox" MaxLength="20"/>
+          </p:FormField>
+          <p:FormField x:Name="NameField" Label="{l:Tr Catalog_Name}" IsRequired="True">
+            <TextBox x:Name="NameBox" MaxLength="120"/>
+          </p:FormField>
+          <p:FormField x:Name="LocalNameField" Label="{l:Tr Catalog_NameLocal}">
+            <TextBox x:Name="LocalNameBox" MaxLength="120"/>
+          </p:FormField>
+          <p:FormField x:Name="AliasesField" Label="{l:Tr Catalog_Aliases}">
+            <TextBox x:Name="AliasesBox" MaxLength="500"/>
+          </p:FormField>
+        </UniformGrid>
+        <p:FormField x:Name="BarcodesField" Label="{l:Tr Catalog_Barcodes}" Hint="{l:Tr Catalog_BarcodesHint}">
+          <TextBox x:Name="BarcodesBox" Height="58" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap"/>
+        </p:FormField>
+
+        <TextBlock Style="{StaticResource FormSection}" Text="{l:Tr Catalog_SectionClassification}"/>
+        <UniformGrid Columns="2">
+          <p:FormField x:Name="CategoryField" Label="{l:Tr Catalog_Category}" IsRequired="True">
+            <ComboBox x:Name="CategoryBox" DisplayMemberPath="Name" SelectedValuePath="Id"/>
+          </p:FormField>
+          <p:FormField x:Name="BrandField" Label="{l:Tr Catalog_Brand}">
+            <ComboBox x:Name="BrandBox" DisplayMemberPath="Name" SelectedValuePath="Id"/>
+          </p:FormField>
+          <p:FormField x:Name="UnitField" Label="{l:Tr Catalog_Unit}" IsRequired="True">
+            <ComboBox x:Name="UnitBox" DisplayMemberPath="Code" SelectedValuePath="Id"/>
+          </p:FormField>
+          <p:FormField x:Name="ClassField" Label="{l:Tr Catalog_ProductClass}" IsRequired="True" Hint="{l:Tr Catalog_ProductClassHint}">
+            <ComboBox x:Name="ProductClassBox" SelectedIndex="0" SelectedValuePath="Tag">
+              <ComboBoxItem Tag="SALEABLE" Content="{l:Tr Catalog_Saleable}"/>
+              <ComboBoxItem Tag="INTERNAL" Content="{l:Tr Catalog_InternalUse}"/>
+            </ComboBox>
+          </p:FormField>
+        </UniformGrid>
+
+        <TextBlock Style="{StaticResource FormSection}" Text="{l:Tr Catalog_SectionTaxPrices}"/>
+        <UniformGrid Columns="2">
+          <p:FormField x:Name="HsnField" Label="{l:Tr Catalog_Hsn}">
+            <TextBox x:Name="HsnBox" MaxLength="8"/>
+          </p:FormField>
+          <p:FormField x:Name="TaxField" Label="{l:Tr Catalog_TaxRate}">
+            <ComboBox x:Name="TaxRateBox" DisplayMemberPath="Name" SelectedValuePath="Id"/>
+          </p:FormField>
+          <p:FormField x:Name="PriceField" Label="{l:Tr Catalog_SellingPrice}">
+            <TextBox x:Name="PriceBox"/>
+          </p:FormField>
+          <p:FormField x:Name="MrpField" Label="{l:Tr Catalog_Mrp}">
+            <TextBox x:Name="MrpBox"/>
+          </p:FormField>
+        </UniformGrid>
+        <CheckBox x:Name="PricesIncludeTaxBox" Margin="0,0,0,10" IsChecked="True" Content="{l:Tr Catalog_PricesIncludeTax}"/>
+
+        <TextBlock Style="{StaticResource FormSection}" Text="{l:Tr Catalog_SectionStockRules}"/>
+        <UniformGrid Columns="2">
+          <p:FormField x:Name="ReorderField" Label="{l:Tr Catalog_ReorderLevel}" IsRequired="True">
+            <TextBox x:Name="ReorderBox" Text="0"/>
+          </p:FormField>
+          <p:FormField x:Name="ShelfLifeField" Label="{l:Tr Catalog_ShelfLife}">
+            <TextBox x:Name="ShelfLifeBox"/>
+          </p:FormField>
+          <p:FormField x:Name="ExpiryAlertField" Label="{l:Tr Catalog_ExpiryAlertDays}">
+            <TextBox x:Name="ExpiryAlertBox"/>
+          </p:FormField>
+          <p:FormField x:Name="PluField" Label="{l:Tr Catalog_Plu}">
+            <TextBox x:Name="PluBox" IsEnabled="False" MaxLength="30"/>
+          </p:FormField>
+        </UniformGrid>
+        <WrapPanel Margin="0,0,0,10">
+          <CheckBox x:Name="TrackExpiryBox" Margin="0,0,24,0" IsChecked="True" Content="{l:Tr Catalog_TrackExpiry}"/>
+          <CheckBox x:Name="LooseBox" Checked="LooseBox_OnChanged" Unchecked="LooseBox_OnChanged" Content="{l:Tr Catalog_Loose}"/>
+        </WrapPanel>
+
+        <StackPanel x:Name="FirstLotSection">
+          <TextBlock Style="{StaticResource FormSection}" Text="{l:Tr Catalog_FirstLot}"/>
+          <CheckBox x:Name="AddFirstLotBox" Margin="0,0,0,10" Content="{l:Tr Catalog_AddFirstLot}"/>
+          <UniformGrid x:Name="FirstLotFields" Columns="2" IsEnabled="{Binding IsChecked, ElementName=AddFirstLotBox}">
+            <p:FormField x:Name="FirstLotQtyField" Label="{l:Tr Stock_Quantity}" IsRequired="True">
+              <TextBox x:Name="FirstLotQtyBox"/>
+            </p:FormField>
+            <p:FormField x:Name="FirstLotCostField" Label="{l:Tr Stock_UnitCost}" IsRequired="True">
+              <TextBox x:Name="FirstLotCostBox"/>
+            </p:FormField>
+            <p:FormField x:Name="FirstLotPriceField" Label="{l:Tr Catalog_Price}" IsRequired="True">
+              <TextBox x:Name="FirstLotPriceBox"/>
+            </p:FormField>
+            <p:FormField x:Name="FirstLotMrpField" Label="{l:Tr Stock_Mrp}">
+              <TextBox x:Name="FirstLotMrpBox"/>
+            </p:FormField>
+            <p:FormField x:Name="FirstLotBatchField" Label="{l:Tr Stock_Batch}">
+              <TextBox x:Name="FirstLotBatchBox" MaxLength="40"/>
+            </p:FormField>
+            <p:FormField x:Name="FirstLotExpiryField" Label="{l:Tr Stock_Expiry}">
+              <DatePicker x:Name="FirstLotExpiryBox" SelectedDateFormat="Short"/>
+            </p:FormField>
+            <p:FormField x:Name="FirstLotDateField" Label="{l:Tr Purchasing_Received}" IsRequired="True">
+              <DatePicker x:Name="FirstLotDateBox" SelectedDateFormat="Short"/>
+            </p:FormField>
+            <p:FormField x:Name="FirstLotReasonField" Label="{l:Tr Stock_DirectReason}" IsRequired="True">
+              <TextBox x:Name="FirstLotReasonBox" MaxLength="500"/>
+            </p:FormField>
+          </UniformGrid>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

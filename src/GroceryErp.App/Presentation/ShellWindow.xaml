@@ -29,49 +29,46 @@
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
 
-    <Border Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Window}}"
-            HorizontalAlignment="Left" Padding="20,10"
-            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+    <!-- One compact row keeps the brand, business date and device status above every page. -->
+    <Border Padding="14,4" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-          <Image Width="48" Height="48" Margin="0,0,10,0"
+          <Image Width="32" Height="32" Margin="0,0,8,0"
                  Source="/GroceryErp.App;component/Assets/logo.jpeg" Stretch="Uniform"/>
-          <Grid Height="48" VerticalAlignment="Center">
-            <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-            <TextBlock x:Name="StoreHeading" FontSize="20" FontWeight="SemiBold" Text="Hare Krushna"
-                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-            <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center">
-              <TextBlock FontSize="12" Text="Dairy &amp; Grocery Store"/>
-              <TextBlock x:Name="BusinessDate" Margin="10,0,0,0" FontSize="11" Opacity="0.72"/>
-            </StackPanel>
-          </Grid>
+          <TextBlock x:Name="StoreHeading" FontSize="16" FontWeight="SemiBold" Text="Hare Krushna"
+                     TextTrimming="CharacterEllipsis" VerticalAlignment="Center" MaxWidth="220"/>
+          <TextBlock Margin="8,0,0,0" FontSize="12" Opacity="0.72" Text="Dairy &amp; Grocery Store" VerticalAlignment="Center"/>
+          <TextBlock x:Name="BusinessDate" Margin="10,0,0,0" FontSize="12" Opacity="0.72" VerticalAlignment="Center"/>
         </StackPanel>
-        <StackPanel Grid.Column="1" Margin="24,0,0,0" HorizontalAlignment="Left" Orientation="Horizontal">
-          <Border x:Name="PrinterStatusBadge" MaxWidth="140" Margin="0,0,8,0" Padding="8,4" CornerRadius="5"
+        <WrapPanel Grid.Column="1" Margin="16,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Center">
+          <Border x:Name="PrinterStatusBadge" MaxWidth="150" Margin="0,0,6,0" Padding="8,3" CornerRadius="5"
                   Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                   BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
                   VerticalAlignment="Center">
             <TextBlock x:Name="PrinterStatusText" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                        AutomationProperties.LiveSetting="Polite" />
           </Border>
-          <Border x:Name="ScannerStatusBadge" MaxWidth="140" Margin="0,0,8,0" Padding="8,4" CornerRadius="5"
+          <Border x:Name="ScannerStatusBadge" MaxWidth="150" Margin="0,0,6,0" Padding="8,3" CornerRadius="5"
                   Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                   BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
                   VerticalAlignment="Center">
             <TextBlock x:Name="ScannerStatusText" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                        AutomationProperties.LiveSetting="Polite" />
           </Border>
-          <Button x:Name="BackupStatusButton" MaxWidth="150" Margin="0,0,8,0" Click="BackupStatus_OnClick" Content="{l:Tr Settings_NoBackup}"/>
-          <Button x:Name="UpdateButton" Width="62" MinWidth="0" Margin="0,0,8,0" Click="Update_OnClick" Content="USB"
+          <Button x:Name="BackupStatusButton" Style="{StaticResource ToolbarButton}" MaxWidth="160" Click="BackupStatus_OnClick" Content="{l:Tr Settings_NoBackup}"/>
+          <Button x:Name="UpdateButton" Style="{StaticResource ToolbarButton}" Click="Update_OnClick" Content="USB"
                   ToolTip="{l:Tr Settings_Update_CheckFolder}" AutomationProperties.Name="{l:Tr Settings_Update_CheckFolder}" />
-          <Button x:Name="LockButton" Width="62" MinWidth="0" Margin="0,0,8,0" Click="Lock_OnClick" Content="{l:Tr Lock_Command}" />
-          <Button Width="42" MinWidth="0" Margin="0,0,6,0" Command="{Binding UseEnglishCommand}" Content="EN" ToolTip="{l:Tr Shell_English}" />
-          <Button Width="42" MinWidth="0" Command="{Binding UseGujaratiCommand}" Content="ગુ" ToolTip="{l:Tr Shell_Gujarati}" />
-        </StackPanel>
+          <Button x:Name="LockButton" Style="{StaticResource ToolbarButton}" Click="Lock_OnClick" Content="{l:Tr Lock_Command}"
+                  ToolTip="Ctrl+Shift+L" />
+          <Button Style="{StaticResource ToolbarButton}" Width="40" Command="{Binding UseEnglishCommand}" Content="EN"
+                  ToolTip="{l:Tr Shell_English}" AutomationProperties.Name="{l:Tr Shell_English}" />
+          <Button Style="{StaticResource ToolbarButton}" Width="40" Margin="0" Command="{Binding UseGujaratiCommand}" Content="ગુ"
+                  ToolTip="{l:Tr Shell_Gujarati}" AutomationProperties.Name="{l:Tr Shell_Gujarati}" />
+        </WrapPanel>
       </Grid>
     </Border>
 

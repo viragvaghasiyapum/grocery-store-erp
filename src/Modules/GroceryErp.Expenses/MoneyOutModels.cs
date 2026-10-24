@@ -72,3 +72,30 @@ public sealed record SalaryCorrection(DateOnly PayDate, Money Amount, string Mod
 
 public sealed record SalaryHistoryItem(string Kind, DateOnly RecordedOn, string? Treatment, DateOnly EffectiveDate,
     Money Amount, DateOnly PayDate, string Mode, string? Notes, Money AmountChange, string? CorrectionReason);
+
+/// <summary>An expired lot with stock that a reviewed write-off would turn into EXPIRED damage.</summary>
+public sealed record ExpiredWriteOffLot(long LotId, string ProductName, string LotCode, DateOnly ExpiryDate,
+    Quantity Quantity, Money CostValue);
+
+/// <summary>Damage list filters. Status: ACTIVE, CORRECTED or VOID. Query matches document, product or lot.</summary>
+public sealed record DamageFilter(DateOnly From, DateOnly To)
+{
+    public string? Status { get; init; }
+    public string? Reason { get; init; }
+    public string? Query { get; init; }
+}
+
+/// <summary>Expense list filters. Status: ACTIVE, CORRECTED, VOID or PURCHASE. Query matches paid-to, reference or notes.</summary>
+public sealed record ExpenseFilter(DateOnly From, DateOnly To)
+{
+    public string? Status { get; init; }
+    public long? CategoryId { get; init; }
+    public string? Query { get; init; }
+}
+
+/// <summary>Employee filters. Status: ACTIVE, INACTIVE or ALL. Query matches name, role or phone.</summary>
+public sealed record EmployeeFilter
+{
+    public string Status { get; init; } = "ACTIVE";
+    public string? Query { get; init; }
+}

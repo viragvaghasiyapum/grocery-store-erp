@@ -197,18 +197,26 @@ public sealed class MoneyOutTests
     }
 
     [Fact]
-    public async Task BulkExpiryWriteOff_IsAtomicAndReplaySafe()
+    public async Task BulkExpiryWriteOff_PreviewsByProductAndReplaysBatches()
     {
         using var fixture = new Fixture(expiry: new DateOnly(2026, 8, 1));
-        string operation = OperationGuard.NewId();
-
-        IReadOnlyList<long> first = await fixture.MoneyOut.WriteOffExpiredAsync(
-            [fixture.LotId], fixture.Today, operation, TestContext.Current.CancellationToken);
-        IReadOnlyList<long> replay = await fixture.MoneyOut.WriteOffExpiredAsync(
-            [fixture.LotId], fixture.Today, operation, TestContext.Current.CancellationToken);
-
-        replay.ShouldBe(first);
+        CancellationToken ct = TestContext.Current.CancellationToken;
         using var connection = fixture.Factory.Open();
+        long product = connection.ExecuteScalar<long>("SELECT product_id FROM product_lot WHERE id=@id", new { id = fixture.LotId });
+
+        IReadOnlyList<ExpiredWriteOffLot> preview = await fixture.MoneyOut.PreviewExpiredWriteOffAsync([product], fixture.Today, ct);
+        preview.Select(static lot => lot.LotId).ShouldBe([fixture.LotId]);
+        preview[0].Quantity.ShouldBe(new Quantity(10));
+        string batch = BulkBatch.OperationId(OperationGuard.NewId(), 0);
+        IReadOnlyList<BulkItemResult> first = await fixture.MoneyOut.WriteOffExpiredBatchAsync([fixture.LotId], fixture.Today, batch, ct);
+        IReadOnlyList<BulkItemResult> replay = await fixture.MoneyOut.WriteOffExpiredBatchAsync([fixture.LotId], fixture.Today, batch, ct);
+        IReadOnlyList<BulkItemResult> again = await fixture.MoneyOut.WriteOffExpiredBatchAsync([fixture.LotId], fixture.Today,
+            BulkBatch.OperationId(OperationGuard.NewId(), 0), ct);
+
+        first.Single().Outcome.ShouldBe(BulkItemOutcome.Changed);
+        replay.Single().Outcome.ShouldBe(BulkItemOutcome.AlreadyDone);
+        again.Single().Outcome.ShouldBe(BulkItemOutcome.NotEligible);
+        (await fixture.MoneyOut.PreviewExpiredWriteOffAsync([product], fixture.Today, ct)).ShouldBeEmpty();
         connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = fixture.LotId }).ShouldBe(0L);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM damage WHERE reason='EXPIRED'").ShouldBe(1L);
     }

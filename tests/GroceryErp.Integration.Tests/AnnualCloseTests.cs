@@ -256,7 +256,9 @@ public sealed class AnnualCloseTests
         string csv = Path.Combine(fixture.Root, "reconciliation.csv");
         (await fixture.Reports.ExportCsvAsync(ReportKind.StockReconciliation, new(MismatchesOnly: true), csv,
             cancellationToken: ct)).ShouldBe(1);
-        File.ReadLines(csv).Count().ShouldBe(2);
+        string[] reconciliation = File.ReadAllLines(csv);
+        reconciliation.Length.ShouldBe(3);
+        reconciliation[0].ShouldContain("Differences only");
 
         // Once the lot agrees again, the recorded difference is no longer listed.
         connection.Execute("UPDATE product_lot SET qty_on_hand=qty_on_hand-1000 WHERE id=@expired", new { expired });

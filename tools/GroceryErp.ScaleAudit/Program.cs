@@ -21,7 +21,7 @@ using GroceryErp.Reports;
 using GroceryErp.Sales;
 
 if (args.Length < 1)
-    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase3-purchase-read|phase1-schema-audit|phase1-rollback|refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|phase6-reports|phase6-matrix|phase6-category-index|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|phase5-label-failure|phase5-live-write|phase5-return-reconcile|phase5-sales-read|phase5-count-read|phase5-fixture-align|phase5-direct-audit|phase5-direct-crash|phase5-direct-crash-check|phase6-annual|rebuild-pnl-days|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
+    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase3-purchase-read|phase7-filters|phase1-schema-audit|phase1-rollback|refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|phase6-reports|phase6-matrix|phase6-category-index|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|phase5-label-failure|phase5-live-write|phase5-return-reconcile|phase5-sales-read|phase5-count-read|phase5-fixture-align|phase5-direct-audit|phase5-direct-crash|phase5-direct-crash-check|phase6-annual|rebuild-pnl-days|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
 
 string root = Path.GetFullPath(args[0]);
 string mode = args.Length > 1 ? args[1] : "read";
@@ -75,7 +75,10 @@ static string MetricName(string name, ReadOnlySpan<KeyValuePair<string, object?>
 }
 var factory = new SqliteConnectionFactory(paths);
 var tracedQueries = new System.Collections.Concurrent.ConcurrentDictionary<(string Operation, string Shape), string>();
-if (mode is "attribution-profile" or "history-profile" or "shape-profile" or "report-profile" or "phase6-reports" or "gap-read" or "feature-write" or "weekly-maintenance-overlap" or "print-journal-profile")
+// The trace hook also fires for every internal FTS5 statement, so timings taken under it run
+// slower than the app; "untraced" in a Phase 7 run's fourth argument measures without it.
+bool untraced = mode == "phase7-filters" && args.Length > 3 && args[3].Contains("untraced", StringComparison.Ordinal);
+if (!untraced && mode is "attribution-profile" or "history-profile" or "shape-profile" or "report-profile" or "phase6-reports" or "gap-read" or "feature-write" or "weekly-maintenance-overlap" or "print-journal-profile" or "phase7-filters")
     factory.SqlTrace = (operation, sql) =>
     {
         string statement = sql.Trim();
@@ -2344,6 +2347,372 @@ switch (mode)
             """, new { productId });
         break;
     }
+    case "phase7-sql":
+    {
+        // Times one SQL file through the app's connection factory, raw and through Dapper, to
+        // separate engine time from provider time. Arguments: <root> phase7-sql <out> <file.sql>.
+        string sql = File.ReadAllText(args[3]);
+        using var connection = factory.Open();
+        for (int pass = 0; pass < 3; pass++)
+        {
+            var raw = new List<double>();
+            var dapper = new List<double>();
+            for (int run = 0; run < 15; run++)
+            {
+                long started = Stopwatch.GetTimestamp();
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = sql;
+                    using var reader = command.ExecuteReader();
+                    while (reader.Read()) { }
+                }
+                raw.Add(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+                started = Stopwatch.GetTimestamp();
+                _ = connection.Query(sql).AsList();
+                dapper.Add(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            }
+            raw.Sort();
+            dapper.Sort();
+            Console.WriteLine($"PASS {pass} reader p50 {raw[7]:0.00} ms p95 {raw[14]:0.00}; dapper p50 {dapper[7]:0.00} p95 {dapper[14]:0.00}");
+        }
+        Console.WriteLine("SQLITE " + connection.ExecuteScalar<string>("SELECT sqlite_version()") + " cache " +
+            connection.ExecuteScalar<long>("PRAGMA cache_size") + " mmap " + connection.ExecuteScalar<long>("PRAGMA mmap_size"));
+        break;
+    }
+    case "phase7-filters":
+    {
+        // Every Phase 7 list, filter, count, ID resolution and bulk preview on the full store:
+        // empty, broad, rare, no-match, Gujarati and high-cardinality shapes. The SQL trace
+        // records each executed statement for EXPLAIN QUERY PLAN after the run.
+        if (!Path.GetFileName(root).Contains("rehearsal", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Phase 7 bulk batches may run only in a disposable rehearsal root.");
+        DateOnly today = clock.BusinessDate;
+        long busyProduct, largeCategory, rareCategory, busyVendor, largeBrand, busyExpenseCategory, lastPurchase;
+        string commonWord, rareName, localWord, sku, barcode, documentNumber, invoicePrefix, purchaseProduct;
+        long[] firstProducts, expiredProducts, newestPosted, busyLots, vendorIds;
+        using (var connection = factory.Open())
+        {
+            busyProduct = connection.ExecuteScalar<long>(
+                "SELECT product_id FROM product_lot GROUP BY product_id ORDER BY COUNT(*) DESC LIMIT 1");
+            largeCategory = connection.ExecuteScalar<long>(
+                "SELECT category_id FROM product GROUP BY category_id ORDER BY COUNT(*) DESC LIMIT 1");
+            rareCategory = connection.ExecuteScalar<long>(
+                "SELECT category_id FROM product GROUP BY category_id ORDER BY COUNT(*),category_id LIMIT 1");
+            busyVendor = connection.ExecuteScalar<long>("""
+                SELECT vendor_id FROM product_lot WHERE vendor_id IS NOT NULL
+                GROUP BY vendor_id ORDER BY COUNT(*) DESC LIMIT 1
+                """);
+            largeBrand = connection.ExecuteScalar<long?>("""
+                SELECT brand_id FROM product WHERE brand_id IS NOT NULL
+                GROUP BY brand_id ORDER BY COUNT(*) DESC LIMIT 1
+                """) ?? 0;
+            busyExpenseCategory = connection.ExecuteScalar<long?>(
+                "SELECT category_id FROM expense GROUP BY category_id ORDER BY COUNT(*) DESC LIMIT 1") ?? 0;
+            commonWord = connection.ExecuteScalar<string>("""
+                SELECT lower(substr(name,1,instr(name||' ',' ')-1)) AS word FROM product
+                GROUP BY word HAVING length(word)>=3 ORDER BY COUNT(*) DESC LIMIT 1
+                """) ?? "";
+            rareName = connection.ExecuteScalar<string>("SELECT name FROM product ORDER BY id DESC LIMIT 1") ?? "";
+            localWord = connection.ExecuteScalar<string>("""
+                SELECT substr(name_local,1,instr(name_local||' ',' ')-1) FROM product
+                WHERE name_local IS NOT NULL AND trim(name_local)<>'' ORDER BY id LIMIT 1
+                """) ?? "";
+            sku = connection.ExecuteScalar<string>("SELECT sku FROM product ORDER BY id DESC LIMIT 1") ?? "";
+            barcode = connection.ExecuteScalar<string>(
+                "SELECT barcode FROM product_barcode WHERE lot_id IS NULL ORDER BY id DESC LIMIT 1") ?? "";
+            lastPurchase = connection.ExecuteScalar<long>("SELECT id FROM purchase ORDER BY id DESC LIMIT 1");
+            documentNumber = connection.ExecuteScalar<string>(
+                "SELECT doc_no FROM purchase WHERE doc_no IS NOT NULL ORDER BY id DESC LIMIT 1") ?? "";
+            invoicePrefix = connection.ExecuteScalar<string>("""
+                SELECT substr(vendor_invoice_no,1,4) FROM purchase
+                WHERE vendor_invoice_no IS NOT NULL AND length(vendor_invoice_no)>=4 ORDER BY id DESC LIMIT 1
+                """) ?? "";
+            purchaseProduct = connection.ExecuteScalar<string>("""
+                SELECT substr(COALESCE(product_name_snapshot,''),1,12) FROM purchase_line
+                WHERE line_kind='PRODUCT' AND product_name_snapshot IS NOT NULL ORDER BY id DESC LIMIT 1
+                """) ?? "";
+            firstProducts = connection.Query<long>(
+                "SELECT id FROM product WHERE is_active=1 ORDER BY name COLLATE NOCASE,id LIMIT 5000").ToArray();
+            expiredProducts = connection.Query<long>("""
+                SELECT DISTINCT product_id FROM product_lot
+                WHERE qty_on_hand>0 AND expiry_date<@today ORDER BY product_id DESC LIMIT 5000
+                """, new { today = today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) }).ToArray();
+            newestPosted = connection.Query<long>(
+                "SELECT id FROM purchase WHERE status='POSTED' ORDER BY received_date DESC,id DESC LIMIT 2000").ToArray();
+            busyLots = connection.Query<long>(
+                "SELECT id FROM product_lot WHERE product_id=@busyProduct ORDER BY id DESC LIMIT 5000", new { busyProduct }).ToArray();
+            vendorIds = connection.Query<long>("SELECT id FROM vendor ORDER BY id").ToArray();
+        }
+        if (busyProduct <= 0 || commonWord.Length == 0 || sku.Length == 0 || firstProducts.Length == 0)
+            throw new InvalidDataException("The Phase 7 fixture needs products, lots and purchases.");
+        Console.WriteLine($"SHAPES common='{commonWord}' rare='{rareName}' local='{localWord}' sku={sku} barcode={barcode} " +
+            $"category={largeCategory}/{rareCategory} vendor={busyVendor} product={busyProduct} lots={busyLots.Length}");
+
+        // Runs a read once cold, then repeatedly warm; the first run is a separate measurement.
+        async Task Profile(string name, Func<Task<int>> read, int runs = 20)
+        {
+            await Measure(name + "-first", read, static count => count);
+            for (int run = 0; run < runs; run++)
+            {
+                long started = Stopwatch.GetTimestamp();
+                try
+                {
+                    int rows = await read();
+                    profileSamples.Add(new(name, Stopwatch.GetElapsedTime(started).TotalMilliseconds, rows, null));
+                }
+                catch (Exception exception)
+                {
+                    profileSamples.Add(new(name, Stopwatch.GetElapsedTime(started).TotalMilliseconds, 0,
+                        exception.GetType().Name + ": " + exception.Message));
+                }
+            }
+        }
+        async Task<int> Rejected(Func<Task> read)
+        {
+            try { await read(); return 0; }
+            catch (GroceryErp.Core.Errors.DomainException) { return -1; }
+        }
+        ProductSearchFilter Products(string? query = null, int limit = 30) =>
+            new(query, Limit: limit, ExpiryAsOf: today) { ExactFirst = true };
+
+        // Products: the default browse page, its next page, every search shape and every filter.
+        ProductSearchPage browse = await catalog.SearchPageAsync(Products());
+        await Profile("products-browse", async () => (await catalog.SearchPageAsync(Products())).Items.Count);
+        await Profile("products-browse-next", async () => (await catalog.SearchPageAsync(Products(),
+            browse.NextName, browse.NextId)).Items.Count);
+        await Profile("products-search-broad", async () => (await catalog.SearchPageAsync(Products(commonWord, 8))).Items.Count);
+        await Profile("products-search-rare", async () => (await catalog.SearchPageAsync(Products(rareName, 8))).Items.Count);
+        await Profile("products-search-nomatch", async () => (await catalog.SearchPageAsync(Products("zqxjv", 8))).Items.Count);
+        await Profile("products-search-short", async () => (await catalog.SearchPageAsync(Products(commonWord[..2], 8))).Items.Count);
+        await Profile("products-search-gujarati", async () => (await catalog.SearchPageAsync(Products(localWord, 8))).Items.Count);
+        await Profile("products-search-sku", async () => (await catalog.SearchPageAsync(Products(sku, 8))).Items.Count);
+        await Profile("products-search-barcode", async () => (await catalog.SearchPageAsync(Products(barcode, 8))).Items.Count);
+        var productFilters = new (string Name, ProductSearchFilter Filter)[]
+        {
+            ("internal", Products() with { ProductClass = "INTERNAL" }),
+            ("saleable", Products() with { ProductClass = "SALEABLE" }),
+            ("archived", Products() with { ArchivedOnly = true }),
+            ("any-status", Products() with { IncludeArchived = true }),
+            ("category-large", Products() with { CategoryId = largeCategory }),
+            ("category-rare", Products() with { CategoryId = rareCategory }),
+            ("brand", Products() with { BrandId = largeBrand > 0 ? largeBrand : null }),
+            ("has-stock", Products() with { HasStockOnly = true }),
+            ("low-stock", Products() with { LowStockOnly = true }),
+            ("expired", Products() with { ExpiryFilter = "EXPIRED" }),
+            ("expiring", Products() with { ExpiryFilter = "EXPIRING" }),
+            ("vendor", Products() with { VendorId = busyVendor }),
+            ("vendor-category", Products() with { VendorId = busyVendor, CategoryId = largeCategory }),
+            ("category-has-stock-expiring", Products() with { CategoryId = largeCategory, HasStockOnly = true, ExpiryFilter = "EXPIRING" }),
+            ("no-barcode", Products() with { NoBarcodeOnly = true }),
+            ("missing-local", Products() with { MissingLocalNameOnly = true }),
+            ("loose", Products() with { LooseOnly = true }),
+            ("search-broad-has-stock", Products(commonWord, 8) with { HasStockOnly = true }),
+        };
+        foreach ((string name, ProductSearchFilter filter) in productFilters)
+            await Profile("products-" + name, async () => (await catalog.SearchPageAsync(filter)).Items.Count);
+        await Profile("products-count-all", () => catalog.CountAsync(Products()), 10);
+        await Profile("products-count-has-stock", () => catalog.CountAsync(Products() with { HasStockOnly = true }), 10);
+        await Profile("products-count-category", () => catalog.CountAsync(Products() with { CategoryId = largeCategory }), 10);
+        await Profile("products-count-search-broad", () => catalog.CountAsync(Products(commonWord)), 10);
+        await Profile("products-resolve-category", async () =>
+        {
+            try { return (await catalog.ResolveIdsAsync(Products() with { CategoryId = largeCategory })).Count; }
+            catch (GroceryErp.Core.Errors.DomainException) { return -1; }
+        }, 10);
+        await Profile("products-resolve-all-rejected", () => Rejected(() => catalog.ResolveIdsAsync(Products())), 5);
+        await Profile("products-preview-category-5000", async () => (await catalog.PreviewBulkAsync(firstProducts,
+            new CatalogBulkCommand(CatalogBulkAction.Category, largeCategory))).Rows.Count, 5);
+        await Profile("products-preview-archive-5000", async () => (await catalog.PreviewBulkAsync(firstProducts,
+            new CatalogBulkCommand(CatalogBulkAction.Archive))).Rows.Count, 5);
+        await Profile("products-preview-expired-writeoff-200", async () =>
+            (await moneyOut.PreviewExpiredWriteOffAsync(expiredProducts.Take(200).ToArray(), today)).Count, 5);
+        await Profile("products-preview-expired-writeoff-over-cap", () =>
+            Rejected(() => moneyOut.PreviewExpiredWriteOffAsync(expiredProducts, today)), 3);
+
+        // Lots of the product with the most lots, under every lot filter.
+        LotFilter Lots() => new() { ProductId = busyProduct, AsOf = today };
+        var lotFilters = new (string Name, LotFilter Filter)[]
+        {
+            ("all", Lots()),
+            ("available", Lots() with { Status = "AVAILABLE" }),
+            ("zero", Lots() with { Status = "ZERO" }),
+            ("blocked", Lots() with { Status = "BLOCKED" }),
+            ("expired", Lots() with { Expiry = "EXPIRED" }),
+            ("expiring", Lots() with { Expiry = "EXPIRING" }),
+            ("no-expiry", Lots() with { Expiry = "NONE" }),
+            ("source-purchase", Lots() with { Source = "PURCHASE_LINE" }),
+            ("source-direct", Lots() with { Source = "DIRECT" }),
+            ("expiry-range", Lots() with { ExpiryFrom = today, ExpiryTo = today.AddDays(365) }),
+            ("price-range", Lots() with { MinPrice = new Money(1), MaxPrice = new Money(100) }),
+            ("batch-search", Lots() with { Query = "B" }),
+            ("batch-nomatch", Lots() with { Query = "zqxjv" }),
+            ("all-products-expired", new LotFilter { Expiry = "EXPIRED", AsOf = today }),
+        };
+        foreach ((string name, LotFilter filter) in lotFilters)
+            await Profile("lots-" + name, async () => (await inventory.GetLotPageAsync(filter, null, 30)).Items.Count);
+        LotPage firstLots = await inventory.GetLotPageAsync(Lots(), null, 30);
+        await Profile("lots-next", async () => (await inventory.GetLotPageAsync(Lots(), firstLots.NextId, 30)).Items.Count);
+        await Profile("lots-count", () => inventory.CountLotsAsync(Lots()), 10);
+        await Profile("lots-resolve", async () => (await inventory.ResolveLotIdsAsync(Lots())).Count, 10);
+        await Profile("lots-preview-delete-zero", async () =>
+            (await inventory.PreviewLotBulkAsync(busyLots, LotBulkAction.DeleteZero)).Count, 5);
+
+        // Purchases and vendors.
+        var purchaseFilters = new (string Name, PurchaseFilter Filter)[]
+        {
+            ("all", new PurchaseFilter()),
+            ("vendor", new PurchaseFilter { VendorId = busyVendor }),
+            ("posted", new PurchaseFilter { Status = "POSTED" }),
+            ("void", new PurchaseFilter { Status = "CANCELLED" }),
+            ("draft", new PurchaseFilter { Status = "DRAFT" }),
+            ("type-expense", new PurchaseFilter { LineKind = "EXPENSE" }),
+            ("type-internal", new PurchaseFilter { LineKind = "INTERNAL" }),
+            ("document-exact", new PurchaseFilter { DocumentQuery = documentNumber }),
+            ("invoice-prefix", new PurchaseFilter { DocumentQuery = invoicePrefix }),
+            ("document-nomatch", new PurchaseFilter { DocumentQuery = "NO-SUCH-BILL" }),
+            ("product", new PurchaseFilter { ProductQuery = purchaseProduct }),
+            ("returnable", new PurchaseFilter { ReturnableOnly = true }),
+            ("date-month", new PurchaseFilter { From = today.AddDays(-30), To = today }),
+            ("vendor-posted-month", new PurchaseFilter { VendorId = busyVendor, Status = "POSTED", From = today.AddDays(-90), To = today }),
+        };
+        foreach ((string name, PurchaseFilter filter) in purchaseFilters)
+            await Profile("purchases-" + name, async () => (await purchasing.GetPurchasePageAsync(filter, null, null, 30)).Items.Count);
+        await Profile("purchases-count-posted", () => purchasing.CountPurchasesAsync(new PurchaseFilter { Status = "POSTED" }), 10);
+        await Profile("purchases-count-vendor", () => purchasing.CountPurchasesAsync(new PurchaseFilter { VendorId = busyVendor }), 10);
+        await Profile("purchases-resolve-vendor-month", async () => (await purchasing.ResolvePurchaseIdsAsync(
+            new PurchaseFilter { VendorId = busyVendor, From = today.AddDays(-90), To = today })).Count, 10);
+        await Profile("purchases-preview-void-2000", async () =>
+            (await purchasing.PreviewVoidAsync(newestPosted)).Count, 3);
+        await Profile("vendors-page", async () => (await purchasing.GetVendorPageAsync(new VendorFilter(), null, null, 30)).Items.Count);
+        await Profile("vendors-search", async () => (await purchasing.GetVendorPageAsync(
+            new VendorFilter { Query = "a", Status = "ALL" }, null, null, 30)).Items.Count);
+        await Profile("vendors-balance", async () => (await purchasing.GetVendorPageAsync(
+            new VendorFilter { WithBalanceOnly = true }, null, null, 30)).Items.Count);
+        await Profile("vendors-count", () => purchasing.CountVendorsAsync(new VendorFilter { Status = "ALL" }), 10);
+        await Profile("vendors-preview", async () => (await purchasing.PreviewVendorBulkAsync(vendorIds, false)).Count, 5);
+
+        // Money out tabs.
+        var history = new DateOnly(2021, 1, 1);
+        await Profile("damages-quarter", async () => (await moneyOut.GetDamagePageAsync(
+            new DamageFilter(today.AddMonths(-3), today), null, null, 30)).Items.Count);
+        await Profile("damages-history", async () => (await moneyOut.GetDamagePageAsync(
+            new DamageFilter(history, today), null, null, 30)).Items.Count);
+        await Profile("damages-reason", async () => (await moneyOut.GetDamagePageAsync(
+            new DamageFilter(history, today) { Reason = "EXPIRED" }, null, null, 30)).Items.Count);
+        await Profile("damages-search", async () => (await moneyOut.GetDamagePageAsync(
+            new DamageFilter(history, today) { Query = commonWord }, null, null, 30)).Items.Count);
+        await Profile("damages-void", async () => (await moneyOut.GetDamagePageAsync(
+            new DamageFilter(history, today) { Status = "VOID" }, null, null, 30)).Items.Count);
+        await Profile("expenses-quarter", async () => (await moneyOut.GetExpensePageAsync(
+            new ExpenseFilter(today.AddMonths(-3), today), null, null, 30)).Items.Count);
+        await Profile("expenses-history-category", async () => (await moneyOut.GetExpensePageAsync(
+            new ExpenseFilter(history, today) { CategoryId = busyExpenseCategory > 0 ? busyExpenseCategory : null }, null, null, 30)).Items.Count);
+        await Profile("expenses-history-purchase", async () => (await moneyOut.GetExpensePageAsync(
+            new ExpenseFilter(history, today) { Status = "PURCHASE" }, null, null, 30)).Items.Count);
+        await Profile("expenses-search", async () => (await moneyOut.GetExpensePageAsync(
+            new ExpenseFilter(history, today) { Query = "a" }, null, null, 30)).Items.Count);
+        await Profile("employees-all", async () => (await moneyOut.GetEmployeesAsync(new EmployeeFilter { Status = "ALL" })).Count);
+        await Profile("salary-register-year", async () => (await moneyOut.GetSalaryRegisterAsync(
+            YearMonth.From(today).AddMonths(-11), YearMonth.From(today), null, null)).Count);
+
+        // "reads" as the fourth argument stops here, for repeated read-only comparisons.
+        if (args.Length > 3 && args[3].StartsWith("reads", StringComparison.Ordinal)) break;
+        // Bounded bulk batches on this disposable copy at the UI's batch sizes: each holds the
+        // single writer, so its duration is what a cashier's bill can wait behind.
+        string root7 = OperationGuard.NewId();
+        int batchNumber = 0;
+        long[] taxTargets = firstProducts.Take(2000).ToArray();
+        long originalTax, otherTax;
+        using (var connection = factory.Open())
+        {
+            originalTax = connection.ExecuteScalar<long>("SELECT tax_rate_id FROM product WHERE id=@id", new { id = taxTargets[0] });
+            otherTax = connection.ExecuteScalar<long>("SELECT id FROM tax_rate WHERE id<>@originalTax ORDER BY id LIMIT 1", new { originalTax });
+        }
+        async Task<int> TaxBatch(long[] ids, long tax) => (await catalog.RunBulkBatchAsync(
+            new CatalogBulkCommand(CatalogBulkAction.Tax, tax), ids, BulkBatch.OperationId(root7, ++batchNumber)))
+            .Count(static result => result.Outcome == BulkItemOutcome.Changed);
+        async Task<int> LotBatch(long[] ids, LotBulkAction action) => (await inventory.RunLotBulkBatchAsync(
+            action, ids, BulkBatch.OperationId(root7, ++batchNumber))).Count(static result => result.Outcome == BulkItemOutcome.Changed);
+        long[] firstTax = taxTargets.Take(50).ToArray();
+        await Measure("bulk-tax-batch-50", () => TaxBatch(firstTax, otherTax), static rows => rows);
+        await Measure("bulk-tax-batch-50-replay", () => catalog.RunBulkBatchAsync(new CatalogBulkCommand(CatalogBulkAction.Tax, otherTax),
+            firstTax, BulkBatch.OperationId(root7, batchNumber)), static results => results.Count);
+        await Measure("bulk-tax-restore-50", () => TaxBatch(firstTax, originalTax), static rows => rows);
+        long[] blockTargets = busyLots.Take(50).ToArray();
+        await Measure("bulk-lot-block-50", () => LotBatch(blockTargets, LotBulkAction.Block), static rows => rows);
+        await Measure("bulk-lot-unblock-50", () => LotBatch(blockTargets, LotBulkAction.Unblock), static rows => rows);
+        IReadOnlyList<ExpiredWriteOffLot> expiredLots = await moneyOut.PreviewExpiredWriteOffAsync(expiredProducts.Take(200).ToArray(), today);
+        long[] writeOff = expiredLots.Take(50).Select(static lot => lot.LotId).ToArray();
+        if (writeOff.Length > 0)
+            await Measure("bulk-writeoff-batch-50", async () => (await moneyOut.WriteOffExpiredBatchAsync(writeOff, today,
+                BulkBatch.OperationId(root7, ++batchNumber))).Count(static result => result.Outcome == BulkItemOutcome.Changed),
+                static rows => rows);
+        IReadOnlyList<PurchasingBulkRow> voidable = await purchasing.PreviewVoidAsync(newestPosted);
+        long[] voidTargets = voidable.Where(static row => row.Eligible).Select(static row => row.Id).ToArray();
+        Console.WriteLine($"VOIDABLE {voidTargets.Length} of {voidable.Count}");
+        if (voidTargets.Length >= 5)
+            await Measure("bulk-void-batch-5", async () => (await purchasing.RunVoidBatchAsync(voidTargets[..5], today,
+                BulkBatch.OperationId(root7, ++batchNumber))).Count(static result => result.Outcome == BulkItemOutcome.Changed),
+                static rows => rows);
+
+        // Cashier bills alone, then with bulk batches committing back to back: the bill commit is
+        // the gate (p95 under 100 ms), so a batch must stay short enough to wait behind.
+        var cashierSales = new SalesService(database, ledger, numbers, periods, settings, audit, clock);
+        string suffix = Guid.NewGuid().ToString("N");
+        long cashierProduct = await database.WriteAsync(tx =>
+        {
+            long category = tx.Connection.ExecuteScalar<long>("SELECT id FROM category LIMIT 1", transaction: tx.Transaction);
+            long uom = tx.Connection.ExecuteScalar<long>("SELECT id FROM uom WHERE code='PCS'", transaction: tx.Transaction);
+            long id = tx.Connection.ExecuteScalar<long>("""
+                INSERT INTO product(sku,name,category_id,uom_id)
+                VALUES (@sku,'Phase 7 cashier product',@category,@uom) RETURNING id
+                """, new { sku = "PH7-C-" + suffix, category, uom }, tx.Transaction);
+            long lotId = tx.Connection.ExecuteScalar<long>("""
+                INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,unit_cost,selling_price,qty_received)
+                VALUES (@id,@code,'CASHIER','2026-09-01','2027-09-01',1000,2000,1000000) RETURNING id
+                """, new { id, code = "PH7-C-L-" + suffix }, tx.Transaction);
+            ledger.Post(tx, new(clock.BusinessDate, id, lotId, "DIRECT_ENTRY", new Quantity(1000), new Money(1),
+                "direct_stock_origin", lotId));
+            return id;
+        });
+        async Task Bills(string name, int count)
+        {
+            for (int index = 0; index < count; index++)
+            {
+                long saleId = await cashierSales.AddProductAsync(null, cashierProduct, Quantity.One);
+                long started = Stopwatch.GetTimestamp();
+                await cashierSales.CompleteAsync(new(saleId, [new(PaymentMode.Cash, new Money(2))], OperationGuard.NewId()));
+                profileSamples.Add(new(name, Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1, null));
+            }
+        }
+        await Bills("cashier-bill-commit-alone", 100);
+        using var bulkStop = new CancellationTokenSource();
+        Task bulkLoad = Task.Run(async () =>
+        {
+            int round = 0;
+            while (!bulkStop.IsCancellationRequested)
+            {
+                long[] batch = taxTargets.Skip(round % 40 * 50).Take(50).ToArray();
+                long started = Stopwatch.GetTimestamp();
+                await TaxBatch(batch, round % 2 == 0 ? otherTax : originalTax);
+                profileSamples.Add(new("bulk-batch-during-billing", Stopwatch.GetElapsedTime(started).TotalMilliseconds, batch.Length, null));
+                started = Stopwatch.GetTimestamp();
+                await LotBatch(busyLots.Skip(round % 20 * 50).Take(50).ToArray(), round % 2 == 0 ? LotBulkAction.Block : LotBulkAction.Unblock);
+                profileSamples.Add(new("bulk-batch-during-billing", Stopwatch.GetElapsedTime(started).TotalMilliseconds, 50, null));
+                round++;
+            }
+        });
+        try { await Bills("cashier-bill-commit-with-bulk", 100); }
+        finally
+        {
+            bulkStop.Cancel();
+            await bulkLoad;
+        }
+        // Leave the lots and tax rates as found: unblock every busy lot and restore the tax rate.
+        foreach (long[] chunk in busyLots.Chunk(50)) await LotBatch(chunk, LotBulkAction.Unblock);
+        foreach (long[] chunk in taxTargets.Chunk(50)) await TaxBatch(chunk, originalTax);
+        break;
+    }
     case "phase5-return-reconcile":
     {
         if (!Path.GetFileName(root).Contains("rehearsal", StringComparison.OrdinalIgnoreCase))
@@ -3888,7 +4257,7 @@ switch (mode)
         throw new ArgumentException($"Unknown mode '{mode}'.");
 }
 
-if (mode is "attribution-profile" or "history-profile" or "shape-profile" or "report-profile" or "phase6-reports" or "gap-read" or "feature-write" or "weekly-maintenance-overlap" or "print-journal-profile")
+if (mode is "attribution-profile" or "history-profile" or "shape-profile" or "report-profile" or "phase6-reports" or "gap-read" or "feature-write" or "weekly-maintenance-overlap" or "print-journal-profile" or "phase7-filters")
 {
     // Freeze the service trace before audit metadata queries and plan collection.
     factory.SqlTrace = null;

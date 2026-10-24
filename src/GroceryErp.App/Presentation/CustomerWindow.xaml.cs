@@ -38,9 +38,9 @@ public partial class CustomerWindow : Window
             }
             CustomersGrid.ItemsSource = visible;
             CustomersGrid.SelectedItem = visible.FirstOrDefault(customer => customer.Id == _currentCustomerId);
-            ErrorText.Text = "";
+            Summary.Clear();
         }
-        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
+        catch (Exception exception) { Summary.ShowMessage(UserError.Message(exception)); }
     }
 
     private async void SearchBox_OnChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
@@ -55,14 +55,18 @@ public partial class CustomerWindow : Window
 
     private async void Create_OnClick(object sender, RoutedEventArgs e)
     {
+        var form = new FormValidator();
+        string? name = form.Text(NameField, NameBox.Text, required: true, maxLength: 120);
+        string? phone = form.Text(PhoneField, PhoneBox.Text, maxLength: 20);
+        string? gstin = form.Text(GstinField, GstinBox.Text, maxLength: 15)?.ToUpperInvariant();
+        if (gstin is { Length: not 15 }) form.AddKey(GstinField, "Purchasing_GstinHint");
+        if (!form.Apply(Fields, Summary)) return;
         try
         {
-            long id = await _sales.CreateCustomerAsync(NameBox.Text,
-                InputNormalizer.Normalize(PhoneBox.Text), InputNormalizer.Normalize(GstinBox.Text).ToUpperInvariant());
-            SelectedCustomerId = id;
+            SelectedCustomerId = await _sales.CreateCustomerAsync(name!, phone, gstin);
             DialogResult = true;
         }
-        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
+        catch (Exception exception) { Summary.ShowMessage(UserError.Message(exception)); }
     }
 
     private void WalkIn_OnClick(object sender, RoutedEventArgs e)
@@ -75,7 +79,8 @@ public partial class CustomerWindow : Window
     {
         if (CustomersGrid.SelectedItem is not CustomerItem customer)
         {
-            ErrorText.Text = TranslationSource.Instance["Sales_SelectCustomer"];
+            FormValidator.Clear(Fields);
+            Summary.ShowMessage(TranslationSource.Instance["Sales_SelectCustomer"]);
             return;
         }
         SelectedCustomerId = customer.Id;

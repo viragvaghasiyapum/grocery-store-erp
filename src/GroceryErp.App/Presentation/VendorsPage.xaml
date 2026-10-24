@@ -1,0 +1,79 @@
+<Page x:Class="GroceryErp.App.Presentation.VendorsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Title="{l:Tr Purchasing_Vendors}" FontFamily="{StaticResource AppFont}"
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European"
+    ScrollViewer.CanContentScroll="False">
+  <Grid Margin="14,8,14,8">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <DockPanel Margin="0,0,0,6">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <Button x:Name="LedgerButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="Ledger_OnClick" Content="{l:Tr Purchasing_VendorLedger}"/>
+        <Button x:Name="EditButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="Edit_OnClick" Content="{l:Tr Purchasing_EditVendor}"/>
+        <Button Style="{StaticResource ToolbarButton}" Click="Payment_OnClick" Content="{l:Tr Purchasing_Payment}"/>
+        <Button Style="{StaticResource ToolbarButton}" Margin="0" Click="New_OnClick" Content="{l:Tr Purchasing_NewVendor}" FontWeight="SemiBold"
+                ToolTip="Ctrl+N"/>
+      </StackPanel>
+      <TextBlock Style="{StaticResource PageTitle}" Text="{l:Tr Purchasing_Vendors}"/>
+    </DockPanel>
+    <WrapPanel x:Name="FilterBar" Grid.Row="1" Margin="0,0,0,2">
+      <ui:TextBox x:Name="SearchBox" Width="280" Margin="0,0,6,4" PlaceholderText="{l:Tr Purchasing_VendorSearch}"
+                  TextChanged="Search_OnTextChanged" AutomationProperties.Name="{l:Tr Purchasing_VendorSearch}" ToolTip="Ctrl+F"/>
+      <ComboBox x:Name="StatusFilter" Width="130" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged"
+                AutomationProperties.Name="{l:Tr Purchasing_Status}">
+        <ComboBoxItem Tag="ACTIVE" Content="{l:Tr Catalog_ActiveOnly}"/>
+        <ComboBoxItem Tag="INACTIVE" Content="{l:Tr Purchasing_InactiveOnly}"/>
+        <ComboBoxItem Tag="ALL" Content="{l:Tr Catalog_AnyStatus}"/>
+      </ComboBox>
+      <CheckBox x:Name="BalanceFilter" Margin="4,0,12,4" VerticalAlignment="Center" Click="Check_OnClick" Content="{l:Tr Purchasing_WithBalance}"/>
+      <Button Style="{StaticResource ToolbarButton}" Margin="0,0,0,4" Click="ClearFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
+    </WrapPanel>
+    <p:SelectionBar x:Name="Selection" Grid.Row="1" Covers="{Binding ElementName=FilterBar}">
+      <p:SelectionBar.Actions>
+        <Menu VerticalAlignment="Center" Background="Transparent">
+          <MenuItem Header="{l:Tr Catalog_BulkActions}">
+            <MenuItem Click="Activate_OnClick" Header="{l:Tr Purchasing_ActivateSelectedVendors}"/>
+            <MenuItem Click="Deactivate_OnClick" Header="{l:Tr Purchasing_DeactivateSelectedVendors}"/>
+          </MenuItem>
+        </Menu>
+      </p:SelectionBar.Actions>
+    </p:SelectionBar>
+    <Grid Grid.Row="2">
+      <DataGrid x:Name="VendorsGrid" Style="{StaticResource CompactTableGrid}" SelectionMode="Single"
+                SelectionChanged="VendorsGrid_OnSelectionChanged" MouseDoubleClick="VendorsGrid_OnDoubleClick"
+                PreviewKeyDown="VendorsGrid_OnPreviewKeyDown" AutomationProperties.Name="{l:Tr Purchasing_Vendors}">
+        <DataGrid.Columns>
+          <DataGridTemplateColumn Width="40" CanUserReorder="False" CanUserResize="False">
+            <DataGridTemplateColumn.HeaderTemplate><DataTemplate>
+              <CheckBox HorizontalAlignment="Center" IsThreeState="True" Loaded="PageCheck_OnLoaded" Click="PageCheck_OnClick"
+                        AutomationProperties.Name="{l:Tr Selection_ThisPage}"/>
+            </DataTemplate></DataGridTemplateColumn.HeaderTemplate>
+            <DataGridTemplateColumn.CellTemplate><DataTemplate>
+              <CheckBox HorizontalAlignment="Center" Loaded="RowCheck_OnLoaded" Click="RowCheck_OnClick"
+                        AutomationProperties.Name="{l:Tr Purchasing_SelectVendor}"/>
+            </DataTemplate></DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTextColumn Width="2*" MinWidth="180" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}"/>
+          <DataGridTextColumn Width="140" Header="{l:Tr Purchasing_Phone}" Binding="{Binding Phone}"/>
+          <DataGridTextColumn Width="170" Header="GSTIN" Binding="{Binding Gstin}"/>
+          <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Balance}" Binding="{Binding BalanceDue}"/>
+          <DataGridTemplateColumn Width="80" Header="{l:Tr Catalog_Active}" SortMemberPath="IsActive">
+            <DataGridTemplateColumn.CellTemplate><DataTemplate>
+              <CheckBox HorizontalAlignment="Center" IsChecked="{Binding IsActive, Mode=OneWay}" IsHitTestVisible="False"
+                        Focusable="False" AutomationProperties.Name="{l:Tr Catalog_Active}"/>
+            </DataTemplate></DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+        </DataGrid.Columns>
+      </DataGrid>
+      <TextBlock x:Name="EmptyText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
+                 TextWrapping="Wrap" Text="{l:Tr Purchasing_VendorsEmpty}"/>
+    </Grid>
+    <p:PagerBar x:Name="Pager" Grid.Row="3"/>
+  </Grid>
+</Page>

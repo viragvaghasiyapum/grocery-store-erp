@@ -33,7 +33,7 @@ public partial class ShellWindow : FluentWindow
     private readonly ReceiptPrinter? _printer;
     private readonly DispatcherTimer _deviceTimer = new() { Interval = TimeSpan.FromSeconds(15) };
     private readonly Dictionary<NavigationViewItem, string> _moduleNavigation = [];
-    private readonly InfoBadge _expiryInfoBadge = new() { Value = "0" };
+    private readonly InfoBadge _expiryInfoBadge = new() { Value = "0", Visibility = Visibility.Collapsed };
     private DateTime _lastActivity;
     private DateTime? _lastScan;
     private PrinterState _printerState = PrinterState.Checking;
@@ -100,7 +100,7 @@ public partial class ShellWindow : FluentWindow
             if (moneyOut is not null)
             {
                 int count = await moneyOut.GetActionableExpiryCountAsync();
-                _expiryInfoBadge.Value = count.ToString(CultureInfo.InvariantCulture);
+                SetExpiryBadge(count);
                 string today = clock?.BusinessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "";
                 string lastPopup = settings?.Current.Values.GetValueOrDefault("expiry.last_popup_date", "") ?? "";
                 if (count > 0 && settings?.Current.ExpiryPopupOnLogin == true && settingsService is not null && lastPopup != today)
@@ -108,7 +108,11 @@ public partial class ShellWindow : FluentWindow
                     var alert = new ExpiryAlertWindow(count) { Owner = this };
                     alert.ShowDialog();
                     await settingsService.SaveAsync(new Dictionary<string, string> { ["expiry.last_popup_date"] = today });
-                    if (alert.ViewRequested) RootNavigation.Navigate(typeof(ProductsPage));
+                    if (alert.ViewRequested)
+                    {
+                        ProductsPage.RequestExpiredStock(PageStateStore.Current);
+                        RootNavigation.Navigate(typeof(ProductsPage));
+                    }
                 }
             }
         };
@@ -241,7 +245,12 @@ public partial class ShellWindow : FluentWindow
 
     private void BackupStatus_OnClick(object sender, RoutedEventArgs e) => RootNavigation.Navigate(typeof(SettingsPage));
 
-    internal void SetExpiryBadge(int count) => _expiryInfoBadge.Value = count.ToString(CultureInfo.InvariantCulture);
+    // A zero badge is noise; it shows only while expired or expiring stock needs action.
+    internal void SetExpiryBadge(int count)
+    {
+        _expiryInfoBadge.Value = count.ToString(CultureInfo.InvariantCulture);
+        _expiryInfoBadge.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
     internal void OpenReports() => RootNavigation.Navigate(typeof(ReportsPage));
     internal void OpenSettings() => RootNavigation.Navigate(typeof(SettingsPage));
     internal void ShowMaintenanceWarning() => MaintenanceWarning.Visibility = Visibility.Visible;

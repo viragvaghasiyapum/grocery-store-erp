@@ -220,9 +220,16 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
         _ensuredTopWindowDate = today;
     }
 
-    public Task<TabularReport> GetReportAsync(ReportKind kind, ReportFilter filter, CancellationToken cancellationToken = default)
+    public async Task<TabularReport> GetReportAsync(ReportKind kind, ReportFilter filter, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(filter);
+        TabularReport report = await GetReportCoreAsync(kind, filter, cancellationToken).ConfigureAwait(false);
+        string[] filters = FilterParts(kind, filter);
+        return filters.Length == 0 ? report : report with { Filters = string.Join(" · ", filters) };
+    }
+
+    private Task<TabularReport> GetReportCoreAsync(ReportKind kind, ReportFilter filter, CancellationToken cancellationToken)
+    {
         if (filter.Limit is < 1 or > 50000 || filter.SlowMoverDays is < 1 or > 3650)
             throw new DomainException(ErrorCode.Validation, "Invalid report filter.");
         DateOnly to = filter.To ?? clock.BusinessDate;
@@ -333,8 +340,13 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
                 exported = await database.ReadAsync(connection =>
                 {
                     using var writer = new StreamWriter(temporary, false, new UTF8Encoding(true), 64 * 1024);
+                    writer.WriteLine(CsvContext(kind, filter, period));
                     writer.WriteLine(string.Join(',', definition.Columns.Select(column => CsvText(
                         Text($"Reports_Column_{column.Key}", column.Heading)))));
+                    // Same columns as the on-screen totals, summed over every streamed row.
+                    Dictionary<string, decimal> totals = definition.Columns
+                        .Where(static column => column.Kind is ReportValueKind.Money or ReportValueKind.Quantity)
+                        .ToDictionary(static column => column.Key, static _ => 0m);
                     var parameters = new
                     {
                         from = Iso(from),
@@ -366,11 +378,17 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
                         writer.WriteLine(string.Join(',', definition.Columns.Select(column =>
                         {
                             values.TryGetValue(column.Key, out object? value);
+                            if (totals.ContainsKey(column.Key)) totals[column.Key] += ScaledDecimal(value);
                             return CsvValue(value, column.Kind);
                         })));
                         count++;
                         if (count % 1000 == 0) progress?.Report(count);
                     }
+                    if (totals.Count > 0)
+                        writer.WriteLine(string.Join(',', definition.Columns.Select((column, index) => index == 0
+                            ? CsvText(Text("Reports_Column_Total", "Total"))
+                            : totals.TryGetValue(column.Key, out decimal total)
+                                ? total.ToString("0.###", CultureInfo.InvariantCulture) : string.Empty)));
                     return count;
                 }, cancellationToken).ConfigureAwait(false);
             }
@@ -389,6 +407,7 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
         IProgress<long>? progress, CancellationToken cancellationToken) => database.ReadAsync(connection =>
     {
         using var writer = new StreamWriter(temporary, false, new UTF8Encoding(true), 64 * 1024);
+        writer.WriteLine(CsvContext(ReportKind.AssetSchedule, new ReportFilter(AssetId: assetId), period));
         writer.WriteLine(string.Join(',', AssetScheduleColumns
             .Select(key => CsvText(Text($"Reports_Column_{key}", key)))));
         if (assetId is null) return 0L;
@@ -472,6 +491,44 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
         ReportValueKind.Count => Convert.ToString(value, CultureInfo.InvariantCulture) ?? "0",
         _ => CsvText(Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty),
     };
+
+    // The first CSV line names the report, its period and every applied filter, so a saved file
+    // always says which version of the data it holds.
+    private string CsvContext(ReportKind kind, ReportFilter filter, DateRange? period)
+    {
+        var parts = new List<string> { Text($"Reports_Kind_{kind}", kind.ToString()) };
+        // The asset schedule has no shared definition; it is always for a date range.
+        if (period is { } range && (kind == ReportKind.AssetSchedule || Definition(kind).UsesPeriod))
+            parts.Add($"{range.From:yyyy-MM-dd} – {range.To:yyyy-MM-dd}");
+        parts.AddRange(FilterParts(kind, filter));
+        return CsvText(string.Join(" · ", parts));
+    }
+
+    // The applied filters in words; the CSV context line, the Excel sheet and the A4 header share them.
+    private string[] FilterParts(ReportKind kind, ReportFilter filter)
+    {
+        var parts = new List<string>();
+        void Add(string key, string fallback, object? value)
+        {
+            if (value is not null && value.ToString() is { Length: > 0 } text)
+                parts.Add($"{Text(key, fallback)}: {Convert.ToString(text, CultureInfo.InvariantCulture)}");
+        }
+        Add("Reports_FilterProduct", "Product", filter.ProductId);
+        Add("Reports_FilterLot", "Lot", filter.LotId);
+        Add("Reports_FilterVendor", "Vendor", filter.VendorId);
+        Add("Reports_FilterAsset", "Asset", filter.AssetId);
+        Add("Reports_Status", "Status", filter.Status);
+        Add("Reports_Payment", "Payment", filter.PaymentMode);
+        Add("Reports_FilterEntity", "Entity", filter.Entity);
+        Add("Reports_FilterAction", "Action", filter.Action);
+        if (kind == ReportKind.SlowMovers)
+            Add("Reports_FilterSlowDays", "Days", filter.SlowMoverDays.ToString(CultureInfo.InvariantCulture));
+        if (kind == ReportKind.StockValue && !filter.IncludeExpired)
+            parts.Add(Text("Reports_ExcludesExpired", "Expired lots excluded"));
+        if (kind == ReportKind.StockReconciliation && filter.MismatchesOnly)
+            parts.Add(Text("Reports_MismatchesOnly", "Differences only"));
+        return [.. parts];
+    }
 
     private static string CsvText(string value)
     {

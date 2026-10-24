@@ -48,34 +48,32 @@ public sealed partial class InventoryService(
 
     public Task<LotPage> GetLotPageAsync(long? productId = null, string? query = null, long? beforeId = null,
         int limit = 100, bool availableOnly = false, string expiryFilter = "ALL",
-        DateOnly? asOfDate = null, CancellationToken cancellationToken = default)
+        DateOnly? asOfDate = null, CancellationToken cancellationToken = default) =>
+        GetLotPageAsync(new LotFilter
+        {
+            ProductId = productId,
+            Query = query,
+            Status = availableOnly ? "AVAILABLE" : "ALL",
+            Expiry = expiryFilter,
+            AsOf = asOfDate,
+        }, beforeId, limit, cancellationToken);
+
+    /// <summary>Reads one keyset page of lots, newest first, with every filter applied in SQL.</summary>
+    public Task<LotPage> GetLotPageAsync(LotFilter filter, long? beforeId, int limit = 100,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(filter);
         if (limit is < 1 or > 200 || beforeId <= 0)
             throw new DomainException(ErrorCode.Validation, "Invalid lot page.");
-        if (expiryFilter is not ("ALL" or "EXPIRED" or "EXPIRING"))
-            throw new DomainException(ErrorCode.Validation, "Invalid expiry filter.");
-        DateOnly today = asOfDate ?? DateOnly.FromDateTime(DateTime.Today);
-        string date = today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-        string soon = today.AddDays(30).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-        string expiryWhere = expiryFilter switch
-        {
-            "EXPIRED" => "AND l.qty_on_hand>0 AND l.expiry_date<@date",
-            "EXPIRING" => "AND l.qty_on_hand>0 AND l.expiry_date>=@date AND l.expiry_date<=@soon",
-            _ => string.Empty,
-        };
-        string pattern = "%" + (query ?? string.Empty).Trim().Replace("%", "\\%", StringComparison.Ordinal)
-            .Replace("_", "\\_", StringComparison.Ordinal) + "%";
+        (string conditions, DynamicParameters parameters) = LotConditions(filter);
+        parameters.Add("beforeId", beforeId);
+        parameters.Add("take", limit + 1);
         return database.ReadAsync(connection =>
         {
             List<LotItem> rows = connection.Query<LotRow>($$"""
                 WITH visible AS MATERIALIZED (
                     SELECT l.id FROM product_lot l JOIN product p ON p.id=l.product_id
-                    WHERE (@productId IS NULL OR l.product_id=@productId)
-                      AND (@availableOnly=0 OR (l.is_active=1 AND l.qty_on_hand>0))
-                      {{expiryWhere}}
-                      AND (@beforeId IS NULL OR l.id<@beforeId)
-                      AND (p.name LIKE @pattern ESCAPE '\' OR l.lot_code LIKE @pattern ESCAPE '\'
-                           OR l.batch_no LIKE @pattern ESCAPE '\')
+                    WHERE {{conditions}} {{(beforeId is null ? string.Empty : "AND l.id<@beforeId")}}
                     ORDER BY l.id DESC LIMIT @take
                 )
                 SELECT l.id AS Id,l.product_id AS ProductId,p.name AS ProductName,l.lot_code AS LotCode,
@@ -83,32 +81,112 @@ public sealed partial class InventoryService(
                        l.unit_cost AS UnitCost,l.mrp AS Mrp,l.selling_price AS SellingPrice,
                        l.qty_received AS Received,l.qty_on_hand AS OnHand,l.is_active AS IsActive,
                        l.origin_kind AS OriginKind,l.detail_version AS DetailVersion,
-                       CASE WHEN l.is_active=0 THEN 'BLOCKED' WHEN l.qty_on_hand<=0 THEN 'EMPTY'
-                            WHEN l.expiry_date IS NULL THEN 'NONE'
-                            WHEN l.expiry_date<date('now','localtime') THEN 'EXPIRED'
-                            WHEN l.expiry_date<=date('now','localtime','+7 days') THEN 'CRITICAL'
-                            WHEN julianday(l.expiry_date)-julianday('now','localtime','start of day')<=
-                                 COALESCE(p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
-                                          CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30)
-                                 THEN 'SOON' ELSE 'FRESH' END AS ExpiryBucketCode
+                       {{ExpiryBucketSql}} AS ExpiryBucketCode
                 FROM visible page JOIN product_lot l ON l.id=page.id JOIN product p ON p.id=l.product_id
                 JOIN category c ON c.id=p.category_id LEFT JOIN category pc ON pc.id=c.parent_id
                 ORDER BY l.id DESC
-                """, new
-            {
-                productId,
-                beforeId,
-                availableOnly,
-                pattern,
-                take = limit + 1,
-                date,
-                soon
-            })
-                .Select(static row => row.ToModel()).ToList();
+                """, parameters).Select(static row => row.ToModel()).ToList();
             bool hasMore = rows.Count > limit;
             if (hasMore) rows.RemoveAt(limit);
             return new LotPage(rows, hasMore, rows.LastOrDefault()?.Id);
         }, cancellationToken);
+    }
+
+    /// <summary>Counts every lot matching the filters, for an "all matching" selection.</summary>
+    public Task<int> CountLotsAsync(LotFilter filter, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        (string conditions, DynamicParameters parameters) = LotConditions(filter);
+        return database.ReadAsync(connection => connection.ExecuteScalar<int>(
+            $"SELECT COUNT(*) FROM product_lot l JOIN product p ON p.id=l.product_id WHERE {conditions}", parameters),
+            cancellationToken);
+    }
+
+    /// <summary>Resolves every matching lot ID, newest first; fails rather than truncating past the cap.</summary>
+    public Task<IReadOnlyList<long>> ResolveLotIdsAsync(LotFilter filter, int maximum = MaxBulkLots,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        int cap = Math.Clamp(maximum, 1, MaxBulkLots);
+        (string conditions, DynamicParameters parameters) = LotConditions(filter);
+        parameters.Add("cap", cap + 1);
+        return database.ReadAsync(connection =>
+        {
+            long[] ids = connection.Query<long>(
+                $"SELECT l.id FROM product_lot l JOIN product p ON p.id=l.product_id WHERE {conditions} ORDER BY l.id DESC LIMIT @cap",
+                parameters).ToArray();
+            if (ids.Length > cap)
+                throw new DomainException(ErrorCode.Validation,
+                    $"More than {cap.ToString(System.Globalization.CultureInfo.InvariantCulture)} lots match. Narrow the filters and try again.");
+            return (IReadOnlyList<long>)ids;
+        }, cancellationToken);
+    }
+
+    /// <summary>Most lots one "all matching" bulk action may resolve; larger sets must be narrowed.</summary>
+    public const int MaxBulkLots = 5000;
+
+    private const string ExpiryBucketSql = """
+        CASE WHEN l.is_active=0 THEN 'BLOCKED' WHEN l.qty_on_hand<=0 THEN 'EMPTY'
+             WHEN l.expiry_date IS NULL THEN 'NONE'
+             WHEN l.expiry_date<date('now','localtime') THEN 'EXPIRED'
+             WHEN l.expiry_date<=date('now','localtime','+7 days') THEN 'CRITICAL'
+             WHEN julianday(l.expiry_date)-julianday('now','localtime','start of day')<=
+                  COALESCE(p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
+                           CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30)
+                  THEN 'SOON' ELSE 'FRESH' END
+        """;
+
+    private static (string Conditions, DynamicParameters Parameters) LotConditions(LotFilter filter)
+    {
+        if (filter.Status is not ("ALL" or "AVAILABLE" or "ZERO" or "BLOCKED") ||
+            filter.Expiry is not ("ALL" or "EXPIRED" or "EXPIRING" or "NONE") ||
+            filter.Source is not (null or "PURCHASE_LINE" or "DIRECT" or "CUSTOMER_RETURN"))
+            throw new DomainException(ErrorCode.Validation, "Invalid lot filter.");
+        if (filter.ExpiryFrom > filter.ExpiryTo || filter.MinPrice > filter.MaxPrice)
+            throw new DomainException(ErrorCode.Validation, "The filter range starts after it ends.");
+        DateOnly today = filter.AsOf ?? DateOnly.FromDateTime(DateTime.Today);
+        var parameters = new DynamicParameters();
+        parameters.Add("productId", filter.ProductId);
+        parameters.Add("date", Format(today));
+        parameters.Add("soon", Format(today.AddDays(30)));
+        parameters.Add("expiryFrom", filter.ExpiryFrom is { } from ? Format(from) : null);
+        parameters.Add("expiryTo", filter.ExpiryTo is { } to ? Format(to) : null);
+        parameters.Add("source", filter.Source);
+        parameters.Add("minPrice", filter.MinPrice?.Scaled);
+        parameters.Add("maxPrice", filter.MaxPrice?.Scaled);
+        string status = filter.Status switch
+        {
+            "AVAILABLE" => "AND l.is_active=1 AND l.qty_on_hand>0",
+            "ZERO" => "AND l.qty_on_hand=0",
+            "BLOCKED" => "AND l.is_active=0",
+            _ => string.Empty,
+        };
+        string expiry = filter.Expiry switch
+        {
+            "EXPIRED" => "AND l.qty_on_hand>0 AND l.expiry_date<@date",
+            "EXPIRING" => "AND l.qty_on_hand>0 AND l.expiry_date>=@date AND l.expiry_date<=@soon",
+            "NONE" => "AND l.expiry_date IS NULL",
+            _ => string.Empty,
+        };
+        string search = string.Empty;
+        string query = (filter.Query ?? string.Empty).Trim();
+        if (query.Length > 0)
+        {
+            parameters.Add("pattern", "%" + query.Replace("\\", "\\\\", StringComparison.Ordinal)
+                .Replace("%", "\\%", StringComparison.Ordinal).Replace("_", "\\_", StringComparison.Ordinal) + "%");
+            search = filter.ProductId is null
+                ? "AND (p.name LIKE @pattern ESCAPE '\\' OR l.lot_code LIKE @pattern ESCAPE '\\' OR l.batch_no LIKE @pattern ESCAPE '\\')"
+                : "AND (l.lot_code LIKE @pattern ESCAPE '\\' OR l.batch_no LIKE @pattern ESCAPE '\\')";
+        }
+        // Only the filters in use appear, as plain comparisons: "(@x IS NULL OR column=@x)" stops
+        // SQLite using an index, which turned one product's lots into a scan of every lot.
+        var conditions = new List<string> { filter.ProductId is null ? "1=1" : "l.product_id=@productId" };
+        if (filter.ExpiryFrom is not null) conditions.Add("l.expiry_date>=@expiryFrom");
+        if (filter.ExpiryTo is not null) conditions.Add("l.expiry_date<=@expiryTo");
+        if (filter.Source is not null) conditions.Add("l.origin_kind=@source");
+        if (filter.MinPrice is not null) conditions.Add("l.selling_price>=@minPrice");
+        if (filter.MaxPrice is not null) conditions.Add("l.selling_price<=@maxPrice");
+        return ($"{string.Join(" AND ", conditions)} {status} {expiry} {search}", parameters);
     }
 
     public Task<IReadOnlyList<LotItem>> GetLotsByIdsAsync(IReadOnlyCollection<long> lotIds,
@@ -665,31 +743,6 @@ public sealed partial class InventoryService(
     public Task SetLotActiveAsync(long lotId, bool active, bool expectedActive,
         CancellationToken cancellationToken = default) =>
         SetLotActiveCoreAsync(lotId, active, expectedActive, cancellationToken);
-
-    public Task<int> BulkSetLotsActiveAsync(IReadOnlyCollection<long> lotIds, bool active,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(lotIds);
-        long[] ids = lotIds.Where(static id => id > 0).Distinct().ToArray();
-        if (ids.Length == 0) throw new DomainException(ErrorCode.Validation, "Select at least one lot.");
-        return database.WriteAsync(transaction =>
-        {
-            int changed = 0;
-            foreach (long id in ids)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                bool? current = transaction.Connection.QuerySingleOrDefault<bool?>(
-                    "SELECT is_active FROM product_lot WHERE id=@id", new { id }, transaction.Transaction);
-                if (current is null) throw new DomainException(ErrorCode.NotFound, "lot", id);
-                if (current == active) continue;
-                transaction.Connection.Execute("UPDATE product_lot SET is_active=@active WHERE id=@id",
-                    new { id, active = active ? 1 : 0 }, transaction.Transaction);
-                audit.Write(transaction, "product_lot", id, active ? "UNBLOCK" : "BLOCK", null);
-                changed++;
-            }
-            return changed;
-        }, cancellationToken);
-    }
 
     private Task SetLotActiveCoreAsync(long lotId, bool active, bool? expectedActive,
         CancellationToken cancellationToken) =>

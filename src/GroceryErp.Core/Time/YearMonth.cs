@@ -39,6 +39,17 @@ public readonly record struct YearMonth : IComparable<YearMonth>
         return From(date);
     }
 
+    /// <summary>Parses YYYY-MM without throwing, for validating typed input.</summary>
+    public static bool TryParse(string? value, out YearMonth month)
+    {
+        month = default;
+        if (value is null || !DateOnly.TryParseExact($"{value}-01", "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out DateOnly date))
+            return false;
+        month = From(date);
+        return true;
+    }
+
     public static bool operator <(YearMonth left, YearMonth right) => left.CompareTo(right) < 0;
     public static bool operator >(YearMonth left, YearMonth right) => left.CompareTo(right) > 0;
     public static bool operator <=(YearMonth left, YearMonth right) => left.CompareTo(right) <= 0;

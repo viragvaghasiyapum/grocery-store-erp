@@ -212,6 +212,7 @@ public sealed class PhaseZeroSmokeTests
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 // Runs first, while no other window has queued work on this dispatcher.
                 VerifyPhaseSixScreens(translations);
+                VerifyPhaseSevenScreens(translations);
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 DisplayFormatter formatter = new();
                 ShellViewModel viewModel = new(translations, formatter);
@@ -352,13 +353,14 @@ public sealed class PhaseZeroSmokeTests
                 Math.Abs(((DataGrid)products.FindName("ProductsGrid")).Columns[1].ActualWidth - 120)
                     .ShouldBeLessThan(1);
                 ((DataGrid)products.FindName("ProductsGrid")).SelectedIndex = 0;
-                ((Button)products.FindName("EditButton")).IsEnabled.ShouldBeTrue();
-                ((MenuItem)products.FindName("LabelsButton")).IsEnabled.ShouldBeTrue();
-                ((MenuItem)products.FindName("RestoreButton")).IsEnabled.ShouldBeFalse();
-                ((TextBlock)products.FindName("StatusText")).Text = translations.Format("Catalog_Count", 1);
+                ((FrameworkElement)products.FindName("MoreFiltersPanel")).Visibility.ShouldBe(Visibility.Collapsed);
+                ((FrameworkElement)products.FindName("Selection")).Visibility.ShouldBe(Visibility.Collapsed);
+                ((FrameworkElement)products.FindName("Details")).Visibility.ShouldBe(Visibility.Collapsed);
+                ((PagerBar)products.FindName("Pager")).Status = translations.Format("Catalog_Count", 1);
                 Capture(productsWindow, "products.en.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
-                ((Button)products.FindName("EditButton")).Content.ShouldBe("ફેરફાર");
+                ((ToggleButton)products.FindName("MoreFiltersToggle")).Content.ShouldBe(translations["Common_MoreFilters"]);
+                ((ToggleButton)products.FindName("MoreFiltersToggle")).Content.ShouldNotBe("More filters");
                 Capture(productsWindow, "products.gu.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 VerifyStickyProductTable(productsWindow, products);
@@ -379,41 +381,34 @@ public sealed class PhaseZeroSmokeTests
                 var firstProduct = (ProductListItem)productGrid.Items[0];
                 var secondProduct = new ProductListItem { Id = 2, Sku = "SALT002", Name = "Other salt", IsActive = true };
                 productGrid.ItemsSource = new[] { firstProduct, secondProduct };
+                // Checked rows show the selection bar with the exact count; the header box
+                // follows the visible page, and picks survive moving to another page.
+                var selectionBar = (SelectionBar)products.FindName("Selection");
                 var checkProduct = typeof(ProductsPage).GetMethod("ProductCheck_OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!;
                 checkProduct.Invoke(products, [new CheckBox { DataContext = firstProduct, IsChecked = true }, new RoutedEventArgs()]);
                 checkProduct.Invoke(products, [new CheckBox { DataContext = secondProduct, IsChecked = true }, new RoutedEventArgs()]);
-                ((Menu)products.FindName("BulkActionsMenu")).Visibility.ShouldBe(Visibility.Visible);
-                ((Button)products.FindName("EditButton")).IsEnabled.ShouldBeFalse();
-                ((MenuItem)products.FindName("LabelsButton")).IsEnabled.ShouldBeFalse();
-                ((MenuItem)products.FindName("BarcodeButton")).IsEnabled.ShouldBeFalse();
+                selectionBar.Visibility.ShouldBe(Visibility.Visible);
+                TextOf(selectionBar).ShouldContain(translations.Format("Selection_Count", 2));
                 var pageSelection = new CheckBox();
                 typeof(ProductsPage).GetMethod("PageSelectionCheck_OnLoaded", BindingFlags.Instance | BindingFlags.NonPublic)!
                     .Invoke(products, [pageSelection, new RoutedEventArgs()]);
                 pageSelection.IsChecked.ShouldBe(true);
+                var updateSelection = typeof(ProductsPage).GetMethod("UpdateSelection", BindingFlags.Instance | BindingFlags.NonPublic)!;
                 productGrid.ItemsSource = new[] { new ProductListItem { Id = 3, Name = "Next page", IsActive = true } };
-                typeof(ProductsPage).GetMethod("UpdateSelectionActions", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .Invoke(products, null);
+                updateSelection.Invoke(products, null);
                 pageSelection.IsChecked.ShouldBe(false);
+                TextOf(selectionBar).ShouldContain(translations.Format("Selection_Count", 2));
                 productGrid.ItemsSource = new[] { firstProduct, secondProduct };
-                typeof(ProductsPage).GetMethod("UpdateSelectionActions", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .Invoke(products, null);
+                updateSelection.Invoke(products, null);
                 pageSelection.IsChecked.ShouldBe(true);
+                Capture(productsWindow, "products-selection.en.png");
                 typeof(ProductsPage).GetMethod("PageSelectionCheck_OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!
                     .Invoke(products, [pageSelection, new RoutedEventArgs()]);
                 pageSelection.IsChecked.ShouldBe(false);
-                ((TextBlock)products.FindName("SelectedCountText")).Text.ShouldContain("0");
+                selectionBar.Visibility.ShouldBe(Visibility.Collapsed);
                 typeof(ProductsPage).GetMethod("PageSelectionCheck_OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!
                     .Invoke(products, [pageSelection, new RoutedEventArgs()]);
                 pageSelection.IsChecked.ShouldBe(true);
-                typeof(ProductsPage).GetMethod("ClearSelection", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .Invoke(products, null);
-                productGrid.ItemsSource = new[]
-                {
-                    new ProductListItem { Id = 3, Sku = "OLD001", Name = "Archived salt", IsActive = false },
-                };
-                productGrid.SelectedIndex = 0;
-                ((MenuItem)products.FindName("RestoreButton")).IsEnabled.ShouldBeTrue();
-                ((MenuItem)products.FindName("BarcodeButton")).IsEnabled.ShouldBeFalse();
                 productsWindow.Close();
                 var savedLayouts = (System.Collections.IDictionary)layouts.GetField("Saved",
                     BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
@@ -436,31 +431,28 @@ public sealed class PhaseZeroSmokeTests
 
                 var inventory = new InventoryService(database, new StockLedger(settings),
                     new DocNumberService(settings), new PeriodGuard(settings, new SystemClock(settings)), new AuditLog());
-                var stock = new ProductStockWindow(inventory,
-                    new ProductListItem { Id = 1, Sku = "SALT001", Name = "Tata Salt 1 kg" },
-                    showLedger: false, loadOnShow: false);
-                stock.Show();
-                ((DataGrid)stock.FindName("LotsGrid")).ItemsSource = new[]
-                {
-                    new LotItem(1, 1, "Tata Salt 1 kg", "L000001", "B2401",
-                        new DateOnly(2026, 9, 1), new DateOnly(2026, 10, 9),
-                        new Money(20), new Money(30), new Money(27.5m), new Quantity(10), new Quantity(5), true, "CRITICAL"),
-                };
-                Capture(stock, "product-lots.en.png");
-                ((DataGrid)stock.FindName("LedgerGrid")).ItemsSource = new[]
+                var selectedLot = new LotItem(1, 1, "Tata Salt 1 kg", "L000001", "B2401",
+                    new DateOnly(2026, 9, 1), new DateOnly(2026, 10, 9),
+                    new Money(20), new Money(30), new Money(27.5m), new Quantity(10), new Quantity(5), true, "CRITICAL");
+                var lotsView = new ProductLotsView(inventory, 1, isInternal: false, loadOnShow: false);
+                ((DataGrid)lotsView.FindName("LotsGrid")).ItemsSource = new[] { selectedLot };
+                var lotsHost = new Window { Content = lotsView, Width = 760, Height = 520 };
+                lotsHost.Show();
+                ((FrameworkElement)lotsView.FindName("MoreFiltersPanel")).Visibility.ShouldBe(Visibility.Collapsed);
+                ((FrameworkElement)lotsView.FindName("ConsumeButton")).Visibility.ShouldBe(Visibility.Collapsed);
+                Capture(lotsHost, "product-lots.en.png");
+                lotsHost.Close();
+                var ledgerView = new ProductLedgerView(inventory, 1, loadOnShow: false);
+                ((DataGrid)ledgerView.FindName("LedgerGrid")).ItemsSource = new[]
                 {
                     new LedgerItem(1, new DateTime(2026, 9, 1), new DateOnly(2026, 9, 1), "OPENING",
                         new Quantity(10), new Money(20), "opening_import", null, "L000001", new Quantity(10), "Opening stock"),
                 };
-                ((TabControl)stock.FindName("StockTabs")).SelectedIndex = 1;
-                Capture(stock, "product-ledger.en.png");
-                stock.Close();
+                var ledgerHost = new Window { Content = ledgerView, Width = 760, Height = 520 };
+                ledgerHost.Show();
+                Capture(ledgerHost, "product-ledger.en.png");
+                ledgerHost.Close();
 
-                var selectedLot = ((IEnumerable<LotItem>)((DataGrid)stock.FindName("LotsGrid")).ItemsSource).First();
-                var adjustment = new StockAdjustmentWindow(inventory, selectedLot);
-                adjustment.Show();
-                Capture(adjustment, "stock-adjustment.en.png");
-                adjustment.Close();
                 var priceChange = new LotPriceWindow(inventory, selectedLot);
                 priceChange.Show();
                 Capture(priceChange, "lot-price.en.png");
@@ -604,15 +596,11 @@ public sealed class PhaseZeroSmokeTests
                 var editor = new ProductEditorWindow(catalog) { Width = 760, Height = 720 };
                 editor.Show();
                 Capture(editor, "product-editor.en.png");
-                ((TabControl)((Grid)editor.Content).Children[1]).SelectedIndex = 1;
-                editor.UpdateLayout();
-                ((TextBox)editor.FindName("PriceBox")).IsVisible.ShouldBeTrue();
+                // One form with grouped sections; a new product can add its first lot.
+                var productForm = (ProductForm)editor.FindName("Form");
+                ((TextBox)productForm.FindName("PriceBox")).IsVisible.ShouldBeTrue();
+                ((FrameworkElement)productForm.FindName("FirstLotSection")).Visibility.ShouldBe(Visibility.Visible);
                 editor.Close();
-
-                var bulkEdit = new CatalogBulkEditWindow(catalog, new long[] { 1 });
-                bulkEdit.Show();
-                Capture(bulkEdit, "catalog-bulk-edit.en.png");
-                bulkEdit.Close();
 
                 var productImport = new ProductImportWindow(new ProductExcelImporter(database, new AuditLog(), settings));
                 productImport.Show();
@@ -643,7 +631,7 @@ public sealed class PhaseZeroSmokeTests
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 Capture(vendorEditor, "vendor-editor.gu.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
-                ((ScrollViewer)((Grid)vendorEditor.Content).Children[0]).ScrollToEnd();
+                ((ScrollViewer)vendorEditor.FindName("Scroller")).ScrollToEnd();
                 Capture(vendorEditor, "vendor-editor-bottom.en.png");
                 vendorEditor.Close();
                 var vendorPayment = new VendorPaymentWindow(purchasing);
@@ -656,7 +644,7 @@ public sealed class PhaseZeroSmokeTests
                 Capture(paymentPreview, "vendor-payment.gu.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 paymentPreview.Height = 510;
-                ((ScrollViewer)((Grid)paymentForm).Children[0]).ScrollToEnd();
+                ((Grid)paymentForm).Children.OfType<ScrollViewer>().Single().ScrollToEnd();
                 Capture(paymentPreview, "vendor-payment.narrow.en.png");
                 paymentPreview.Close();
                 var purchaseEntry = new PurchaseEntryWindow(purchasing, loadOnShow: false);
@@ -754,17 +742,19 @@ public sealed class PhaseZeroSmokeTests
                     new PurchaseListItem(2, null, "Amul Distribution", "AD-729",
                         new DateOnly(2026, 9, 29), "DRAFT", Money.Zero, new Money(1850)),
                 };
-                ((DataGrid)purchasesPage.FindName("VendorsGrid")).ItemsSource = new[]
-                {
-                    new VendorItem(1, "Shree Wholesale Traders", "9999999999", "24ABCDE1234F1Z5", new Money(2325), true),
-                };
                 var purchasesHost = new Window { Content = purchasesPage, Width = 1080, Height = 700 };
                 purchasesHost.Show();
+                ((DatePicker)purchasesPage.FindName("FromBox")).IsVisible.ShouldBeTrue();
                 Capture(purchasesHost, "purchases-page.en.png");
-                var purchaseFilters = (AnimatedSection)purchasesPage.FindName("PurchaseFiltersSection");
-                purchaseFilters.IsExpanded = true;
-                ((DatePicker)purchasesPage.FindName("PurchaseFromBox")).IsVisible.ShouldBeTrue();
-                purchaseFilters.IsExpanded = false;
+                var moreFilters = (ToggleButton)purchasesPage.FindName("MoreFiltersToggle");
+                ((FrameworkElement)purchasesPage.FindName("ReturnableFilter")).IsVisible.ShouldBeFalse();
+                moreFilters.IsChecked = true;
+                moreFilters.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                purchasesHost.UpdateLayout();
+                ((FrameworkElement)purchasesPage.FindName("ReturnableFilter")).IsVisible.ShouldBeTrue();
+                Capture(purchasesHost, "purchases-filters.en.png");
+                moreFilters.IsChecked = false;
+                moreFilters.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 Capture(purchasesHost, "purchases-page.gu.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
@@ -809,34 +799,21 @@ public sealed class PhaseZeroSmokeTests
                 Capture(vendorReturn, "vendor-return.en.png");
                 vendorReturn.Close();
 
-                var stockPage = new StockPage(inventory, loadOnShow: false);
-                ((DataGrid)stockPage.FindName("OverviewGrid")).ItemsSource = new[]
+                var vendorsPage = new VendorsPage(purchasing, loadOnShow: false);
+                ((DataGrid)vendorsPage.FindName("VendorsGrid")).ItemsSource = new[]
                 {
-                    new StockOverviewItem(1, "SALT001", "Tata Salt 1 kg", new Quantity(11),
-                        new Money(2750), new Quantity(5), false),
+                    new VendorItem(1, "Shree Wholesale Traders", "9999999999", "24ABCDE1234F1Z5", new Money(2325), true),
+                    new VendorItem(2, "Amul Distribution", "8888888888", null, Money.Zero, false),
                 };
-                ((DataGrid)stockPage.FindName("LotsGrid")).ItemsSource = new[]
-                {
-                    new LotItem(1, 1, "Tata Salt 1 kg", "L2627-000014", "SALT-2409",
-                        new DateOnly(2026, 9, 28), new DateOnly(2026, 10, 9),
-                        new Money(250), new Money(350), new Money(300), new Quantity(11), new Quantity(11), true, "CRITICAL"),
-                };
-                var stockHost = new Window { Content = stockPage, Width = 1080, Height = 700 };
-                stockHost.Show();
-                Capture(stockHost, "stock-page.en.png");
-                ((TabControl)stockPage.FindName("StockTabs")).SelectedIndex = 1;
-                Capture(stockHost, "stock-lots.en.png");
-                ((DataGrid)stockPage.FindName("LedgerGrid")).ItemsSource = new[]
-                {
-                    new LedgerItem(1, new DateTime(2026, 9, 28), new DateOnly(2026, 9, 28), "PURCHASE",
-                        new Quantity(11), new Money(250), "purchase_line", 1, "L2627-000014",
-                        new Quantity(11), "Shree Wholesale Traders"),
-                };
-                ((TabControl)stockPage.FindName("StockTabs")).SelectedIndex = 2;
-                ((ComboBox)stockPage.FindName("LedgerTypeBox")).ItemsSource = new List<string> { "All movements", "PURCHASE" };
-                ((ComboBox)stockPage.FindName("LedgerTypeBox")).SelectedIndex = 0;
-                Capture(stockHost, "stock-ledger.en.png");
-                stockHost.Close();
+                var vendorsHost = new Window { Content = vendorsPage, Width = 1080, Height = 700 };
+                vendorsHost.Show();
+                ((DataGrid)vendorsPage.FindName("VendorsGrid")).SelectedIndex = 0;
+                ((FrameworkElement)vendorsPage.FindName("Selection")).Visibility.ShouldBe(Visibility.Collapsed);
+                Capture(vendorsHost, "vendors-page.en.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                Capture(vendorsHost, "vendors-page.gu.png");
+                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                vendorsHost.Close();
 
                 var source = new StockSourceWindow(new StockSourceDocument("Purchase", "P2627-000051",
                     new DateOnly(2026, 9, 28), "Shree Wholesale Traders", "POSTED", "SW-1042",
@@ -850,24 +827,10 @@ public sealed class PhaseZeroSmokeTests
                     new DocNumberService(settings), new PeriodGuard(settings, new SystemClock(settings)), new AuditLog());
                 var moneyOutPage = new MoneyOutPage(moneyOutService, inventory, phase5Clock, loadOnShow: false);
                 var moneyOutHost = new Window { Content = moneyOutPage, Width = 1120, Height = 700 };
-                ((DataGrid)moneyOutPage.FindName("ExpiredList")).ItemsSource = new[]
-                {
-                    new ExpiryLot(1, 1, "SALT001", "Tata Salt 1 kg", "ટાટા મીઠું", "L2627-000014",
-                        "SALT-2409", new DateOnly(2026, 9, 26), -2, new Quantity(11), new Money(220), "EXPIRED", 1, "Shree Wholesale"),
-                };
                 ((DataGrid)moneyOutPage.FindName("DamageGrid")).ItemsSource = new[]
                 {
                     new DamageItem(1, "D2627-000021", new DateOnly(2026, 9, 27), "Tata Salt 1 kg", "L2627-000014",
                         new Quantity(2), new Money(20), new Money(40), Money.Zero, "BROKEN", "Handling"),
-                };
-                ((ComboBox)moneyOutPage.FindName("ExpenseCategory")).ItemsSource = new[]
-                {
-                    new ExpenseCategoryItem(1, "Electricity", "વીજળી", true),
-                };
-                ((ComboBox)moneyOutPage.FindName("ExpenseCategory")).SelectedIndex = 0;
-                ((ComboBox)moneyOutPage.FindName("CategoryMaster")).ItemsSource = new[]
-                {
-                    new ExpenseCategoryItem(1, "Electricity", "વીજળી", true),
                 };
                 ((DataGrid)moneyOutPage.FindName("ExpenseGrid")).ItemsSource = new[]
                 {
@@ -878,45 +841,29 @@ public sealed class PhaseZeroSmokeTests
                     new EmployeeItem(1, "Asha Patel", "9999999999", "Cashier", new DateOnly(2026, 4, 1), null,
                         new Money(12000), true, null),
                 };
-                ((DataGrid)moneyOutPage.FindName("SalaryGrid")).ItemsSource = new[]
-                {
-                    new { EmployeeId = 1, BaseSalary = "12000.000", LeaveDeduction = "500.000", Overtime = "250.000", Bonus = "1000.000" },
-                };
                 moneyOutHost.Show();
-                ((TabItem)((TabControl)moneyOutPage.FindName("MoneyOutTabs")).Items[0])
-                    .Visibility.ShouldBe(Visibility.Collapsed);
-                ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 1;
-                Capture(moneyOutHost, "damages.en.png");
-                ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 2;
-                Capture(moneyOutHost, "expenses.en.png");
-                // A selected expense opens its details panel; the entry form stays closed. Its
-                // history loads asynchronously and resumes on this dispatcher, as in the app.
-                SynchronizationContext? moneyOutContext = SynchronizationContext.Current;
-                SynchronizationContext.SetSynchronizationContext(
-                    new System.Windows.Threading.DispatcherSynchronizationContext(application.Dispatcher));
-                ((DataGrid)moneyOutPage.FindName("ExpenseGrid")).SelectedIndex = 0;
-                SynchronizationContext.SetSynchronizationContext(moneyOutContext);
-                var expenseEntryTab = (System.Windows.Controls.Primitives.ToggleButton)moneyOutPage.FindName("ExpenseEntryTab");
-                expenseEntryTab.IsChecked.ShouldBe(false);
-                expenseEntryTab.IsChecked = true;
-                var categoryTab = (System.Windows.Controls.Primitives.ToggleButton)moneyOutPage.FindName("ExpenseCategoryTab");
-                categoryTab.IsChecked = true;
-                categoryTab.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-                ((System.Windows.Controls.Primitives.ToggleButton)moneyOutPage.FindName("ExpenseEntryTab")).IsChecked.ShouldBe(false);
-                ((WrapPanel)moneyOutPage.FindName("ExpenseCategoryPanel")).Visibility.ShouldBe(Visibility.Visible);
-                ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 3;
-                Capture(moneyOutHost, "payroll.en.png");
-                ((DataGrid)moneyOutPage.FindName("SalaryGrid")).ItemsSource = null;
-                var payrollTabs = (TabControl)moneyOutPage.FindName("PayrollTabs");
-                payrollTabs.SelectedIndex = 1;
-                ((Button)moneyOutPage.FindName("PostSalaryButton")).IsEnabled.ShouldBeFalse();
-                ((StackPanel)moneyOutPage.FindName("PageControls")).Visibility.ShouldBe(Visibility.Collapsed);
-                payrollTabs.SelectedIndex = 2;
+                // Damage, Expenses, Employees and posted payments are separate tabs; each shows
+                // only its own actions above the tabs.
+                var moneyOutTabs = (TabControl)moneyOutPage.FindName("MoneyOutTabs");
+                moneyOutTabs.Items.Count.ShouldBe(4);
+                string[] actionPanels = ["DamageActions", "ExpenseActions", "EmployeeActions", "SalaryActions"];
+                string[] tabCaptures = ["damages.en.png", "expenses.en.png", "employees.en.png", "payroll.en.png"];
+                for (int tab = 0; tab < actionPanels.Length; tab++)
+                {
+                    moneyOutTabs.SelectedIndex = tab;
+                    for (int panel = 0; panel < actionPanels.Length; panel++)
+                        ((FrameworkElement)moneyOutPage.FindName(actionPanels[panel])).Visibility
+                            .ShouldBe(panel == tab ? Visibility.Visible : Visibility.Collapsed);
+                    Capture(moneyOutHost, tabCaptures[tab]);
+                }
                 ((FrameworkElement)moneyOutPage.FindName("SalaryDetails")).Visibility.ShouldBe(Visibility.Collapsed);
-                payrollTabs.SelectedIndex = 0;
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 Capture(moneyOutHost, "payroll.gu.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                moneyOutTabs.SelectedIndex = 2;
+                ((Button)moneyOutPage.FindName("EditEmployeeButton")).IsEnabled.ShouldBeFalse();
+                moneyOutTabs.SelectedIndex = 0;
+                VerifyStickyMoneyOutTable(moneyOutHost, moneyOutPage);
                 moneyOutHost.Close();
 
                 var assetService = new AssetService(database, settings, new PeriodGuard(settings, new SystemClock(settings)), new AuditLog(), phase5Clock);
@@ -934,17 +881,10 @@ public sealed class PhaseZeroSmokeTests
                 };
                 var assetsHost = new Window { Content = assetsPage, Width = 1120, Height = 700 };
                 assetsHost.Show();
+                // Add, edit and dispose open their own dialogs; the table keeps the page.
+                ((FrameworkElement)assetsPage.FindName("TimelineOverlay")).Visibility.ShouldBe(Visibility.Collapsed);
+                ((Button)assetsPage.FindName("EditAssetButton")).IsEnabled.ShouldBeFalse();
                 Capture(assetsHost, "assets.en.png");
-                var assetDetailsTab = (System.Windows.Controls.Primitives.ToggleButton)assetsPage.FindName("AssetDetailsTab");
-                var assetDisposalTab = (System.Windows.Controls.Primitives.ToggleButton)assetsPage.FindName("AssetDisposalTab");
-                assetDetailsTab.IsChecked = true;
-                assetDetailsTab.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-                ((StackPanel)assetsPage.FindName("AssetDetailsPanel")).Visibility.ShouldBe(Visibility.Visible);
-                assetDisposalTab.IsChecked = true;
-                assetDisposalTab.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-                assetDetailsTab.IsChecked.ShouldBe(false);
-                ((WrapPanel)assetsPage.FindName("AssetDisposalPanel")).Visibility.ShouldBe(Visibility.Visible);
-                assetDisposalTab.IsChecked = false;
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 Capture(assetsHost, "assets.gu.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
@@ -1123,6 +1063,11 @@ public sealed class PhaseZeroSmokeTests
                 voidDialog.Title.ShouldBe("Void");
                 voidDialog.Show();
                 Capture(voidDialog, "void.en.png");
+                // A failed submit marks the field inline, lists it in the summary and keeps the dialog open.
+                ((Button)voidDialog.FindName("ConfirmButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                ((FormField)voidDialog.FindName("ReasonField")).HasError.ShouldBeTrue();
+                ((FormErrorSummary)voidDialog.FindName("Summary")).HasMessage.ShouldBeTrue();
+                voidDialog.IsVisible.ShouldBeTrue();
                 voidDialog.Close();
 
                 var quantityDialog = new QuantityWindow(new Quantity(2), allowZero: true);
@@ -1166,6 +1111,9 @@ public sealed class PhaseZeroSmokeTests
                 };
                 customerWindow.Show();
                 Capture(customerWindow, "customer.en.png");
+                ((Button)customerWindow.FindName("CreateButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                ((FormField)customerWindow.FindName("NameField")).HasError.ShouldBeTrue();
+                customerWindow.IsVisible.ShouldBeTrue();
                 customerWindow.Close();
 
                 ReceiptLine[] receiptLines =
@@ -1309,7 +1257,7 @@ public sealed class PhaseZeroSmokeTests
         thread.Start();
 
         await completion.Task.WaitAsync(
-            TimeSpan.FromSeconds(60),
+            TimeSpan.FromSeconds(120),
             TestContext.Current.CancellationToken);
     }
 
@@ -1379,7 +1327,10 @@ public sealed class PhaseZeroSmokeTests
             Run(() => new AnnualCloseService(database, periods, clock).EnsureFinalizedAsync()).ShouldBe(1);
 
             var moneyOutPage = new MoneyOutPage(moneyOut, inventory, clock);
-            var moneyOutHost = new Window { Content = moneyOutPage, Width = 1366, Height = 768, Language = AppLanguage };
+            // Lists open on the last three months; widen them to reach the finalized year.
+            ((DatePicker)moneyOutPage.FindName("DamageFromBox")).SelectedDate = new DateTime(2026, 1, 1);
+            ((DatePicker)moneyOutPage.FindName("ExpenseFromBox")).SelectedDate = new DateTime(2026, 1, 1);
+            var moneyOutHost = new Window { Content = moneyOutPage, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
             moneyOutHost.Show();
             var damageGrid = (DataGrid)moneyOutPage.FindName("DamageGrid");
             PumpUntil(() => damageGrid.Items.Count == 1);
@@ -1388,8 +1339,15 @@ public sealed class PhaseZeroSmokeTests
             PumpUntil(() => damageDetails.Visibility == Visibility.Visible);
             TextOf(damageDetails).ShouldContain("FY 2025-26 is finalized");
             CaptureRevision(moneyOutHost, "damage-details.en.png");
+            // The tabs are the page header: the active tab's actions share their line.
+            var damageActions = (FrameworkElement)moneyOutPage.FindName("DamageActions");
+            var damageTab = (FrameworkElement)((TabControl)moneyOutPage.FindName("MoneyOutTabs")).Items[0];
+            double tabTop = damageTab.TranslatePoint(new Point(), moneyOutHost).Y;
+            damageActions.TranslatePoint(new Point(), moneyOutHost).Y.ShouldBeGreaterThanOrEqualTo(tabTop - 1);
+            damageActions.TranslatePoint(new Point(0, damageActions.ActualHeight), moneyOutHost).Y
+                .ShouldBeLessThanOrEqualTo(tabTop + damageTab.ActualHeight + 1);
 
-            ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 2;
+            ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 1;
             var expenseGrid = (DataGrid)moneyOutPage.FindName("ExpenseGrid");
             PumpUntil(() => expenseGrid.Items.Count == 2);
             var expenseDetails = (CorrectionDetailsPanel)moneyOutPage.FindName("ExpenseDetails");
@@ -1423,9 +1381,9 @@ public sealed class PhaseZeroSmokeTests
             CaptureRevision(voidWindow, "expense-void.en.png");
             voidWindow.Close();
 
-            ((TextBox)moneyOutPage.FindName("SalaryRegisterPeriod")).Text = "2026-09";
+            ((TextBox)moneyOutPage.FindName("SalaryFromMonth")).Text = "2026-09";
+            ((TextBox)moneyOutPage.FindName("SalaryToMonth")).Text = "2026-09";
             ((TabControl)moneyOutPage.FindName("MoneyOutTabs")).SelectedIndex = 3;
-            ((TabControl)moneyOutPage.FindName("PayrollTabs")).SelectedIndex = 2;
             var salaryGrid = (DataGrid)moneyOutPage.FindName("SalaryRegisterGrid");
             PumpUntil(() => salaryGrid.Items.Count == 2);
             salaryGrid.SelectedIndex = 0;
@@ -1436,27 +1394,31 @@ public sealed class PhaseZeroSmokeTests
             moneyOutHost.Close();
 
             var assetsPage = new AssetsPage(assets, clock, purchasing);
-            var assetsHost = new Window { Content = assetsPage, Width = 1366, Height = 768, Language = AppLanguage };
+            var assetsHost = new Window { Content = assetsPage, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
             assetsHost.Show();
             var assetGrid = (DataGrid)assetsPage.FindName("AssetGrid");
             PumpUntil(() => assetGrid.Items.Count == 1);
             assetGrid.SelectedIndex = 0;
-            ((ToggleButton)assetsPage.FindName("AssetDetailsTab")).IsChecked = true;
-            ((TextBox)assetsPage.FindName("AssetRate")).Text = "20";
-            var assetPreview = (TextBlock)assetsPage.FindName("AssetFinancialLockText");
-            PumpUntil(() => assetPreview.Text.Contains("New terms apply from 2026-04", StringComparison.Ordinal));
-            ((FrameworkElement)assetsPage.FindName("AssetEffectivePanel")).Visibility.ShouldBe(Visibility.Visible);
-            CaptureRevision(assetsHost, "asset-terms-preview.en.png");
-            ((TextBox)assetsPage.FindName("AssetRate")).Text = "15";
-            ((TextBox)assetsPage.FindName("AssetCost")).Text = "46000";
-            PumpUntil(() => assetPreview.Text.Contains("Cost and in-use date are fixed", StringComparison.Ordinal));
-            ((Button)assetsPage.FindName("SaveAssetButton")).IsEnabled.ShouldBeFalse();
-            CaptureRevision(assetsHost, "asset-terms-blocked.en.png");
+            ((Button)assetsPage.FindName("EditAssetButton")).IsEnabled.ShouldBeTrue();
             assetsHost.Close();
+            // Editing terms previews the recalculated months before saving; blocked changes cannot save.
+            var assetForm = new AssetFormWindow(assets, clock, [], (AssetItem)assetGrid.Items[0]) { Language = AppLanguage };
+            assetForm.Show();
+            ((TextBox)assetForm.FindName("AssetRate")).Text = "20";
+            var assetPreview = (TextBlock)assetForm.FindName("AssetFinancialLockText");
+            PumpUntil(() => assetPreview.Text.Contains("New terms apply from 2026-04", StringComparison.Ordinal));
+            ((FrameworkElement)assetForm.FindName("EffectiveField")).Visibility.ShouldBe(Visibility.Visible);
+            CaptureRevision(assetForm, "asset-terms-preview.en.png");
+            ((TextBox)assetForm.FindName("AssetRate")).Text = "15";
+            ((TextBox)assetForm.FindName("AssetCost")).Text = "46000";
+            PumpUntil(() => assetPreview.Text.Contains("Cost and in-use date are fixed", StringComparison.Ordinal));
+            ((Button)assetForm.FindName("SaveAssetButton")).IsEnabled.ShouldBeFalse();
+            CaptureRevision(assetForm, "asset-terms-blocked.en.png");
+            assetForm.Close();
 
             var reportsPage = new ReportsPage(reports, new ReportOutputService(settings, translations), clock,
                 new DisplayFormatter(), new ReportNavigationState());
-            var reportsHost = new Window { Content = reportsPage, Width = 1366, Height = 768, Language = AppLanguage };
+            var reportsHost = new Window { Content = reportsPage, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
             reportsHost.Show();
             var status = (TextBlock)reportsPage.FindName("PnlStatusText");
             PumpUntil(() => status.Text.StartsWith("Open · editable through 07-01-2027", StringComparison.Ordinal));
@@ -1488,6 +1450,324 @@ public sealed class PhaseZeroSmokeTests
         }
     }
 
+    // Revision Phase 7 screens on real services at the 1366x768 desktop size: Products pages
+    // sized to the table, exact SKU first, server filters, an all-matching selection reviewed
+    // and run in bounded batches, the product panel building Lots only when opened, and the
+    // Purchases and Vendors tables and entry forms.
+    private static void VerifyPhaseSevenScreens(TranslationSource translations)
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"grocery-erp-ui-phase7-{Guid.NewGuid():N}");
+        SynchronizationContext? previousContext = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(
+            new System.Windows.Threading.DispatcherSynchronizationContext(System.Windows.Threading.Dispatcher.CurrentDispatcher));
+        try
+        {
+            var paths = new AppPaths(new SettingsBootstrap(root));
+            var factory = new SqliteConnectionFactory(paths);
+            using var database = new DbExecutor(factory);
+            new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
+            using var settings = new SettingsService(database, paths, new AuditLog());
+            Run(() => settings.LoadAsync());
+            var clock = new MutableClock(new DateOnly(2026, 10, 23));
+            var periods = new PeriodGuard(settings, clock);
+            var ledger = new StockLedger(settings);
+            var numbers = new DocNumberService(settings);
+            var catalog = new CatalogService(database, new AuditLog(), settings);
+            var inventory = new InventoryService(database, ledger, numbers, periods, new AuditLog());
+            var purchasing = new PurchasingService(database, ledger, numbers, periods, settings, new AuditLog());
+            var moneyOut = new MoneyOutService(database, ledger, numbers, periods, new AuditLog());
+            long staples, household, salt;
+            using (var connection = factory.Open())
+            {
+                staples = connection.ExecuteScalar<long>("INSERT INTO category(name) VALUES ('Staples') RETURNING id");
+                household = connection.ExecuteScalar<long>("INSERT INTO category(name) VALUES ('Household') RETURNING id");
+                long AddProduct(string sku, string name, string productClass, long stock, string? expiry = "2099-12-31")
+                {
+                    long id = connection.ExecuteScalar<long>("""
+                        INSERT INTO product(sku,name,category_id,uom_id,tax_rate_id,track_expiry,default_selling_price,product_class)
+                        SELECT @sku,@name,@staples,u.id,t.id,1,30000,@productClass
+                        FROM uom u,tax_rate t WHERE u.code='PCS' ORDER BY t.id LIMIT 1 RETURNING id
+                        """, new { sku, name, staples, productClass });
+                    if (stock <= 0) return id;
+                    long lot = connection.ExecuteScalar<long>("""
+                        INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,unit_cost,selling_price,qty_received)
+                        VALUES (@id,'L-'||@sku,'B-'||@sku,'2026-09-01',@expiry,20000,30000,@stock) RETURNING id
+                        """, new { id, sku, expiry, stock });
+                    connection.Execute("UPDATE product_lot SET qty_on_hand=qty_received WHERE id=@lot", new { lot });
+                    return id;
+                }
+                // Sixty products, every third without stock, one with an expired lot.
+                for (int index = 1; index <= 60; index++)
+                    AddProduct($"P{index:000}", $"Product {index:00}", "SALEABLE", index % 3 == 0 ? 0 : 10_000,
+                        index == 1 ? "2026-09-15" : "2099-12-31");
+                // The exact SKU leads even though another product's SKU contains it and sorts first.
+                AddProduct("SALT0011", "Black salt 500 g", "SALEABLE", 5_000);
+                salt = AddProduct("SALT001", "Tata Salt 1 kg", "SALEABLE", 11_000);
+                AddProduct("CLEAN01", "Shop floor cleaner", "INTERNAL", 2_000);
+            }
+            long vendor = Run(() => purchasing.CreateVendorAsync(new("Shree Wholesale Traders", null, "9999999999", null, null,
+                null, "Ahmedabad", "Gujarat", "380001", null, null, null, null, 30, Money.Zero, null)));
+            long draft = Run(() => purchasing.SaveDraftAsync(null, new PurchaseDraftInput(vendor, "SW-1042",
+                new DateOnly(2026, 10, 20), new DateOnly(2026, 10, 20), null, Money.Zero, null,
+                [new(salt, "SALT-2410", null, new DateOnly(2030, 10, 1), new Quantity(10), Quantity.Zero,
+                    new Money(250), Money.Zero, new Percent(5), new Money(350), new Money(300))])));
+            PostedPurchase posted = Run(() => purchasing.PostAsync(draft, OperationGuard.NewId()));
+
+            var products = new ProductsPage(catalog, settings, new ProductExcelImporter(database, new AuditLog(), settings));
+            var productsHost = new Window { Content = products, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
+            productsHost.Show();
+            var grid = (DataGrid)products.FindName("ProductsGrid");
+            var pager = (PagerBar)products.FindName("Pager");
+            var next = (Button)pager.FindName("NextButton");
+            var previous = (Button)pager.FindName("PreviousButton");
+            PumpUntil(() => grid.Items.Count > 0 && next.IsEnabled);
+            // A page is the rows that fit the table, so the table never scrolls inside.
+            int fitted = grid.Items.Count;
+            fitted.ShouldBeInRange(5, 40);
+            productsHost.UpdateLayout();
+            FindVisualChild<ScrollViewer>(grid)!.ScrollableHeight.ShouldBeLessThan(1);
+            var first = (ProductListItem)grid.Items[0];
+            next.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            PumpUntil(() => grid.Items.Count > 0 && ((ProductListItem)grid.Items[0]).Id != first.Id && previous.IsEnabled);
+            ((TextBlock)pager.FindName("PageText")).Text.ShouldBe(translations.Format("Pager_Page", 2));
+            previous.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            PumpUntil(() => grid.Items.Count == fitted && ((ProductListItem)grid.Items[0]).Id == first.Id);
+            ShouldBeOneLine((FrameworkElement)products.FindName("FilterBar"));
+            CaptureRevision(productsHost, "products.en.png");
+
+            // An exact SKU leads the result, and a search shows at most eight rows.
+            var search = (TextBox)products.FindName("SearchBox");
+            search.Text = "SALT001";
+            PumpUntil(() => grid.Items.Count == 2 && ((ProductListItem)grid.Items[0]).Sku == "SALT001");
+            ((ProductListItem)grid.Items[1]).Sku.ShouldBe("SALT0011");
+            search.Text = "Product";
+            PumpUntil(() => grid.Items.Count == 8 && next.IsEnabled);
+            CaptureRevision(productsHost, "products-search.en.png");
+            search.Text = string.Empty;
+            PumpUntil(() => grid.Items.Count == fitted);
+
+            // Filters run on the server; internal-use and stocked products are separate views.
+            var classFilter = (ComboBox)products.FindName("ClassFilter");
+            classFilter.SelectedIndex = 2;
+            PumpUntil(() => grid.Items.Count == 1);
+            ((ProductListItem)grid.Items[0]).ProductClass.ShouldBe("INTERNAL");
+            classFilter.SelectedIndex = 1;
+            ((ComboBox)products.FindName("ExpiryFilter")).SelectedIndex = 1;
+            PumpUntil(() => grid.Items.Count == 1 && ((ProductListItem)grid.Items[0]).Sku == "P001");
+            ((ProductListItem)grid.Items[0]).HasExpiredStock.ShouldBeTrue();
+            ((ComboBox)products.FindName("ExpiryFilter")).SelectedIndex = 0;
+            ((ComboBox)products.FindName("StockFilter")).SelectedIndex = 1;
+            PumpUntil(() => grid.Items.Count == fitted && grid.Items.Cast<ProductListItem>().All(item => item.StockScaled > 0) && next.IsEnabled);
+
+            // A checked page offers every matching row; the count comes from the server.
+            var header = FindVisualChild<CheckBox>(FindVisualChild<DataGridColumnHeadersPresenter>(grid)!)!;
+            header.IsChecked = true;
+            header.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            var selection = (SelectionBar)products.FindName("Selection");
+            selection.Visibility.ShouldBe(Visibility.Visible);
+            TextOf(selection).ShouldContain(translations.Format("Selection_Count", fitted));
+            Button allMatching = Descendants<Button>(selection)
+                .Single(button => Equals(button.Content, translations["Selection_AllMatching"]));
+            allMatching.Visibility.ShouldBe(Visibility.Visible);
+            allMatching.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            // 40 stocked numbered products plus the two salts; the internal cleaner is filtered out.
+            PumpUntil(() => TextOf(selection).Contains(translations.Format("Selection_AllMatchingCount", 42), StringComparison.Ordinal));
+            CaptureRevision(productsHost, "products-all-matching.en.png");
+
+            // The review re-resolves the rows on the server, then runs them in bounded batches.
+            BulkAction categoryChange = products.CatalogBulk(new CatalogBulkCommand(CatalogBulkAction.Category, household),
+                "Catalog_SetCategory");
+            var bulk = new BulkActionWindow(new BulkAction
+            {
+                Title = categoryChange.Title,
+                RunLabel = categoryChange.RunLabel,
+                SelectionSummary = categoryChange.SelectionSummary,
+                BatchSize = 10,
+                Plan = categoryChange.Plan,
+                Run = categoryChange.Run,
+            })
+            { Language = AppLanguage };
+            bulk.Show();
+            var runBulk = (Button)bulk.FindName("RunButton");
+            PumpUntil(() => runBulk.IsEnabled);
+            ((TextBlock)bulk.FindName("PlanText")).Text.ShouldBe(translations.Format("Bulk_PlanSummary", 42, 42, 0));
+            ((TextBlock)bulk.FindName("SelectionText")).Text.ShouldContain(translations.Format("Selection_AllMatchingCount", 42));
+            CaptureRevision(bulk, "bulk-review.en.png");
+            runBulk.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            PumpUntil(() => ((FrameworkElement)bulk.FindName("ResultPanel")).Visibility == Visibility.Visible, 15_000);
+            ((TextBlock)bulk.FindName("ResultText")).Text.ShouldBe(translations.Format("Bulk_ResultSummary", 42, 0, 0, 0));
+            ((TextBlock)bulk.FindName("ErrorText")).Text.ShouldBeEmpty();
+            bulk.ChangedAny.ShouldBeTrue();
+            CaptureRevision(bulk, "bulk-result.en.png");
+            bulk.Close();
+            using (var connection = factory.Open())
+            {
+                connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE category_id=@household", new { household }).ShouldBe(42);
+                connection.ExecuteScalar<long>("SELECT COUNT(*) FROM operation WHERE op_type='BULK_BATCH'").ShouldBe(5);
+                connection.ExecuteScalar<long>("SELECT category_id FROM product WHERE sku='CLEAN01'").ShouldBe(staples);
+                connection.ExecuteScalar<long>("SELECT category_id FROM product WHERE sku='P003'").ShouldBe(staples);
+            }
+
+            // The product panel opens beside the table; Lots is built only when selected.
+            ((Button)Descendants<Button>(selection).Single(button => Equals(button.Content, translations["Selection_Clear"])))
+                .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            selection.Visibility.ShouldBe(Visibility.Collapsed);
+            var details = (ProductDetailsPanel)products.FindName("Details");
+            details.Initialize(catalog, inventory, clock.BusinessDate, regularTaxMode: true);
+            search.Text = "SALT001";
+            PumpUntil(() => grid.Items.Count > 0 && ((ProductListItem)grid.Items[0]).Sku == "SALT001");
+            grid.SelectedIndex = 0;
+            Task opening = (Task)typeof(ProductsPage).GetMethod("OpenDetailsAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(products, [grid.Items[0], false])!;
+            PumpUntil(() => opening.IsCompleted);
+            opening.GetAwaiter().GetResult();
+            details.Visibility.ShouldBe(Visibility.Visible);
+            details.ProductId.ShouldBe(salt);
+            ((ContentControl)details.FindName("LotsHost")).Content.ShouldBeNull();
+            ((ContentControl)details.FindName("HistoryHost")).Content.ShouldBeNull();
+            var form = (ProductForm)details.FindName("Form");
+            ((TextBox)form.FindName("NameBox")).Text.ShouldBe("Tata Salt 1 kg");
+            ((FrameworkElement)form.FindName("FirstLotSection")).Visibility.ShouldBe(Visibility.Collapsed);
+            // Beside the open panel the filters fold behind More filters and the row stays one line.
+            productsHost.UpdateLayout();
+            PumpUntil(() => ((Panel)products.FindName("MoreFiltersPanel")).Children.Contains((UIElement)products.FindName("ClassFilter")));
+            ShouldBeOneLine((FrameworkElement)products.FindName("FilterBar"));
+            CaptureRevision(productsHost, "product-basics.en.png");
+            ((TabControl)details.FindName("Tabs")).SelectedItem = details.FindName("LotsTab");
+            var lots = (ProductLotsView)((ContentControl)details.FindName("LotsHost")).Content;
+            lots.ShouldNotBeNull();
+            var lotsGrid = (DataGrid)lots.FindName("LotsGrid");
+            // The opening lot and the posted purchase lot.
+            PumpUntil(() => lotsGrid.Items.Count == 2);
+            ((ContentControl)details.FindName("HistoryHost")).Content.ShouldBeNull();
+            CaptureRevision(productsHost, "product-lots.en.png");
+            var stockText = (TextBlock)details.FindName("StockText");
+            string englishStock = stockText.Text;
+            translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+            // Text set in code follows the language too: the folded-filters toggle at once, the
+            // panel header and the row count after their refresh.
+            ((string)((ToggleButton)products.FindName("MoreFiltersToggle")).Content).ShouldStartWith(translations["Common_MoreFilters"]);
+            PumpUntil(() => stockText.Text != englishStock &&
+                ((PagerBar)products.FindName("Pager")).Status == translations.Format("Catalog_Count", grid.Items.Count));
+            CaptureRevision(productsHost, "product-lots.gu.png");
+            translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+            details.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(details)!, 0, Key.Escape)
+            { RoutedEvent = UIElement.PreviewKeyDownEvent });
+            details.Visibility.ShouldBe(Visibility.Collapsed);
+            productsHost.Close();
+
+            // Purchases: a document number finds its purchase; the toolbar shows the posted GRN.
+            var purchases = new PurchasesPage(purchasing);
+            var purchasesHost = new Window { Content = purchases, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
+            purchasesHost.Show();
+            var purchaseGrid = (DataGrid)purchases.FindName("PurchasesGrid");
+            PumpUntil(() => purchaseGrid.Items.Count == 1);
+            ((TextBox)purchases.FindName("DocumentFilter")).Text = posted.DocumentNumber.ToLowerInvariant();
+            PumpUntil(() => purchaseGrid.Items.Count == 1 &&
+                ((PurchaseListItem)purchaseGrid.Items[0]).DocumentNumber == posted.DocumentNumber);
+            ((TextBox)purchases.FindName("DocumentFilter")).Text = "NO-SUCH-BILL";
+            PumpUntil(() => purchaseGrid.Items.Count == 0 &&
+                ((FrameworkElement)purchases.FindName("EmptyText")).Visibility == Visibility.Visible);
+            ((TextBox)purchases.FindName("DocumentFilter")).Text = string.Empty;
+            PumpUntil(() => purchaseGrid.Items.Count == 1);
+            purchaseGrid.SelectedIndex = 0;
+            ((Button)purchases.FindName("OpenButton")).IsEnabled.ShouldBeTrue();
+            ShouldBeOneLine((FrameworkElement)purchases.FindName("FilterBar"));
+            CaptureRevision(purchasesHost, "purchases.en.png");
+            purchasesHost.Close();
+
+            var vendors = new VendorsPage(purchasing);
+            var vendorsHost = new Window { Content = vendors, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
+            vendorsHost.Show();
+            var vendorGrid = (DataGrid)vendors.FindName("VendorsGrid");
+            PumpUntil(() => vendorGrid.Items.Count == 1);
+            ((VendorItem)vendorGrid.Items[0]).BalanceDue.ShouldBe(posted.Totals.GrandTotal);
+            CaptureRevision(vendorsHost, "vendors.en.png");
+            vendorsHost.Close();
+
+            // Forms mark required fields, list errors at the top and keep the typed values.
+            var vendorForm = new VendorEditorWindow(purchasing) { Language = AppLanguage };
+            vendorForm.Show();
+            ((TextBox)vendorForm.FindName("GstinBox")).Text = "24ABC";
+            ((Button)vendorForm.FindName("SaveButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            ((FormErrorSummary)vendorForm.FindName("Summary")).HasMessage.ShouldBeTrue();
+            ((FormField)vendorForm.FindName("NameField")).HasError.ShouldBeTrue();
+            ((FormField)vendorForm.FindName("GstinField")).HasError.ShouldBeTrue();
+            ((TextBox)vendorForm.FindName("GstinBox")).Text.ShouldBe("24ABC");
+            CaptureRevision(vendorForm, "vendor-form-errors.en.png");
+            vendorForm.Close();
+
+            var expenseForm = new ExpenseFormWindow(moneyOut, clock, Run(() => moneyOut.GetExpenseCategoriesAsync())) { Language = AppLanguage };
+            expenseForm.Show();
+            var periodText = (TextBlock)expenseForm.FindName("PeriodText");
+            PumpUntil(() => !string.IsNullOrEmpty(periodText.Text));
+            CaptureRevision(expenseForm, "expense-form.en.png");
+            expenseForm.Close();
+
+            var damageForm = new LotDamageWindow(moneyOut, clock, inventory) { Language = AppLanguage };
+            damageForm.Show();
+            ((TextBox)damageForm.FindName("LotSearchBox")).Text = "SALT-2410";
+            var lotChoice = (ComboBox)damageForm.FindName("LotBox");
+            PumpUntil(() => lotChoice.Items.Count == 1 && lotChoice.SelectedIndex == 0);
+            ((TextBlock)damageForm.FindName("LotText")).Text.ShouldContain("Tata Salt 1 kg");
+            CaptureRevision(damageForm, "damage-form.en.png");
+            damageForm.Close();
+
+            // Every entry dialog opens on real services in the shared form layout.
+            void Settle(int milliseconds)
+            {
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                PumpUntil(() => watch.ElapsedMilliseconds >= milliseconds, milliseconds + 1000);
+            }
+            void CaptureForm(Window form, string fileName, bool fields = true)
+            {
+                form.Language = AppLanguage;
+                form.Show();
+                Settle(300);
+                if (fields) Descendants<FormField>(form).ShouldNotBeEmpty(fileName);
+                CaptureRevision(form, fileName);
+                form.Close();
+            }
+            long helper = Run(() => moneyOut.SaveEmployeeAsync(null, new("Ravi Kumar", "9999999999", "Helper",
+                new DateOnly(2026, 4, 1), null, new Money(9000), true, null)));
+            IReadOnlyList<EmployeeItem> staff = Run(() => moneyOut.GetEmployeesAsync(new EmployeeFilter()));
+            IReadOnlyList<ExpenseCategoryItem> expenseCategories = Run(() => moneyOut.GetExpenseCategoriesAsync());
+            CaptureForm(new EmployeeFormWindow(moneyOut, clock), "employee-form.en.png");
+            CaptureForm(new SalaryRunWindow(moneyOut, clock, staff.ToDictionary(static item => item.Id, static item => item.Name)),
+                "salary-run.en.png");
+            CaptureForm(new AdvanceFormWindow(moneyOut, clock, staff), "advance-form.en.png");
+            CaptureForm(new ExpenseCategoriesWindow(moneyOut), "expense-categories.en.png");
+            CaptureForm(new RepeatExpensesWindow(moneyOut, clock, expenseCategories), "repeat-expenses.en.png", fields: false);
+            CaptureForm(new DirectLotWindow(inventory, salt, clock), "direct-lot.en.png");
+            IReadOnlyList<LotItem> saltLots = Run(() => inventory.GetLotPageAsync(salt, limit: 10)).Items;
+            CaptureForm(new LotBulkDamageWindow(moneyOut, clock, saltLots.Where(static lot => lot.OnHand > Quantity.Zero).ToArray()),
+                "bulk-damage.en.png");
+            var assets = new AssetService(database, settings, periods, new AuditLog(), clock);
+            CaptureForm(new AssetFormWindow(assets, clock, []), "asset-form.en.png");
+            Run(() => assets.SaveAssetAsync(null, new AssetInput("Display fridge", "Equipment", new DateOnly(2026, 4, 1),
+                new DateOnly(2026, 4, 1), new Money(30000), null, DepreciationMethod.Slm, new Percent(10), Money.Zero, null)));
+            AssetItem fridge = Run(() => assets.GetAssetPageAsync()).Items.Single();
+            CaptureForm(new AssetDisposalWindow(assets, clock, fridge), "asset-disposal.en.png");
+            helper.ShouldBeGreaterThan(0);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previousContext);
+            SqliteConnectionFactory.ClearPoolForDataRoot(root);
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
+    {
+        for (int index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(root, index);
+            if (child is T match) yield return match;
+            foreach (T nested in Descendants<T>(child)) yield return nested;
+        }
+    }
+
     // Service work runs off this thread; the dispatcher keeps pumping so pages that
     // receive change messages can still marshal back to it.
     private static T Run<T>(Func<Task<T>> action)
@@ -1503,6 +1783,14 @@ public sealed class PhaseZeroSmokeTests
         PumpUntil(() => task.IsCompleted, 30_000);
         task.GetAwaiter().GetResult();
     }
+
+    // A page's area in the shell at 1366x768: the window less its 220 px navigation pane, title
+    // bar and header. Pages are captured and checked at this size, not the bare desktop size.
+    private const double ShellPageWidth = 1146;
+    private const double ShellPageHeight = 690;
+
+    // A filter row that stays on one line keeps the table at its full height.
+    private static void ShouldBeOneLine(FrameworkElement filterRow) => filterRow.ActualHeight.ShouldBeLessThan(46);
 
     // The app formats dates and numbers in this culture; the test skips its startup, so the
     // Phase 6 windows set it themselves.
@@ -1645,6 +1933,8 @@ public sealed class PhaseZeroSmokeTests
         return null;
     }
 
+    // Filters stay above and the pager below the table: only the rows scroll, and the
+    // table takes the height between them.
     private static void VerifyStickyProductTable(Window window, ProductsPage page)
     {
         ScrollViewer.GetCanContentScroll(page).ShouldBeFalse();
@@ -1657,115 +1947,40 @@ public sealed class PhaseZeroSmokeTests
         }).ToArray();
         grid.ItemsSource = rows;
         window.UpdateLayout();
-        var toolbar = (Button)page.FindName("EditButton");
-        var pageSize = (ComboBox)page.FindName("PageSizeBox");
-        var header = FindVisualChild<DataGridColumnHeadersPresenter>(grid)!;
-        double toolbarY = toolbar.TranslatePoint(new Point(), window).Y;
-        double pageSizeY = pageSize.TranslatePoint(new Point(), window).Y;
-        double headerY = header.TranslatePoint(new Point(), window).Y;
-        grid.ScrollIntoView(rows[^1]);
-        grid.UpdateLayout();
-        FindVisualChild<ScrollViewer>(grid)!.VerticalOffset.ShouldBeGreaterThan(0);
-        Math.Abs(toolbar.TranslatePoint(new Point(), window).Y - toolbarY).ShouldBeLessThan(1);
-        Math.Abs(pageSize.TranslatePoint(new Point(), window).Y - pageSizeY).ShouldBeLessThan(1);
-        Math.Abs(header.TranslatePoint(new Point(), window).Y - headerY).ShouldBeLessThan(1);
+        VerifyStickyTable(window, grid, (FrameworkElement)page.FindName("SearchBox"), (FrameworkElement)page.FindName("Pager"));
     }
 
     private static void VerifyStickyMoneyOutTable(Window window, MoneyOutPage page)
     {
         ScrollViewer.GetCanContentScroll(page).ShouldBeFalse();
-        var grid = (DataGrid)page.FindName("ExpiredList");
+        var grid = (DataGrid)page.FindName("DamageGrid");
         var originalItems = grid.ItemsSource;
-        var lot = (ExpiryLot)grid.Items[0];
-        var rows = Enumerable.Range(1, 120).Select(index => lot with { LotId = index }).ToArray();
+        var damage = (DamageItem)grid.Items[0];
+        var rows = Enumerable.Range(1, 120).Select(index => damage with { Id = index }).ToArray();
         grid.ItemsSource = rows;
         window.UpdateLayout();
-        var toolbar = (Button)page.FindName("BulkWriteOffButton");
-        var pageSize = (ComboBox)page.FindName("PageSizeBox");
-        var nextPage = (Button)page.FindName("NextExpiryButton");
-        var header = FindVisualChild<DataGridColumnHeadersPresenter>(grid)!;
-        double toolbarY = toolbar.TranslatePoint(new Point(), window).Y;
-        double pageSizeY = pageSize.TranslatePoint(new Point(), window).Y;
-        double headerY = header.TranslatePoint(new Point(), window).Y;
-        pageSize.ActualWidth.ShouldBeGreaterThan(100);
-        ((StackPanel)page.FindName("ExpiryPager")).Visibility.ShouldBe(Visibility.Visible);
-        nextPage.TranslatePoint(new Point(nextPage.ActualWidth, 0), window).X
-            .ShouldBeLessThan(window.ActualWidth - 8);
-        grid.ScrollIntoView(rows[^1]);
-        grid.UpdateLayout();
-        FindVisualChild<ScrollViewer>(grid)!.VerticalOffset.ShouldBeGreaterThan(0);
-        Math.Abs(toolbar.TranslatePoint(new Point(), window).Y - toolbarY).ShouldBeLessThan(1);
-        Math.Abs(pageSize.TranslatePoint(new Point(), window).Y - pageSizeY).ShouldBeLessThan(1);
-        Math.Abs(header.TranslatePoint(new Point(), window).Y - headerY).ShouldBeLessThan(1);
+        VerifyStickyTable(window, grid, (FrameworkElement)page.FindName("DamageSearch"), (FrameworkElement)page.FindName("DamagePager"));
         grid.ItemsSource = originalItems;
         window.UpdateLayout();
     }
 
-    private static void VerifyExpiryActionsShareTabRow(Window window, MoneyOutPage page)
+    private static void VerifyStickyTable(Window window, DataGrid grid, FrameworkElement filters, FrameworkElement pager)
     {
-        var tabs = (TabControl)page.FindName("ExpiryTabs");
-        var soon = (TabItem)tabs.Items[2];
-        var count = (TextBlock)page.FindName("ExpirySelectedCount");
-        var record = (Button)page.FindName("ExpiryRecordDamageButton");
-        var writeOff = (Button)page.FindName("BulkWriteOffButton");
-        var print = (Button)page.FindName("PrintExpiryButton");
-        var popup = (Popup)page.FindName("ExpiryDamagePopup");
-        window.UpdateLayout();
-
-        double tabTop = soon.TranslatePoint(new Point(), window).Y;
-        foreach (FrameworkElement action in new FrameworkElement[] { count, record, writeOff, print })
-            Math.Abs(action.TranslatePoint(new Point(), window).Y - tabTop).ShouldBeLessThan(12);
-        double nextLeft = soon.TranslatePoint(new Point(), window).X + soon.ActualWidth;
-        foreach (FrameworkElement action in new FrameworkElement[] { count, record, writeOff, print })
-        {
-            double left = action.TranslatePoint(new Point(), window).X;
-            left.ShouldBeGreaterThanOrEqualTo(nextLeft);
-            nextLeft = left + action.ActualWidth;
-        }
-        DependencyObject presenter = count;
-        while (presenter is not ContentPresenter)
-            presenter = VisualTreeHelper.GetParent(presenter)!;
-        count.TranslatePoint(new Point(), window).X.ShouldBeGreaterThanOrEqualTo(
-            ((ContentPresenter)presenter).TranslatePoint(new Point(), window).X);
-        double rightGap = tabs.TranslatePoint(new Point(), window).X + tabs.ActualWidth - nextLeft;
-        rightGap.ShouldBeLessThan(20);
-
-        ((DataGrid)page.FindName("ExpiredList")).SelectedIndex = 0;
-        record.IsEnabled.ShouldBeTrue();
-        record.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-        popup.IsOpen.ShouldBeTrue();
-        popup.IsOpen = false;
-    }
-
-    private static void VerifyExpiryHeaderSelection(Window window, MoneyOutPage page,
-        TranslationSource translations)
-    {
-        var grid = (DataGrid)page.FindName("ExpiredList");
-        var lot = (ExpiryLot)grid.Items[0];
-        grid.ItemsSource = new[] { lot, lot with { LotId = lot.LotId + 1 } };
-        window.UpdateLayout();
-        var header = FindVisualChild<CheckBox>(FindVisualChild<DataGridColumnHeadersPresenter>(grid)!)!;
-        header.IsEnabled.ShouldBeTrue();
-        header.IsChecked = true;
-        header.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-        ((TextBlock)page.FindName("ExpirySelectedCount")).Text.ShouldBe(translations.Format("Selection_Count", 2));
-        ((Button)page.FindName("BulkWriteOffButton")).IsEnabled.ShouldBeTrue();
-
-        grid.ScrollIntoView(lot);
+        var header = FindVisualChild<DataGridColumnHeadersPresenter>(grid)!;
+        double filtersY = filters.TranslatePoint(new Point(), window).Y;
+        double pagerY = pager.TranslatePoint(new Point(), window).Y;
+        double headerY = header.TranslatePoint(new Point(), window).Y;
+        double gridBottom = grid.TranslatePoint(new Point(0, grid.ActualHeight), window).Y;
+        pager.IsVisible.ShouldBeTrue();
+        (pagerY + pager.ActualHeight).ShouldBeLessThanOrEqualTo(((FrameworkElement)window.Content).ActualHeight + 1);
+        (pagerY - gridBottom).ShouldBeLessThan(16);
+        pager.TranslatePoint(new Point(pager.ActualWidth, 0), window).X.ShouldBeLessThan(window.ActualWidth);
+        grid.ScrollIntoView(grid.Items[^1]);
         grid.UpdateLayout();
-        var rowCheck = FindVisualChild<CheckBox>(FindVisualChild<DataGridRow>(grid)!)!;
-        rowCheck.IsChecked = false;
-        rowCheck.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-        header.IsChecked.ShouldBeNull();
-
-        header.IsChecked = true;
-        header.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-        ((TextBlock)page.FindName("ExpirySelectedCount")).Text.ShouldBe(translations.Format("Selection_Count", 2));
-
-        header.IsChecked = false;
-        header.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-        ((TextBlock)page.FindName("ExpirySelectedCount")).Text.ShouldBe(translations.Format("Selection_Count", 0));
-        ((Button)page.FindName("BulkWriteOffButton")).IsEnabled.ShouldBeFalse();
+        FindVisualChild<ScrollViewer>(grid)!.VerticalOffset.ShouldBeGreaterThan(0);
+        Math.Abs(filters.TranslatePoint(new Point(), window).Y - filtersY).ShouldBeLessThan(1);
+        Math.Abs(pager.TranslatePoint(new Point(), window).Y - pagerY).ShouldBeLessThan(1);
+        Math.Abs(header.TranslatePoint(new Point(), window).Y - headerY).ShouldBeLessThan(1);
     }
 
     private static void Capture(Window window, string fileName)

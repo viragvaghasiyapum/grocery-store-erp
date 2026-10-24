@@ -41,11 +41,11 @@ public partial class VendorReturnWindow : Window
             if (_entries.Length == 0)
             {
                 PostButton.IsEnabled = false;
-                ErrorText.Text = TranslationSource.Instance["Purchasing_NoReturnableLots"];
+                Summary.ShowMessage(TranslationSource.Instance["Purchasing_NoReturnableLots"]);
             }
             UpdateTotals();
         }
-        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); PostButton.IsEnabled = false; }
+        catch (Exception exception) { Summary.ShowMessage(UserError.Message(exception)); PostButton.IsEnabled = false; }
     }
 
     private static bool TryMoney(string raw, out Money money)
@@ -89,13 +89,14 @@ public partial class VendorReturnWindow : Window
 
     private async void Post_OnClick(object sender, RoutedEventArgs e)
     {
-        if (DatePicker.SelectedDate is not { } date || !TryCollect(out VendorReturnLineInput[] lines, out Money total))
-        {
-            ErrorText.Text = TranslationSource.Instance["Purchasing_ReturnInvalid"];
-            return;
-        }
-        var input = new VendorReturnInput(_purchaseId, DateOnly.FromDateTime(date),
-            InputNormalizer.Normalize(CreditNumberBox.Text).Trim(), ReasonBox.Text.Trim(), lines);
+        ReturnGrid.CommitEdit();
+        var form = new FormValidator();
+        DateOnly? date = form.Date(DateField, DatePicker.SelectedDate);
+        string? reason = form.Text(ReasonField, ReasonBox.Text, required: true, maxLength: 500);
+        bool linesValid = TryCollect(out VendorReturnLineInput[] lines, out Money total);
+        if (!form.Apply(Fields, Summary, linesValid ? null : [TranslationSource.Instance["Purchasing_ReturnInvalid"]])) return;
+        var input = new VendorReturnInput(_purchaseId, date!.Value,
+            InputNormalizer.Normalize(CreditNumberBox.Text).Trim(), reason!, lines);
         if (MessageBox.Show(TranslationSource.Instance.Format("Purchasing_ReturnConfirm",
                 lines.Length, total.Value.ToString("N3", Digits)),
             TranslationSource.Instance["Purchasing_VendorReturn"], MessageBoxButton.YesNo,
@@ -107,7 +108,7 @@ public partial class VendorReturnWindow : Window
             DocumentNumber = posted.DocumentNumber;
             DialogResult = true;
         }
-        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); PostButton.IsEnabled = true; }
+        catch (Exception exception) { Summary.ShowMessage(UserError.Message(exception)); PostButton.IsEnabled = true; }
     }
 
     public string? DocumentNumber { get; private set; }
@@ -122,6 +123,8 @@ public partial class VendorReturnWindow : Window
         public VendorReturnLot Lot { get; }
         public string ProductName => Lot.ProductName;
         public string LotCode => Lot.LotCode;
+        public string Received => Lot.Received.Value.ToString("0.###", Digits);
+        public string AlreadyReturned => Lot.AlreadyReturned.Value.ToString("0.###", Digits);
         public string OnHand => Lot.OnHand.Value.ToString("0.###", Digits);
         public string Returnable => Lot.Returnable.Value.ToString("0.###", Digits);
         public string QuantityText

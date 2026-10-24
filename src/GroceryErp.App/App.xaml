@@ -15,13 +15,16 @@
       <Style x:Key="CatalogGrid" TargetType="DataGrid" BasedOn="{StaticResource CatalogGridBase}">
         <EventSetter Event="Loaded" Handler="TableGrid_OnLoaded"/>
       </Style>
+      <!-- Table pages: one-line rows so a page fits more of them; two-line tables set their own height. -->
       <Style x:Key="CompactTableGrid" TargetType="DataGrid" BasedOn="{StaticResource CatalogGrid}">
-        <Setter Property="RowHeight" Value="40"/>
+        <Setter Property="RowHeight" Value="34"/>
         <Setter Property="ColumnHeaderHeight" Value="32"/>
         <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
       </Style>
       <p:ExpiryBucketConverter x:Key="ExpiryBucketConverter"/>
       <p:PurchaseLineKindConverter x:Key="PurchaseLineKindConverter"/>
+      <p:LotOriginConverter x:Key="LotOriginConverter"/>
+      <p:PurchaseStatusConverter x:Key="PurchaseStatusConverter"/>
       <Style TargetType="{x:Type p:AnimatedSection}">
         <Setter Property="Template">
           <Setter.Value>
@@ -37,7 +40,60 @@
           </Setter.Value>
         </Setter>
       </Style>
+      <Style TargetType="{x:Type p:FormField}">
+        <Setter Property="Margin" Value="0,0,12,10"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="{x:Type p:FormField}">
+              <StackPanel>
+                <TextBlock Margin="0,0,0,3" TextWrapping="Wrap">
+                  <Run Text="{Binding Label, RelativeSource={RelativeSource TemplatedParent}, Mode=OneWay}"/><Run x:Name="RequiredMarker" Text=" *" Foreground="{StaticResource ErrorBrush}" FontWeight="SemiBold"/>
+                </TextBlock>
+                <ContentPresenter/>
+                <TextBlock x:Name="HintText" Margin="0,3,0,0" TextWrapping="Wrap" FontSize="12"
+                           Foreground="{StaticResource SecondaryTextBrush}"
+                           Text="{Binding Hint, RelativeSource={RelativeSource TemplatedParent}}"/>
+                <TextBlock x:Name="ErrorText" Margin="0,3,0,0" TextWrapping="Wrap" FontSize="12" Visibility="Collapsed"
+                           Foreground="{StaticResource ErrorBrush}"
+                           Text="{Binding Error, RelativeSource={RelativeSource TemplatedParent}}"/>
+              </StackPanel>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsRequired" Value="False">
+                  <Setter TargetName="RequiredMarker" Property="Text" Value=""/>
+                </Trigger>
+                <Trigger Property="Hint" Value="{x:Null}">
+                  <Setter TargetName="HintText" Property="Visibility" Value="Collapsed"/>
+                </Trigger>
+                <Trigger Property="HasError" Value="True">
+                  <Setter TargetName="ErrorText" Property="Visibility" Value="Visible"/>
+                  <Setter TargetName="HintText" Property="Visibility" Value="Collapsed"/>
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
       <Style x:Key="ExpiryBucketStyle" TargetType="TextBlock">
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Style.Triggers>
+          <DataTrigger Binding="{Binding ExpiryBucketCode}" Value="EXPIRED">
+            <Setter Property="Foreground" Value="{StaticResource ExpiryExpiredBrush}"/>
+          </DataTrigger>
+          <DataTrigger Binding="{Binding ExpiryBucketCode}" Value="CRITICAL">
+            <Setter Property="Foreground" Value="{StaticResource ExpiryCriticalBrush}"/>
+          </DataTrigger>
+          <DataTrigger Binding="{Binding ExpiryBucketCode}" Value="SOON">
+            <Setter Property="Foreground" Value="{StaticResource ExpirySoonBrush}"/>
+          </DataTrigger>
+          <DataTrigger Binding="{Binding ExpiryBucketCode}" Value="FRESH">
+            <Setter Property="Foreground" Value="{StaticResource ExpiryReadyBrush}"/>
+          </DataTrigger>
+        </Style.Triggers>
+      </Style>
+      <!-- The same colours for a status shown inline after a date. -->
+      <Style x:Key="ExpiryBucketRunStyle" TargetType="Run">
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Style.Triggers>
           <DataTrigger Binding="{Binding ExpiryBucketCode}" Value="EXPIRED">

@@ -460,7 +460,22 @@ public partial class ReportsPage : Page
         PeriodPicker.Visibility = pnl ? Visibility.Collapsed : Visibility.Visible;
         MonthsCheck.Visibility = pnl ? Visibility.Visible : Visibility.Collapsed;
         CompareCheck.Visibility = pnl ? Visibility.Visible : Visibility.Collapsed;
-        MoreFiltersExpander.Visibility = pnl || kind is ReportKind.StockValue ? Visibility.Collapsed : Visibility.Visible;
+        // Only filters the selected report uses are shown; the section hides when none apply.
+        var filters = new (FrameworkElement Panel, bool Applies)[]
+        {
+            (StatusFilterPanel, sales || expiry),
+            (PaymentFilterPanel, sales),
+            (ProductFilterPanel, kind is ReportKind.StockLedger or ReportKind.ItemSales or ReportKind.StockReconciliation),
+            (LotFilterPanel, kind == ReportKind.StockLedger),
+            (VendorFilterPanel, kind is ReportKind.VendorPayables or ReportKind.PurchaseRegister),
+            (AssetFilterPanel, kind == ReportKind.AssetSchedule),
+            (SlowDaysFilterPanel, kind == ReportKind.SlowMovers),
+            (AuditFilterPanel, kind == ReportKind.AuditLog),
+        };
+        foreach ((FrameworkElement panel, bool applies) in filters)
+            panel.Visibility = applies ? Visibility.Visible : Visibility.Collapsed;
+        MoreFiltersExpander.Visibility = !pnl && filters.Any(static filter => filter.Applies)
+            ? Visibility.Visible : Visibility.Collapsed;
         StatusPicker.IsEnabled = sales || expiry;
         PaymentPicker.IsEnabled = sales;
         ProductFilter.IsEnabled = kind is ReportKind.StockLedger or ReportKind.ItemSales or ReportKind.StockReconciliation;

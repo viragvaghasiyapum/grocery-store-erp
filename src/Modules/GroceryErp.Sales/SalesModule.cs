@@ -11,7 +11,7 @@ public sealed class SalesModule(Type billingPage, Type historyPage) : IModule
     public ResourceManager Strings => SharedStrings.ResourceManager;
     public IEnumerable<NavItem> Navigation =>
         [new("Sales_Pos_Navigation", "Cart24", billingPage, 10),
-         new("Sales_History_Navigation", "Document24", historyPage, 20)];
+         new("Sales_History_Navigation", "Document24", historyPage, 50)];
 
     public void Register(IServiceCollection services)
     {

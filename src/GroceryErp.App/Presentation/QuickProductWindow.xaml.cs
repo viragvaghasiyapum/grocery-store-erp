@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Windows;
 using GroceryErp.Catalog;
 using GroceryErp.Core;
@@ -8,6 +7,7 @@ using GroceryErp.Localization;
 
 namespace GroceryErp.App.Presentation;
 
+/// <summary>Creates a product from an unknown scanned barcode with the essential fields only.</summary>
 public partial class QuickProductWindow : Window
 {
     private readonly CatalogService _catalog;
@@ -36,39 +36,37 @@ public partial class QuickProductWindow : Window
             SaveButton.IsEnabled = CategoryBox.Items.Count > 0 && UnitBox.Items.Count > 0 && TaxBox.Items.Count > 0;
             NameBox.Focus();
         }
-        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
+        catch (Exception exception) { Summary.ShowMessage(UserError.Message(exception)); }
     }
 
     private async void Save_OnClick(object sender, RoutedEventArgs e)
     {
+        var form = new FormValidator();
+        string? sku = form.Text(SkuField, SkuBox.Text, required: true);
+        string? name = form.Text(NameField, NameBox.Text, required: true, maxLength: 120);
+        long? categoryId = form.Choice(CategoryField, CategoryBox.SelectedValue);
+        long? unitId = form.Choice(UnitField, UnitBox.SelectedValue);
+        Money? price = form.Money(PriceField, PriceBox.Text, required: true);
+        Money? mrp = form.Money(MrpField, MrpBox.Text);
+        long? taxId = form.Choice(TaxField, TaxBox.SelectedValue);
+        string? hsn = form.Text(HsnField, HsnBox.Text, maxLength: 8);
+        if (!form.Apply(Fields, Summary)) return;
         try
         {
             SaveButton.IsEnabled = false;
-            ErrorText.Text = string.Empty;
-            if (CategoryBox.SelectedValue is not long categoryId || UnitBox.SelectedValue is not long unitId ||
-                TaxBox.SelectedValue is not long taxId)
-                throw new InvalidOperationException(TranslationSource.Instance["Pos_QuickRequired"]);
-            Money price = ParseMoney(PriceBox.Text);
-            Money mrp = ParseMoney(MrpBox.Text);
             string symbology = _barcode.Length switch { 8 => "EAN8", 12 => "UPCA", 13 => "EAN13", _ => "CODE128" };
             SavedProductId = await _catalog.CreateAsync(new ProductInput(
-                SkuBox.Text, NameBox.Text, null, null, categoryId, null, unitId,
-                HsnBox.Text, taxId, true, false, null, false, null, null,
+                sku!, name!, null, null, categoryId!.Value, null, unitId!.Value,
+                hsn, taxId, true, false, null, false, null, null,
                 Quantity.Zero, price, mrp,
                 [new ProductBarcodeInput(_barcode, Quantity.One, symbology, true)]));
             DialogResult = true;
         }
         catch (Exception exception)
         {
-            ErrorText.Text = UserError.Message(exception);
+            // Keep the typed values; a duplicate SKU or barcode is reported for the whole form.
+            Summary.ShowMessage(UserError.Message(exception));
             SaveButton.IsEnabled = true;
         }
-    }
-
-    private static Money ParseMoney(string text)
-    {
-        if (!decimal.TryParse(InputNormalizer.Normalize(text), NumberStyles.Number, TranslationSource.FormatCulture, out decimal value) || value < 0)
-            throw new InvalidOperationException(TranslationSource.Instance["Pos_QuickRequired"]);
-        return new Money(value);
     }
 }

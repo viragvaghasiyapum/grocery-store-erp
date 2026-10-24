@@ -33,12 +33,21 @@ public partial class PurchaseEntryWindow : Window
     private bool _taxIsCost;
     public ObservableCollection<PurchaseEditLine> Lines { get; } = [];
 
+    /// <summary>Gets the GRN number after a successful post, so the caller can show it.</summary>
+    public string? PostedDocumentNumber { get; private set; }
+
     public PurchaseEntryWindow(PurchasingService purchasing, long? draftId = null, bool loadOnShow = true)
     {
         InitializeComponent();
         _purchasing = purchasing;
         _openingDraftId = draftId;
         DataContext = this;
+        PreviewKeyDown += (_, args) =>
+        {
+            if (args.Key != Key.S || Keyboard.Modifiers != ModifierKeys.Control) return;
+            Save_OnClick(this, args);
+            args.Handled = true;
+        };
         if (loadOnShow) Loaded += LoadAsync;
     }
 
@@ -98,8 +107,14 @@ public partial class PurchaseEntryWindow : Window
 
     private async void Save_OnClick(object sender, RoutedEventArgs e)
     {
-        try { SetBusy(true); _purchaseId = await SaveAsync(); ErrorText.Text = TranslationSource.Instance["Purchasing_DraftSaved"]; }
-        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
+        try
+        {
+            SetBusy(true);
+            if (await SaveAsync() is not long id) return;
+            _purchaseId = id;
+            ErrorText.Text = TranslationSource.Instance["Purchasing_DraftSaved"];
+        }
+        catch (Exception exception) { Summary.ShowMessage(UserError.Message(exception)); }
         finally { SetBusy(false); }
     }
 
@@ -108,8 +123,10 @@ public partial class PurchaseEntryWindow : Window
         try
         {
             SetBusy(true);
-            _purchaseId = await SaveAsync();
-            PostedPurchase posted = await _purchasing.PostAsync(_purchaseId.Value, OperationGuard.NewId());
+            if (await SaveAsync() is not long id) return;
+            _purchaseId = id;
+            PostedPurchase posted = await _purchasing.PostAsync(id, OperationGuard.NewId());
+            PostedDocumentNumber = posted.DocumentNumber;
             if (!posted.WasReplay && posted.LotIds.Count > 0 && MessageBox.Show(
                 TranslationSource.Instance["Catalog_PrintReceivedLabels"],
                 TranslationSource.Instance["Catalog_PrintLabels"], MessageBoxButton.YesNo,
@@ -130,22 +147,55 @@ public partial class PurchaseEntryWindow : Window
             }
             DialogResult = true;
         }
-        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
+        catch (Exception exception) { Summary.ShowMessage(UserError.Message(exception)); }
         finally { SetBusy(false); }
     }
 
-    private Task<long> SaveAsync()
+    // Checks the header and every line before saving; the entered rows stay as typed on failure.
+    private async Task<long?> SaveAsync()
     {
         LinesGrid.CommitEdit(DataGridEditingUnit.Cell, true);
         LinesGrid.CommitEdit(DataGridEditingUnit.Row, true);
-        long vendorId = VendorBox.SelectedValue is long value ? value : throw new InvalidOperationException("Select a vendor.");
-        DateOnly received = DateOnly.FromDateTime(ReceivedDateBox.SelectedDate ?? throw new InvalidOperationException("Select a received date."));
+        var form = new FormValidator();
+        long? vendorId = form.Choice(VendorField, VendorBox.SelectedValue);
+        DateOnly? received = form.Date(ReceivedField, ReceivedDateBox.SelectedDate);
         DateOnly? invoiceDate = InvoiceDateBox.SelectedDate is DateTime date ? DateOnly.FromDateTime(date) : null;
-        List<PurchaseLineInput> lines = Lines.Where(static line => line.ProductId > 0).Select(line => line.ToInput()).ToList();
-        Money? billTotal = ParseOptionalMoney(BillTotalBox.Text);
-        var input = new PurchaseDraftInput(vendorId, InvoiceBox.Text, invoiceDate, received, billTotal,
-            new Money(Parse(ChargesBox.Text)), NotesBox.Text, lines);
-        return _purchasing.SaveDraftAsync(_purchaseId, input);
+        if (invoiceDate > received) form.AddKey(InvoiceDateField, "Purchasing_InvoiceAfterReceived");
+        Money? charges = form.Money(ChargesField, ChargesBox.Text);
+        Money? billTotal = form.Money(BillTotalField, BillTotalBox.Text);
+        var lineErrors = new List<string>();
+        var lines = new List<PurchaseLineInput>();
+        int number = 0;
+        foreach (PurchaseEditLine line in Lines.Where(static line => line.ProductId > 0))
+        {
+            number++;
+            if (line.Problem() is { } problem)
+                lineErrors.Add(TranslationSource.Instance.Format("Purchasing_LineError", number, TranslationSource.Instance[problem]));
+            else lines.Add(line.ToInput());
+        }
+        if (number == 0) lineErrors.Add(TranslationSource.Instance["Purchasing_NoLines"]);
+        if (!form.Apply(this, Summary, lineErrors)) return null;
+        var input = new PurchaseDraftInput(vendorId!.Value, InvoiceBox.Text, invoiceDate, received!.Value, billTotal,
+            charges ?? Money.Zero, NotesBox.Text, lines);
+        return await _purchasing.SaveDraftAsync(_purchaseId, input);
+    }
+
+    // Ctrl+D copies the cell above into the current cell (spreadsheet copy-down). The line type,
+    // product and expense category are never copied, so a row's classification is always chosen.
+    private void LinesGrid_OnPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.D || Keyboard.Modifiers != ModifierKeys.Control) return;
+        e.Handled = true;
+        // Combo-box columns (type, product, expense category) are not bound text columns, so they are never copied.
+        if (LinesGrid.CurrentItem is not PurchaseEditLine line || LinesGrid.CurrentColumn is not DataGridBoundColumn column) return;
+        int index = Lines.IndexOf(line);
+        if (index <= 0 || column.Binding is not System.Windows.Data.Binding { Path.Path: { Length: > 0 } path }) return;
+        System.Reflection.PropertyInfo? property = typeof(PurchaseEditLine).GetProperty(path);
+        if (property is not { CanWrite: true }) return;
+        LinesGrid.CommitEdit(DataGridEditingUnit.Cell, true);
+        property.SetValue(line, property.GetValue(Lines[index - 1]));
+        LinesGrid.Items.Refresh();
+        UpdateTotals();
     }
 
     private void Cancel_OnClick(object sender, RoutedEventArgs e) => DialogResult = false;
@@ -408,6 +458,22 @@ public partial class PurchaseEntryWindow : Window
         }
         private void Notify([CallerMemberName] string? propertyName = null) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
+        /// <summary>Gets the resource key of the first problem that would stop saving this line, or null.</summary>
+        public string? Problem()
+        {
+            if (Quantity <= 0) return "Purchasing_LineQuantity";
+            if (FreeQuantity < 0 || Rate < 0 || Discount < 0 || TaxRate < 0 || SellingPrice < 0 || Mrp < 0)
+                return "Purchasing_LineNegative";
+            if (IsExpenseLine && ExpenseCategoryId is null) return "Purchasing_ExpenseCategoryRequired";
+            if (!IsDate(ManufacturingDate) || !IsDate(Expiry)) return "Purchasing_LineDateFormat";
+            if (IsStockLine && Mrp is { } mrp && SellingPrice > mrp) return "Error_PriceAboveMrp";
+            return null;
+        }
+
+        private static bool IsDate(string? text) => string.IsNullOrWhiteSpace(text) ||
+            DateOnly.TryParseExact(InputNormalizer.Normalize(text), "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out _);
         public PurchaseLineInput ToInput() => new(ProductId, Batch,
             string.IsNullOrWhiteSpace(ManufacturingDate) ? null : DateOnly.ParseExact(InputNormalizer.Normalize(ManufacturingDate), "yyyy-MM-dd", CultureInfo.InvariantCulture),
             string.IsNullOrWhiteSpace(Expiry) ? null : DateOnly.ParseExact(InputNormalizer.Normalize(Expiry), "yyyy-MM-dd", CultureInfo.InvariantCulture),

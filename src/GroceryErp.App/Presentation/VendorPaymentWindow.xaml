@@ -1,33 +1,56 @@
 <Window x:Class="GroceryErp.App.Presentation.VendorPaymentWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
-        Title="{l:Tr Purchasing_Payment}" Width="470" Height="600" MinHeight="480" WindowStartupLocation="CenterOwner">
+        xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="{l:Tr Purchasing_Payment}" Width="520" Height="600" MinWidth="440" MinHeight="480"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
+        NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
   <Grid Margin="20">
-    <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-      <StackPanel Margin="0,0,18,0">
-    <TextBlock Text="{l:Tr Purchasing_Vendor}"/><ComboBox x:Name="VendorBox" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="VendorBox_OnSelectionChanged" Margin="0,4,0,10"/>
-    <TextBlock Text="{l:Tr Purchasing_OptionalPurchase}"/>
-    <TextBox x:Name="PurchaseSearchBox" Margin="0,4,0,6" TextChanged="PurchaseSearch_OnChanged" ToolTip="Search document or vendor invoice"/>
-    <ComboBox x:Name="PurchaseBox" DisplayMemberPath="Label" SelectedValuePath="Id" Margin="0,0,0,6"/>
-    <TextBlock Text="{l:Tr Purchasing_Received}"/><DatePicker x:Name="DateBox" Margin="0,4,0,10"/>
-    <TextBlock Text="{l:Tr Purchasing_Amount}"/><TextBox x:Name="AmountBox" Margin="0,4,0,10"/>
-    <TextBlock Text="{l:Tr Purchasing_Mode}"/><ComboBox x:Name="ModeBox" Margin="0,4,0,10"><ComboBoxItem Content="CASH"/><ComboBoxItem Content="UPI"/><ComboBoxItem Content="BANK"/><ComboBoxItem Content="CHEQUE"/><ComboBoxItem Content="OTHER"/></ComboBox>
-    <TextBlock Text="{l:Tr Purchasing_Reference}"/><TextBox x:Name="ReferenceBox" Margin="0,4,0,10"/>
-    <TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="NotesBox" Margin="0,4,0,10"/>
-    <TextBlock x:Name="ErrorText" Foreground="Crimson" TextWrapping="Wrap"/>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <StackPanel>
+      <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr Purchasing_Payment}"/>
+      <TextBlock Style="{StaticResource FormContext}" Text="{l:Tr Purchasing_PaymentContext}"/>
+    </StackPanel>
+    <p:FormErrorSummary x:Name="Summary" Grid.Row="1"/>
+    <ScrollViewer Grid.Row="2" Margin="0,8,0,0" VerticalScrollBarVisibility="Auto">
+      <StackPanel x:Name="Fields" Margin="0,0,10,0">
+        <p:FormField x:Name="VendorField" Label="{l:Tr Purchasing_Vendor}" IsRequired="True">
+          <ComboBox x:Name="VendorBox" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="VendorBox_OnSelectionChanged"/>
+        </p:FormField>
+        <p:FormField x:Name="PurchaseField" Label="{l:Tr Purchasing_OptionalPurchase}">
+          <StackPanel>
+            <ui:TextBox x:Name="PurchaseSearchBox" Margin="0,0,0,4" PlaceholderText="{l:Tr Purchasing_DocumentFilter}"
+                        TextChanged="PurchaseSearch_OnChanged" AutomationProperties.Name="{l:Tr Purchasing_DocumentFilter}"/>
+            <DockPanel>
+              <Button x:Name="PurchaseNextButton" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" Margin="4,0,0,0" IsEnabled="False"
+                      Click="PurchaseNext_OnClick" Content="›" ToolTip="{l:Tr Pager_NextHint}" AutomationProperties.Name="{l:Tr Pager_NextHint}"/>
+              <Button x:Name="PurchasePreviousButton" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" Margin="4,0,0,0" IsEnabled="False"
+                      Click="PurchasePrevious_OnClick" Content="‹" ToolTip="{l:Tr Pager_PreviousHint}" AutomationProperties.Name="{l:Tr Pager_PreviousHint}"/>
+              <ComboBox x:Name="PurchaseBox" DisplayMemberPath="Label" SelectedValuePath="Id"/>
+            </DockPanel>
+          </StackPanel>
+        </p:FormField>
+        <UniformGrid Columns="2">
+          <p:FormField x:Name="DateField" Label="{l:Tr Purchasing_PaymentDate}" IsRequired="True"><DatePicker x:Name="DateBox" SelectedDateFormat="Short"/></p:FormField>
+          <p:FormField x:Name="AmountField" Label="{l:Tr Purchasing_Amount}" IsRequired="True"><TextBox x:Name="AmountBox"/></p:FormField>
+          <p:FormField x:Name="ModeField" Label="{l:Tr Purchasing_Mode}" IsRequired="True">
+            <ComboBox x:Name="ModeBox" SelectedIndex="0">
+              <ComboBoxItem Tag="CASH" Content="{l:Tr MoneyOut_ModeCash}"/>
+              <ComboBoxItem Tag="UPI" Content="UPI"/>
+              <ComboBoxItem Tag="BANK" Content="{l:Tr MoneyOut_ModeBank}"/>
+              <ComboBoxItem Tag="CHEQUE" Content="{l:Tr Purchasing_ModeCheque}"/>
+              <ComboBoxItem Tag="OTHER" Content="{l:Tr MoneyOut_ReasonOther}"/>
+            </ComboBox>
+          </p:FormField>
+          <p:FormField Label="{l:Tr Purchasing_Reference}"><TextBox x:Name="ReferenceBox" MaxLength="120"/></p:FormField>
+        </UniformGrid>
+        <p:FormField Label="{l:Tr Purchasing_Notes}"><TextBox x:Name="NotesBox" MaxLength="500"/></p:FormField>
       </StackPanel>
     </ScrollViewer>
-    <DockPanel Grid.Row="1" Margin="0,12,0,0">
-      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-        <Button x:Name="PurchasePreviousButton" IsEnabled="False" Click="PurchasePrevious_OnClick" Content="{l:Tr Sales_Previous}" Margin="0,0,8,0"/>
-        <Button x:Name="PurchaseNextButton" IsEnabled="False" Click="PurchaseNext_OnClick" Content="{l:Tr Sales_Next}"/>
-      </StackPanel>
-      <StackPanel Orientation="Horizontal">
-        <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{l:Tr Common_RowsPerPage}"/>
-        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
-      </StackPanel>
-    </DockPanel>
-    <StackPanel Grid.Row="2" HorizontalAlignment="Right" Orientation="Horizontal" Margin="0,12,0,0"><Button Margin="0,0,8,0" Click="Save_OnClick" Content="{l:Tr Common_Save}"/><Button Click="Cancel_OnClick" Content="{l:Tr Common_Cancel}"/></StackPanel>
+    <StackPanel Grid.Row="3" Style="{StaticResource FormFooter}">
+      <Button Margin="0,0,8,0" IsCancel="True" Content="{l:Tr Common_Cancel}"/>
+      <Button x:Name="SaveButton" IsDefault="True" Click="Save_OnClick" Content="{l:Tr Common_Save}"/>
+    </StackPanel>
   </Grid>
 </Window>

@@ -2,33 +2,39 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using GroceryErp.Assets;
+using GroceryErp.Core;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
-using GroceryErp.Data.Services;
 using GroceryErp.Localization;
 using GroceryErp.Purchasing;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GroceryErp.App.Presentation;
 
+/// <summary>
+/// Assets: search and keyset pages sized to the window, the asset and disposal forms as dialogs,
+/// and a side panel with each asset's depreciation timeline and terms.
+/// </summary>
 public partial class AssetsPage : Page
 {
-    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
+    private const string StateKey = nameof(AssetsPage);
     private readonly AssetService _assets;
     private readonly IClock _clock;
     private readonly PurchasingService _purchasing;
-    private AssetItem? _editingAsset;
-    private readonly Stack<(bool? Disposed, string? Name, long? Id)> _previousPages = new();
-    private (bool? Disposed, string? Name, long? Id) _cursor;
-    private AssetPage? _page;
-    private bool _loadingPage;
-    private bool _changingAssetSection;
+    private readonly KeysetPager<AssetCursor> _pager = new();
+    private readonly LatestRequest _requests = new();
+    private readonly FitPageSize _fit;
+    private readonly DispatcherTimer _searchDelay;
     private IReadOnlyList<DepreciationEntry> _timeline = [];
-    private bool _settingAsset;
-    private int _previewVersion;
     private int _timelinePage;
     private const int TimelinePageSize = 50;
+    private bool _restoring;
+
+    private sealed record AssetCursor(bool Disposed, string Name, long Id);
+
+    private sealed record State(string Search, bool IncludeDisposed);
 
     public AssetsPage() : this(null, null, null) { }
 
@@ -40,146 +46,127 @@ public partial class AssetsPage : Page
         _assets = assets ?? services!.GetRequiredService<AssetService>();
         _clock = clock ?? services!.GetRequiredService<IClock>();
         _purchasing = purchasing ?? services!.GetRequiredService<PurchasingService>();
-        AssetRate.Text = "10";
-        DateTime today = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
-        PurchaseDate.SelectedDate = today;
-        InUseDate.SelectedDate = today;
-        DisposalDate.SelectedDate = today;
-        if (loadOnShow) Loaded += async (_, _) => await RefreshAsync();
-        Loaded += (_, _) => TranslationSource.Instance.PropertyChanged += TranslationChanged;
+        _fit = new FitPageSize(AssetGrid);
+        // Method and status cells and the row count are set in code, so a reload re-renders them.
+        LanguageRefresh.Attach(this, () => _ = LoadAsync(PageMove.Same));
+        _fit.RowsChanged += async (_, _) => await LoadAsync(PageMove.Same);
+        _searchDelay = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromMilliseconds(200) };
+        _searchDelay.Tick += async (_, _) =>
+        {
+            _searchDelay.Stop();
+            await LoadAsync(PageMove.First);
+        };
+        Pager.PreviousRequested += async (_, _) => await LoadAsync(PageMove.Previous);
+        Pager.NextRequested += async (_, _) => await LoadAsync(PageMove.Next);
+        if (PageStateStore.Current?.Get<State>(StateKey) is { } state)
+        {
+            _restoring = true;
+            AssetSearchBox.Text = state.Search;
+            IncludeDisposedBox.IsChecked = state.IncludeDisposed;
+            _restoring = false;
+        }
+        PreviewKeyDown += (_, args) =>
+        {
+            if (Keyboard.Modifiers != ModifierKeys.Control) return;
+            if (args.Key == Key.F) { AssetSearchBox.Focus(); args.Handled = true; }
+            else if (args.Key == Key.N) { NewAsset_OnClick(this, args); args.Handled = true; }
+        };
+        if (loadOnShow) Loaded += async (_, _) => await LoadAsync(PageMove.First);
         Unloaded += (_, _) =>
         {
-            TranslationSource.Instance.PropertyChanged -= TranslationChanged;
+            _searchDelay.Stop();
+            _requests.Cancel();
             CloseTimeline();
+            PageStateStore.Current?.Set(StateKey, new State(AssetSearchBox.Text ?? "", IncludeDisposedBox.IsChecked == true));
         };
     }
 
-    private void TranslationChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    private async Task LoadAsync(PageMove move)
     {
-        if (e.PropertyName == "Item[]" && IsLoaded)
-            UpdateDisposalTarget(AssetGrid.SelectedItem as AssetItem);
-    }
-
-    private async void AddAsset_OnClick(object sender, RoutedEventArgs e)
-    {
+        if (!_pager.CanMove(move)) return;
+        using var timing = UiRefreshProbe.Track("assets", this);
+        using LatestRequest.Scope request = _requests.Begin();
+        Pager.SetLoading(true);
         try
         {
-            if (ReadInput() is not { } input) return;
-            if (_editingAsset is { } editing)
-            {
-                AssetChangePreview preview = await _assets.PreviewChangeAsync(editing.Id, input, EffectiveMonth());
-                if (preview.Treatment == "BLOCKED")
-                {
-                    StatusText.Text = DescribePreview(preview);
-                    return;
-                }
-                if (preview.Treatment != "DETAILS" && MessageBox.Show(DescribePreview(preview),
-                        TranslationSource.Instance["Assets_ConfirmChange"], MessageBoxButton.OKCancel,
-                        MessageBoxImage.Information) != MessageBoxResult.OK) return;
-            }
-            await _assets.SaveAssetAsync(_editingAsset?.Id, input, EffectiveMonth());
-            NewAsset_OnClick(sender, e);
-            AssetDetailsTab.IsChecked = false;
-            await RefreshAsync();
+            AssetCursor? cursor = _pager.CursorFor(move);
+            AssetPage page = await _assets.GetAssetPageAsync(InputNormalizer.Normalize(AssetSearchBox.Text ?? string.Empty),
+                IncludeDisposedBox.IsChecked == true, cursor?.Disposed, cursor?.Name, cursor?.Id, _fit.Take(), request.Token);
+            if (!request.IsCurrent) return;
+            _pager.Commit(move, page.HasMore, page is { NextDisposed: { } disposed, NextName: { } name, NextId: { } id }
+                ? new AssetCursor(disposed, name, id) : null);
+            CloseTimeline();
+            timing.Bind(() => AssetGrid.ItemsSource = page.Items);
+            EmptyText.Visibility = page.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            Pager.Status = TranslationSource.Instance.Format("MoneyOut_RowCount", page.Items.Count);
         }
-        catch (FormatException exception) { StatusText.Text = exception.Message; }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
-    }
-
-    private AssetInput? ReadInput()
-    {
-        if (PurchaseDate.SelectedDate is not { } purchase || InUseDate.SelectedDate is not { } inUse) return null;
-        string category = (AssetCategory.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Other";
-        string method = (AssetMethod.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "WDV";
-        return new(AssetName.Text, category, DateOnly.FromDateTime(purchase), DateOnly.FromDateTime(inUse),
-            new Money(Parse(AssetCost.Text)), AssetVendor.SelectedValue is long vendorId ? vendorId : null,
-            method == "WDV" ? DepreciationMethod.Wdv : DepreciationMethod.Slm,
-            new Percent(Parse(AssetRate.Text)), new Money(Parse(AssetSalvage.Text)), AssetNotes.Text);
-    }
-
-    private YearMonth? EffectiveMonth() =>
-        AssetEffectivePanel.Visibility == Visibility.Visible && !string.IsNullOrWhiteSpace(AssetEffectiveFrom.Text)
-            ? YearMonth.Parse(AssetEffectiveFrom.Text.Trim()) : null;
-
-    // Shows, before saving, which months a financial change recalculates and its effect.
-    private async void AssetTerms_OnChanged(object sender, RoutedEventArgs e)
-    {
-        if (!IsInitialized || _editingAsset is not { } asset || _settingAsset) return;
-        int version = ++_previewVersion;
-        try
-        {
-            await Task.Delay(250);
-            if (version != _previewVersion || ReadInput() is not { } input) return;
-            AssetChangePreview preview = await _assets.PreviewChangeAsync(asset.Id, input, EffectiveMonth());
-            if (version != _previewVersion) return;
-            bool terms = preview.Treatment == "TERMS";
-            if (terms && AssetEffectivePanel.Visibility != Visibility.Visible)
-            {
-                AssetEffectivePanel.Visibility = Visibility.Visible;
-                _settingAsset = true;
-                AssetEffectiveFrom.Text = preview.EffectiveMonth?.ToString() ?? "";
-                _settingAsset = false;
-            }
-            else if (!terms && AssetEffectivePanel.Visibility == Visibility.Visible && sender != AssetEffectiveFrom)
-                AssetEffectivePanel.Visibility = Visibility.Collapsed;
-            AssetFinancialLockText.Text = preview.Treatment == "DETAILS" ? "" : DescribePreview(preview);
-            AssetFinancialLockText.Visibility = preview.Treatment == "DETAILS" ? Visibility.Collapsed : Visibility.Visible;
-            SaveAssetButton.IsEnabled = preview.Treatment != "BLOCKED";
-        }
-        catch (FormatException)
-        {
-            if (version != _previewVersion) return;
-            AssetFinancialLockText.Text = TranslationSource.Instance["Assets_PreviewNeedsValues"];
-            AssetFinancialLockText.Visibility = Visibility.Visible;
-        }
+        catch (OperationCanceledException) when (request.Token.IsCancellationRequested) { }
         catch (Exception exception)
         {
-            if (version != _previewVersion) return;
-            AssetFinancialLockText.Text = UserError.Message(exception);
-            AssetFinancialLockText.Visibility = Visibility.Visible;
+            if (request.IsCurrent) Pager.Status = UserError.Message(exception);
+        }
+        finally
+        {
+            if (request.IsCurrent) Pager.Update(_pager.PageNumber, _pager.CanGoBack, _pager.HasMore);
         }
     }
 
-    private static string DescribePreview(AssetChangePreview preview)
+    private void Search_OnTextChanged(object sender, TextChangedEventArgs e)
     {
-        string Money(Money value) => value.Value.ToString("N3", TranslationSource.FormatCulture);
-        return preview.Treatment switch
-        {
-            "BLOCKED" => TranslationSource.Instance.Format("Assets_PreviewBlocked", preview.FirstOpenMonth.ToString()),
-            "RECALCULATION" => TranslationSource.Instance.Format("Assets_PreviewRecalculation",
-                preview.EffectiveMonth?.ToString() ?? "", preview.MonthsRecalculated, Money(preview.DepreciationBefore),
-                Money(preview.DepreciationAfter), Money(preview.BookValueBefore), Money(preview.BookValueAfter)),
-            _ => TranslationSource.Instance.Format("Assets_PreviewTerms", preview.EffectiveMonth?.ToString() ?? "",
-                preview.FirstOpenMonth.ToString(), preview.MonthsRecalculated, Money(preview.DepreciationBefore),
-                Money(preview.DepreciationAfter), Money(preview.BookValueBefore), Money(preview.BookValueAfter)),
-        };
+        if (!IsLoaded || _restoring) return;
+        _requests.Cancel();
+        _searchDelay.Stop();
+        _searchDelay.Start();
     }
 
-    private void AssetCategory_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void IncludeDisposed_OnClick(object sender, RoutedEventArgs e) => await LoadAsync(PageMove.First);
+
+    private async void ClearAssetFilters_OnClick(object sender, RoutedEventArgs e)
     {
-        if (!IsInitialized || !AssetRate.IsEnabled || AssetCategory.SelectedItem is not ComboBoxItem item) return;
-        AssetRate.Text = item.Tag?.ToString() switch
+        _restoring = true;
+        AssetSearchBox.Text = string.Empty;
+        IncludeDisposedBox.IsChecked = true;
+        _restoring = false;
+        _searchDelay.Stop();
+        await LoadAsync(PageMove.First);
+    }
+
+    private void AssetGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        AssetItem? asset = AssetGrid.SelectedItem as AssetItem;
+        EditAssetButton.IsEnabled = asset is not null;
+        DisposeButton.IsEnabled = asset is { DisposedDate: null };
+    }
+
+    private void AssetGrid_OnDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (AssetGrid.SelectedItem is AssetItem) EditAsset_OnClick(sender, e);
+    }
+
+    private async void NewAsset_OnClick(object sender, RoutedEventArgs e) => await OpenFormAsync(null);
+
+    private async void EditAsset_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (AssetGrid.SelectedItem is AssetItem asset) await OpenFormAsync(asset);
+    }
+
+    private async Task OpenFormAsync(AssetItem? asset)
+    {
+        try
         {
-            "Furniture" => "10",
-            "Electronics" => "40",
-            "Vehicle" => "15",
-            _ => "15",
-        };
+            IReadOnlyList<VendorItem> vendors = await _purchasing.GetVendorsAsync(includeInactive: true);
+            if (new AssetFormWindow(_assets, _clock, vendors, asset) { Owner = Window.GetWindow(this) }.ShowDialog() != true) return;
+            await LoadAsync(asset is null ? PageMove.First : PageMove.Same);
+            Pager.Status = TranslationSource.Instance["MoneyOut_Saved"];
+        }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 
     private async void Dispose_OnClick(object sender, RoutedEventArgs e)
     {
-        if (AssetGrid.SelectedItem is not AssetItem { DisposedDate: null } asset ||
-            DisposalDate.SelectedDate is not { } date) return;
-        if (MessageBox.Show(TranslationSource.Instance.Format("Assets_DisposeConfirm", asset.Name),
-            TranslationSource.Instance["Assets_Dispose"], MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-        try
-        {
-            await _assets.DisposeAsync(asset.Id, DateOnly.FromDateTime(date), new Money(Parse(DisposalValue.Text)), OperationGuard.NewId());
-            AssetDisposalTab.IsChecked = false;
-            await RefreshAsync();
-        }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        if (AssetGrid.SelectedItem is not AssetItem { DisposedDate: null } asset) return;
+        if (new AssetDisposalWindow(_assets, _clock, asset) { Owner = Window.GetWindow(this) }.ShowDialog() != true) return;
+        await LoadAsync(PageMove.Same);
     }
 
     private async void Post_OnClick(object sender, RoutedEventArgs e)
@@ -187,190 +174,10 @@ public partial class AssetsPage : Page
         try
         {
             DepreciationPostResult result = await _assets.PostDueDepreciationAsync();
-            await RefreshAsync();
-            StatusText.Text = TranslationSource.Instance.Format("Assets_PostResult", result.PostedCount, result.CurrentDatedPeriods.Count);
+            await LoadAsync(PageMove.Same);
+            Pager.Status = TranslationSource.Instance.Format("Assets_PostResult", result.PostedCount, result.CurrentDatedPeriods.Count);
         }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
-    }
-
-    private async void Refresh_OnClick(object sender, RoutedEventArgs e) => await RefreshAsync();
-
-    private void AssetGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        CloseTimeline();
-        AssetItem? asset = AssetGrid.SelectedItem as AssetItem;
-        UpdateDisposalTarget(asset);
-        if (asset is null)
-        {
-            SaveAssetButton.IsEnabled = _editingAsset is null;
-            EditAssetButton.IsEnabled = false;
-            return;
-        }
-        SaveAssetButton.IsEnabled = false;
-        EditAssetButton.IsEnabled = false;
-        _settingAsset = true;
-        try
-        {
-            _editingAsset = asset;
-            AssetName.Text = asset.Name;
-            AssetCategory.SelectedItem = AssetCategory.Items.Cast<ComboBoxItem>().FirstOrDefault(item => (string?)item.Tag == asset.Category);
-            PurchaseDate.SelectedDate = asset.PurchaseDate.ToDateTime(TimeOnly.MinValue);
-            InUseDate.SelectedDate = asset.InUseFrom.ToDateTime(TimeOnly.MinValue);
-            AssetCost.Text = asset.Cost.Value.ToString("0.000", TranslationSource.FormatCulture);
-            AssetMethod.SelectedIndex = asset.Method == DepreciationMethod.Wdv ? 0 : 1;
-            AssetRate.Text = asset.Rate.Value.ToString("0.000", TranslationSource.FormatCulture);
-            AssetSalvage.Text = asset.SalvageValue.Value.ToString("0.000", TranslationSource.FormatCulture);
-            AssetVendor.SelectedValue = asset.VendorId;
-            AssetNotes.Text = asset.Notes ?? "";
-            AssetEffectiveFrom.Text = "";
-            AssetEffectivePanel.Visibility = Visibility.Collapsed;
-            // A disposed asset keeps its final terms; others show a preview before saving.
-            SetFinancialFieldsEnabled(asset.DisposedDate is null);
-            SaveAssetButton.IsEnabled = true;
-            EditAssetButton.IsEnabled = true;
-        }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
-        finally { _settingAsset = false; }
-    }
-
-    private void UpdateDisposalTarget(AssetItem? asset)
-    {
-        if (DisposeButton is null) return;
-        bool canDispose = asset is { DisposedDate: null };
-        SelectedAssetText.Text = asset?.Name ?? TranslationSource.Instance["Assets_SelectToDispose"];
-        DisposeButton.IsEnabled = canDispose;
-        DisposalDate.IsEnabled = canDispose;
-        DisposalValue.IsEnabled = canDispose;
-    }
-
-    private void NewAsset_OnClick(object sender, RoutedEventArgs e)
-    {
-        AssetGrid.SelectedItem = null;
-        _editingAsset = null;
-        AssetName.Clear(); AssetCost.Clear(); AssetNotes.Clear();
-        AssetCategory.SelectedIndex = 0; AssetMethod.SelectedIndex = 0;
-        AssetRate.Text = "10"; AssetSalvage.Text = "0";
-        AssetVendor.SelectedIndex = -1;
-        PurchaseDate.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
-        InUseDate.SelectedDate = PurchaseDate.SelectedDate;
-        SaveAssetButton.IsEnabled = true;
-        EditAssetButton.IsEnabled = false;
-        SetFinancialFieldsEnabled(true);
-        UpdateDisposalTarget(null);
-        CloseTimeline();
-        AssetDetailsTab.IsChecked = true;
-        AssetDisposalTab.IsChecked = false;
-        AssetName.Focus();
-    }
-
-    private void EditAsset_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (AssetGrid.SelectedItem is not AssetItem || !EditAssetButton.IsEnabled) return;
-        AssetDetailsTab.IsChecked = true;
-        AssetDisposalTab.IsChecked = false;
-        AssetName.Focus();
-    }
-
-    private void AssetSection_OnChanged(object sender, RoutedEventArgs e)
-    {
-        if (_changingAssetSection || AssetDetailsPanel is null || AssetDisposalPanel is null) return;
-        _changingAssetSection = true;
-        try
-        {
-            if (ReferenceEquals(sender, AssetDetailsTab) && AssetDetailsTab.IsChecked == true)
-                AssetDisposalTab.IsChecked = false;
-            else if (ReferenceEquals(sender, AssetDisposalTab) && AssetDisposalTab.IsChecked == true)
-                AssetDetailsTab.IsChecked = false;
-            SectionMotion.SetOpen(AssetDetailsPanel, AssetDetailsTab.IsChecked == true);
-            SectionMotion.SetOpen(AssetDisposalPanel, AssetDisposalTab.IsChecked == true);
-        }
-        finally { _changingAssetSection = false; }
-    }
-
-    private void SetFinancialFieldsEnabled(bool enabled)
-    {
-        PurchaseDate.IsEnabled = enabled;
-        InUseDate.IsEnabled = enabled;
-        AssetCost.IsEnabled = enabled;
-        AssetMethod.IsEnabled = enabled;
-        AssetRate.IsEnabled = enabled;
-        AssetSalvage.IsEnabled = enabled;
-        AssetFinancialLockText.Text = enabled ? "" : TranslationSource.Instance["Assets_FinancialLocked"];
-        AssetFinancialLockText.Visibility = enabled ? Visibility.Collapsed : Visibility.Visible;
-    }
-
-    private Task RefreshAsync()
-    {
-        _previousPages.Clear();
-        return LoadPageAsync(null, null, null);
-    }
-
-    private async Task LoadPageAsync(bool? disposed, string? name, long? id)
-    {
-        using var timing = UiRefreshProbe.Track("assets", this);
-        if (_loadingPage) return;
-        _loadingPage = true;
-        try
-        {
-            long? selectedId = _editingAsset?.Id;
-            AssetPage page = await _assets.GetAssetPageAsync(AssetSearchBox.Text,
-                IncludeDisposedBox.IsChecked == true, disposed, name, id, PageSize);
-            _page = page;
-            _cursor = (disposed, name, id);
-            AssetVendor.ItemsSource = await _purchasing.GetVendorsAsync(includeInactive: true);
-            timing.Bind(() => AssetGrid.ItemsSource = page.Items);
-            CloseTimeline();
-            AssetGrid.SelectedItem = page.Items.FirstOrDefault(asset => asset.Id == selectedId);
-            StatusText.Text = TranslationSource.Instance["MoneyOut_Ready"];
-        }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
-        finally
-        {
-            _loadingPage = false;
-            PreviousAssetButton.IsEnabled = _previousPages.Count > 0;
-            NextAssetButton.IsEnabled = _page?.HasMore == true;
-        }
-    }
-
-    private async void AssetSearch_OnClick(object sender, RoutedEventArgs e) => await RefreshAsync();
-
-    private async void ClearAssetFilters_OnClick(object sender, RoutedEventArgs e)
-    {
-        AssetSearchBox.Clear();
-        IncludeDisposedBox.IsChecked = true;
-        await RefreshAsync();
-    }
-
-    private async void NextAsset_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (_loadingPage || _page is not { HasMore: true, NextDisposed: not null, NextName: not null, NextId: not null } page) return;
-        (bool? Disposed, string? Name, long? Id) previous = _cursor;
-        await LoadPageAsync(page.NextDisposed, page.NextName, page.NextId);
-        if (_cursor == (page.NextDisposed, page.NextName, page.NextId)) _previousPages.Push(previous);
-        PreviousAssetButton.IsEnabled = _previousPages.Count > 0;
-    }
-
-    private async void PreviousAsset_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (_loadingPage || _previousPages.Count == 0) return;
-        (bool? Disposed, string? Name, long? Id) previous = _previousPages.Peek();
-        await LoadPageAsync(previous.Disposed, previous.Name, previous.Id);
-        if (_cursor == previous) _previousPages.Pop();
-        PreviousAssetButton.IsEnabled = _previousPages.Count > 0;
-    }
-
-    private static decimal Parse(string? text)
-    {
-        if (!decimal.TryParse(text, NumberStyles.Number, CultureInfo.GetCultureInfo("en-IN"), out decimal value))
-            throw new FormatException(TranslationSource.Instance["MoneyOut_ValidNumber"]);
-        return value;
-    }
-
-    private async void PageSize_OnChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (!IsLoaded) return;
-        _previousPages.Clear();
-        await LoadPageAsync(null, null, null);
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 
     private async void ViewTimeline_OnClick(object sender, RoutedEventArgs e)
@@ -400,7 +207,7 @@ public partial class AssetsPage : Page
             RenderTimelinePage();
             SideOverlayMotion.Show(TimelineOverlay, TimelinePanel, TimelineBackdrop);
         }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 
     private void CloseTimeline()

@@ -1,6 +1,10 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Threading;
+using GroceryErp.Core;
 using GroceryErp.Core.Errors;
+using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Services;
 using GroceryErp.Localization;
@@ -9,21 +13,24 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace GroceryErp.App.Presentation;
 
+/// <summary>
+/// Purchases: server-side document, vendor, status, date, line type, product and return-eligibility
+/// filters; keyset pages sized to the window; Open/Void/Partial return with eligibility shown; and
+/// reviewed bulk void. Filters are kept for the session.
+/// </summary>
 public partial class PurchasesPage : Page
 {
-    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
+    private const string StateKey = nameof(PurchasesPage);
     private readonly PurchasingService _purchasing;
-    private readonly Stack<(DateOnly? Date, long? Id)> _previousPages = new();
-    private DateOnly? _beforeDate;
-    private long? _beforeId;
-    private PurchasePage? _currentPage;
-    private bool _loadingPage;
-    private readonly Dictionary<long, PurchaseListItem> _selectedPurchases = new();
-    private CheckBox? _pageSelectionCheck;
-    private bool _checkboxSelectionUsed;
-    private readonly Dictionary<long, VendorItem> _selectedVendors = new();
-    private CheckBox? _vendorPageSelectionCheck;
-    private bool _vendorCheckboxSelectionUsed;
+    private readonly KeysetPager<DateCursor> _pager = new();
+    private readonly LatestRequest _requests = new();
+    private readonly LatestRequest _eligibility = new();
+    private readonly TableSelection<PurchaseListItem> _selection = new(static purchase => purchase.Id);
+    private readonly FitPageSize _fit;
+    private readonly DispatcherTimer _searchDelay;
+    private CheckBox? _pageCheck;
+    private State? _pendingState;
+    private bool _restoring;
 
     public PurchasesPage() : this(null) { }
 
@@ -31,293 +38,361 @@ public partial class PurchasesPage : Page
     {
         InitializeComponent();
         _purchasing = purchasing ?? ((App)Application.Current).Services.GetRequiredService<PurchasingService>();
-        UpdatePurchaseSelectionActions();
-        UpdateVendorSelectionActions();
-        Loaded += (_, _) => TranslationSource.Instance.PropertyChanged += TranslationChanged;
-        Unloaded += (_, _) => TranslationSource.Instance.PropertyChanged -= TranslationChanged;
-        if (loadOnShow) Loaded += async (_, _) => await RefreshAsync();
+        _ = new FilterRow(FilterBar, DocumentFilter, MoreFiltersToggle, MoreFiltersPanel)
+            .Fold(VendorFilter).Fold(FromLabel, FromBox, ToLabel, ToBox).Fold(StatusFilter);
+        _fit = new FitPageSize(PurchasesGrid);
+        LanguageRefresh.Attach(this, () => _ = RefreshForLanguageAsync());
+        _fit.RowsChanged += async (_, _) => await LoadAsync(PageMove.Same);
+        _searchDelay = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromMilliseconds(250) };
+        _searchDelay.Tick += async (_, _) =>
+        {
+            _searchDelay.Stop();
+            await ReloadAsync();
+        };
+        _selection.Changed += (_, _) => UpdateSelection();
+        Selection.ClearRequested += (_, _) =>
+        {
+            _selection.Clear();
+            PurchasesGrid.Items.Refresh();
+        };
+        Selection.AllMatchingRequested += async (_, _) => await SelectAllMatchingAsync();
+        Pager.PreviousRequested += async (_, _) => await LoadAsync(PageMove.Previous);
+        Pager.NextRequested += async (_, _) => await LoadAsync(PageMove.Next);
+        _pendingState = PageStateStore.Current?.Get<State>(StateKey);
+        ApplyState(_pendingState);
+        PreviewKeyDown += (_, args) =>
+        {
+            if (Keyboard.Modifiers != ModifierKeys.Control) return;
+            if (args.Key == Key.F) { DocumentFilter.Focus(); args.Handled = true; }
+            else if (args.Key == Key.N) { NewPurchase_OnClick(this, args); args.Handled = true; }
+        };
+        if (loadOnShow) Loaded += async (_, _) =>
+        {
+            try
+            {
+                await LoadVendorsAsync();
+                await LoadAsync(PageMove.First);
+            }
+            catch (Exception exception) { Pager.Status = UserError.Message(exception); }
+        };
+        Unloaded += (_, _) =>
+        {
+            _searchDelay.Stop();
+            _requests.Cancel();
+            _eligibility.Cancel();
+            PageStateStore.Current?.Set(StateKey, new State(DocumentFilter.Text ?? string.Empty,
+                VendorFilter.SelectedValue as long? ?? 0, StatusFilter.SelectedIndex, FromBox.SelectedDate, ToBox.SelectedDate,
+                TypeFilter.SelectedIndex, ProductFilter.Text ?? string.Empty, ReturnableFilter.IsChecked == true,
+                MoreFiltersToggle.IsChecked == true));
+        };
     }
 
-    private void TranslationChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    private sealed record State(string Document, long VendorId, int Status, DateTime? From, DateTime? To, int Type,
+        string Product, bool Returnable, bool MoreFilters);
+
+    private void ApplyState(State? state)
     {
-        if (e.PropertyName == "Item[]" && IsLoaded)
+        if (state is null) return;
+        _restoring = true;
+        DocumentFilter.Text = state.Document;
+        StatusFilter.SelectedIndex = state.Status;
+        FromBox.SelectedDate = state.From;
+        ToBox.SelectedDate = state.To;
+        TypeFilter.SelectedIndex = state.Type;
+        ProductFilter.Text = state.Product;
+        ReturnableFilter.IsChecked = state.Returnable;
+        MoreFiltersToggle.IsChecked = state.MoreFilters;
+        MoreFiltersPanel.Visibility = state.MoreFilters ? Visibility.Visible : Visibility.Collapsed;
+        _restoring = false;
+    }
+
+    private async Task LoadVendorsAsync()
+    {
+        long? selected = VendorFilter.SelectedValue as long? ?? _pendingState?.VendorId;
+        _pendingState = null;
+        IReadOnlyList<VendorItem> vendors = await _purchasing.GetVendorsAsync(includeInactive: true);
+        _restoring = true;
+        VendorFilter.ItemsSource = new[] { new VendorItem(0, TranslationSource.Instance["Purchasing_AllVendors"], null, null, Money.Zero, true) }
+            .Concat(vendors).ToList();
+        VendorFilter.SelectedValue = selected ?? 0;
+        if (VendorFilter.SelectedIndex < 0) VendorFilter.SelectedIndex = 0;
+        _restoring = false;
+    }
+
+    // "All vendors", the status cells and the row count are set in code, so they follow a reload.
+    private async Task RefreshForLanguageAsync()
+    {
+        try
         {
-            UpdatePurchaseSelectionActions();
-            UpdateVendorSelectionActions();
+            await LoadVendorsAsync();
+            await LoadAsync(PageMove.Same);
+        }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
+    }
+
+    private static string? SelectedTag(ComboBox box) => (box.SelectedItem as ComboBoxItem)?.Tag is string { Length: > 0 } tag ? tag : null;
+
+    private PurchaseFilter CurrentFilter() => new()
+    {
+        DocumentQuery = InputNormalizer.Normalize(DocumentFilter.Text ?? string.Empty),
+        VendorId = VendorFilter.SelectedValue is long id and > 0 ? id : null,
+        Status = SelectedTag(StatusFilter),
+        From = FromBox.SelectedDate is { } from ? DateOnly.FromDateTime(from) : null,
+        To = ToBox.SelectedDate is { } to ? DateOnly.FromDateTime(to) : null,
+        LineKind = SelectedTag(TypeFilter),
+        ProductQuery = InputNormalizer.Normalize(ProductFilter.Text ?? string.Empty),
+        ReturnableOnly = ReturnableFilter.IsChecked == true,
+    };
+
+    private Task ReloadAsync()
+    {
+        _selection.Clear();
+        return LoadAsync(PageMove.First);
+    }
+
+    private async Task LoadAsync(PageMove move)
+    {
+        if (!_pager.CanMove(move)) return;
+        using var timing = UiRefreshProbe.Track("purchases", this);
+        using LatestRequest.Scope request = _requests.Begin();
+        Pager.SetLoading(true);
+        try
+        {
+            PurchaseFilter filter = CurrentFilter();
+            if (filter.From > filter.To)
+            {
+                Pager.Status = TranslationSource.Instance["Common_DateRangeInvalid"];
+                return;
+            }
+            DateCursor? cursor = _pager.CursorFor(move);
+            PurchasePage page = await _purchasing.GetPurchasePageAsync(filter, cursor?.Date, cursor?.Id, _fit.Take(), request.Token);
+            if (!request.IsCurrent) return;
+            _pager.Commit(move, page.HasMore, page.NextDate is { } date && page.NextId is { } next ? new DateCursor(date, next) : null);
+            _selection.Refresh(page.Items);
+            timing.Bind(() => PurchasesGrid.ItemsSource = page.Items);
+            EmptyText.Visibility = page.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            Pager.Status = TranslationSource.Instance.Format("Purchasing_Count", page.Items.Count);
+            UpdateSelection();
+            UpdateActions();
+        }
+        catch (OperationCanceledException) when (request.Token.IsCancellationRequested) { }
+        catch (Exception exception)
+        {
+            if (request.IsCurrent) Pager.Status = UserError.Message(exception);
+        }
+        finally
+        {
+            if (request.IsCurrent) Pager.Update(_pager.PageNumber, _pager.CanGoBack, _pager.HasMore);
         }
     }
 
-    private async void Refresh_OnClick(object sender, RoutedEventArgs e)
+    private void Text_OnChanged(object sender, TextChangedEventArgs e)
     {
-        if (PurchasingTabs.SelectedIndex == 1)
+        if (!IsLoaded || _restoring) return;
+        _requests.Cancel();
+        _searchDelay.Stop();
+        _searchDelay.Start();
+    }
+
+    private async void Filter_OnChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (IsLoaded && !_restoring) await ReloadAsync();
+    }
+
+    private async void Date_OnChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (IsLoaded && !_restoring) await ReloadAsync();
+    }
+
+    private async void Check_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (IsLoaded) await ReloadAsync();
+    }
+
+    private void MoreFilters_OnClick(object sender, RoutedEventArgs e) =>
+        MoreFiltersPanel.Visibility = MoreFiltersToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+
+    private async void ClearFilters_OnClick(object sender, RoutedEventArgs e)
+    {
+        _restoring = true;
+        DocumentFilter.Text = string.Empty;
+        VendorFilter.SelectedIndex = 0;
+        StatusFilter.SelectedIndex = 0;
+        FromBox.SelectedDate = null;
+        ToBox.SelectedDate = null;
+        TypeFilter.SelectedIndex = 0;
+        ProductFilter.Text = string.Empty;
+        ReturnableFilter.IsChecked = false;
+        _restoring = false;
+        _searchDelay.Stop();
+        await ReloadAsync();
+    }
+
+    private PurchaseListItem? Current => PurchasesGrid.SelectedItem as PurchaseListItem;
+
+    private void PurchasesGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateActions();
+
+    // Void needs a server check (no document may have used the purchase's stock), so the button
+    // explains why it is unavailable instead of failing after a click.
+    private async void UpdateActions()
+    {
+        PurchaseListItem? purchase = Current;
+        OpenButton.IsEnabled = purchase is not null;
+        VendorReturnButton.IsEnabled = purchase is { Status: "POSTED" };
+        ReturnHistoryButton.IsEnabled = purchase is { Status: "POSTED" or "CANCELLED" };
+        CancelPurchaseButton.IsEnabled = false;
+        CancelPurchaseButton.ToolTip = null;
+        if (purchase is not { Status: "POSTED" }) return;
+        using LatestRequest.Scope request = _eligibility.Begin();
+        try
         {
-            await RefreshVendorsSafelyAsync();
+            IReadOnlyList<PurchasingBulkRow> rows = await _purchasing.PreviewVoidAsync([purchase.Id], request.Token);
+            if (!request.IsCurrent || Current?.Id != purchase.Id) return;
+            CancelPurchaseButton.IsEnabled = rows.Count == 1 && rows[0].Eligible;
+            CancelPurchaseButton.ToolTip = rows is [{ Eligible: false, ReasonKey: { } reason }]
+                ? TranslationSource.Instance[reason] : TranslationSource.Instance["Purchasing_VoidAvailable"];
+            ToolTipService.SetShowOnDisabled(CancelPurchaseButton, true);
         }
-        else await RefreshAsync();
+        catch (OperationCanceledException) when (request.Token.IsCancellationRequested) { }
+        catch (Exception exception)
+        {
+            if (request.IsCurrent) Pager.Status = UserError.Message(exception);
+        }
     }
 
-    private async void FilterPurchases_OnClick(object sender, RoutedEventArgs e) => await RefreshAsync();
-
-    private async void ClearPurchaseFilters_OnClick(object sender, RoutedEventArgs e)
+    private void PurchasesGrid_OnDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        PurchaseFromBox.SelectedDate = null;
-        PurchaseToBox.SelectedDate = null;
-        PurchaseVendorFilter.SelectedValue = null;
-        PurchaseStatusFilter.SelectedIndex = 0;
-        PurchaseTypeFilter.SelectedIndex = 0;
-        PurchaseProductFilter.Clear();
-        await RefreshAsync();
+        if (Current is not null) Open_OnClick(sender, e);
     }
 
-    private async void NewVendor_OnClick(object sender, RoutedEventArgs e)
+    private void PurchasesGrid_OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        var window = new VendorEditorWindow(_purchasing) { Owner = Window.GetWindow(this) };
-        if (window.ShowDialog() == true) await RefreshVendorsSafelyAsync();
+        if (Current is not PurchaseListItem purchase) return;
+        if (e.Key == Key.Enter)
+        {
+            Open_OnClick(sender, e);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            _selection.Set(purchase, !_selection.IsSelected(purchase));
+            PurchasesGrid.Items.Refresh();
+            e.Handled = true;
+        }
+    }
+
+    private void RowCheck_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox { DataContext: PurchaseListItem purchase } box) box.IsChecked = _selection.IsSelected(purchase);
+    }
+
+    private void RowCheck_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox { DataContext: PurchaseListItem purchase } box) _selection.Set(purchase, box.IsChecked == true);
+    }
+
+    private void PageCheck_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        _pageCheck = sender as CheckBox;
+        UpdateSelection();
+    }
+
+    private void PageCheck_OnClick(object sender, RoutedEventArgs e)
+    {
+        PurchaseListItem[] rows = PurchasesGrid.Items.OfType<PurchaseListItem>().ToArray();
+        _selection.SetPage(rows, _selection.PageState(rows) != true);
+        PurchasesGrid.Items.Refresh();
+    }
+
+    private void UpdateSelection()
+    {
+        PurchaseListItem[] rows = PurchasesGrid.Items.OfType<PurchaseListItem>().ToArray();
+        bool? state = _selection.PageState(rows);
+        if (_pageCheck is not null) _pageCheck.IsChecked = state;
+        Selection.Show(_selection.Count, _selection.AllMatching, state == true, _pager.HasMore || _pager.CanGoBack,
+            _selection.AllMatching ? FilterSummary() : null);
+    }
+
+    private string FilterSummary() => FilterText.Describe(DocumentFilter, VendorFilter, StatusFilter, FromBox, ToBox,
+        TypeFilter, ProductFilter, ReturnableFilter);
+
+    private async Task SelectAllMatchingAsync()
+    {
+        try
+        {
+            _selection.SelectAllMatching(await _purchasing.CountPurchasesAsync(CurrentFilter()));
+            PurchasesGrid.Items.Refresh();
+        }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
+    }
+
+    private async void BulkVoid_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_selection.IsEmpty) return;
+        PurchaseFilter filter = CurrentFilter();
+        DateOnly date = ((App)Application.Current).Services.GetRequiredService<IClock>().BusinessDate;
+        var bulk = new BulkAction
+        {
+            Title = TranslationSource.Instance["Purchasing_CancelSelected"],
+            RunLabel = TranslationSource.Instance["Purchasing_CancelPurchase"],
+            SelectionSummary = _selection.AllMatching
+                ? $"{TranslationSource.Instance.Format("Selection_AllMatchingCount", _selection.Count)} · {FilterSummary()}"
+                : TranslationSource.Instance.Format("Selection_Count", _selection.Count),
+            Destructive = true,
+            // A void reverses every lot, the vendor balance and expenses: about 13-22 ms a purchase.
+            BatchSize = 5,
+            Plan = async token =>
+            {
+                IReadOnlyList<long> ids = _selection.AllMatching
+                    ? await _purchasing.ResolvePurchaseIdsAsync(filter, cancellationToken: token) : _selection.PickedIds;
+                IReadOnlyList<PurchasingBulkRow> rows = await _purchasing.PreviewVoidAsync(ids, token);
+                PurchasingBulkRow[] eligible = rows.Where(static row => row.Eligible).ToArray();
+                return new BulkPlan(rows.Select(static row => new BulkCandidate(row.Id, row.Label, row.Eligible, row.ReasonKey)).ToArray(),
+                    TranslationSource.Instance.Format("Purchasing_VoidEffect", eligible.Length,
+                        Money.FromScaled(eligible.Sum(static row => row.Amount.Scaled)),
+                        date.ToString("dd MMM yyyy", TranslationSource.FormatCulture)));
+            },
+            Run = (ids, operation, token) => _purchasing.RunVoidBatchAsync(ids, date, operation, token),
+        };
+        var window = new BulkActionWindow(bulk) { Owner = Window.GetWindow(this) };
+        window.ShowDialog();
+        if (!window.ChangedAny) return;
+        _selection.Clear();
+        await LoadAsync(PageMove.Same);
     }
 
     private async void NewPurchase_OnClick(object sender, RoutedEventArgs e)
     {
         var window = new PurchaseEntryWindow(_purchasing) { Owner = Window.GetWindow(this) };
         window.ShowDialog();
-        await RefreshAsync();
+        await LoadAsync(PageMove.First);
+        if (window.PostedDocumentNumber is { } number)
+            Pager.Status = TranslationSource.Instance.Format("Purchasing_PostedNumber", number);
     }
 
-    private async void OpenDraft_OnClick(object sender, RoutedEventArgs e)
+    private async void Open_OnClick(object sender, RoutedEventArgs e)
     {
-        if (SelectedSinglePurchase() is not { Status: "DRAFT" } purchase) return;
-        var window = new PurchaseEntryWindow(_purchasing, purchase.Id) { Owner = Window.GetWindow(this) };
-        window.ShowDialog();
-        await RefreshAsync();
-    }
-
-    private async void ViewInvoice_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (SelectedSinglePurchase() is not { Status: "POSTED" or "CANCELLED" } purchase) return;
+        if (Current is not PurchaseListItem purchase) return;
+        if (purchase.Status == "DRAFT")
+        {
+            var window = new PurchaseEntryWindow(_purchasing, purchase.Id) { Owner = Window.GetWindow(this) };
+            window.ShowDialog();
+            await LoadAsync(PageMove.Same);
+            if (window.PostedDocumentNumber is { } number)
+                Pager.Status = TranslationSource.Instance.Format("Purchasing_PostedNumber", number);
+            return;
+        }
         try
         {
             PurchaseInvoice invoice = await _purchasing.GetInvoiceAsync(purchase.Id);
             new PurchaseInvoiceWindow(invoice) { Owner = Window.GetWindow(this) }.ShowDialog();
         }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
-    }
-
-    private void PurchasesGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_selectedPurchases.Count == 0 && e.AddedItems.Count > 0) _checkboxSelectionUsed = false;
-        UpdatePurchaseSelectionActions();
-    }
-
-    private void PurchaseCheck_OnLoaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is CheckBox { DataContext: PurchaseListItem purchase } box)
-            box.IsChecked = _selectedPurchases.ContainsKey(purchase.Id);
-    }
-
-    private void PurchaseCheck_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is not CheckBox { DataContext: PurchaseListItem purchase } box) return;
-        _checkboxSelectionUsed = true;
-        if (box.IsChecked == true) _selectedPurchases[purchase.Id] = purchase;
-        else _selectedPurchases.Remove(purchase.Id);
-        UpdatePurchaseSelectionActions();
-    }
-
-    private void PurchasePageCheck_OnLoaded(object sender, RoutedEventArgs e)
-    {
-        _pageSelectionCheck = sender as CheckBox;
-        UpdatePageSelectionCheck();
-    }
-
-    private void PurchasePageCheck_OnClick(object sender, RoutedEventArgs e)
-    {
-        PurchaseListItem[] pageItems = PurchasesGrid.Items.OfType<PurchaseListItem>().ToArray();
-        if (pageItems.Length == 0) return;
-        bool allSelected = pageItems.All(item => _selectedPurchases.ContainsKey(item.Id));
-        _checkboxSelectionUsed = true;
-        foreach (PurchaseListItem item in pageItems)
-        {
-            if (allSelected) _selectedPurchases.Remove(item.Id);
-            else _selectedPurchases[item.Id] = item;
-        }
-        if (allSelected) PurchasesGrid.UnselectAll();
-        PurchasesGrid.Items.Refresh();
-        UpdatePurchaseSelectionActions();
-    }
-
-    private PurchaseListItem? SelectedSinglePurchase() => _selectedPurchases.Count switch
-    {
-        > 1 => null,
-        1 => _selectedPurchases.Values.Single(),
-        _ => _checkboxSelectionUsed ? null : PurchasesGrid.SelectedItem as PurchaseListItem,
-    };
-
-    private void UpdatePageSelectionCheck()
-    {
-        if (_pageSelectionCheck is null) return;
-        PurchaseListItem[] pageItems = PurchasesGrid.Items.OfType<PurchaseListItem>().ToArray();
-        int selected = pageItems.Count(item => _selectedPurchases.ContainsKey(item.Id));
-        _pageSelectionCheck.IsChecked = selected == 0 ? false : selected == pageItems.Length ? true : null;
-    }
-
-    private void UpdatePurchaseSelectionActions()
-    {
-        if (OpenDraftButton is null) return;
-        PurchaseListItem? purchase = SelectedSinglePurchase();
-        OpenDraftButton.IsEnabled = purchase is { Status: "DRAFT" };
-        ViewInvoiceButton.IsEnabled = purchase is { Status: "POSTED" or "CANCELLED" };
-        CancelPurchaseButton.IsEnabled = purchase is { Status: "POSTED" };
-        VendorReturnButton.IsEnabled = purchase is { Status: "POSTED" };
-        ReturnHistoryButton.IsEnabled = purchase is { Status: "POSTED" or "CANCELLED" };
-        bool multiple = _selectedPurchases.Count > 1;
-        BulkCancelPurchaseButton.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
-        BulkCancelPurchaseButton.IsEnabled = multiple && _selectedPurchases.Values.All(static item => item.Status == "POSTED");
-        int count = _selectedPurchases.Count > 0 || _checkboxSelectionUsed
-            ? _selectedPurchases.Count : purchase is null ? 0 : 1;
-        PurchaseSelectedCountText.Text = TranslationSource.Instance.Format("Selection_Count", count);
-        UpdatePageSelectionCheck();
-    }
-
-    private void ClearPurchaseSelection()
-    {
-        _selectedPurchases.Clear();
-        _checkboxSelectionUsed = false;
-        PurchasesGrid.UnselectAll();
-        PurchasesGrid.Items.Refresh();
-        UpdatePurchaseSelectionActions();
-    }
-
-    private void VendorsGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_selectedVendors.Count == 0 && e.AddedItems.Count > 0) _vendorCheckboxSelectionUsed = false;
-        UpdateVendorSelectionActions();
-    }
-
-    private void VendorCheck_OnLoaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is CheckBox { DataContext: VendorItem vendor } box)
-            box.IsChecked = _selectedVendors.ContainsKey(vendor.Id);
-    }
-
-    private void VendorCheck_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is not CheckBox { DataContext: VendorItem vendor } box) return;
-        _vendorCheckboxSelectionUsed = true;
-        if (box.IsChecked == true) _selectedVendors[vendor.Id] = vendor;
-        else _selectedVendors.Remove(vendor.Id);
-        UpdateVendorSelectionActions();
-    }
-
-    private void VendorPageCheck_OnLoaded(object sender, RoutedEventArgs e)
-    {
-        _vendorPageSelectionCheck = sender as CheckBox;
-        UpdateVendorPageSelectionCheck();
-    }
-
-    private void VendorPageCheck_OnClick(object sender, RoutedEventArgs e)
-    {
-        VendorItem[] vendors = VendorsGrid.Items.OfType<VendorItem>().ToArray();
-        if (vendors.Length == 0) return;
-        bool allSelected = vendors.All(item => _selectedVendors.ContainsKey(item.Id));
-        _vendorCheckboxSelectionUsed = true;
-        foreach (VendorItem vendor in vendors)
-        {
-            if (allSelected) _selectedVendors.Remove(vendor.Id);
-            else _selectedVendors[vendor.Id] = vendor;
-        }
-        if (allSelected) VendorsGrid.UnselectAll();
-        VendorsGrid.Items.Refresh();
-        UpdateVendorSelectionActions();
-    }
-
-    private VendorItem? SelectedSingleVendor() => _selectedVendors.Count switch
-    {
-        > 1 => null,
-        1 => _selectedVendors.Values.Single(),
-        _ => _vendorCheckboxSelectionUsed ? null : VendorsGrid.SelectedItem as VendorItem,
-    };
-
-    private void UpdateVendorPageSelectionCheck()
-    {
-        if (_vendorPageSelectionCheck is null) return;
-        VendorItem[] vendors = VendorsGrid.Items.OfType<VendorItem>().ToArray();
-        int selected = vendors.Count(item => _selectedVendors.ContainsKey(item.Id));
-        _vendorPageSelectionCheck.IsChecked = selected == 0 ? false : selected == vendors.Length ? true : null;
-    }
-
-    private void UpdateVendorSelectionActions()
-    {
-        if (EditVendorButton is null) return;
-        VendorItem? vendor = SelectedSingleVendor();
-        EditVendorButton.IsEnabled = vendor is not null;
-        VendorLedgerButton.IsEnabled = vendor is not null;
-        bool checkedVendors = _selectedVendors.Count > 0;
-        ActivateVendorsButton.Visibility = checkedVendors ? Visibility.Visible : Visibility.Collapsed;
-        DeactivateVendorsButton.Visibility = checkedVendors ? Visibility.Visible : Visibility.Collapsed;
-        ActivateVendorsButton.IsEnabled = _selectedVendors.Values.Any(static item => !item.IsActive);
-        DeactivateVendorsButton.IsEnabled = _selectedVendors.Values.Any(static item => item.IsActive);
-        int count = checkedVendors || _vendorCheckboxSelectionUsed
-            ? _selectedVendors.Count : vendor is null ? 0 : 1;
-        VendorSelectedCountText.Text = TranslationSource.Instance.Format("Selection_Count", count);
-        UpdateVendorPageSelectionCheck();
-    }
-
-    private void ClearVendorSelection()
-    {
-        _selectedVendors.Clear();
-        _vendorCheckboxSelectionUsed = false;
-        VendorsGrid.UnselectAll();
-        VendorsGrid.Items.Refresh();
-        UpdateVendorSelectionActions();
-    }
-
-    private async void EditVendor_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (SelectedSingleVendor() is not VendorItem vendor) return;
-        var window = new VendorEditorWindow(_purchasing, vendor.Id) { Owner = Window.GetWindow(this) };
-        if (window.ShowDialog() == true) await RefreshVendorsSafelyAsync();
-    }
-
-    private void VendorLedger_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (SelectedSingleVendor() is not VendorItem vendor) return;
-        new VendorLedgerWindow(_purchasing, vendor.Id, vendor.Name) { Owner = Window.GetWindow(this) }.ShowDialog();
-    }
-
-    private async void ActivateVendors_OnClick(object sender, RoutedEventArgs e) => await ChangeVendorsActiveAsync(true);
-
-    private async void DeactivateVendors_OnClick(object sender, RoutedEventArgs e) => await ChangeVendorsActiveAsync(false);
-
-    private async Task ChangeVendorsActiveAsync(bool active)
-    {
-        VendorItem[] vendors = _selectedVendors.Values.ToArray();
-        if (vendors.Length == 0 || vendors.All(item => item.IsActive == active)) return;
-        if (!active && MessageBox.Show(TranslationSource.Instance.Format("Purchasing_DeactivateVendorsConfirm", vendors.Length),
-            TranslationSource.Instance["Purchasing_DeactivateSelectedVendors"], MessageBoxButton.YesNo,
-            MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-        ActivateVendorsButton.IsEnabled = false;
-        DeactivateVendorsButton.IsEnabled = false;
-        try
-        {
-            int changed = await _purchasing.BulkSetVendorsActiveAsync(vendors.Select(static item => item.Id).ToArray(), active);
-            await RefreshVendorsAsync();
-            StatusText.Text = TranslationSource.Instance.Format("Purchasing_VendorStatusChanged", changed);
-        }
-        catch (Exception exception)
-        {
-            StatusText.Text = UserError.Message(exception);
-            UpdateVendorSelectionActions();
-        }
-    }
-
-    private async void Payment_OnClick(object sender, RoutedEventArgs e)
-    {
-        var window = new VendorPaymentWindow(_purchasing) { Owner = Window.GetWindow(this) };
-        if (window.ShowDialog() == true) await RefreshVendorsSafelyAsync();
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 
     private async void CancelPurchase_OnClick(object sender, RoutedEventArgs e)
     {
-        if (SelectedSinglePurchase() is not { Status: "POSTED" } purchase) return;
+        if (Current is not { Status: "POSTED" } purchase) return;
         if (MessageBox.Show(TranslationSource.Instance["Purchasing_CancelConfirm"],
             TranslationSource.Instance["Purchasing_CancelPurchase"], MessageBoxButton.YesNo,
             MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
@@ -325,144 +400,28 @@ public partial class PurchasesPage : Page
         {
             IServiceProvider services = ((App)Application.Current).Services;
             await _purchasing.CancelAsync(purchase.Id, services.GetRequiredService<IClock>().BusinessDate, OperationGuard.NewId());
-            await RefreshAsync();
+            await LoadAsync(PageMove.Same);
         }
         catch (DomainException exception) when (exception.Code == ErrorCode.CancelNotAllowed)
         {
-            StatusText.Text = TranslationSource.Instance["Purchasing_CancelBlocked"];
+            Pager.Status = TranslationSource.Instance["Purchasing_CancelBlocked"];
         }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
-    }
-
-    private async void BulkCancelPurchases_OnClick(object sender, RoutedEventArgs e)
-    {
-        PurchaseListItem[] purchases = _selectedPurchases.Values.ToArray();
-        if (purchases.Length < 2 || purchases.Any(static item => item.Status != "POSTED")) return;
-        if (MessageBox.Show(TranslationSource.Instance.Format("Purchasing_BulkCancelConfirm", purchases.Length),
-            TranslationSource.Instance["Purchasing_CancelSelected"], MessageBoxButton.YesNo,
-            MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-
-        BulkCancelPurchaseButton.IsEnabled = false;
-        int cancelled = 0;
-        var failures = new List<string>();
-        DateOnly date = ((App)Application.Current).Services.GetRequiredService<IClock>().BusinessDate;
-        foreach (PurchaseListItem purchase in purchases)
-        {
-            try
-            {
-                await _purchasing.CancelAsync(purchase.Id, date, OperationGuard.NewId());
-                cancelled++;
-            }
-            catch (Exception exception)
-            {
-                failures.Add($"{purchase.DocumentNumber ?? purchase.VendorInvoiceNumber ?? purchase.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)}: {UserError.Message(exception)}");
-            }
-        }
-        await RefreshAsync();
-        StatusText.Text = TranslationSource.Instance.Format("Purchasing_BulkCancelResult", cancelled, failures.Count);
-        if (failures.Count > 0)
-            MessageBox.Show(string.Join(Environment.NewLine, failures),
-                TranslationSource.Instance["Purchasing_CancelSelected"], MessageBoxButton.OK, MessageBoxImage.Warning);
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 
     private async void VendorReturn_OnClick(object sender, RoutedEventArgs e)
     {
-        if (SelectedSinglePurchase() is not { Status: "POSTED" } purchase) return;
+        if (Current is not { Status: "POSTED" } purchase) return;
         var window = new VendorReturnWindow(_purchasing, purchase.Id) { Owner = Window.GetWindow(this) };
         if (window.ShowDialog() != true) return;
-        await RefreshAsync();
-        StatusText.Text = TranslationSource.Instance.Format("Purchasing_ReturnPosted", window.DocumentNumber ?? "");
+        await LoadAsync(PageMove.Same);
+        Pager.Status = TranslationSource.Instance.Format("Purchasing_ReturnPosted", window.DocumentNumber ?? "");
     }
 
     private async void ReturnHistory_OnClick(object sender, RoutedEventArgs e)
     {
-        if (SelectedSinglePurchase() is not { Status: "POSTED" or "CANCELLED" } purchase) return;
+        if (Current is not { Status: "POSTED" or "CANCELLED" } purchase) return;
         new VendorReturnHistoryWindow(_purchasing, purchase.Id) { Owner = Window.GetWindow(this) }.ShowDialog();
-        await RefreshAsync();
-    }
-
-    private Task RefreshAsync() => LoadPageAsync(null, null, reset: true);
-
-    private async Task LoadPageAsync(DateOnly? beforeDate, long? beforeId, bool reset)
-    {
-        using var timing = UiRefreshProbe.Track("purchases", this);
-        if (_loadingPage) return;
-        _loadingPage = true;
-        PreviousPurchaseButton.IsEnabled = false;
-        NextPurchaseButton.IsEnabled = false;
-        try
-        {
-            PurchasePage page = await _purchasing.GetPurchasesPageAsync(beforeDate, beforeId,
-                PurchaseFromBox.SelectedDate is { } from ? DateOnly.FromDateTime(from) : null,
-                PurchaseToBox.SelectedDate is { } to ? DateOnly.FromDateTime(to) : null,
-                PurchaseVendorFilter.SelectedValue as long?, PageSize, PurchaseProductFilter.Text,
-                (PurchaseStatusFilter.SelectedValue as string) is { Length: > 0 } status ? status : null,
-                (PurchaseTypeFilter.SelectedValue as string) is { Length: > 0 } kind ? kind : null);
-            if (reset)
-            {
-                _previousPages.Clear();
-                ClearPurchaseSelection();
-            }
-            _beforeDate = beforeDate;
-            _beforeId = beforeId;
-            _currentPage = page;
-            timing.Bind(() => PurchasesGrid.ItemsSource = page.Items);
-            UpdatePurchaseSelectionActions();
-            if (reset)
-            {
-                await RefreshVendorsAsync();
-            }
-            StatusText.Text = $"{PurchasesGrid.Items.Count} / {VendorsGrid.Items.Count}";
-        }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
-        finally
-        {
-            _loadingPage = false;
-            PreviousPurchaseButton.IsEnabled = _previousPages.Count > 0;
-            NextPurchaseButton.IsEnabled = _currentPage?.HasMore == true;
-        }
-    }
-
-    private async Task RefreshVendorsAsync()
-    {
-        long? selectedVendor = PurchaseVendorFilter.SelectedValue as long?;
-        IReadOnlyList<VendorItem> vendors = await _purchasing.GetVendorsAsync(includeInactive: true);
-        ClearVendorSelection();
-        VendorsGrid.ItemsSource = vendors;
-        UpdateVendorSelectionActions();
-        PurchaseVendorFilter.ItemsSource = vendors;
-        PurchaseVendorFilter.SelectedValue = selectedVendor;
-        StatusText.Text = $"{PurchasesGrid.Items.Count} / {VendorsGrid.Items.Count}";
-    }
-
-    private async Task RefreshVendorsSafelyAsync()
-    {
-        try { await RefreshVendorsAsync(); }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
-    }
-
-    private async void NextPurchase_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (_loadingPage || _currentPage is not { HasMore: true, NextDate: not null, NextId: not null } page) return;
-        DateOnly? oldDate = _beforeDate;
-        long? oldId = _beforeId;
-        await LoadPageAsync(page.NextDate, page.NextId, reset: false);
-        if (_beforeDate == page.NextDate && _beforeId == page.NextId)
-            _previousPages.Push((oldDate, oldId));
-        PreviousPurchaseButton.IsEnabled = _previousPages.Count > 0;
-    }
-
-    private async void PreviousPurchase_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (_loadingPage || _previousPages.Count == 0) return;
-        (DateOnly? date, long? id) = _previousPages.Peek();
-        await LoadPageAsync(date, id, reset: false);
-        if (_beforeDate == date && _beforeId == id) _previousPages.Pop();
-        PreviousPurchaseButton.IsEnabled = _previousPages.Count > 0;
-    }
-
-    private async void PageSize_OnChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (IsLoaded) await RefreshAsync();
+        await LoadAsync(PageMove.Same);
     }
 }

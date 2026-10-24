@@ -256,7 +256,7 @@
   <data name="Catalog_SelectedCount" xml:space="preserve"><value>Products selected: {0}</value></data>
   <data name="Catalog_BulkComplete" xml:space="preserve"><value>{0} products updated.</value></data>
   <data name="Purchasing_Navigation" xml:space="preserve"><value>Purchases</value></data>
-  <data name="Purchasing_Title" xml:space="preserve"><value>Purchases and vendors</value></data>
+  <data name="Purchasing_Title" xml:space="preserve"><value>Purchases</value></data>
   <data name="Purchasing_Purchases" xml:space="preserve"><value>Purchases</value></data>
   <data name="Purchasing_Vendors" xml:space="preserve"><value>Vendors</value></data>
   <data name="Purchasing_Grn" xml:space="preserve"><value>GRN number</value></data>
@@ -563,7 +563,7 @@
   <data name="Purchasing_ClearFilters" xml:space="preserve"><value>Clear filters</value></data>
   <data name="Purchasing_ProductFilter" xml:space="preserve"><value>Product</value></data>
   <data name="Purchasing_SelectPurchase" xml:space="preserve"><value>Select purchase</value></data>
-  <data name="Purchasing_CancelSelected" xml:space="preserve"><value>Cancel selected</value></data>
+  <data name="Purchasing_CancelSelected" xml:space="preserve"><value>Void selected purchases</value></data>
   <data name="Purchasing_BulkCancelConfirm" xml:space="preserve"><value>Cancel {0} selected purchases? Only purchases with untouched stock can be cancelled. Some may fail while others succeed.</value></data>
   <data name="Purchasing_BulkCancelResult" xml:space="preserve"><value>{0} purchases cancelled; {1} failed.</value></data>
   <data name="Purchasing_SelectVendor" xml:space="preserve"><value>Select vendor</value></data>
@@ -1075,8 +1075,8 @@
   <data name="Reports_Print_FirstRows" xml:space="preserve"><value>first {0} rows</value></data>
   <data name="Reports_PrintPreviewCapped" xml:space="preserve"><value>Print preview shows the first {0} rows. Export CSV for the full result.</value></data>
   <data name="Reports_Column_OriginalTotal" xml:space="preserve"><value>Original bill</value></data>
-  <data name="Reports_TruncatedRows" xml:space="preserve"><value>Showing first {0} rows · totals and exports are partial</value></data>
-  <data name="Reports_PartialExport" xml:space="preserve"><value>Partial report: totals include displayed rows only.</value></data>
+  <data name="Reports_TruncatedRows" xml:space="preserve"><value>Showing first {0} rows · totals and Excel/A4 output are partial; Export full CSV has every row</value></data>
+  <data name="Reports_PartialExport" xml:space="preserve"><value>Partial report: only the displayed rows and their totals are included. Use Export full CSV for every row.</value></data>
   <data name="Reports_AllStatuses" xml:space="preserve"><value>All statuses</value></data>
   <data name="Reports_StatusCompleted" xml:space="preserve"><value>Completed</value></data>
   <data name="Reports_StatusVoid" xml:space="preserve"><value>Void</value></data>
@@ -1223,9 +1223,8 @@
   <data name="Sales_RecreateFractional" xml:space="preserve"><value>Fractional quantity</value></data>
   <data name="Sales_RecreateLotExpiry" xml:space="preserve"><value>Lot expiry date</value></data>
   <data name="Sales_RecreateSave" xml:space="preserve"><value>Use these details</value></data>
-  <data name="Sales_RecreateReview" xml:space="preserve"><value>missing</value></data>
+  <data name="Sales_RecreateReview" xml:space="preserve"><value>Not saved on the original sale. Check it.</value></data>
   <data name="Sales_MoreFilters" xml:space="preserve"><value>More filters</value></data>
-  <data name="Sales_RecreateRequired" xml:space="preserve"><value>Complete SKU, name, category, unit, tax, tax mode and required expiry or HSN details.</value></data>
   <data name="Error_AnnualReportInvalid" xml:space="preserve"><value>The finalized report for {0} failed its checksum. Restore a verified backup before relying on it.</value></data>
   <data name="Error_EntryChanged" xml:space="preserve"><value>This entry changed since it was loaded. Refresh and try again.</value></data>
   <data name="Error_EntryVoided" xml:space="preserve"><value>This entry is void and cannot be changed.</value></data>
@@ -1315,4 +1314,201 @@
   <data name="Assets_TermHistory" xml:space="preserve"><value>Depreciation terms</value></data>
   <data name="Assets_TermLine" xml:space="preserve"><value>From {0}: {1} {2}% · salvage ₹{3} · cost ₹{4} · {5} · recorded {6}</value></data>
   <data name="Assets_ChargedOn" xml:space="preserve"><value>Charged on</value></data>
+  <data name="Form_Required" xml:space="preserve"><value>Required.</value></data>
+  <data name="Form_Choose" xml:space="preserve"><value>Choose a value.</value></data>
+  <data name="Form_Yes" xml:space="preserve"><value>Yes</value></data>
+  <data name="Form_No" xml:space="preserve"><value>No</value></data>
+  <data name="Form_InvalidNumber" xml:space="preserve"><value>Enter a number such as 12.5.</value></data>
+  <data name="Form_TooManyDecimals" xml:space="preserve"><value>Use at most 3 decimal places.</value></data>
+  <data name="Form_MustBePositive" xml:space="preserve"><value>Enter a number greater than zero.</value></data>
+  <data name="Form_AtLeast" xml:space="preserve"><value>Enter {0} or more.</value></data>
+  <data name="Form_WholeNumberAtLeast" xml:space="preserve"><value>Enter a whole number of {0} or more.</value></data>
+  <data name="Form_TooLong" xml:space="preserve"><value>Use at most {0} characters.</value></data>
+  <data name="Form_FixProblem_One" xml:space="preserve"><value>Fix {0} problem before saving:</value></data>
+  <data name="Form_FixProblem_Other" xml:space="preserve"><value>Fix {0} problems before saving:</value></data>
+  <data name="Bulk_Preview" xml:space="preserve"><value>Review</value></data>
+  <data name="Bulk_Progress" xml:space="preserve"><value>Progress</value></data>
+  <data name="Bulk_Result" xml:space="preserve"><value>Result</value></data>
+  <data name="Bulk_SaveResult" xml:space="preserve"><value>Save result list…</value></data>
+  <data name="Bulk_Checking" xml:space="preserve"><value>Checking the selection…</value></data>
+  <data name="Bulk_PlanSummary" xml:space="preserve"><value>{0} rows checked: {1} eligible, {2} skipped.</value></data>
+  <data name="Bulk_SkipReasons" xml:space="preserve"><value>Skipped: {0}</value></data>
+  <data name="Bulk_NoneEligible" xml:space="preserve"><value>Nothing in this selection can be changed.</value></data>
+  <data name="Bulk_RunCount" xml:space="preserve"><value>{0} ({1})</value></data>
+  <data name="Bulk_Stop" xml:space="preserve"><value>Stop after this part</value></data>
+  <data name="Bulk_Stopping" xml:space="preserve"><value>Stopping after the current part…</value></data>
+  <data name="Bulk_Resume" xml:space="preserve"><value>Resume</value></data>
+  <data name="Bulk_ProgressText" xml:space="preserve"><value>Part {0} of {1} · {2} of {3} rows done</value></data>
+  <data name="Bulk_ResultSummary" xml:space="preserve"><value>Changed {0} · Skipped {1} · Changed since review {2} · Not processed {3}</value></data>
+  <data name="Bulk_Stopped" xml:space="preserve"><value>Stopped after {0} parts. Saved parts are kept; Resume continues with the rest.</value></data>
+  <data name="Bulk_Failed" xml:space="preserve"><value>Part {0} was not saved: {1} Saved parts are kept; Resume retries it.</value></data>
+  <data name="Bulk_Operation" xml:space="preserve"><value>Operation ID {0}</value></data>
+  <data name="Bulk_Outcome_Changed" xml:space="preserve"><value>Changed</value></data>
+  <data name="Bulk_Outcome_Earlier" xml:space="preserve"><value>Already done earlier</value></data>
+  <data name="Bulk_Outcome_Skipped" xml:space="preserve"><value>Skipped</value></data>
+  <data name="Bulk_Outcome_Conflicted" xml:space="preserve"><value>Changed since review</value></data>
+  <data name="Bulk_Outcome_NotProcessed" xml:space="preserve"><value>Not processed</value></data>
+  <data name="Bulk_NotEligible" xml:space="preserve"><value>Not eligible</value></data>
+  <data name="Bulk_ChangedSincePreview" xml:space="preserve"><value>Changed since review</value></data>
+  <data name="Bulk_Missing" xml:space="preserve"><value>No longer exists</value></data>
+  <data name="Bulk_Csv_Id" xml:space="preserve"><value>ID</value></data>
+  <data name="Bulk_Csv_Row" xml:space="preserve"><value>Row</value></data>
+  <data name="Bulk_Csv_Outcome" xml:space="preserve"><value>Outcome</value></data>
+  <data name="Bulk_Csv_Reason" xml:space="preserve"><value>Reason</value></data>
+  <data name="Selection_AllMatchingCount" xml:space="preserve"><value>All {0} matching rows selected</value></data>
+  <data name="Pager_Page" xml:space="preserve"><value>Page {0}</value></data>
+  <data name="Pager_PreviousHint" xml:space="preserve"><value>Previous page</value></data>
+  <data name="Pager_NextHint" xml:space="preserve"><value>Next page</value></data>
+  <data name="Bulk_Reason_AlreadyActive" xml:space="preserve"><value>Already active</value></data>
+  <data name="Bulk_Reason_AlreadyArchived" xml:space="preserve"><value>Already archived</value></data>
+  <data name="Bulk_Reason_AlreadyBlocked" xml:space="preserve"><value>Already blocked</value></data>
+  <data name="Bulk_Reason_AlreadyInactive" xml:space="preserve"><value>Already inactive</value></data>
+  <data name="Bulk_Reason_Archived" xml:space="preserve"><value>Archived product</value></data>
+  <data name="Bulk_Reason_HasInternalBarcode" xml:space="preserve"><value>Already has a shop barcode</value></data>
+  <data name="Bulk_Reason_HasStock" xml:space="preserve"><value>Has stock, so the type cannot change</value></data>
+  <data name="Bulk_Reason_NoChange" xml:space="preserve"><value>Already has this value</value></data>
+  <data name="Bulk_Reason_NotExpired" xml:space="preserve"><value>No longer expired with stock</value></data>
+  <data name="Bulk_Reason_NotPosted" xml:space="preserve"><value>Not a posted purchase</value></data>
+  <data name="Bulk_Reason_PurchaseTouched" xml:space="preserve"><value>Stock from this purchase was used; only a partial return is possible</value></data>
+  <data name="Catalog_ActiveOnly" xml:space="preserve"><value>Active</value></data>
+  <data name="Catalog_AllBrands" xml:space="preserve"><value>All brands</value></data>
+  <data name="Catalog_AllCategories" xml:space="preserve"><value>All categories</value></data>
+  <data name="Catalog_AllTypes" xml:space="preserve"><value>All types</value></data>
+  <data name="Catalog_AnyStatus" xml:space="preserve"><value>Any status</value></data>
+  <data name="Catalog_AnyStock" xml:space="preserve"><value>Any stock</value></data>
+  <data name="Catalog_ArchivedOnly" xml:space="preserve"><value>Archived</value></data>
+  <data name="Catalog_ArchivedStatus" xml:space="preserve"><value>Archived</value></data>
+  <data name="Catalog_BasicsTab" xml:space="preserve"><value>Basics</value></data>
+  <data name="Catalog_BulkEffect" xml:space="preserve"><value>{0} products will change · stock {1} units · cost value ₹{2}</value></data>
+  <data name="Catalog_DiscardChanges" xml:space="preserve"><value>Discard unsaved changes to {0}?</value></data>
+  <data name="Catalog_ExpiredStock" xml:space="preserve"><value>Expired stock</value></data>
+  <data name="Catalog_FormContext" xml:space="preserve"><value>Fields marked * are required. A new product can add its first lot here.</value></data>
+  <data name="Catalog_HasStock" xml:space="preserve"><value>Has stock</value></data>
+  <data name="Catalog_HistoryTab" xml:space="preserve"><value>History (before upgrade)</value></data>
+  <data name="Catalog_HsnDigits" xml:space="preserve"><value>Use 4, 6 or 8 digits.</value></data>
+  <data name="Catalog_ImportMenu" xml:space="preserve"><value>Import ▾</value></data>
+  <data name="Catalog_LabelsLimit" xml:space="preserve"><value>Labels can be printed for up to {0} products at a time.</value></data>
+  <data name="Catalog_ProductClassHint" xml:space="preserve"><value>Internal-use items stay out of billing and profit and loss.</value></data>
+  <data name="Catalog_RevertChanges" xml:space="preserve"><value>Revert</value></data>
+  <data name="Catalog_Saved" xml:space="preserve"><value>Product saved.</value></data>
+  <data name="Catalog_SectionClassification" xml:space="preserve"><value>Classification</value></data>
+  <data name="Catalog_SectionIdentity" xml:space="preserve"><value>Identity</value></data>
+  <data name="Catalog_SectionStockRules" xml:space="preserve"><value>Stock rules</value></data>
+  <data name="Catalog_SectionTaxPrices" xml:space="preserve"><value>Tax and prices</value></data>
+  <data name="Catalog_SelectProduct" xml:space="preserve"><value>Select product</value></data>
+  <data name="Catalog_SetCategory" xml:space="preserve"><value>Set category…</value></data>
+  <data name="Catalog_SetProductClass" xml:space="preserve"><value>Set product type…</value></data>
+  <data name="Catalog_SetTaxRate" xml:space="preserve"><value>Set GST rate…</value></data>
+  <data name="Catalog_StatusFilter" xml:space="preserve"><value>Product status</value></data>
+  <data name="Catalog_StockSummary" xml:space="preserve"><value>In stock: {0} {1} · FEFO price ₹{2}</value></data>
+  <data name="Catalog_StockSummaryNoPrice" xml:space="preserve"><value>In stock: {0} {1}</value></data>
+  <data name="Catalog_WriteOffEffect" xml:space="preserve"><value>{0} expired lots · {1} units · cost value ₹{2} become damage dated {3}.</value></data>
+  <data name="Catalog_WriteOffExpiredSelected" xml:space="preserve"><value>Write off expired stock…</value></data>
+  <data name="Common_Continue" xml:space="preserve"><value>Continue</value></data>
+  <data name="Common_DateRangeInvalid" xml:space="preserve"><value>The start date is after the end date.</value></data>
+  <data name="Common_MoreFilters" xml:space="preserve"><value>More filters</value></data>
+  <data name="Common_NoFilters" xml:space="preserve"><value>No filters</value></data>
+  <data name="Form_PeriodLocked" xml:space="preserve"><value>{0} is in a finalized year. Choose a date in an open period.</value></data>
+  <data name="Form_PeriodOpen" xml:space="preserve"><value>Counts in profit and loss on {0}.</value></data>
+  <data name="MoneyOut_AdvanceContext" xml:space="preserve"><value>Records a salary advance or other payment on its pay date.</value></data>
+  <data name="MoneyOut_AllCategories" xml:space="preserve"><value>All categories</value></data>
+  <data name="MoneyOut_AllEmployees" xml:space="preserve"><value>All employees</value></data>
+  <data name="MoneyOut_AnyReason" xml:space="preserve"><value>Any reason</value></data>
+  <data name="MoneyOut_CategoriesContext" xml:space="preserve"><value>Choose a category to rename it or turn it off, or add a new one.</value></data>
+  <data name="MoneyOut_ChooseCategories" xml:space="preserve"><value>Choose at least one category.</value></data>
+  <data name="MoneyOut_DamageAvailable" xml:space="preserve"><value>Available: {0}</value></data>
+  <data name="MoneyOut_DamageChooseLot" xml:space="preserve"><value>Find the lot that was damaged.</value></data>
+  <data name="MoneyOut_DamageSearch" xml:space="preserve"><value>Document, product or lot</value></data>
+  <data name="MoneyOut_DamagesEmpty" xml:space="preserve"><value>No damage matches these filters.</value></data>
+  <data name="MoneyOut_DraftInvalid" xml:space="preserve"><value>{0}: check the date (YYYY-MM-DD) and amount.</value></data>
+  <data name="MoneyOut_Drafts" xml:space="preserve"><value>Draft expenses</value></data>
+  <data name="MoneyOut_DraftsSaved" xml:space="preserve"><value>{0} expenses saved.</value></data>
+  <data name="MoneyOut_EmployeeContext" xml:space="preserve"><value>A salary change applies from a chosen month; posted payments stay as paid.</value></data>
+  <data name="MoneyOut_EmployeeSearch" xml:space="preserve"><value>Name, role or phone</value></data>
+  <data name="MoneyOut_EmployeesEmpty" xml:space="preserve"><value>No employees match these filters.</value></data>
+  <data name="MoneyOut_ExpenseContext" xml:space="preserve"><value>Fields marked * are required. The date decides where the expense counts in profit and loss.</value></data>
+  <data name="MoneyOut_ExpenseSearch" xml:space="preserve"><value>Paid to, reference or notes</value></data>
+  <data name="MoneyOut_ExpensesEmpty" xml:space="preserve"><value>No expenses match these filters.</value></data>
+  <data name="MoneyOut_FindLastMonth" xml:space="preserve"><value>Find last month's entries</value></data>
+  <data name="MoneyOut_LeaveBeforeJoin" xml:space="preserve"><value>The leaving date is before the joining date.</value></data>
+  <data name="MoneyOut_NewEmployee" xml:space="preserve"><value>New employee</value></data>
+  <data name="MoneyOut_NewExpense" xml:space="preserve"><value>New expense</value></data>
+  <data name="MoneyOut_PaymentsEmpty" xml:space="preserve"><value>No payments match these filters.</value></data>
+  <data name="MoneyOut_PrepareLines" xml:space="preserve"><value>Prepare lines</value></data>
+  <data name="MoneyOut_RepeatContext" xml:space="preserve"><value>Pick categories, review last month's amounts, then save the ones to repeat.</value></data>
+  <data name="MoneyOut_RowCount" xml:space="preserve"><value>Rows: {0}</value></data>
+  <data name="MoneyOut_SalaryChooseLines" xml:space="preserve"><value>Prepare lines and select at least one employee.</value></data>
+  <data name="MoneyOut_SalaryLineInvalid" xml:space="preserve"><value>{0}: amounts must be numbers of 0 or more.</value></data>
+  <data name="MoneyOut_SalaryPostConfirm" xml:space="preserve"><value>Post salary for {0} employees for {1}, total ₹{2}?</value></data>
+  <data name="MoneyOut_SalaryRunContext" xml:space="preserve"><value>Salary counts in the month worked. Adjust deductions, overtime or bonus before posting.</value></data>
+  <data name="MoneyOut_SaveSelected" xml:space="preserve"><value>Save selected</value></data>
+  <data name="Purchasing_AllVendors" xml:space="preserve"><value>All vendors</value></data>
+  <data name="Purchasing_AnyLineType" xml:space="preserve"><value>Any line type</value></data>
+  <data name="Purchasing_AnyStatus" xml:space="preserve"><value>Any status</value></data>
+  <data name="Purchasing_CopyDownHint" xml:space="preserve"><value>Ctrl+D copies the cell above (never the line type or product). Ctrl+S saves the draft.</value></data>
+  <data name="Purchasing_Count" xml:space="preserve"><value>Purchases: {0}</value></data>
+  <data name="Purchasing_DeactivateEffect" xml:space="preserve"><value>Inactive vendors are hidden from new purchases; their history stays.</value></data>
+  <data name="Purchasing_DocumentFilter" xml:space="preserve"><value>GRN or vendor bill no.</value></data>
+  <data name="Purchasing_Empty" xml:space="preserve"><value>No purchases match these filters.</value></data>
+  <data name="Purchasing_ExpenseCategoryRequired" xml:space="preserve"><value>choose an expense category</value></data>
+  <data name="Purchasing_InactiveOnly" xml:space="preserve"><value>Inactive</value></data>
+  <data name="Purchasing_InvoiceAfterReceived" xml:space="preserve"><value>The bill date is after the received date.</value></data>
+  <data name="Purchasing_LineDateFormat" xml:space="preserve"><value>write dates as YYYY-MM-DD</value></data>
+  <data name="Purchasing_LineError" xml:space="preserve"><value>Line {0}: {1}</value></data>
+  <data name="Purchasing_LineNegative" xml:space="preserve"><value>amounts cannot be negative</value></data>
+  <data name="Purchasing_LineQuantity" xml:space="preserve"><value>enter a quantity greater than zero</value></data>
+  <data name="Purchasing_Lines" xml:space="preserve"><value>Purchase lines</value></data>
+  <data name="Purchasing_NoLines" xml:space="preserve"><value>Add at least one product line.</value></data>
+  <data name="Purchasing_Open" xml:space="preserve"><value>Open</value></data>
+  <data name="Purchasing_PostedNumber" xml:space="preserve"><value>Purchase posted as {0}.</value></data>
+  <data name="Purchasing_ReturnableOnly" xml:space="preserve"><value>Stock left to return</value></data>
+  <data name="Purchasing_VendorCount" xml:space="preserve"><value>Vendors: {0}</value></data>
+  <data name="Purchasing_VendorSearch" xml:space="preserve"><value>Name, phone or GSTIN</value></data>
+  <data name="Purchasing_VendorsEmpty" xml:space="preserve"><value>No vendors match these filters.</value></data>
+  <data name="Purchasing_VoidAvailable" xml:space="preserve"><value>No stock from this purchase was used, so it can be voided.</value></data>
+  <data name="Purchasing_VoidEffect" xml:space="preserve"><value>{0} purchases · ₹{1} will be voided on {2}; their stock and vendor balance are reversed.</value></data>
+  <data name="Purchasing_WithBalance" xml:space="preserve"><value>With balance due</value></data>
+  <data name="Stock_AnyExpiry" xml:space="preserve"><value>Any expiry</value></data>
+  <data name="Stock_AnySource" xml:space="preserve"><value>Any source</value></data>
+  <data name="Stock_BulkDamageLimit" xml:space="preserve"><value>Select 1 to 50 lots with stock to mark them damaged.</value></data>
+  <data name="Stock_BulkLotEffect" xml:space="preserve"><value>{0} lots · {1} units on hand · cost value ₹{2}</value></data>
+  <data name="Stock_CountLimit" xml:space="preserve"><value>A physical count reviews up to {0} products at a time.</value></data>
+  <data name="Stock_ExpiryBeforeReceived" xml:space="preserve"><value>Expiry is before the received date.</value></data>
+  <data name="Stock_ExpiryBetween" xml:space="preserve"><value>Expiry</value></data>
+  <data name="Stock_LotFilterSearch" xml:space="preserve"><value>Batch no. or lot code</value></data>
+  <data name="Stock_LotStatusFilter" xml:space="preserve"><value>Lot status</value></data>
+  <data name="Stock_LotsEmpty" xml:space="preserve"><value>No lots match these filters. Add a direct lot or clear the filters.</value></data>
+  <data name="Stock_MaxPrice" xml:space="preserve"><value>Highest price</value></data>
+  <data name="Stock_MinPrice" xml:space="preserve"><value>Lowest price</value></data>
+  <data name="Stock_Origin_CUSTOMER_RETURN" xml:space="preserve"><value>Customer return</value></data>
+  <data name="Stock_Origin_DIRECT" xml:space="preserve"><value>Direct entry</value></data>
+  <data name="Stock_Origin_PURCHASE_LINE" xml:space="preserve"><value>Purchase</value></data>
+  <data name="Stock_PriceBetween" xml:space="preserve"><value>Price</value></data>
+  <data name="Purchasing_GstinHint" xml:space="preserve"><value>GSTIN has 15 characters.</value></data>
+  <data name="Purchasing_ModeCheque" xml:space="preserve"><value>Cheque</value></data>
+  <data name="Purchasing_PanLength" xml:space="preserve"><value>PAN has 10 characters.</value></data>
+  <data name="Purchasing_PaymentContext" xml:space="preserve"><value>Reduces the vendor's balance. Choose a bill to settle it, or leave it empty for an on-account payment.</value></data>
+  <data name="Purchasing_PaymentDate" xml:space="preserve"><value>Payment date</value></data>
+  <data name="Purchasing_PincodeDigits" xml:space="preserve"><value>Pincode has 6 digits.</value></data>
+  <data name="Purchasing_ReturnAlready" xml:space="preserve"><value>Returned</value></data>
+  <data name="Purchasing_ReturnReceived" xml:space="preserve"><value>Received</value></data>
+  <data name="Purchasing_SectionAddress" xml:space="preserve"><value>Address</value></data>
+  <data name="Purchasing_SectionContact" xml:space="preserve"><value>Contact</value></data>
+  <data name="Purchasing_SectionPayment" xml:space="preserve"><value>Payment</value></data>
+  <data name="Purchasing_SectionTax" xml:space="preserve"><value>Tax</value></data>
+  <data name="Purchasing_VendorContext" xml:space="preserve"><value>Fields marked * are required. The opening balance is what you owed this vendor before using the app.</value></data>
+  <data name="Reports_ExcludesExpired" xml:space="preserve"><value>Expired lots excluded</value></data>
+  <data name="Sales_AmountBetween" xml:space="preserve"><value>Bill total</value></data>
+  <data name="Sales_AnyPayment" xml:space="preserve"><value>Any payment</value></data>
+  <data name="Sales_ExportFilters" xml:space="preserve"><value>Filters</value></data>
+  <data name="Sales_ExportTotal" xml:space="preserve"><value>Total bills</value></data>
+  <data name="Sales_ProductFilter" xml:space="preserve"><value>Product or SKU</value></data>
+  <data name="Stock_BulkDamageContext" xml:space="preserve"><value>Enter the damaged quantity for each lot. The cost leaves stock and counts as a loss on the date.</value></data>
+  <data name="Stock_DirectLotContext" xml:space="preserve"><value>Adds stock without a purchase. Its cost reaches profit and loss only when it is sold.</value></data>
+  <data name="Stock_InternalUseContext" xml:space="preserve"><value>Takes stock out of this internal-use lot. It does not count in profit and loss.</value></data>
+  <data name="Assets_DisposalAsset" xml:space="preserve"><value>{0} · book value ₹{1}</value></data>
+  <data name="Assets_DisposalContext" xml:space="preserve"><value>The difference between the proceeds and the book value on that date counts as a gain or loss.</value></data>
+  <data name="Assets_Empty" xml:space="preserve"><value>No assets match these filters.</value></data>
+  <data name="Assets_FormContext" xml:space="preserve"><value>Fields marked * are required. Buying an asset is not an expense; its depreciation is.</value></data>
+  <data name="Assets_InUseBeforePurchase" xml:space="preserve"><value>The in-use date is before the purchase date.</value></data>
 </root>

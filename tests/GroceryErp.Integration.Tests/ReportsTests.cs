@@ -36,7 +36,10 @@ public sealed class ReportsTests
         string csv = Path.Combine(fixture.Root, "current-stock.csv");
         (await fixture.Reports.ExportCsvAsync(ReportKind.StockValue,
             new ReportFilter(IncludeExpired: false), csv, cancellationToken: ct)).ShouldBe(1);
-        File.ReadLines(csv).Last().ShouldContain(",4,");
+        string[] stockLines = File.ReadAllLines(csv);
+        stockLines[0].ShouldContain("Expired lots excluded");
+        stockLines[2].ShouldContain(",4,");
+        stockLines[^1].ShouldStartWith("\"Total\"");
     }
 
     [Fact]
@@ -230,9 +233,11 @@ public sealed class ReportsTests
             filter, path, cancellationToken: TestContext.Current.CancellationToken);
         rows.ShouldBe(3);
         string[] lines = await File.ReadAllLinesAsync(path, TestContext.Current.CancellationToken);
-        lines.Length.ShouldBe(4);
-        lines[1].ShouldContain(",1000,");
-        lines[3].ShouldContain(",3000,");
+        lines.Length.ShouldBe(6);
+        lines[0].ShouldContain("2026-09-01 – 2026-09-30");
+        lines[2].ShouldContain(",1000,");
+        lines[4].ShouldContain(",3000,");
+        lines[5].ShouldStartWith("\"Total\"");
         Directory.GetFiles(fixture.Root, "*.partial").ShouldBeEmpty();
 
         await File.WriteAllTextAsync(path, "previous export", TestContext.Current.CancellationToken);
@@ -260,12 +265,12 @@ public sealed class ReportsTests
             cancellationToken: TestContext.Current.CancellationToken);
         count.ShouldBe(532);
         string[] lines = await File.ReadAllLinesAsync(path, TestContext.Current.CancellationToken);
-        lines.Length.ShouldBe(533);
-        lines[1].ShouldContain("2026-09");
+        lines.Length.ShouldBe(534);
+        lines[2].ShouldContain("2026-09");
         lines[^1].ShouldContain("2070-12");
         foreach (int index in new[] { 0, 499 })
         {
-            string[] cells = lines[index + 1].Split(',');
+            string[] cells = lines[index + 2].Split(',');
             cells[0].Trim('"').ShouldBe(preview.Rows[index].Values["Period"]);
             foreach ((string key, int column) in new[] { ("Opening", 2), ("Depreciation", 3), ("Closing", 4) })
             {
@@ -649,7 +654,7 @@ public sealed class ReportsTests
         (await fixture.Reports.ExportCsvAsync(ReportKind.ItemSales,
             filter with { ProductId = selectedProduct }, selectedCsv,
             cancellationToken: TestContext.Current.CancellationToken)).ShouldBe(1);
-        File.ReadLines(selectedCsv).Count().ShouldBe(2);
+        File.ReadLines(selectedCsv).Count().ShouldBe(4);
         System.Text.Json.JsonSerializer.Serialize(projectedCategories.Rows).ShouldBe(
             System.Text.Json.JsonSerializer.Serialize(sourceCategories.Rows));
         projectedCategories.Totals.ShouldBe(sourceCategories.Totals);
@@ -676,7 +681,9 @@ public sealed class ReportsTests
                 cancellationToken: TestContext.Current.CancellationToken);
             exported.ShouldBeGreaterThanOrEqualTo(0);
             File.Exists(csvPath).ShouldBeTrue();
-            File.ReadLines(csvPath).LongCount().ShouldBe(exported + 1);
+            // A context line, the header, every row and, for reports with amounts, a totals row.
+            long lineCount = File.ReadLines(csvPath).LongCount();
+            lineCount.ShouldBeInRange(exported + 2, exported + 3);
         }
     }
 

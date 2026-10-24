@@ -165,18 +165,22 @@ public sealed class ScaleUiTests
                 return;
             }
 
+            // Every Phase 7 page, then Products and Purchases again so repeated navigation shows
+            // whether memory keeps rising.
             foreach ((string label, string control) in new[]
             {
                 ("Products", "SearchBox"),
-                ("Purchases", "OpenDraftButton"),
-                ("Stock", "StockTabs"),
+                ("Purchases", "PurchasesGrid"),
+                ("Vendors", "VendorsGrid"),
                 ("Assets", "AssetSearchBox"),
                 ("Reports", "ReportPicker"),
                 ("Sales history", "HistoryGrid"),
                 ("Billing (POS)", "ScanBox"),
                 ("Dashboard", "TodaySales"),
                 ("Money out", "MoneyOutTabs"),
-                ("Assets", "AssetSearchBox"),
+                ("Products", "SearchBox"),
+                ("Purchases", "PurchasesGrid"),
+                ("Money out", "MoneyOutTabs"),
             })
             {
                 var timer = Stopwatch.StartNew();
@@ -212,7 +216,7 @@ public sealed class ScaleUiTests
                 {
                     "Products" => "ProductsGrid",
                     "Purchases" => "PurchasesGrid",
-                    "Stock" => "OverviewGrid",
+                    "Vendors" => "VendorsGrid",
                     "Assets" => "AssetGrid",
                     "Reports" => "ReportGrid",
                     "Sales history" => "HistoryGrid",

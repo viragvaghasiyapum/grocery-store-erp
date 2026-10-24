@@ -71,67 +71,6 @@ public sealed partial class InventoryService
         audit.Write(tx, "product_lot", lotId, "DELETE_ZERO", new { productId });
     }, cancellationToken);
 
-    public Task<IReadOnlyList<LotDeletionPreview>> PreviewDeleteZeroLotsAsync(
-        IReadOnlyCollection<long> lotIds, CancellationToken cancellationToken = default)
-    {
-        long[] ids = ValidateBulkLotIds(lotIds);
-        return database.ReadAsync<IReadOnlyList<LotDeletionPreview>>(connection =>
-        {
-            var previews = new List<LotDeletionPreview>(ids.Length);
-            foreach (long lotId in ids)
-            {
-                LotDeleteRow? lot = connection.QuerySingleOrDefault<LotDeleteRow>("""
-                    SELECT lot_code AS LotCode,qty_on_hand AS Quantity FROM product_lot WHERE id=@lotId
-                    """, new { lotId });
-                if (lot is null) throw new DomainException(ErrorCode.NotFound, "lot", lotId);
-                bool referenced = lot.Quantity == 0 && IsOnOpenBill(connection, lotId);
-                string? reason = lot.Quantity != 0 ? "Stock_DeleteHasStock" :
-                    referenced ? "Stock_DeleteOpenBill" : null;
-                previews.Add(new(lotId, lot.LotCode, Quantity.FromScaled(lot.Quantity),
-                    reason is null, reason));
-            }
-            return previews;
-        }, cancellationToken);
-    }
-
-    public Task DeleteZeroLotsAsync(IReadOnlyCollection<LotDeletionRequest> requests,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(requests);
-        long[] ids = ValidateBulkLotIds(requests.Select(static request => request.LotId).ToArray());
-        if (ids.Length != requests.Count || requests.Any(static request => request.ExpectedVersion <= 0))
-            throw new DomainException(ErrorCode.Validation, "Select distinct zero lots with current versions.");
-        return database.WriteAsync(tx =>
-        {
-            foreach (LotDeletionRequest request in requests)
-            {
-                var key = new { lotId = request.LotId, expectedVersion = request.ExpectedVersion };
-                long? productId = tx.Connection.QuerySingleOrDefault<long?>("""
-                    SELECT product_id FROM product_lot
-                    WHERE id=@lotId AND qty_on_hand=0 AND detail_version=@expectedVersion
-                    """, key, tx.Transaction);
-                if (productId is null) ThrowLotEditConflict(tx, request.LotId);
-                if (IsOnOpenBill(tx.Connection, request.LotId, tx.Transaction))
-                    throw new DomainException(ErrorCode.Validation, "A held or draft bill still uses this lot.");
-                int changed = tx.Connection.Execute("""
-                    DELETE FROM product_lot
-                    WHERE id=@lotId AND qty_on_hand=0 AND detail_version=@expectedVersion
-                    """, key, tx.Transaction);
-                if (changed != 1) ThrowLotEditConflict(tx, request.LotId);
-                audit.Write(tx, "product_lot", request.LotId, "DELETE_ZERO", new { productId });
-            }
-        }, cancellationToken);
-    }
-
-    private static long[] ValidateBulkLotIds(IReadOnlyCollection<long> lotIds)
-    {
-        ArgumentNullException.ThrowIfNull(lotIds);
-        long[] ids = lotIds.ToArray();
-        if (ids.Length is < 1 or > 50 || ids.Any(static id => id <= 0) || ids.Distinct().Count() != ids.Length)
-            throw new DomainException(ErrorCode.Validation, "Select 1 to 50 distinct lots.");
-        return ids;
-    }
-
     // Posted documents keep their own snapshots, so history never blocks deleting a
     // zero lot. An unfinished bill still points at the live lot it will sell from.
     internal static bool IsOnOpenBill(System.Data.IDbConnection connection, long lotId,

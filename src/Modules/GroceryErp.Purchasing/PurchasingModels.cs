@@ -132,3 +132,33 @@ public sealed record PurchaseListItem(
 
 public sealed record PurchasePage(IReadOnlyList<PurchaseListItem> Items, bool HasMore,
     DateOnly? NextDate, long? NextId);
+
+/// <summary>
+/// Server-side purchase filters. Status: DRAFT, POSTED or CANCELLED (shown as Void). LineKind:
+/// PRODUCT, INTERNAL or EXPENSE. DocumentQuery matches the GRN number exactly or a vendor invoice
+/// number prefix. ReturnableOnly keeps posted purchases with stock left on one of their own lots.
+/// </summary>
+public sealed record PurchaseFilter
+{
+    public DateOnly? From { get; init; }
+    public DateOnly? To { get; init; }
+    public long? VendorId { get; init; }
+    public string? ProductQuery { get; init; }
+    public string? Status { get; init; }
+    public string? LineKind { get; init; }
+    public string? DocumentQuery { get; init; }
+    public bool ReturnableOnly { get; init; }
+}
+
+/// <summary>Vendor filters. Status: ACTIVE, INACTIVE or ALL. Query matches name, phone or GSTIN.</summary>
+public sealed record VendorFilter
+{
+    public string? Query { get; init; }
+    public string Status { get; init; } = "ACTIVE";
+    public bool WithBalanceOnly { get; init; }
+}
+
+public sealed record VendorPage(IReadOnlyList<VendorItem> Items, bool HasMore, string? NextName, long? NextId);
+
+/// <summary>A row's eligibility for a purchasing bulk action, resolved before anything changes.</summary>
+public sealed record PurchasingBulkRow(long Id, string Label, bool Eligible, string? ReasonKey, Money Amount);

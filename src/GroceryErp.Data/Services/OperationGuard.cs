@@ -13,7 +13,7 @@ public enum OpType
     DirectCustomerReturn, DirectDamage, DirectInternalUse, DirectVendorReturn,
     DirectVendorReturnCancel, DirectCountReview,
     DirectPurchaseVoid, VendorReturnCancel, InternalUse, DirectEntry,
-    ExpenseCorrection, AssetTermChange,
+    ExpenseCorrection, AssetTermChange, BulkBatch,
 }
 
 public sealed class OperationRef

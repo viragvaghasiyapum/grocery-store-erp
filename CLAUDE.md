@@ -18,7 +18,7 @@ An offline, single-user, single-PC grocery ERP for one shop: WPF on .NET 10, SQL
 
 `optimization*.md`, `audit.md`, `revised plan.md` and `luna/` are history. Don't treat them as current requirements.
 
-**Status (22 Oct 2026):** the old plan is fully implemented. The revised plan is implemented through **Phase 5** on **schema 33**, including the single live direct-stock cutover. Phase 6 is next (P/L heads, independent calendar/fiscal annual locks and snapshots, stock reports), then Phase 7 (UI simplification), Phase 8 (remove `stock_movement`, the ledger screens and dead code, then compact the database) and Phase 9 (scale and release). Hardware, target-PC, native-Gujarati and operator sign-offs are human gates. Never claim them as passed.
+**Status (23 Oct 2026):** the old plan is fully implemented. The revised plan is implemented through **Phase 7** on **schema 35**: the direct-stock cutover (Phase 5), P/L heads with independent annual locks and snapshots (Phase 6), and the simplified UI with SQL-side filters and reviewed bulk batches (Phase 7). Phase 8 is next (remove `stock_movement`, the ledger screens and dead code, then compact the database), then Phase 9 (scale and release). Hardware, target-PC, native-Gujarati and operator sign-offs are human gates. Never claim them as passed.
 
 ## Commands
 
@@ -28,7 +28,7 @@ The SDK is pinned to 10.0.401 by `global.json`. A repo-local SDK in `.tools/dotn
 dotnet restore GroceryErp.slnx
 dotnet format GroceryErp.slnx --verify-no-changes --no-restore   # CI gate
 dotnet build GroceryErp.slnx -c Release --no-restore            # warnings are errors
-dotnet test GroceryErp.slnx -c Release --no-build               # ~200 tests; 2 opt-in UI journeys skip
+dotnet test GroceryErp.slnx -c Release --no-build               # ~230 tests; 2 opt-in UI journeys skip
 ```
 
 The test runner is **Microsoft.Testing.Platform** with xUnit v3 (set in `global.json`). Use `--project` and the xUnit v3 filters. Older docs use VSTest-style `--filter "FullyQualifiedName~..."`; use the forms below instead:
@@ -101,10 +101,10 @@ Triggers also enforce immutability: completed sale financials, posted purchase a
 
 ### Migrations
 
-- The scripts sit at the **repo root**, not in a `db/` folder, though PLANS.md says `db/*.sql`. `grocery_erp_schema.sql` is 001, followed by `002_…sql` through `033_direct_lot_stock.sql`.
+- The scripts sit at the **repo root**, not in a `db/` folder, though PLANS.md says `db/*.sql`. `grocery_erp_schema.sql` is 001, followed by `002_…sql` through `035_list_filter_indexes.sql`.
 - Each script is embedded through an explicit `<EmbeddedResource … Link="db/NNN_name.sql">` in `src/GroceryErp.Data/GroceryErp.Data.csproj`.
 - To add a migration:
-  1. Create root `034_name.sql`.
+  1. Create root `036_name.sql`.
   2. Add its `EmbeddedResource` line.
   3. Bump `MigrationRunner.LatestVersion`. The runner requires a contiguous 001..Latest sequence.
 - The runner strips `PRAGMA user_version` lines from scripts and sets the version itself. It takes a pre-migration backup automatically.

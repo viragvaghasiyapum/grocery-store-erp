@@ -11,7 +11,7 @@ using GroceryErp.Inventory.Contracts;
 
 namespace GroceryErp.Purchasing;
 
-public sealed class PurchasingService(
+public sealed partial class PurchasingService(
     DbExecutor database,
     IStockLedger ledger,
     DocNumberService numbers,
@@ -61,57 +61,16 @@ public sealed class PurchasingService(
         DateOnly? from = null, DateOnly? to = null, long? vendorId = null, int limit = 100,
         string? productQuery = null,
         string? status = null, string? lineKind = null,
-        CancellationToken cancellationToken = default)
-    {
-        if (beforeDate is null != (beforeId is null) || limit is < 1 or > 200 || from > to ||
-            status is not null and not ("DRAFT" or "POSTED" or "CANCELLED") ||
-            lineKind is not null and not ("PRODUCT" or "INTERNAL" or "EXPENSE"))
-            throw new DomainException(ErrorCode.Validation, "Invalid purchase page filter.");
-        return database.ReadAsync(connection =>
+        CancellationToken cancellationToken = default) =>
+        GetPurchasePageAsync(new PurchaseFilter
         {
-            string? productPattern = string.IsNullOrWhiteSpace(productQuery) ? null :
-                "%" + productQuery.Trim().Replace("\\", "\\\\", StringComparison.Ordinal)
-                    .Replace("%", "\\%", StringComparison.Ordinal).Replace("_", "\\_", StringComparison.Ordinal) + "%";
-            if (productPattern?.Length > 246) throw new DomainException(ErrorCode.Validation, "Search term is too long.");
-            List<PurchaseListItem> rows = connection.Query<PurchaseListRow>("""
-                SELECT p.id AS Id,p.doc_no AS DocumentNumber,
-                       COALESCE(p.vendor_name_snapshot,v.name,'Legacy unknown') AS VendorName,
-                       p.vendor_invoice_no AS VendorInvoiceNumber,p.received_date AS ReceivedDate,
-                       p.status AS Status,p.grand_total AS GrandTotal,p.vendor_bill_total AS VendorBillTotal
-                FROM purchase p LEFT JOIN vendor v ON v.id=p.vendor_id
-                WHERE (@from IS NULL OR p.received_date>=@from)
-                  AND (@to IS NULL OR p.received_date<=@to)
-                  AND (@vendorId IS NULL OR p.vendor_id=@vendorId)
-                  AND (@status IS NULL OR p.status=@status)
-                  AND (@lineKind IS NULL OR EXISTS (
-                      SELECT 1 FROM purchase_line typed WHERE typed.purchase_id=p.id AND typed.line_kind=@lineKind))
-                  AND (@productPattern IS NULL OR EXISTS (
-                      SELECT 1 FROM purchase_line pl LEFT JOIN product current ON current.id=pl.product_id
-                      WHERE pl.purchase_id=p.id AND
-                        (COALESCE(pl.product_name_snapshot,current.name) LIKE @productPattern ESCAPE '\' COLLATE NOCASE
-                         OR COALESCE(pl.product_sku_snapshot,current.sku) LIKE @productPattern ESCAPE '\' COLLATE NOCASE)))
-                  AND (@beforeDate IS NULL OR p.received_date<@beforeDate
-                       OR (p.received_date=@beforeDate AND p.id<@beforeId))
-                ORDER BY p.received_date DESC,p.id DESC LIMIT @take
-                """, new
-            {
-                beforeDate,
-                beforeId,
-                from,
-                to,
-                vendorId,
-                productPattern,
-                status,
-                lineKind,
-                take = limit + 1
-            })
-                .Select(static row => row.ToModel()).ToList();
-            bool hasMore = rows.Count > limit;
-            if (hasMore) rows.RemoveAt(limit);
-            PurchaseListItem? last = rows.LastOrDefault();
-            return new PurchasePage(rows, hasMore, last?.ReceivedDate, last?.Id);
-        }, cancellationToken);
-    }
+            From = from,
+            To = to,
+            VendorId = vendorId,
+            ProductQuery = productQuery,
+            Status = status,
+            LineKind = lineKind,
+        }, beforeDate, beforeId, limit, cancellationToken);
 
     public Task<PurchaseInvoice> GetInvoiceAsync(long purchaseId, CancellationToken cancellationToken = default) =>
         database.ReadAsync(connection =>
@@ -206,31 +165,6 @@ public sealed class PurchasingService(
             }, transaction.Transaction);
             if (changed == 0) throw new DomainException(ErrorCode.NotFound, "vendor", id);
             audit.Write(transaction, "vendor", id, "UPDATE", new { vendor.Name, vendor.Gstin, isActive });
-        }, cancellationToken);
-    }
-
-    public Task<int> BulkSetVendorsActiveAsync(IReadOnlyCollection<long> vendorIds, bool active,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(vendorIds);
-        long[] ids = vendorIds.Where(static id => id > 0).Distinct().ToArray();
-        if (ids.Length == 0) throw new DomainException(ErrorCode.Validation, "Select at least one vendor.");
-        return database.WriteAsync(transaction =>
-        {
-            int changed = 0;
-            foreach (long id in ids)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                bool? current = transaction.Connection.QuerySingleOrDefault<bool?>(
-                    "SELECT is_active FROM vendor WHERE id=@id", new { id }, transaction.Transaction);
-                if (current is null) throw new DomainException(ErrorCode.NotFound, "vendor", id);
-                if (current == active) continue;
-                transaction.Connection.Execute("UPDATE vendor SET is_active=@active WHERE id=@id",
-                    new { id, active = active ? 1 : 0 }, transaction.Transaction);
-                audit.Write(transaction, "vendor", id, active ? "ACTIVATE" : "DEACTIVATE", null);
-                changed++;
-            }
-            return changed;
         }, cancellationToken);
     }
 
@@ -496,49 +430,64 @@ public sealed class PurchasingService(
             if (header is null) throw new DomainException(ErrorCode.NotFound, "purchase", purchaseId);
             if (header.Status != "POSTED") throw new DomainException(ErrorCode.PurchaseFinalized, purchaseId);
             periods.EnsureOpen(transaction, cancellationDate);
-            // "Untouched" means no posted document ever used the lot, even if its
-            // quantity is back to the received amount. Legacy ledger touches carried
-            // forward as these documents or as stock corrections.
-            List<CancelLotRow> lots = transaction.Connection.Query<CancelLotRow>("""
-                SELECT l.id AS LotId,l.product_id AS ProductId,l.qty_received AS Received,l.qty_on_hand AS OnHand,
-                       l.unit_cost AS UnitCost,pl.id AS PurchaseLineId,
-                       EXISTS(SELECT 1 FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
-                              WHERE sl.lot_id=l.id AND s.status IN ('COMPLETED','VOID'))
-                       OR EXISTS(SELECT 1 FROM damage WHERE lot_id=l.id)
-                       OR EXISTS(SELECT 1 FROM vendor_return_line WHERE lot_id=l.id)
-                       OR EXISTS(SELECT 1 FROM internal_use_record WHERE lot_id_snapshot=l.id)
-                       OR EXISTS(SELECT 1 FROM physical_count_result WHERE source_lot_id=l.id)
-                       OR EXISTS(SELECT 1 FROM stock_correction WHERE lot_id=l.id) AS Touched
-                FROM product_lot l JOIN purchase_line pl ON pl.id=l.purchase_line_id
-                WHERE pl.purchase_id=@purchaseId
-                """, new { purchaseId }, transaction.Transaction).ToList();
-            CancelLineCountRow lineCounts = transaction.Connection.QuerySingle<CancelLineCountRow>("""
-                SELECT COUNT(*) AS AllLines,
-                       COALESCE(SUM(CASE WHEN line_kind<>'EXPENSE' THEN 1 ELSE 0 END),0) AS StockLines
-                FROM purchase_line WHERE purchase_id=@purchaseId
-                """, new { purchaseId }, transaction.Transaction);
-            if (lineCounts.AllLines == 0 || lineCounts.StockLines != lots.Count ||
-                lots.Any(static lot => lot.OnHand != lot.Received || lot.Touched))
+            List<CancelLotRow> lots = VoidLots(transaction.Connection, purchaseId, transaction.Transaction);
+            if (!IsUntouched(transaction.Connection, purchaseId, lots, transaction.Transaction))
                 throw new DomainException(ErrorCode.CancelNotAllowed, purchaseId);
-            foreach (CancelLotRow lot in lots)
-            {
-                ledger.Post(transaction, new(cancellationDate, lot.ProductId, lot.LotId, "PURCHASE_CANCEL",
-                    Quantity.FromScaled(-lot.Received), Money.FromScaled(lot.UnitCost), "purchase_line", lot.PurchaseLineId));
-                transaction.Connection.Execute("UPDATE product_lot SET is_active=0 WHERE id=@LotId", lot, transaction.Transaction);
-                products.Add(lot.ProductId);
-            }
-            transaction.Connection.Execute("""
-                INSERT INTO purchase_expense_reversal(expense_id,purchase_id,reversal_date,amount)
-                SELECT e.id,@purchaseId,@date,e.amount FROM expense e
-                JOIN purchase_line pl ON pl.id=e.purchase_line_id
-                WHERE pl.purchase_id=@purchaseId
-                """, new { purchaseId, date = Format(cancellationDate) }, transaction.Transaction);
-            transaction.Connection.Execute("UPDATE purchase SET status='CANCELLED',cancelled_date=@date WHERE id=@purchaseId",
-                new { purchaseId, date = Format(cancellationDate) }, transaction.Transaction);
-            audit.Write(transaction, "purchase", purchaseId, "CANCEL", new { lots = lots.Count });
+            ApplyVoid(transaction, purchaseId, cancellationDate, lots, products);
             OperationGuard.Complete(transaction, operationId, "purchase", purchaseId);
         }, cancellationToken);
         if (products.Count > 0) WeakReferenceMessenger.Default.Send(new StockChangedMessage(products.ToArray()));
+    }
+
+    // "Untouched" means no posted document ever used the lot, even if its
+    // quantity is back to the received amount. Legacy ledger touches carried
+    // forward as these documents or as stock corrections.
+    private static List<CancelLotRow> VoidLots(IDbConnection connection, long purchaseId, IDbTransaction? transaction = null) =>
+        connection.Query<CancelLotRow>("""
+            SELECT l.id AS LotId,l.product_id AS ProductId,l.qty_received AS Received,l.qty_on_hand AS OnHand,
+                   l.unit_cost AS UnitCost,pl.id AS PurchaseLineId,
+                   EXISTS(SELECT 1 FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
+                          WHERE sl.lot_id=l.id AND s.status IN ('COMPLETED','VOID'))
+                   OR EXISTS(SELECT 1 FROM damage WHERE lot_id=l.id)
+                   OR EXISTS(SELECT 1 FROM vendor_return_line WHERE lot_id=l.id)
+                   OR EXISTS(SELECT 1 FROM internal_use_record WHERE lot_id_snapshot=l.id)
+                   OR EXISTS(SELECT 1 FROM physical_count_result WHERE source_lot_id=l.id)
+                   OR EXISTS(SELECT 1 FROM stock_correction WHERE lot_id=l.id) AS Touched
+            FROM product_lot l JOIN purchase_line pl ON pl.id=l.purchase_line_id
+            WHERE pl.purchase_id=@purchaseId
+            """, new { purchaseId }, transaction).ToList();
+
+    private static bool IsUntouched(IDbConnection connection, long purchaseId, List<CancelLotRow> lots,
+        IDbTransaction? transaction = null)
+    {
+        CancelLineCountRow lineCounts = connection.QuerySingle<CancelLineCountRow>("""
+            SELECT COUNT(*) AS AllLines,
+                   COALESCE(SUM(CASE WHEN line_kind<>'EXPENSE' THEN 1 ELSE 0 END),0) AS StockLines
+            FROM purchase_line WHERE purchase_id=@purchaseId
+            """, new { purchaseId }, transaction);
+        return lineCounts.AllLines != 0 && lineCounts.StockLines == lots.Count &&
+            !lots.Any(static lot => lot.OnHand != lot.Received || lot.Touched);
+    }
+
+    private void ApplyVoid(DbTx transaction, long purchaseId, DateOnly cancellationDate, List<CancelLotRow> lots,
+        HashSet<long> products)
+    {
+        foreach (CancelLotRow lot in lots)
+        {
+            ledger.Post(transaction, new(cancellationDate, lot.ProductId, lot.LotId, "PURCHASE_CANCEL",
+                Quantity.FromScaled(-lot.Received), Money.FromScaled(lot.UnitCost), "purchase_line", lot.PurchaseLineId));
+            transaction.Connection.Execute("UPDATE product_lot SET is_active=0 WHERE id=@LotId", lot, transaction.Transaction);
+            products.Add(lot.ProductId);
+        }
+        transaction.Connection.Execute("""
+            INSERT INTO purchase_expense_reversal(expense_id,purchase_id,reversal_date,amount)
+            SELECT e.id,@purchaseId,@date,e.amount FROM expense e
+            JOIN purchase_line pl ON pl.id=e.purchase_line_id
+            WHERE pl.purchase_id=@purchaseId
+            """, new { purchaseId, date = Format(cancellationDate) }, transaction.Transaction);
+        transaction.Connection.Execute("UPDATE purchase SET status='CANCELLED',cancelled_date=@date WHERE id=@purchaseId",
+            new { purchaseId, date = Format(cancellationDate) }, transaction.Transaction);
+        audit.Write(transaction, "purchase", purchaseId, "CANCEL", new { lots = lots.Count });
     }
 
     public Task<long> RecordPaymentAsync(VendorPaymentInput input, string operationId, CancellationToken cancellationToken = default)

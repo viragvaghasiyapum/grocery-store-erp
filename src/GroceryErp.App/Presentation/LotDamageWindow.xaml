@@ -2,37 +2,67 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
-    Title="{l:Tr MoneyOut_RecordDamage}" Width="480" Height="480" MinHeight="450"
-    WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+    xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Title="{l:Tr MoneyOut_RecordDamage}" Width="520" Height="600" MinWidth="440" MinHeight="460"
+    WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
   <Grid Margin="20">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <StackPanel>
-      <TextBlock Text="{l:Tr MoneyOut_RecordDamage}" FontSize="22" FontWeight="SemiBold"/>
-      <TextBlock x:Name="LotText" Margin="0,6,0,12" TextWrapping="Wrap"/>
+      <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr MoneyOut_RecordDamage}"/>
+      <TextBlock x:Name="LotText" Style="{StaticResource FormContext}" Text="{l:Tr MoneyOut_DamageChooseLot}"/>
     </StackPanel>
-    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-      <StackPanel Margin="0,0,8,0">
-        <TextBlock Text="{l:Tr Stock_Quantity}"/><TextBox x:Name="QuantityBox" Margin="0,4,0,10" TextChanged="Preview_OnChanged"/>
-        <TextBlock Text="{l:Tr MoneyOut_Reason}"/>
-        <ComboBox x:Name="ReasonBox" Margin="0,4,0,10" SelectedIndex="0">
-          <ComboBoxItem Tag="EXPIRED" Content="{l:Tr MoneyOut_ReasonExpired}"/>
-          <ComboBoxItem Tag="BROKEN" Content="{l:Tr MoneyOut_ReasonBroken}"/>
-          <ComboBoxItem Tag="SPOILED" Content="{l:Tr MoneyOut_ReasonSpoiled}"/>
-          <ComboBoxItem Tag="PEST" Content="{l:Tr MoneyOut_ReasonPest}"/>
-          <ComboBoxItem Tag="LOST" Content="{l:Tr MoneyOut_ReasonLost}"/>
-          <ComboBoxItem Tag="OTHER" Content="{l:Tr MoneyOut_ReasonOther}"/>
-        </ComboBox>
-        <TextBlock Text="{l:Tr MoneyOut_Recovered}"/><TextBox x:Name="RecoveredBox" Margin="0,4,0,10" Text="0" TextChanged="Preview_OnChanged"/>
-        <TextBlock Text="{l:Tr MoneyOut_DamageDate}"/><DatePicker x:Name="DateBox" Margin="0,4,0,10"/>
-        <TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="NotesBox" Margin="0,4,0,10" MaxLength="500"/>
-        <TextBlock x:Name="PreviewText" FontWeight="SemiBold" Margin="0,4,0,8" TextWrapping="Wrap"/>
-        <TextBlock x:Name="ErrorText" Foreground="Crimson" TextWrapping="Wrap"/>
+    <p:FormErrorSummary x:Name="Summary" Grid.Row="1"/>
+    <ScrollViewer Grid.Row="2" Margin="0,8,0,0" VerticalScrollBarVisibility="Auto">
+      <StackPanel x:Name="Fields" Margin="0,0,8,0">
+        <p:FormField x:Name="LotField" Label="{l:Tr Stock_Lots}" IsRequired="True" Visibility="Collapsed">
+          <StackPanel>
+            <ui:TextBox x:Name="LotSearchBox" Margin="0,0,0,4" PlaceholderText="{l:Tr Stock_LotSearch}"
+                        TextChanged="LotSearch_OnTextChanged" AutomationProperties.Name="{l:Tr Stock_LotSearch}"/>
+            <ComboBox x:Name="LotBox" SelectionChanged="LotBox_OnSelectionChanged" AutomationProperties.Name="{l:Tr Stock_Lots}">
+              <ComboBox.ItemTemplate><DataTemplate>
+                <StackPanel>
+                  <TextBlock Text="{Binding ProductName}" FontWeight="SemiBold"/>
+                  <TextBlock FontSize="11" Opacity="0.75">
+                    <Run Text="{Binding LotCode, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding BatchNumber, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding OnHand, Mode=OneWay}"/>
+                  </TextBlock>
+                </StackPanel>
+              </DataTemplate></ComboBox.ItemTemplate>
+            </ComboBox>
+          </StackPanel>
+        </p:FormField>
+        <UniformGrid Columns="2">
+          <p:FormField x:Name="QuantityField" Label="{l:Tr Stock_Quantity}" IsRequired="True">
+            <TextBox x:Name="QuantityBox" TextChanged="Preview_OnChanged"/>
+          </p:FormField>
+          <p:FormField x:Name="RecoveredField" Label="{l:Tr MoneyOut_Recovered}">
+            <TextBox x:Name="RecoveredBox" Text="0" TextChanged="Preview_OnChanged"/>
+          </p:FormField>
+          <p:FormField x:Name="ReasonField" Label="{l:Tr MoneyOut_Reason}" IsRequired="True">
+            <ComboBox x:Name="ReasonBox" SelectedIndex="0">
+              <ComboBoxItem Tag="EXPIRED" Content="{l:Tr MoneyOut_ReasonExpired}"/>
+              <ComboBoxItem Tag="BROKEN" Content="{l:Tr MoneyOut_ReasonBroken}"/>
+              <ComboBoxItem Tag="SPOILED" Content="{l:Tr MoneyOut_ReasonSpoiled}"/>
+              <ComboBoxItem Tag="PEST" Content="{l:Tr MoneyOut_ReasonPest}"/>
+              <ComboBoxItem Tag="LOST" Content="{l:Tr MoneyOut_ReasonLost}"/>
+              <ComboBoxItem Tag="OTHER" Content="{l:Tr MoneyOut_ReasonOther}"/>
+            </ComboBox>
+          </p:FormField>
+          <p:FormField x:Name="DateField" Label="{l:Tr MoneyOut_DamageDate}" IsRequired="True">
+            <DatePicker x:Name="DateBox" SelectedDateFormat="Short" SelectedDateChanged="Date_OnChanged"/>
+          </p:FormField>
+        </UniformGrid>
+        <p:FormField x:Name="NotesField" Label="{l:Tr Purchasing_Notes}">
+          <TextBox x:Name="NotesBox" MaxLength="500"/>
+        </p:FormField>
+        <TextBlock x:Name="PreviewText" Style="{StaticResource FormPreview}"/>
+        <TextBlock x:Name="PeriodText" Style="{StaticResource FormContext}"/>
       </StackPanel>
     </ScrollViewer>
-    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-      <Button Margin="0,0,8,0" Click="Save_OnClick" Content="{l:Tr MoneyOut_RecordDamage}"/>
-      <Button IsCancel="True" Content="{l:Tr Common_Cancel}"/>
+    <StackPanel Grid.Row="3" Style="{StaticResource FormFooter}">
+      <Button Margin="0,0,8,0" IsCancel="True" Content="{l:Tr Common_Cancel}"/>
+      <Button x:Name="SaveButton" IsDefault="True" Click="Save_OnClick" Content="{l:Tr MoneyOut_RecordDamage}"/>
     </StackPanel>
   </Grid>
 </Window>

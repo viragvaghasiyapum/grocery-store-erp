@@ -18,7 +18,10 @@ namespace GroceryErp.App.Presentation;
 
 public partial class SalesHistoryPage : Page
 {
-    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
+    private const string StateKey = nameof(SalesHistoryPage);
+    private readonly FitPageSize _fit;
+    private int _pageLimit = 30;
+    private int PageSize => _pageLimit;
     private static readonly CultureInfo Digits = CultureInfo.GetCultureInfo("en-IN");
     private readonly SalesService _sales;
     private readonly ReceiptPrinter _printer;
@@ -48,6 +51,17 @@ public partial class SalesHistoryPage : Page
         _clock = clock;
         FromPicker.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
         ToPicker.SelectedDate = _clock.BusinessDate.ToDateTime(TimeOnly.MinValue);
+        RestoreState();
+        _ = new FilterRow(FilterBar, ProductBox, MoreFiltersToggle, MoreFiltersPanel)
+            .Fold(FromLabel, FromPicker, ToLabel, ToPicker).Fold(StatusBox);
+        _fit = new FitPageSize(HistoryGrid);
+        _fit.RowsChanged += async (_, _) => await RefreshAsync(reset: false);
+        PreviewKeyDown += (_, args) =>
+        {
+            if (args.Key != Key.F || Keyboard.Modifiers != ModifierKeys.Control) return;
+            InvoiceBox.Focus();
+            args.Handled = true;
+        };
         if (loadOnShow) Loaded += async (_, _) => { await RefreshAsync(); };
         Loaded += (_, _) =>
         {
@@ -59,9 +73,34 @@ public partial class SalesHistoryPage : Page
             TranslationSource.Instance.PropertyChanged -= OnLanguageChanged;
             _exportCancellation?.Cancel();
             CloseDetails();
+            PageStateStore.Current?.Set(StateKey, new State(FromPicker.SelectedDate, ToPicker.SelectedDate,
+                InvoiceBox.Text ?? "", ProductBox.Text ?? "", StatusBox.SelectedIndex, CustomerBox.Text ?? "",
+                PaymentBox.SelectedIndex, MinimumBox.Text, MaximumBox.Text, MoreFiltersToggle.IsChecked == true));
         };
         UpdateActions();
     }
+
+    private sealed record State(DateTime? From, DateTime? To, string Invoice, string Product, int Status, string Customer,
+        int Payment, string Minimum, string Maximum, bool MoreFilters);
+
+    private void RestoreState()
+    {
+        if (PageStateStore.Current?.Get<State>(StateKey) is not { } state) return;
+        FromPicker.SelectedDate = state.From;
+        ToPicker.SelectedDate = state.To;
+        InvoiceBox.Text = state.Invoice;
+        ProductBox.Text = state.Product;
+        StatusBox.SelectedIndex = state.Status;
+        CustomerBox.Text = state.Customer;
+        PaymentBox.SelectedIndex = state.Payment;
+        MinimumBox.Text = state.Minimum;
+        MaximumBox.Text = state.Maximum;
+        MoreFiltersToggle.IsChecked = state.MoreFilters;
+        MoreFiltersPanel.Visibility = state.MoreFilters ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void MoreFilters_OnClick(object sender, RoutedEventArgs e) =>
+        MoreFiltersPanel.Visibility = MoreFiltersToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
 
     private void OnLanguageChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -89,6 +128,7 @@ public partial class SalesHistoryPage : Page
         {
             DateOnly? pageDate = reset ? null : forward || backward ? requestedDate : _beforeDate;
             long? pageId = reset ? null : forward || backward ? requestedId : _beforeId;
+            _pageLimit = _fit.Take();
             SaleHistoryFilter filter = CreateFilter(pageDate, pageId, PageSize);
             IReadOnlyList<SaleHistoryItem> items = await _sales.GetHistoryAsync(filter);
             // Commit navigation only after the requested page succeeds. Rapid clicks
@@ -103,6 +143,8 @@ public partial class SalesHistoryPage : Page
             StatusText.Text = TranslationSource.Instance.Format("Sales_ResultCount", items.Count);
             PreviousButton.IsEnabled = _previous.Count > 0;
             NextButton.IsEnabled = items.Count == PageSize;
+            PageText.Text = _previous.Count > 0 || items.Count == PageSize
+                ? TranslationSource.Instance.Format("Pager_Page", _previous.Count + 1) : string.Empty;
             UpdateActions();
             return true;
         }
@@ -197,11 +239,6 @@ public partial class SalesHistoryPage : Page
         if (_loadingHistory || _previous.Count == 0) return;
         (DateOnly? date, long? id) = _previous.Peek();
         await RefreshAsync(reset: false, requestedDate: date, requestedId: id, backward: true);
-    }
-
-    private async void PageSize_OnChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (IsLoaded) await RefreshAsync();
     }
 
     private void HistoryGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -425,7 +462,10 @@ public partial class SalesHistoryPage : Page
                 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
             await using (var writer = new StreamWriter(file, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true), 64 * 1024))
             {
+                // The file states the filters it was made with and ends with totals that reconcile to its rows.
+                await writer.WriteLineAsync(Csv(TranslationSource.Instance["Sales_ExportFilters"]) + "," + Csv(FilterSummary()));
                 await writer.WriteLineAsync(string.Join(',', headings.Select(Csv)));
+                decimal grandTotal = 0;
                 DateOnly? beforeDate = null;
                 long? beforeId = null;
                 while (true)
@@ -442,6 +482,7 @@ public partial class SalesHistoryPage : Page
                             .Append(item.LineCount.ToString(CultureInfo.InvariantCulture)).Append(',')
                             .Append(Csv(item.PaymentModes)).Append(',')
                             .Append(item.GrandTotal.Value.ToString("0.00", CultureInfo.InvariantCulture)).AppendLine();
+                        grandTotal += item.GrandTotal.Value;
                     }
                     await writer.WriteAsync(chunk.ToString().AsMemory(), cancellation.Token);
                     exported += page.Count;
@@ -450,6 +491,9 @@ public partial class SalesHistoryPage : Page
                     beforeDate = page[^1].SaleDate;
                     beforeId = page[^1].Id;
                 }
+                await writer.WriteLineAsync(Csv(TranslationSource.Instance["Sales_ExportTotal"]) + "," +
+                    Csv(exported.ToString(CultureInfo.InvariantCulture)) + ",,,," +
+                    grandTotal.ToString("0.00", CultureInfo.InvariantCulture));
                 await writer.FlushAsync(cancellation.Token);
                 await file.FlushAsync(cancellation.Token);
             }
@@ -470,9 +514,20 @@ public partial class SalesHistoryPage : Page
 
     private void CancelExport_OnClick(object sender, RoutedEventArgs e) => _exportCancellation?.Cancel();
 
-    private static string Csv(string? text)
+    private static string Csv(string? text) => CsvFormat.Text(text);
+
+    private string FilterSummary()
     {
-        text ??= string.Empty;
-        return '"' + text.Replace("\"", "\"\"", StringComparison.Ordinal) + '"';
+        var parts = new List<string>
+        {
+            $"{TranslationSource.Instance["Sales_From"]} {FromPicker.SelectedDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "-"}",
+            $"{TranslationSource.Instance["Sales_To"]} {ToPicker.SelectedDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "-"}",
+        };
+        foreach (TextBox box in new TextBox[] { InvoiceBox, ProductBox, CustomerBox, MinimumBox, MaximumBox })
+            if (!string.IsNullOrWhiteSpace(box.Text))
+                parts.Add($"{System.Windows.Automation.AutomationProperties.GetName(box)}: {box.Text.Trim()}");
+        foreach (ComboBox box in new[] { StatusBox, PaymentBox })
+            if (box.SelectedIndex > 0 && box.SelectedItem is ComboBoxItem { Content: string text }) parts.Add(text);
+        return string.Join(" · ", parts);
     }
 }

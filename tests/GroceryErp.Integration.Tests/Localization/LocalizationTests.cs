@@ -41,6 +41,21 @@ public sealed class LocalizationTests
     }
 
     [Fact]
+    public void GujaratiResources_CallALotBatchNeverFlour()
+    {
+        // The glossary word for a lot or batch is બેચ; લોટ means flour, which a grocery also sells.
+        ResourceSet gujarati = SharedStrings.ResourceManager.GetResourceSet(
+            CultureInfo.GetCultureInfo("gu-IN"),
+            createIfNotExists: true,
+            tryParents: true)!;
+
+        gujarati.Cast<DictionaryEntry>()
+            .Where(entry => entry.Value?.ToString()?.Contains("લોટ", StringComparison.Ordinal) == true)
+            .Select(entry => (string)entry.Key)
+            .ShouldBeEmpty();
+    }
+
+    [Fact]
     public void EveryDomainError_HasEnglishAndGujaratiMessage()
     {
         foreach (ErrorCode code in Enum.GetValues<ErrorCode>())

@@ -3,58 +3,31 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
-    Title="{l:Tr Assets_Title}" ScrollViewer.CanContentScroll="False">
-  <Grid Margin="{StaticResource PagePadding}">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <DockPanel>
+    xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Title="{l:Tr Assets_Title}" FontFamily="{StaticResource AppFont}"
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European"
+    ScrollViewer.CanContentScroll="False">
+  <Grid Margin="14,8,14,8">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <DockPanel Margin="0,0,0,6">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-        <Button Margin="0,0,8,0" Click="NewAsset_OnClick" Content="{l:Tr Assets_New}"/>
-        <Button Click="Post_OnClick" Content="{l:Tr Assets_PostNow}" ToolTip="{l:Tr Assets_PostAllHint}"/>
+        <Button Style="{StaticResource ToolbarButton}" Click="Post_OnClick" Content="{l:Tr Assets_PostNow}" ToolTip="{l:Tr Assets_PostAllHint}"/>
+        <Button x:Name="DisposeButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="Dispose_OnClick" Content="{l:Tr Assets_Dispose}"/>
+        <Button x:Name="EditAssetButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="EditAsset_OnClick" Content="{l:Tr Assets_EditSelected}"/>
+        <Button Style="{StaticResource ToolbarButton}" Margin="0" Click="NewAsset_OnClick" Content="{l:Tr Assets_New}" FontWeight="SemiBold" ToolTip="Ctrl+N"/>
       </StackPanel>
-      <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Assets_Title}"/>
+      <TextBlock Style="{StaticResource PageTitle}" Text="{l:Tr Assets_Title}"/>
     </DockPanel>
-    <Grid Grid.Row="1" Margin="0,12,0,10">
-      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-      <StackPanel Orientation="Horizontal">
-        <ToggleButton x:Name="AssetDetailsTab" Margin="0,0,8,0" Checked="AssetSection_OnChanged" Unchecked="AssetSection_OnChanged" Content="{l:Tr Assets_Details}"/>
-        <ToggleButton x:Name="AssetDisposalTab" Checked="AssetSection_OnChanged" Unchecked="AssetSection_OnChanged" Content="{l:Tr Assets_DisposalDetails}"/>
-      </StackPanel>
-      <StackPanel x:Name="AssetDetailsPanel" Grid.Row="1" Margin="0,8,0,0" Visibility="Collapsed" ClipToBounds="True">
-      <WrapPanel ItemHeight="68">
-      <StackPanel Width="174" Margin="0,0,8,4"><TextBlock Text="{l:Tr Catalog_Name}"/><TextBox x:Name="AssetName"/></StackPanel>
-      <StackPanel Width="132" Margin="0,0,8,4"><TextBlock Text="{l:Tr Catalog_Category}"/><ComboBox x:Name="AssetCategory" SelectedIndex="0" SelectionChanged="AssetCategory_OnSelectionChanged"><ComboBoxItem Tag="Furniture" Content="{l:Tr Assets_Furniture}"/><ComboBoxItem Tag="Equipment" Content="{l:Tr Assets_Equipment}"/><ComboBoxItem Tag="Electronics" Content="{l:Tr Assets_Electronics}"/><ComboBoxItem Tag="Vehicle" Content="{l:Tr Assets_Vehicle}"/><ComboBoxItem Tag="Other" Content="{l:Tr Assets_Other}"/></ComboBox></StackPanel>
-      <StackPanel Width="130" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_PurchaseDate}"/><DatePicker x:Name="PurchaseDate" SelectedDateFormat="Short"/></StackPanel>
-      <StackPanel Width="130" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_InUseDate}"/><DatePicker x:Name="InUseDate" SelectedDateFormat="Short" SelectedDateChanged="AssetTerms_OnChanged"/></StackPanel>
-      <StackPanel Width="104" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_Cost}"/><TextBox x:Name="AssetCost" TextChanged="AssetTerms_OnChanged"/></StackPanel>
-      <StackPanel Width="84" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_Method}"/><ComboBox x:Name="AssetMethod" SelectedIndex="0" SelectionChanged="AssetTerms_OnChanged"><ComboBoxItem Tag="WDV" Content="WDV"/><ComboBoxItem Tag="SLM" Content="SLM"/></ComboBox></StackPanel>
-      <StackPanel Width="82" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_Rate}"/><TextBox x:Name="AssetRate" Text="15" TextChanged="AssetTerms_OnChanged"/></StackPanel>
-      <StackPanel Width="110" Margin="0,0,8,4"><TextBlock Text="{l:Tr Assets_Salvage}"/><TextBox x:Name="AssetSalvage" Text="0" TextChanged="AssetTerms_OnChanged"/></StackPanel>
-      <StackPanel x:Name="AssetEffectivePanel" Width="120" Margin="0,0,8,4" Visibility="Collapsed"><TextBlock Text="{l:Tr Assets_EffectiveFrom}"/><TextBox x:Name="AssetEffectiveFrom" ToolTip="YYYY-MM" TextChanged="AssetTerms_OnChanged" AutomationProperties.Name="{l:Tr Assets_EffectiveFrom}"/></StackPanel>
-      <StackPanel Width="150" Margin="0,0,8,4"><TextBlock Text="{l:Tr Purchasing_Vendor}"/><ComboBox x:Name="AssetVendor" DisplayMemberPath="Name" SelectedValuePath="Id"/></StackPanel>
-      <StackPanel Width="168" Margin="0,0,8,4"><TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="AssetNotes"/></StackPanel>
-      </WrapPanel>
-      <TextBlock x:Name="AssetFinancialLockText" Margin="0,0,0,8" Visibility="Collapsed" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-      <WrapPanel>
-        <Button x:Name="SaveAssetButton" Click="AddAsset_OnClick" Content="{l:Tr Common_Save}"/>
-      </WrapPanel>
-      </StackPanel>
-      <WrapPanel x:Name="AssetDisposalPanel" Grid.Row="1" Margin="0,8,0,0" Visibility="Collapsed" ClipToBounds="True">
-        <TextBlock x:Name="SelectedAssetText" Width="220" VerticalAlignment="Center" Margin="0,0,12,0" Text="{l:Tr Assets_SelectToDispose}" TextTrimming="CharacterEllipsis"/>
-        <StackPanel Width="140" Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Assets_DisposalDate}"/><DatePicker x:Name="DisposalDate" IsEnabled="False" SelectedDateFormat="Short"/></StackPanel>
-        <StackPanel Width="130" Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Assets_Proceeds}"/><TextBox x:Name="DisposalValue" IsEnabled="False" Text="0"/></StackPanel>
-        <Button x:Name="DisposeButton" IsEnabled="False" Margin="0,18,0,0" Click="Dispose_OnClick" Content="{l:Tr Assets_Dispose}"/>
-      </WrapPanel>
-    </Grid>
-    <WrapPanel Grid.Row="2" Margin="0,0,0,12">
-      <StackPanel Width="220" Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Assets_Search}"/><TextBox x:Name="AssetSearchBox" ToolTip="{l:Tr Assets_SearchHint}" AutomationProperties.Name="{l:Tr Assets_Search}"/></StackPanel>
-      <CheckBox x:Name="IncludeDisposedBox" IsChecked="True" VerticalAlignment="Bottom" Margin="0,0,12,4" Content="{l:Tr Assets_IncludeDisposed}"/>
-      <Button Margin="0,18,8,0" Click="AssetSearch_OnClick" Content="{l:Tr Assets_Search}"/>
-      <Button Margin="0,18,8,0" Click="ClearAssetFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
-      <Button Margin="0,18,8,0" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
-      <Button x:Name="EditAssetButton" IsEnabled="False" Margin="0,18,0,0" Click="EditAsset_OnClick" Content="{l:Tr Assets_EditSelected}"/>
+    <WrapPanel Grid.Row="1" Margin="0,0,0,2">
+      <ui:TextBox x:Name="AssetSearchBox" Width="260" Margin="0,0,6,4" PlaceholderText="{l:Tr Assets_SearchHint}"
+                  TextChanged="Search_OnTextChanged" AutomationProperties.Name="{l:Tr Assets_Search}" ToolTip="Ctrl+F"/>
+      <CheckBox x:Name="IncludeDisposedBox" IsChecked="True" VerticalAlignment="Center" Margin="4,0,12,4" Click="IncludeDisposed_OnClick" Content="{l:Tr Assets_IncludeDisposed}"/>
+      <Button Style="{StaticResource ToolbarButton}" Margin="0,0,0,4" Click="ClearAssetFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
     </WrapPanel>
-    <Grid Grid.Row="3">
-      <DataGrid x:Name="AssetGrid" Style="{StaticResource CatalogGrid}" SelectionChanged="AssetGrid_OnSelectionChanged">
+    <Grid Grid.Row="2">
+      <DataGrid x:Name="AssetGrid" Style="{StaticResource CompactTableGrid}" SelectionChanged="AssetGrid_OnSelectionChanged"
+                MouseDoubleClick="AssetGrid_OnDoubleClick" AutomationProperties.Name="{l:Tr Assets_Title}">
         <DataGrid.Columns>
           <DataGridTemplateColumn Width="125" Header="{l:Tr Assets_ViewTimeline}">
             <DataGridTemplateColumn.CellTemplate><DataTemplate>
@@ -63,26 +36,19 @@
                       Padding="8,2" FontSize="11"/>
             </DataTemplate></DataGridTemplateColumn.CellTemplate>
           </DataGridTemplateColumn>
-          <DataGridTextColumn Width="220" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}"/>
+          <DataGridTextColumn Width="2*" MinWidth="160" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}"/>
           <DataGridTextColumn Width="120" Header="{l:Tr Catalog_Category}" Binding="{Binding Category}"/>
           <DataGridTextColumn Width="125" Header="{l:Tr Assets_Cost}" Binding="{Binding Cost}"/>
-          <DataGridTextColumn Width="90" Header="{l:Tr Assets_Method}" Binding="{Binding Method}"/>
-          <DataGridTextColumn Width="90" Header="{l:Tr Assets_Rate}" Binding="{Binding Rate}"/>
-          <DataGridTextColumn Width="140" Header="{l:Tr Assets_BookValue}" Binding="{Binding BookValue}"/>
-          <DataGridTextColumn Width="140" Header="{l:Tr Assets_Disposed}" Binding="{Binding DisposedDate}"/>
+          <DataGridTextColumn Width="80" Header="{l:Tr Assets_Method}" Binding="{Binding Method}"/>
+          <DataGridTextColumn Width="80" Header="{l:Tr Assets_Rate}" Binding="{Binding Rate}"/>
+          <DataGridTextColumn Width="130" Header="{l:Tr Assets_BookValue}" Binding="{Binding BookValue}"/>
+          <DataGridTextColumn Width="120" Header="{l:Tr Assets_Disposed}" Binding="{Binding DisposedDate, StringFormat=dd MMM yyyy}"/>
         </DataGrid.Columns>
       </DataGrid>
+      <TextBlock x:Name="EmptyText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" Text="{l:Tr Assets_Empty}"/>
     </Grid>
-    <DockPanel Grid.Row="4" Margin="0,12,0,0">
-      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-        <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
-        <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" Margin="0,0,8,0" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
-        <Button x:Name="PreviousAssetButton" IsEnabled="False" Margin="0,0,6,0" Click="PreviousAsset_OnClick" Content="{l:Tr Sales_Previous}"/>
-        <Button x:Name="NextAssetButton" IsEnabled="False" Click="NextAsset_OnClick" Content="{l:Tr Sales_Next}"/>
-      </StackPanel>
-      <TextBlock x:Name="StatusText" VerticalAlignment="Center"/>
-    </DockPanel>
-    <Grid x:Name="TimelineOverlay" Grid.RowSpan="5" Panel.ZIndex="10" Visibility="Collapsed">
+    <p:PagerBar x:Name="Pager" Grid.Row="3"/>
+    <Grid x:Name="TimelineOverlay" Grid.RowSpan="4" Panel.ZIndex="10" Visibility="Collapsed">
       <Border x:Name="TimelineBackdrop" Background="#88000000" MouseDown="TimelineBackdrop_OnMouseDown"/>
       <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
         <Border x:Name="TimelinePanel" Grid.Column="1" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"

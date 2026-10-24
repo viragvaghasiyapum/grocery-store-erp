@@ -3,138 +3,20 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
-    Title="{l:Tr Catalog_EditorTitle}" Width="760" Height="720" MinWidth="650" MinHeight="600"
-    WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
-  <Grid Margin="22">
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
-    </Grid.RowDefinitions>
-    <StackPanel Margin="0,0,0,12">
-        <TextBlock FontSize="26" FontWeight="SemiBold" Text="{l:Tr Catalog_EditorTitle}" />
-        <TextBlock x:Name="ErrorText" Margin="0,8,0,0" Foreground="Crimson" TextWrapping="Wrap" />
+    xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+    Title="{l:Tr Catalog_EditorTitle}" Width="720" Height="720" MinWidth="560" MinHeight="480"
+    WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+  <Grid Margin="20">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <StackPanel Margin="0,0,0,8">
+      <TextBlock x:Name="TitleText" Style="{StaticResource FormTitle}" Text="{l:Tr Catalog_New}"/>
+      <TextBlock Style="{StaticResource FormContext}" Text="{l:Tr Catalog_FormContext}"/>
     </StackPanel>
-    <TabControl Grid.Row="1">
-      <TabItem Header="{l:Tr Catalog_BasicDetails}">
-      <ScrollViewer VerticalScrollBarVisibility="Auto">
-      <StackPanel Margin="8,8,18,8">
-
-        <Grid Margin="0,16,0,0">
-          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
-          <StackPanel Margin="0,0,10,0">
-            <TextBlock Text="{l:Tr Catalog_Sku}" />
-            <TextBox x:Name="SkuBox" MaxLength="20" />
-          </StackPanel>
-          <StackPanel Grid.Column="1" Margin="10,0,0,0">
-            <TextBlock Text="{l:Tr Catalog_Name}" />
-            <TextBox x:Name="NameBox" MaxLength="120" />
-          </StackPanel>
-        </Grid>
-
-        <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_NameLocal}" />
-        <TextBox x:Name="LocalNameBox" MaxLength="120" />
-        <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_Aliases}" />
-        <TextBox x:Name="AliasesBox" MaxLength="500" />
-
-        <Grid Margin="0,12,0,0">
-          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
-          <StackPanel Margin="0,0,8,0">
-            <TextBlock Text="{l:Tr Catalog_Category}" />
-            <ComboBox x:Name="CategoryBox" DisplayMemberPath="Name" SelectedValuePath="Id" />
-          </StackPanel>
-          <StackPanel Grid.Column="1" Margin="8,0">
-            <TextBlock Text="{l:Tr Catalog_Brand}" />
-            <ComboBox x:Name="BrandBox" DisplayMemberPath="Name" SelectedValuePath="Id" />
-          </StackPanel>
-          <StackPanel Grid.Column="2" Margin="8,0,0,0">
-            <TextBlock Text="{l:Tr Catalog_Unit}" />
-            <ComboBox x:Name="UnitBox" DisplayMemberPath="Code" SelectedValuePath="Id" />
-          </StackPanel>
-        </Grid>
-
-        <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_Barcodes}" />
-        <TextBox x:Name="BarcodesBox" Height="70" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
-                 ToolTip="{l:Tr Catalog_BarcodesHint}" />
-      </StackPanel>
-      </ScrollViewer>
-      </TabItem>
-      <TabItem Header="{l:Tr Catalog_PricingStock}">
-      <ScrollViewer VerticalScrollBarVisibility="Auto">
-      <StackPanel Margin="8,8,18,8">
-
-        <Grid Margin="0,12,0,0">
-          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
-          <StackPanel Margin="0,0,8,0">
-            <TextBlock Text="{l:Tr Catalog_Hsn}" />
-            <TextBox x:Name="HsnBox" MaxLength="8" />
-          </StackPanel>
-          <StackPanel Grid.Column="1" Margin="8,0">
-            <TextBlock Text="{l:Tr Catalog_TaxRate}" />
-            <ComboBox x:Name="TaxRateBox" DisplayMemberPath="Name" SelectedValuePath="Id" />
-          </StackPanel>
-          <StackPanel Grid.Column="2" Margin="8,0,0,0">
-            <TextBlock Text="{l:Tr Catalog_ReorderLevel}" />
-            <TextBox x:Name="ReorderBox" Text="0" />
-          </StackPanel>
-        </Grid>
-
-        <Grid Margin="0,12,0,0">
-          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
-          <StackPanel Margin="0,0,8,0">
-            <TextBlock Text="{l:Tr Catalog_SellingPrice}" />
-            <TextBox x:Name="PriceBox" />
-          </StackPanel>
-          <StackPanel Grid.Column="1" Margin="8,0">
-            <TextBlock Text="{l:Tr Catalog_Mrp}" />
-            <TextBox x:Name="MrpBox" />
-          </StackPanel>
-          <StackPanel Grid.Column="2" Margin="8,0,0,0">
-            <TextBlock Text="{l:Tr Catalog_ShelfLife}" />
-            <TextBox x:Name="ShelfLifeBox" />
-          </StackPanel>
-        </Grid>
-
-        <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_ExpiryAlertDays}" />
-        <TextBox x:Name="ExpiryAlertBox" />
-        <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_ProductClass}" />
-        <ComboBox x:Name="ProductClassBox" SelectedIndex="0" SelectedValuePath="Tag">
-          <ComboBoxItem Tag="SALEABLE" Content="{l:Tr Catalog_Saleable}"/>
-          <ComboBoxItem Tag="INTERNAL" Content="{l:Tr Catalog_InternalUse}"/>
-        </ComboBox>
-        <WrapPanel Margin="0,14,0,0">
-          <CheckBox x:Name="PricesIncludeTaxBox" Margin="0,0,24,0" IsChecked="True" Content="{l:Tr Catalog_PricesIncludeTax}" />
-          <CheckBox x:Name="TrackExpiryBox" Margin="0,0,24,0" IsChecked="True" Content="{l:Tr Catalog_TrackExpiry}" />
-          <CheckBox x:Name="LooseBox" Checked="LooseBox_OnChanged" Unchecked="LooseBox_OnChanged" Content="{l:Tr Catalog_Loose}" />
-        </WrapPanel>
-        <TextBlock Margin="0,12,0,0" Text="{l:Tr Catalog_Plu}" />
-        <TextBox x:Name="PluBox" IsEnabled="False" MaxLength="30" />
-      </StackPanel>
-      </ScrollViewer>
-      </TabItem>
-      <TabItem x:Name="FirstLotTab" Header="{l:Tr Catalog_FirstLot}">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel Margin="8,10,18,8">
-            <CheckBox x:Name="AddFirstLotBox" Content="{l:Tr Catalog_AddFirstLot}" Margin="0,0,0,12"/>
-            <Grid IsEnabled="{Binding IsChecked, ElementName=AddFirstLotBox}">
-              <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-              <StackPanel Margin="0,0,8,10"><TextBlock Text="{l:Tr Stock_Quantity}"/><TextBox x:Name="FirstLotQtyBox"/></StackPanel>
-              <StackPanel Grid.Column="1" Margin="8,0,0,10"><TextBlock Text="{l:Tr Stock_UnitCost}"/><TextBox x:Name="FirstLotCostBox"/></StackPanel>
-              <StackPanel Grid.Row="1" Margin="0,0,8,10"><TextBlock Text="{l:Tr Catalog_Price}"/><TextBox x:Name="FirstLotPriceBox"/></StackPanel>
-              <StackPanel Grid.Row="1" Grid.Column="1" Margin="8,0,0,10"><TextBlock Text="{l:Tr Stock_Mrp}"/><TextBox x:Name="FirstLotMrpBox"/></StackPanel>
-              <StackPanel Grid.Row="2" Margin="0,0,8,10"><TextBlock Text="{l:Tr Stock_Batch}"/><TextBox x:Name="FirstLotBatchBox"/></StackPanel>
-              <StackPanel Grid.Row="2" Grid.Column="1" Margin="8,0,0,10"><TextBlock Text="{l:Tr Stock_Expiry}"/><DatePicker x:Name="FirstLotExpiryBox"/></StackPanel>
-              <StackPanel Grid.Row="3" Margin="0,0,8,10"><TextBlock Text="{l:Tr Purchasing_Received}"/><DatePicker x:Name="FirstLotDateBox"/></StackPanel>
-              <StackPanel Grid.Row="3" Grid.Column="1" Margin="8,0,0,10"><TextBlock Text="{l:Tr Stock_DirectReason}"/><TextBox x:Name="FirstLotReasonBox" MaxLength="500"/></StackPanel>
-            </Grid>
-          </StackPanel>
-        </ScrollViewer>
-      </TabItem>
-    </TabControl>
-    <StackPanel Grid.Row="2" Margin="0,18,0,0" HorizontalAlignment="Right" Orientation="Horizontal">
-      <Button Width="95" Margin="0,0,8,0" IsCancel="True" Content="{l:Tr Common_Cancel}" />
-      <Button x:Name="SaveButton" Width="110" IsDefault="True" Click="Save_OnClick" Content="{l:Tr Common_Save}" />
+    <p:ProductForm x:Name="Form" Grid.Row="1"/>
+    <StackPanel Grid.Row="2" Style="{StaticResource FormFooter}">
+      <Button Margin="0,0,8,0" IsCancel="True" Content="{l:Tr Common_Cancel}"/>
+      <Button x:Name="SaveButton" IsDefault="True" IsEnabled="False" Click="Save_OnClick" Content="{l:Tr Common_Save}"/>
     </StackPanel>
   </Grid>
 </Window>

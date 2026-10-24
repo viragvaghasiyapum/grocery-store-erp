@@ -123,6 +123,7 @@ public partial class App : Application
             }
             builder.Services.AddSingleton(modules);
             builder.Services.AddSingleton<ReportNavigationState>();
+            builder.Services.AddSingleton<PageStateStore>();
             builder.Services.AddSingleton<UsbUpdateService>();
             builder.Services.AddSingleton<ReleaseNotesService>();
             builder.Services.AddSingleton<ShellViewModel>();
@@ -376,11 +377,14 @@ public partial class App : Application
     internal IServiceProvider Services =>
         _host?.Services ?? throw new InvalidOperationException("The application host is not ready.");
 
+    // Pages hosted by UI tests have no host; optional session helpers are then skipped.
+    internal IServiceProvider? ServicesOrNull => _host?.Services;
+
     internal static IReadOnlyList<IModule> CreateModules() =>
     [
         new SalesModule(typeof(BillingPage), typeof(SalesHistoryPage)),
-        new PurchasingModule(typeof(PurchasesPage)),
-        new InventoryModule(typeof(StockPage)),
+        new PurchasingModule(typeof(PurchasesPage), typeof(VendorsPage)),
+        new InventoryModule(),
         new ExpensesModule(typeof(MoneyOutPage)),
         new AssetsModule(typeof(AssetsPage)),
         new ReportsModule(typeof(ReportsPage)),

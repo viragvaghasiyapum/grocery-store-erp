@@ -40,11 +40,15 @@ public sealed class ReportOutputService(ISettings settings, TranslationSource? t
             IXLWorksheet sheet = workbook.Worksheets.Add(SafeSheetName(report.Title));
             sheet.Cell(1, 1).Value = report.Title;
             sheet.Range(1, 1, 1, Math.Max(1, report.Columns.Count)).Merge().Style.Font.SetBold().Font.SetFontSize(16);
-            int headerRow = (report.Period is null ? 3 : 4) + (report.IsTruncated ? 1 : 0) + (report.Summary is null ? 0 : 1);
-            if (report.Period is { } period)
-                sheet.Cell(2, 1).Value = $"{period.From:dd-MM-yyyy} to {period.To:dd-MM-yyyy}";
-            if (report.Summary is { } summary)
-                sheet.Cell(report.Period is null ? 2 : 3, 1).Value = summary;
+            // Title, then the period, status summary and applied filters that each appear, then the header.
+            string[] context = new[]
+            {
+                report.Period is { } period ? $"{period.From:dd-MM-yyyy} to {period.To:dd-MM-yyyy}" : null,
+                report.Summary,
+                report.Filters,
+            }.OfType<string>().ToArray();
+            for (int line = 0; line < context.Length; line++) sheet.Cell(2 + line, 1).Value = context[line];
+            int headerRow = 3 + context.Length + (report.IsTruncated ? 1 : 0);
             if (report.IsTruncated)
             {
                 sheet.Cell(headerRow - 1, 1).Value = Text("Reports_PartialExport", "Partial report: totals include displayed rows only.");
@@ -253,6 +257,7 @@ public sealed class ReportOutputService(ISettings settings, TranslationSource? t
             {
                 report.Period is { } period ? $"{period.From:dd-MM-yyyy} to {period.To:dd-MM-yyyy}" : null,
                 report.Summary,
+                report.Filters,
             }.Where(static value => !string.IsNullOrEmpty(value)));
             if (periodLine.Length > 0)
                 AddText(page, periodLine, Margin, 106, 10, FontWeights.Normal, pageWidth - 2 * Margin - (bands > 1 ? 190 : 0));

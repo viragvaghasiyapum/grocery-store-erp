@@ -1,0 +1,108 @@
+<UserControl x:Class="GroceryErp.App.Presentation.ProductLotsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <WrapPanel Margin="0,0,0,6">
+      <Button x:Name="AddLotButton" Style="{StaticResource ToolbarButton}" Click="AddDirectLot_OnClick" Content="{l:Tr Stock_AddDirectLot}"/>
+      <Button x:Name="EditLotButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="EditLot_OnClick" Content="{l:Tr Stock_EditDetails}"/>
+      <Button x:Name="DamageLotButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="DamageLot_OnClick" Content="{l:Tr MoneyOut_RecordDamage}"/>
+      <Button x:Name="ConsumeButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Visibility="Collapsed" Click="Consume_OnClick" Content="{l:Tr Stock_ConsumeInternal}"/>
+      <Button x:Name="LabelButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="Label_OnClick" Content="{l:Tr Catalog_PrintLabels}"/>
+    </WrapPanel>
+    <WrapPanel x:Name="FilterBar" Grid.Row="1" Margin="0,0,0,4">
+      <ui:TextBox x:Name="SearchBox" Width="170" Margin="0,0,6,4" PlaceholderText="{l:Tr Stock_LotFilterSearch}"
+                  AutomationProperties.Name="{l:Tr Stock_LotFilterSearch}" TextChanged="Search_OnTextChanged"/>
+      <ComboBox x:Name="StatusFilter" Width="130" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged"
+                AutomationProperties.Name="{l:Tr Stock_LotStatusFilter}">
+        <ComboBoxItem Tag="ALL" Content="{l:Tr Stock_ExpiryFilterAll}"/>
+        <ComboBoxItem Tag="AVAILABLE" Content="{l:Tr Stock_Available}"/>
+        <ComboBoxItem Tag="ZERO" Content="{l:Tr Stock_Expiry_EMPTY}"/>
+        <ComboBoxItem Tag="BLOCKED" Content="{l:Tr Stock_Expiry_BLOCKED}"/>
+      </ComboBox>
+      <ComboBox x:Name="ExpiryFilter" Width="160" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged"
+                AutomationProperties.Name="{l:Tr Stock_ExpiryStatus}">
+        <ComboBoxItem Tag="ALL" Content="{l:Tr Stock_AnyExpiry}"/>
+        <ComboBoxItem Tag="EXPIRED" Content="{l:Tr MoneyOut_Expired}"/>
+        <ComboBoxItem Tag="EXPIRING" Content="{l:Tr Stock_Expiring}"/>
+        <ComboBoxItem Tag="NONE" Content="{l:Tr Stock_Expiry_NONE}"/>
+      </ComboBox>
+      <ToggleButton x:Name="MoreFiltersToggle" Margin="0,0,6,4" MinHeight="32" Padding="10,4" Click="MoreFilters_OnClick"
+                    Content="{l:Tr Common_MoreFilters}"/>
+      <Button Style="{StaticResource ToolbarButton}" Margin="0,0,0,4" Click="ClearFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
+    </WrapPanel>
+    <WrapPanel x:Name="MoreFiltersPanel" Grid.Row="2" Margin="0,0,0,4" Visibility="Collapsed">
+      <ComboBox x:Name="SourceFilter" Width="150" Margin="0,0,10,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged"
+                AutomationProperties.Name="{l:Tr Stock_Source}">
+        <ComboBoxItem Tag="" Content="{l:Tr Stock_AnySource}"/>
+        <ComboBoxItem Tag="PURCHASE_LINE" Content="{l:Tr Stock_Origin_PURCHASE_LINE}"/>
+        <ComboBoxItem Tag="DIRECT" Content="{l:Tr Stock_Origin_DIRECT}"/>
+        <ComboBoxItem Tag="CUSTOMER_RETURN" Content="{l:Tr Stock_Origin_CUSTOMER_RETURN}"/>
+      </ComboBox>
+      <TextBlock Style="{StaticResource FilterLabel}" Text="{l:Tr Stock_ExpiryBetween}"/>
+      <DatePicker x:Name="ExpiryFromBox" SelectedDateFormat="Short" Width="118" Margin="0,0,4,4" SelectedDateChanged="Date_OnChanged" AutomationProperties.Name="{l:Tr Reports_From}"/>
+      <DatePicker x:Name="ExpiryToBox" SelectedDateFormat="Short" Width="118" Margin="0,0,10,4" SelectedDateChanged="Date_OnChanged" AutomationProperties.Name="{l:Tr Reports_To}"/>
+      <TextBlock Style="{StaticResource FilterLabel}" Text="{l:Tr Stock_PriceBetween}"/>
+      <TextBox x:Name="MinPriceBox" Width="70" Margin="0,0,4,4" TextChanged="Search_OnTextChanged" AutomationProperties.Name="{l:Tr Stock_MinPrice}"/>
+      <TextBox x:Name="MaxPriceBox" Width="70" Margin="0,0,0,4" TextChanged="Search_OnTextChanged" AutomationProperties.Name="{l:Tr Stock_MaxPrice}"/>
+    </WrapPanel>
+    <p:SelectionBar x:Name="Selection" Grid.Row="1" Covers="{Binding ElementName=FilterBar}">
+      <p:SelectionBar.Actions>
+        <Menu VerticalAlignment="Center" Background="Transparent">
+          <MenuItem Header="{l:Tr Catalog_BulkActions}">
+            <MenuItem Click="BulkBlock_OnClick" Header="{l:Tr Stock_BlockSelected}"/>
+            <MenuItem Click="BulkUnblock_OnClick" Header="{l:Tr Stock_UnblockSelected}"/>
+            <MenuItem x:Name="BulkDamageItem" Click="BulkDamage_OnClick" Header="{l:Tr Stock_BulkDamage}"/>
+            <MenuItem Click="BulkDeleteZero_OnClick" Header="{l:Tr Stock_DeleteZero}"/>
+          </MenuItem>
+        </Menu>
+      </p:SelectionBar.Actions>
+    </p:SelectionBar>
+    <Grid Grid.Row="3">
+      <DataGrid x:Name="LotsGrid" Style="{StaticResource CompactTableGrid}" SelectionMode="Single"
+                SelectionChanged="LotsGrid_OnSelectionChanged" MouseDoubleClick="LotsGrid_OnDoubleClick"
+                AutomationProperties.Name="{l:Tr Stock_Lots}">
+        <DataGrid.Columns>
+          <DataGridTemplateColumn Width="40" CanUserReorder="False" CanUserResize="False">
+            <DataGridTemplateColumn.HeaderTemplate><DataTemplate>
+              <CheckBox HorizontalAlignment="Center" IsThreeState="True" Loaded="PageCheck_OnLoaded" Click="PageCheck_OnClick"
+                        AutomationProperties.Name="{l:Tr Selection_ThisPage}"/>
+            </DataTemplate></DataGridTemplateColumn.HeaderTemplate>
+            <DataGridTemplateColumn.CellTemplate><DataTemplate>
+              <CheckBox HorizontalAlignment="Center" Loaded="RowCheck_OnLoaded" Click="RowCheck_OnClick"
+                        AutomationProperties.Name="{l:Tr Stock_SelectLot}"/>
+            </DataTemplate></DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTextColumn Width="88" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
+          <DataGridTextColumn Width="90" Header="{l:Tr Stock_Batch}" Binding="{Binding BatchNumber}"/>
+          <!-- Expiry date and its status share one column so the panel needs less sideways scrolling. -->
+          <DataGridTemplateColumn Width="130" Header="{l:Tr Stock_Expiry}" SortMemberPath="ExpiryDate">
+            <DataGridTemplateColumn.CellTemplate><DataTemplate>
+              <TextBlock TextTrimming="CharacterEllipsis">
+                <Run Text="{Binding ExpiryDate, StringFormat=dd MMM yy, Mode=OneWay}"/>
+                <Run Style="{StaticResource ExpiryBucketRunStyle}" FontSize="12"
+                     Text="{Binding ExpiryBucketCode, Converter={StaticResource ExpiryBucketConverter}, Mode=OneWay}"/>
+              </TextBlock>
+            </DataTemplate></DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTextColumn Width="80" Header="{l:Tr Stock_OnHand}" Binding="{Binding OnHand}"/>
+          <DataGridTextColumn Width="78" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}"/>
+          <DataGridTextColumn Width="72" Header="{l:Tr Stock_Mrp}" Binding="{Binding Mrp}"/>
+          <DataGridTextColumn Width="80" Header="{l:Tr Stock_UnitCost}" Binding="{Binding UnitCost}"/>
+          <DataGridTextColumn Width="105" Header="{l:Tr Stock_Source}" Binding="{Binding OriginKind, Converter={StaticResource LotOriginConverter}}"/>
+          <DataGridTextColumn Width="88" Header="{l:Tr Reports_Column_Received}" Binding="{Binding ReceivedDate, StringFormat=dd MMM yy}"/>
+        </DataGrid.Columns>
+      </DataGrid>
+      <TextBlock x:Name="EmptyText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
+                 TextWrapping="Wrap" TextAlignment="Center" MaxWidth="360" Text="{l:Tr Stock_LotsEmpty}"/>
+    </Grid>
+    <p:PagerBar x:Name="Pager" Grid.Row="4"/>
+  </Grid>
+</UserControl>

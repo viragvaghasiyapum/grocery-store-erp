@@ -1,0 +1,54 @@
+<Window x:Class="GroceryErp.App.Presentation.EmployeeFormWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+    Title="{l:Tr MoneyOut_EmployeeDetails}" Width="560" Height="580" MinWidth="460" MinHeight="460"
+    WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+  <Grid Margin="20">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <StackPanel>
+      <TextBlock x:Name="TitleText" Style="{StaticResource FormTitle}" Text="{l:Tr MoneyOut_NewEmployee}"/>
+      <TextBlock Style="{StaticResource FormContext}" Text="{l:Tr MoneyOut_EmployeeContext}"/>
+    </StackPanel>
+    <p:FormErrorSummary x:Name="Summary" Grid.Row="1"/>
+    <ScrollViewer Grid.Row="2" Margin="0,8,0,0" VerticalScrollBarVisibility="Auto">
+      <StackPanel x:Name="Fields" Margin="0,0,8,0">
+        <UniformGrid Columns="2">
+          <p:FormField x:Name="NameField" Label="{l:Tr MoneyOut_EmployeeName}" IsRequired="True">
+            <TextBox x:Name="NameBox" MaxLength="120"/>
+          </p:FormField>
+          <p:FormField x:Name="PhoneField" Label="{l:Tr MoneyOut_Phone}">
+            <TextBox x:Name="PhoneBox" MaxLength="20"/>
+          </p:FormField>
+          <p:FormField x:Name="RoleField" Label="{l:Tr MoneyOut_Role}">
+            <TextBox x:Name="RoleBox" MaxLength="80"/>
+          </p:FormField>
+          <p:FormField x:Name="SalaryField" Label="{l:Tr MoneyOut_Salary}" IsRequired="True">
+            <TextBox x:Name="SalaryBox" TextChanged="Salary_OnChanged"/>
+          </p:FormField>
+          <p:FormField x:Name="JoinField" Label="{l:Tr MoneyOut_JoinDate}">
+            <DatePicker x:Name="JoinBox" SelectedDateFormat="Short"/>
+          </p:FormField>
+          <p:FormField x:Name="LeaveField" Label="{l:Tr MoneyOut_LeaveDate}">
+            <DatePicker x:Name="LeaveBox" SelectedDateFormat="Short"/>
+          </p:FormField>
+          <p:FormField x:Name="SalaryFromField" Label="{l:Tr MoneyOut_SalaryFrom}" IsRequired="True" Visibility="Collapsed"
+                       Hint="YYYY-MM">
+            <TextBox x:Name="SalaryFromBox" MaxLength="7" TextChanged="Salary_OnChanged"/>
+          </p:FormField>
+        </UniformGrid>
+        <TextBlock x:Name="SalaryHint" Style="{StaticResource FormPreview}" Visibility="Collapsed"/>
+        <p:FormField x:Name="NotesField" Label="{l:Tr Purchasing_Notes}">
+          <TextBox x:Name="NotesBox" MaxLength="500"/>
+        </p:FormField>
+        <CheckBox x:Name="ActiveBox" IsChecked="True" Content="{l:Tr MoneyOut_Active}"/>
+      </StackPanel>
+    </ScrollViewer>
+    <StackPanel Grid.Row="3" Style="{StaticResource FormFooter}">
+      <Button Margin="0,0,8,0" IsCancel="True" Content="{l:Tr Common_Cancel}"/>
+      <Button x:Name="SaveButton" IsDefault="True" Click="Save_OnClick" Content="{l:Tr Common_Save}"/>
+    </StackPanel>
+  </Grid>
+</Window>

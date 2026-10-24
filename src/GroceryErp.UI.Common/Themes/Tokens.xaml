@@ -15,6 +15,12 @@
   <SolidColorBrush x:Key="TableAlternateBrush" Color="#F5F7FA"/>
   <SolidColorBrush x:Key="SelectedTabBrush" Color="#E8F1FF"/>
   <SolidColorBrush x:Key="SelectedTabTextBrush" Color="#174EA6"/>
+  <SolidColorBrush x:Key="ErrorBrush" Color="#B42318"/>
+  <SolidColorBrush x:Key="ErrorSurfaceBrush" Color="#FEF3F2"/>
+  <SolidColorBrush x:Key="ErrorStrokeBrush" Color="#FECDCA"/>
+  <SolidColorBrush x:Key="SelectionSurfaceBrush" Color="#EEF4FF"/>
+  <SolidColorBrush x:Key="SelectionStrokeBrush" Color="#B2CCFF"/>
+  <SolidColorBrush x:Key="SecondaryTextBrush" Color="#5B6472"/>
   <Style TargetType="Button">
     <Setter Property="MinHeight" Value="36" />
     <Setter Property="MinWidth" Value="88" />
@@ -23,6 +29,57 @@
   <Style x:Key="SectionTitle" TargetType="TextBlock">
     <Setter Property="FontSize" Value="20" />
     <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <!-- Table pages: one title/action row, one filter row, the table, one footer row. -->
+  <Style x:Key="PageTitle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="20" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="0,0,16,0" />
+  </Style>
+  <Style x:Key="ToolbarButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+    <Setter Property="MinHeight" Value="32" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Padding" Value="12,4" />
+    <Setter Property="Margin" Value="0,0,6,0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="FilterLabel" TargetType="TextBlock">
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <!-- Filter controls keep a 4 px bottom margin; matching it keeps labels on their line. -->
+    <Setter Property="Margin" Value="0,0,6,4" />
+    <Setter Property="Foreground" Value="{StaticResource SecondaryTextBrush}" />
+  </Style>
+  <Style x:Key="StatusText" TargetType="TextBlock">
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    <Setter Property="Foreground" Value="{StaticResource SecondaryTextBrush}" />
+  </Style>
+  <!-- Forms: title and context, grouped fields, inline errors, fixed footer actions. -->
+  <Style x:Key="FormTitle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="20" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style x:Key="FormContext" TargetType="TextBlock">
+    <Setter Property="Margin" Value="0,4,0,0" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="Foreground" Value="{StaticResource SecondaryTextBrush}" />
+  </Style>
+  <Style x:Key="FormSection" TargetType="TextBlock">
+    <Setter Property="Margin" Value="0,6,0,8" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{StaticResource SelectedTabTextBrush}" />
+  </Style>
+  <Style x:Key="FormPreview" TargetType="TextBlock">
+    <Setter Property="Margin" Value="0,2,0,8" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style x:Key="FormFooter" TargetType="StackPanel">
+    <Setter Property="Orientation" Value="Horizontal" />
+    <Setter Property="HorizontalAlignment" Value="Right" />
+    <Setter Property="Margin" Value="0,12,0,0" />
   </Style>
   <Style x:Key="CatalogCard" TargetType="Border">
     <Setter Property="Padding" Value="16"/>
@@ -65,13 +122,44 @@
     <Setter Property="CellStyle">
       <Setter.Value>
         <Style TargetType="DataGridCell">
-          <Setter Property="Padding" Value="8,4"/>
+          <Setter Property="Padding" Value="6,0"/>
           <Setter Property="VerticalContentAlignment" Value="Center"/>
+          <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+          <!-- The stock cell template ignores padding and alignment, which left text at the top of each row. -->
+          <Setter Property="Template">
+            <Setter.Value>
+              <ControlTemplate TargetType="DataGridCell">
+                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}" SnapsToDevicePixels="True">
+                  <ContentPresenter Margin="{TemplateBinding Padding}"
+                                    VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                    HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                    SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                </Border>
+              </ControlTemplate>
+            </Setter.Value>
+          </Setter>
         </Style>
       </Setter.Value>
     </Setter>
   </Style>
   <Style x:Key="CatalogGrid" TargetType="DataGrid" BasedOn="{StaticResource CatalogGridBase}"/>
+  <!-- A tabbed table page: the tabs are the page header, without a frame, and the page places the
+       active tab's actions at the right of the same line, so the table starts one row higher. -->
+  <Style x:Key="PageTabs" TargetType="TabControl">
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TabControl">
+          <Grid KeyboardNavigation.TabNavigation="Local" SnapsToDevicePixels="True">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <TabPanel IsItemsHost="True" KeyboardNavigation.TabIndex="1"/>
+            <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Row="1" ContentSource="SelectedContent"
+                              KeyboardNavigation.TabIndex="2"/>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
   <Style TargetType="TabItem">
     <Setter Property="Margin" Value="0"/>
     <Setter Property="Padding" Value="14,9"/>

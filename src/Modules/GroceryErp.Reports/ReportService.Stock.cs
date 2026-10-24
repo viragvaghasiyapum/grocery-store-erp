@@ -73,6 +73,7 @@ public sealed partial class ReportService
     {
         ReportDefinition definition = Definition(ReportKind.StockReconciliation);
         using var writer = new StreamWriter(temporary, false, new UTF8Encoding(true), 64 * 1024);
+        writer.WriteLine(CsvContext(ReportKind.StockReconciliation, filter, null));
         writer.WriteLine(string.Join(',', definition.Columns.Select(column =>
             CsvText(Text($"Reports_Column_{column.Key}", column.Heading)))));
         long count = 0;

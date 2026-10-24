@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Windows;
-using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using GroceryErp.Localization;
@@ -12,9 +11,21 @@ namespace GroceryErp.App.Presentation;
 // lacks the saved fields. Nothing is guessed: each gap is marked for the operator.
 public sealed class ReturnRecreationWindow : Window
 {
-    private static readonly Brush ErrorBrush = Brushes.Firebrick;
-    private static readonly Brush ReviewBrush = new SolidColorBrush(Color.FromRgb(0xB2, 0x6A, 0x00));
     private readonly HashSet<string> _missing;
+    private readonly Grid _fields = new();
+    private readonly FormErrorSummary _summary = new();
+    private readonly List<FormField> _ordered = [];
+    private readonly FormField _skuField;
+    private readonly FormField _nameField;
+    private readonly FormField _localNameField;
+    private readonly FormField _hsnField;
+    private readonly FormField _categoryField;
+    private readonly FormField _unitField;
+    private readonly FormField _taxField;
+    private readonly FormField _taxModeField;
+    private readonly FormField _trackExpiryField;
+    private readonly FormField _looseField;
+    private readonly FormField _expiryField;
     private readonly TextBox _sku;
     private readonly TextBox _name;
     private readonly TextBox _localName;
@@ -23,11 +34,11 @@ public sealed class ReturnRecreationWindow : Window
     private readonly ComboBox _unit;
     private readonly ComboBox _tax;
     private readonly ComboBox _taxMode;
+    // Yes/No choices start empty when the old sale did not save the fact.
+    private readonly ComboBox _trackExpiry;
+    private readonly ComboBox _isLoose;
     private readonly CheckBox _includesTax;
-    private readonly CheckBox _trackExpiry;
-    private readonly CheckBox _isLoose;
     private readonly DatePicker _expiry;
-    private readonly TextBlock _error;
 
     public ReturnRecreationInput? Result { get; private set; }
 
@@ -37,101 +48,77 @@ public sealed class ReturnRecreationWindow : Window
         ArgumentNullException.ThrowIfNull(options);
         _missing = draft.MissingFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
         Title = Tr("Sales_RecreateTitle");
-        Width = 640;
+        Width = 720;
         Height = 700;
-        MinWidth = 560;
+        MinWidth = 600;
         MinHeight = 560;
+        ShowInTaskbar = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        SetResourceReference(FontFamilyProperty, "AppFont");
         NumberSubstitution.SetCultureSource(this, NumberCultureSource.Override);
         NumberSubstitution.SetCultureOverride(this, CultureInfo.GetCultureInfo("en-IN"));
         NumberSubstitution.SetSubstitution(this, NumberSubstitutionMethod.European);
 
-        var root = new Grid { Margin = new Thickness(18, 14, 18, 14) };
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.Children.Add(new TextBlock
-        {
-            Text = TranslationSource.Instance.Format("Sales_RecreateIntro", draft.ProductName,
-                draft.TaxRate.Value.ToString("0.###", CultureInfo.InvariantCulture)),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 12),
-        });
-
-        var form = new Grid();
-        form.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
-        form.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var scroll = new ScrollViewer { Content = form, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        Grid.SetRow(scroll, 1);
-        root.Children.Add(scroll);
-
         _sku = new TextBox { Text = draft.SuggestedSku, MaxLength = 20 };
         _name = new TextBox { Text = draft.ProductName, MaxLength = 200 };
         _localName = new TextBox { Text = draft.ProductNameLocal ?? "", MaxLength = 200 };
+        _hsn = new TextBox { Text = draft.HsnCode ?? "", MaxLength = 8 };
         _category = Choice(options.Categories, draft.CategoryId);
         _unit = Choice(options.Units, draft.UnitId);
         _tax = Choice(options.TaxRates, draft.TaxRateId);
-        _taxMode = new ComboBox
-        {
-            ItemsSource = new ReturnRecreationOption[]
-            {
-                new(0, Tr("Setup_TaxRegular")), new(1, Tr("Setup_TaxComposition")), new(2, Tr("Setup_TaxNone")),
-            },
-            DisplayMemberPath = nameof(ReturnRecreationOption.Label),
-            SelectedIndex = draft.TaxMode switch { "REGULAR" => 0, "COMPOSITION" => 1, "NONE" => 2, _ => -1 },
-            Height = 32,
-        };
-        _hsn = new TextBox { Text = draft.HsnCode ?? "", MaxLength = 8 };
-        _includesTax = new CheckBox { IsChecked = draft.PriceIncludesTax, Content = Tr("Sales_RecreatePricing") };
-        _trackExpiry = new CheckBox
-        {
-            IsChecked = draft.TrackExpiry,
-            IsThreeState = draft.TrackExpiry is null,
-            Content = Tr("Sales_RecreateTrackExpiry")
-        };
-        _isLoose = new CheckBox
-        {
-            IsChecked = draft.IsLoose,
-            IsThreeState = draft.IsLoose is null,
-            Content = Tr("Sales_RecreateFractional")
-        };
-        _expiry = new DatePicker { SelectedDate = draft.ExpiryDate?.ToDateTime(TimeOnly.MinValue) };
-        _trackExpiry.Click += (_, _) => _trackExpiry.IsThreeState = false;
-        _isLoose.Click += (_, _) => _isLoose.IsThreeState = false;
+        _taxMode = Choice([new(0, Tr("Setup_TaxRegular")), new(1, Tr("Setup_TaxComposition")), new(2, Tr("Setup_TaxNone"))],
+            draft.TaxMode switch { "REGULAR" => 0, "COMPOSITION" => 1, "NONE" => 2, _ => null });
+        _trackExpiry = YesNo(draft.TrackExpiry);
+        _isLoose = YesNo(draft.IsLoose);
+        _expiry = new DatePicker { SelectedDate = draft.ExpiryDate?.ToDateTime(TimeOnly.MinValue), SelectedDateFormat = DatePickerFormat.Short };
+        _includesTax = new CheckBox { IsChecked = draft.PriceIncludesTax, Content = Tr("Sales_RecreatePricing"), Margin = new Thickness(0, 28, 0, 10) };
 
-        AddField(form, "Sales_RecreateSku", _sku, required: true, "SKU");
-        AddField(form, "Sales_RecreateName", _name, required: true, "product name");
-        AddField(form, "Sales_RecreateLocalName", _localName, required: false);
-        AddField(form, "Sales_RecreateCategory", _category, required: true, "category");
-        AddField(form, "Sales_RecreateUnit", _unit, required: true, "unit");
-        AddField(form, "Sales_RecreateTax", _tax, required: true, "tax rate");
-        AddField(form, "Sales_RecreateTaxMode", _taxMode, required: true, "tax mode");
-        AddField(form, "Sales_RecreateHsn", _hsn, required: false, "HSN");
-        AddOption(form, _includesTax, null);
-        AddOption(form, _trackExpiry, "expiry tracking");
-        AddOption(form, _isLoose, "quantity type");
-        AddField(form, "Sales_RecreateLotExpiry", _expiry, required: false, "lot expiry");
+        _skuField = Field("Sales_RecreateSku", _sku, required: true, "SKU");
+        _nameField = Field("Sales_RecreateName", _name, required: true, "product name");
+        _localNameField = Field("Sales_RecreateLocalName", _localName, required: false);
+        _hsnField = Field("Sales_RecreateHsn", _hsn, required: false, "HSN");
+        _categoryField = Field("Sales_RecreateCategory", _category, required: true, "category");
+        _unitField = Field("Sales_RecreateUnit", _unit, required: true, "unit");
+        _taxField = Field("Sales_RecreateTax", _tax, required: true, "tax rate");
+        _taxModeField = Field("Sales_RecreateTaxMode", _taxMode, required: true, "tax mode");
+        _trackExpiryField = Field("Sales_RecreateTrackExpiry", _trackExpiry, required: true, "expiry tracking");
+        _looseField = Field("Sales_RecreateFractional", _isLoose, required: true, "quantity type");
+        _expiryField = Field("Sales_RecreateLotExpiry", _expiry, required: false, "lot expiry");
+        LayOutFields();
 
-        _error = new TextBlock { Foreground = ErrorBrush, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 10, 0, 6) };
-        Grid.SetRow(_error, 2);
-        root.Children.Add(_error);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        var cancel = new Button { Content = Tr("Common_Cancel"), IsCancel = true, Width = 96 };
-        var save = new Button
+        var root = new Grid { Margin = new Thickness(20) };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var heading = new StackPanel();
+        heading.Children.Add(Styled(new TextBlock { Text = Title }, "FormTitle"));
+        heading.Children.Add(Styled(new TextBlock
         {
-            Content = Tr("Sales_RecreateSave"),
-            IsDefault = true,
-            MinWidth = 150,
-            Margin = new Thickness(8, 0, 0, 0)
+            Text = TranslationSource.Instance.Format("Sales_RecreateIntro", draft.ProductName,
+                draft.TaxRate.Value.ToString("0.###", CultureInfo.InvariantCulture)),
+        }, "FormContext"));
+        root.Children.Add(heading);
+        Grid.SetRow(_summary, 1);
+        root.Children.Add(_summary);
+        var scroll = new ScrollViewer
+        {
+            Content = _fields,
+            Margin = new Thickness(0, 8, 0, 0),
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
         };
+        Grid.SetRow(scroll, 2);
+        root.Children.Add(scroll);
+        var footer = Styled(new StackPanel(), "FormFooter");
+        var save = new Button { Content = Tr("Sales_RecreateSave"), IsDefault = true, MinWidth = 150 };
         save.Click += Save;
-        actions.Children.Add(cancel);
-        actions.Children.Add(save);
-        Grid.SetRow(actions, 3);
-        root.Children.Add(actions);
+        footer.Children.Add(new Button { Content = Tr("Common_Cancel"), IsCancel = true, MinWidth = 96, Margin = new Thickness(0, 0, 8, 0) });
+        footer.Children.Add(save);
+        Grid.SetRow(footer, 3);
+        root.Children.Add(footer);
         Content = root;
-        Loaded += (_, _) => FirstMissing()?.Focus();
+        Loaded += (_, _) => (_ordered.FirstOrDefault(static field => field.Hint is not null) ?? _skuField).FocusInput();
     }
 
     private static ComboBox Choice(IReadOnlyList<ReturnRecreationOption> items, long? selected) => new()
@@ -140,89 +127,70 @@ public sealed class ReturnRecreationWindow : Window
         DisplayMemberPath = nameof(ReturnRecreationOption.Label),
         SelectedValuePath = nameof(ReturnRecreationOption.Id),
         SelectedValue = selected,
-        Height = 32,
     };
 
-    private void AddField(Grid grid, string labelKey, Control input, bool required, string? missingKey = null)
+    private static ComboBox YesNo(bool? value) =>
+        Choice([new(1, Tr("Form_Yes")), new(0, Tr("Form_No"))], value switch { true => 1, false => 0, null => null });
+
+    private static T Styled<T>(T element, string style) where T : FrameworkElement
     {
-        int row = NextRow(grid);
-        bool review = missingKey is not null && _missing.Contains(missingKey);
-        var caption = new TextBlock
+        element.SetResourceReference(StyleProperty, style);
+        return element;
+    }
+
+    // A field the legacy sale did not save says so under its input.
+    private FormField Field(string labelKey, Control input, bool required, string? missingKey = null)
+    {
+        var field = new FormField
         {
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 10, 8),
-            TextWrapping = TextWrapping.Wrap
+            Label = Tr(labelKey),
+            IsRequired = required,
+            Hint = missingKey is not null && _missing.Contains(missingKey) ? Tr("Sales_RecreateReview") : null,
+            Content = input,
         };
-        caption.Inlines.Add(new System.Windows.Documents.Run(Tr(labelKey)));
-        if (required) caption.Inlines.Add(new System.Windows.Documents.Run(" *") { Foreground = ErrorBrush });
-        if (review) caption.Inlines.Add(new System.Windows.Documents.Run(" · " + Tr("Sales_RecreateReview"))
-        { Foreground = ReviewBrush, FontSize = 11 });
-        Grid.SetRow(caption, row);
-        grid.Children.Add(caption);
-        input.Margin = new Thickness(0, 0, 0, 8);
-        if (input is TextBox box) { box.Height = 32; box.VerticalContentAlignment = VerticalAlignment.Center; }
-        if (review) input.Tag = "review";
-        AutomationProperties.SetName(input, Tr(labelKey));
-        Grid.SetRow(input, row);
-        Grid.SetColumn(input, 1);
-        grid.Children.Add(input);
+        _ordered.Add(field);
+        return field;
     }
 
-    private void AddOption(Grid grid, CheckBox option, string? missingKey)
+    // Two columns in reading order, then the tax-pricing option in the next free cell.
+    private void LayOutFields()
     {
-        int row = NextRow(grid);
-        if (missingKey is not null && _missing.Contains(missingKey))
+        _fields.ColumnDefinitions.Add(new ColumnDefinition());
+        _fields.ColumnDefinitions.Add(new ColumnDefinition());
+        int count = _ordered.Count + 1;
+        for (int index = 0; index < count; index++)
         {
-            option.Foreground = ReviewBrush;
-            option.Tag = "review";
+            if (index % 2 == 0) _fields.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            UIElement cell = index < _ordered.Count ? _ordered[index] : _includesTax;
+            Grid.SetRow(cell, index / 2);
+            Grid.SetColumn(cell, index % 2);
+            _fields.Children.Add(cell);
         }
-        option.Margin = new Thickness(0, 2, 0, 10);
-        AutomationProperties.SetName(option, option.Content?.ToString() ?? string.Empty);
-        Grid.SetRow(option, row);
-        Grid.SetColumn(option, 1);
-        grid.Children.Add(option);
     }
-
-    private static int NextRow(Grid grid)
-    {
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        return grid.RowDefinitions.Count - 1;
-    }
-
-    private Control? FirstMissing() => new Control[]
-        { _sku, _name, _category, _unit, _tax, _taxMode, _hsn, _trackExpiry, _isLoose, _expiry }
-        .FirstOrDefault(static control => Equals(control.Tag, "review"));
 
     private void Save(object sender, RoutedEventArgs e)
     {
-        string? mode = _taxMode.SelectedIndex switch { 0 => "REGULAR", 1 => "COMPOSITION", 2 => "NONE", _ => null };
-        bool trackExpiry = _trackExpiry.IsChecked == true;
-        var invalid = new List<Control>();
-        if (string.IsNullOrWhiteSpace(_sku.Text)) invalid.Add(_sku);
-        if (string.IsNullOrWhiteSpace(_name.Text)) invalid.Add(_name);
-        if (_category.SelectedValue is not long) invalid.Add(_category);
-        if (_unit.SelectedValue is not long) invalid.Add(_unit);
-        if (_tax.SelectedValue is not long) invalid.Add(_tax);
-        if (mode is null) invalid.Add(_taxMode);
-        if (mode == "REGULAR" && string.IsNullOrWhiteSpace(_hsn.Text)) invalid.Add(_hsn);
-        if (_trackExpiry.IsChecked is null) invalid.Add(_trackExpiry);
-        if (_isLoose.IsChecked is null) invalid.Add(_isLoose);
-        if (trackExpiry && _expiry.SelectedDate is null) invalid.Add(_expiry);
-        foreach (Control control in new Control[] { _sku, _name, _category, _unit, _tax, _taxMode, _hsn, _expiry })
-            control.ClearValue(BorderBrushProperty);
-        if (invalid.Count > 0)
+        var form = new FormValidator();
+        string? sku = form.Text(_skuField, _sku.Text, required: true, maxLength: 20);
+        string? name = form.Text(_nameField, _name.Text, required: true, maxLength: 200);
+        string? localName = form.Text(_localNameField, _localName.Text, maxLength: 200);
+        long? category = form.Choice(_categoryField, _category.SelectedValue);
+        long? unit = form.Choice(_unitField, _unit.SelectedValue);
+        long? tax = form.Choice(_taxField, _tax.SelectedValue);
+        string? mode = form.Choice(_taxModeField, _taxMode.SelectedValue) switch
         {
-            foreach (Control control in invalid) control.BorderBrush = ErrorBrush;
-            _error.Text = Tr("Sales_RecreateRequired");
-            invalid[0].Focus();
-            return;
-        }
-        Result = new ReturnRecreationInput(_sku.Text.Trim(), _name.Text.Trim(),
-            string.IsNullOrWhiteSpace(_localName.Text) ? null : _localName.Text.Trim(),
-            (long)_category.SelectedValue!, (long)_unit.SelectedValue!, (long)_tax.SelectedValue!, mode!,
-            string.IsNullOrWhiteSpace(_hsn.Text) ? null : _hsn.Text.Trim(),
-            _includesTax.IsChecked == true, trackExpiry, _isLoose.IsChecked == true, "SALEABLE",
-            _expiry.SelectedDate is { } date ? DateOnly.FromDateTime(date) : null);
+            0 => "REGULAR",
+            1 => "COMPOSITION",
+            2 => "NONE",
+            _ => null,
+        };
+        string? hsn = form.Text(_hsnField, _hsn.Text, required: mode == "REGULAR", maxLength: 8);
+        long? trackExpiry = form.Choice(_trackExpiryField, _trackExpiry.SelectedValue);
+        long? isLoose = form.Choice(_looseField, _isLoose.SelectedValue);
+        DateOnly? expiry = form.Date(_expiryField, _expiry.SelectedDate, required: trackExpiry == 1);
+        if (!form.Apply(_fields, _summary)) return;
+        Result = new ReturnRecreationInput(sku!, name!, localName, category!.Value, unit!.Value, tax!.Value, mode!, hsn,
+            _includesTax.IsChecked == true, trackExpiry == 1, isLoose == 1, "SALEABLE", expiry);
         DialogResult = true;
     }
 

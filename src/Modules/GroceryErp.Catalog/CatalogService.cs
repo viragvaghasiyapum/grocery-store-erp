@@ -10,7 +10,7 @@ using GroceryErp.Inventory.Contracts;
 
 namespace GroceryErp.Catalog;
 
-public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettings settings)
+public sealed partial class CatalogService(DbExecutor database, IAuditLog audit, ISettings settings)
 {
     // Only the choice of query plan is cached. Row IDs and product fields are
     // always read afresh, so edits in another process cannot return stale rows.
@@ -222,70 +222,6 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                 """, new { id, normalizedName, scaled = Fx3.ToScaled(rate), active = isActive ? 1 : 0 }, transaction.Transaction);
             if (changed == 0) throw new DomainException(ErrorCode.NotFound, "tax rate", id);
             audit.Write(transaction, "tax_rate", id, "UPDATE", new { name = normalizedName, rate, isActive });
-        }, cancellationToken);
-    }
-
-    public Task<int> BulkChangeCategoryAsync(IReadOnlyCollection<long> productIds, long categoryId, CancellationToken cancellationToken = default) =>
-        BulkChangeAsync(productIds, "category_id", categoryId, "BULK_CATEGORY", cancellationToken);
-
-    public Task<int> BulkChangeTaxRateAsync(IReadOnlyCollection<long> productIds, long taxRateId, CancellationToken cancellationToken = default) =>
-        BulkChangeAsync(productIds, "tax_rate_id", taxRateId, "BULK_TAX_RATE", cancellationToken);
-
-    public Task<CatalogBulkPreview> PreviewBulkAsync(IReadOnlyCollection<long> productIds,
-        CatalogBulkAction action, string? targetClass = null, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(productIds);
-        long[] ids = productIds.Where(static id => id > 0).Distinct().ToArray();
-        if (ids.Length is < 1 or > 200)
-            throw new DomainException(ErrorCode.Validation, "Select 1 to 200 products per bulk action.");
-        if (action == CatalogBulkAction.Classification && targetClass is not ("SALEABLE" or "INTERNAL"))
-            throw new DomainException(ErrorCode.Validation, "Invalid product classification.");
-        return database.ReadAsync(connection =>
-        {
-            List<BulkPreviewRow> rows = connection.Query<BulkPreviewRow>("""
-                SELECT p.id AS Id,p.is_active AS IsActive,p.product_class AS ProductClass,
-                       COALESCE(t.quantity,0) AS Quantity,COALESCE(t.cost_value,0) AS CostValue
-                FROM product p LEFT JOIN product_stock_total t ON t.product_id=p.id
-                WHERE p.id IN @ids
-                """, new { ids }).AsList();
-            BulkPreviewRow[] eligible = rows.Where(row => action switch
-            {
-                CatalogBulkAction.Archive or CatalogBulkAction.Labels => row.IsActive,
-                CatalogBulkAction.Restore => !row.IsActive,
-                CatalogBulkAction.Classification => row.ProductClass == targetClass || row.Quantity == 0,
-                _ => true,
-            }).ToArray();
-            return new CatalogBulkPreview(ids.Length, eligible.Select(static row => row.Id).ToArray(),
-                ids.Length - eligible.Length,
-                Quantity.FromScaled(eligible.Sum(static row => row.Quantity)),
-                Money.FromScaled(eligible.Sum(static row => row.CostValue)));
-        }, cancellationToken);
-    }
-
-    public Task<int> BulkChangeClassificationAsync(IReadOnlyCollection<long> productIds, string productClass,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(productIds);
-        if (productClass is not ("SALEABLE" or "INTERNAL"))
-            throw new DomainException(ErrorCode.Validation, "Invalid product classification.");
-        long[] ids = productIds.Where(static id => id > 0).Distinct().ToArray();
-        if (ids.Length is < 1 or > 200)
-            throw new DomainException(ErrorCode.Validation, "Select 1 to 200 products per bulk action.");
-        return database.WriteAsync(tx =>
-        {
-            long invalid = tx.Connection.ExecuteScalar<long>("""
-                SELECT COUNT(*) FROM product p WHERE p.id IN @ids AND p.product_class<>@productClass
-                  AND EXISTS(SELECT 1 FROM product_lot l WHERE l.product_id=p.id AND l.qty_on_hand<>0)
-                """, new { ids, productClass }, tx.Transaction);
-            if (invalid != 0)
-                throw new DomainException(ErrorCode.Validation,
-                    "Products with stock cannot change classification. Consume or return stock first.");
-            int changed = tx.Connection.Execute("""
-                UPDATE product SET product_class=@productClass,updated_at=datetime('now','localtime')
-                WHERE id IN @ids AND product_class<>@productClass
-                """, new { ids, productClass }, tx.Transaction);
-            audit.Write(tx, "product", 0, "BULK_CLASSIFICATION", new { ids, productClass, changed });
-            return changed;
         }, cancellationToken);
     }
 
@@ -535,66 +471,30 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
         audit.Write(transaction, "product", id, active ? "RESTORE" : "ARCHIVE", null);
     }, cancellationToken);
 
-    public Task<int> BulkRemoveAsync(IReadOnlyCollection<long> productIds, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(productIds);
-        long[] ids = productIds.Where(static id => id > 0).Distinct().ToArray();
-        if (ids.Length is < 1 or > 200) throw new DomainException(ErrorCode.Validation, "Select 1 to 200 products per bulk action.");
-        return database.WriteAsync(transaction =>
-        {
-            int count = 0;
-            foreach (long id in ids)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                bool? active = transaction.Connection.QuerySingleOrDefault<bool?>(
-                    "SELECT is_active FROM product WHERE id=@id", new { id }, transaction.Transaction);
-                if (active != true) throw new DomainException(ErrorCode.Validation, "Only active products can be removed.");
-                Remove(transaction, id);
-                count++;
-            }
-            return count;
-        }, cancellationToken);
-    }
-
-    public Task<int> BulkRestoreAsync(IReadOnlyCollection<long> productIds, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(productIds);
-        long[] ids = productIds.Where(static id => id > 0).Distinct().ToArray();
-        if (ids.Length is < 1 or > 200) throw new DomainException(ErrorCode.Validation, "Select 1 to 200 products per bulk action.");
-        return database.WriteAsync(transaction =>
-        {
-            foreach (long id in ids)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                int changed = transaction.Connection.Execute(
-                    "UPDATE product SET is_active=1,updated_at=datetime('now','localtime') WHERE id=@id AND is_active=0",
-                    new { id }, transaction.Transaction);
-                if (changed != 1) throw new DomainException(ErrorCode.Validation, "Only archived products can be restored.");
-                audit.Write(transaction, "product", id, "RESTORE", null);
-            }
-            return ids.Length;
-        }, cancellationToken);
-    }
-
     public Task<string> GenerateInternalBarcodeAsync(long productId, string prefix, CancellationToken cancellationToken = default) =>
         database.WriteAsync(transaction =>
         {
             long exists = transaction.Connection.ExecuteScalar<long>(
                 "SELECT COUNT(*) FROM product WHERE id=@productId", new { productId }, transaction.Transaction);
             if (exists == 0) throw new DomainException(ErrorCode.NotFound, "product", productId);
-            string? existingBarcode = transaction.Connection.QueryFirstOrDefault<string>(
-                "SELECT barcode FROM product_barcode WHERE product_id=@productId AND lot_id IS NULL AND source='INTERNAL' ORDER BY id LIMIT 1",
-                new { productId }, transaction.Transaction);
-            if (existingBarcode is not null) return existingBarcode;
-            string barcode = Ean.Internal(prefix, productId);
-            transaction.Connection.Execute("""
-                INSERT INTO product_barcode(barcode, product_id, pack_qty, symbology, source, is_primary)
-                VALUES (@barcode, @productId, 1000, 'EAN13', 'INTERNAL',
-                    CASE WHEN EXISTS(SELECT 1 FROM product_barcode WHERE product_id=@productId AND is_primary=1) THEN 0 ELSE 1 END)
-                """, new { barcode, productId }, transaction.Transaction);
-            audit.Write(transaction, "product", productId, "BARCODE_ADD", new { barcode });
-            return barcode;
+            return EnsureInternalBarcode(transaction, productId, prefix);
         }, cancellationToken);
+
+    private string EnsureInternalBarcode(DbTx transaction, long productId, string prefix)
+    {
+        string? existingBarcode = transaction.Connection.QueryFirstOrDefault<string>(
+            "SELECT barcode FROM product_barcode WHERE product_id=@productId AND lot_id IS NULL AND source='INTERNAL' ORDER BY id LIMIT 1",
+            new { productId }, transaction.Transaction);
+        if (existingBarcode is not null) return existingBarcode;
+        string barcode = Ean.Internal(prefix, productId);
+        transaction.Connection.Execute("""
+            INSERT INTO product_barcode(barcode, product_id, pack_qty, symbology, source, is_primary)
+            VALUES (@barcode, @productId, 1000, 'EAN13', 'INTERNAL',
+                CASE WHEN EXISTS(SELECT 1 FROM product_barcode WHERE product_id=@productId AND is_primary=1) THEN 0 ELSE 1 END)
+            """, new { barcode, productId }, transaction.Transaction);
+        audit.Write(transaction, "product", productId, "BARCODE_ADD", new { barcode });
+        return barcode;
+    }
 
     public Task<string> EnsureLotBarcodeAsync(long lotId, string prefix, CancellationToken cancellationToken = default) =>
         database.WriteAsync(transaction =>
@@ -614,191 +514,6 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
             audit.Write(transaction, "product_lot", lotId, "BARCODE_ADD", new { barcode });
             return barcode;
         }, cancellationToken);
-
-    public async Task<IReadOnlyList<ProductListItem>> SearchAsync(ProductSearchFilter filter, CancellationToken cancellationToken = default) =>
-        (await SearchPageAsync(filter, null, null, cancellationToken).ConfigureAwait(false)).Items;
-
-    public Task<ProductSearchPage> SearchPageAsync(ProductSearchFilter filter, string? afterName = null,
-        long? afterId = null, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(filter);
-        if (afterName is null != (afterId is null))
-            throw new ArgumentException("Both product cursor fields are required.");
-        int limit = Math.Clamp(filter.Limit, 1, 200);
-        if (filter.ExpiryFilter is not ("ALL" or "EXPIRED" or "EXPIRING"))
-            throw new DomainException(ErrorCode.Validation, "Invalid expiry filter.");
-        string query = CatalogText.Optional(filter.Query, 120) ?? string.Empty;
-        return database.ReadAsync(connection =>
-        {
-            string join = string.Empty;
-            string search = string.Empty;
-            var parameters = new DynamicParameters();
-            parameters.Add("CategoryId", filter.CategoryId);
-            parameters.Add("BrandId", filter.BrandId);
-            parameters.Add("LowStockOnly", filter.LowStockOnly);
-            parameters.Add("NoBarcodeOnly", filter.NoBarcodeOnly);
-            parameters.Add("MissingLocalNameOnly", filter.MissingLocalNameOnly);
-            parameters.Add("IncludeArchived", filter.IncludeArchived);
-            parameters.Add("SaleableOnly", filter.SaleableOnly);
-            parameters.Add("LooseOnly", filter.LooseOnly);
-            parameters.Add("afterName", afterName);
-            parameters.Add("afterId", afterId);
-            parameters.Add("limit", limit + 1);
-            DateOnly asOf = filter.ExpiryAsOf ?? DateOnly.FromDateTime(DateTime.Today);
-            parameters.Add("expiryToday", asOf.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
-            parameters.Add("expirySoon", asOf.AddDays(30).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
-            if (query.Length >= 3 && query.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(static term => term.Length >= 3))
-            {
-                string match = string.Join(' ', query.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(static term => $"\"{term.Replace("\"", "\"\"")}\""));
-                parameters.Add("match", match);
-                bool broadFts = filter.CategoryId is null && filter.BrandId is null &&
-                    !filter.LowStockOnly && !filter.NoBarcodeOnly &&
-                    !filter.MissingLocalNameOnly && !filter.LooseOnly && filter.ExpiryFilter == "ALL";
-                long[]? pageIds = null;
-                if (broadFts)
-                {
-                    bool? common = null;
-                    lock (_searchPlanGate)
-                        if (_searchPlans.TryGetValue(match, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
-                            common = cached.Common;
-                    if (common is null)
-                    {
-                        long products = connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product");
-                        long threshold = Math.Max(32, (products + 1) / 2);
-                        long hits = connection.ExecuteScalar<long>("""
-                            SELECT COUNT(*) FROM (SELECT rowid FROM product_fts
-                            WHERE product_fts MATCH @match LIMIT @threshold)
-                            """, new { match, threshold });
-                        common = hits == threshold;
-                        lock (_searchPlanGate)
-                        {
-                            if (_searchPlans.Count >= 32) _searchPlans.Clear();
-                            _searchPlans[match] = (DateTime.UtcNow.AddMinutes(5), common.Value);
-                        }
-                    }
-                    if (common.Value)
-                    {
-                        // Limit the name scan to a small index window, then let the
-                        // virtual table test rows in name order. A short page falls
-                        // back to the complete FTS plan.
-                        SearchBoundary? boundary = connection.QuerySingleOrDefault<SearchBoundary>("""
-                            SELECT p.name AS Name,p.id AS Id FROM product p INDEXED BY ix_product_name
-                            WHERE (@IncludeArchived=1 OR p.is_active=1)
-                              AND (@SaleableOnly=0 OR p.product_class='SALEABLE')
-                              AND (@afterName IS NULL OR p.name COLLATE NOCASE > @afterName COLLATE NOCASE
-                                   OR (p.name COLLATE NOCASE = @afterName COLLATE NOCASE AND p.id>@afterId))
-                            ORDER BY p.name COLLATE NOCASE,p.id LIMIT 1 OFFSET @offset
-                            """, new
-                        {
-                            filter.IncludeArchived,
-                            filter.SaleableOnly,
-                            afterName,
-                            afterId,
-                            offset = (limit + 1) * 4 - 1
-                        });
-                        pageIds = connection.Query<long>("""
-                            SELECT p.id FROM product p INDEXED BY ix_product_name
-                            CROSS JOIN product_fts f ON f.rowid=p.id
-                            WHERE (@IncludeArchived=1 OR p.is_active=1)
-                              AND (@SaleableOnly=0 OR p.product_class='SALEABLE')
-                              AND (@afterName IS NULL OR p.name COLLATE NOCASE > @afterName COLLATE NOCASE
-                                   OR (p.name COLLATE NOCASE = @afterName COLLATE NOCASE AND p.id>@afterId))
-                              AND (@boundaryName IS NULL OR p.name COLLATE NOCASE < @boundaryName COLLATE NOCASE
-                                   OR (p.name COLLATE NOCASE = @boundaryName COLLATE NOCASE AND p.id<=@boundaryId))
-                              AND product_fts MATCH @match
-                            ORDER BY p.name COLLATE NOCASE,p.id LIMIT @take
-                            """, new
-                        {
-                            match,
-                            filter.IncludeArchived,
-                            filter.SaleableOnly,
-                            afterName,
-                            afterId,
-                            boundaryName = boundary?.Name,
-                            boundaryId = boundary?.Id,
-                            take = limit + 1
-                        }).ToArray();
-                    }
-                }
-                if (pageIds is { Length: > 0 } && pageIds.Length == limit + 1)
-                {
-                    search = "AND p.id IN @pageIds";
-                    parameters.Add("pageIds", pageIds);
-                }
-                else
-                {
-                    join = "JOIN product_fts f ON f.rowid=p.id";
-                    search = "AND product_fts MATCH @match";
-                }
-            }
-            else
-            {
-                search = query.Length == 0 ? string.Empty : "AND (p.sku LIKE @prefix ESCAPE '\\' OR p.name LIKE @prefix ESCAPE '\\' OR p.name_local LIKE @prefix ESCAPE '\\' OR p.search_terms LIKE @prefix ESCAPE '\\')";
-                string escaped = query.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("%", "\\%", StringComparison.Ordinal).Replace("_", "\\_", StringComparison.Ordinal);
-                parameters.Add("prefix", (query.Length >= 3 ? "%" : "") + escaped + "%");
-            }
-
-            bool broadLowStock = filter.LowStockOnly && query.Length == 0 &&
-                filter.CategoryId is null && filter.BrandId is null &&
-                !filter.NoBarcodeOnly && !filter.MissingLocalNameOnly && !filter.LooseOnly &&
-                filter.ExpiryFilter == "ALL";
-            bool nameOrderedLowStock = broadLowStock && connection.ExecuteScalar<long>(
-                "SELECT COUNT(*) FROM product_stock_total WHERE is_low=1") > 500;
-            string productIndex = nameOrderedLowStock ? "INDEXED BY ix_product_name" : string.Empty;
-            string stockJoin = filter.LowStockOnly
-                ? (nameOrderedLowStock ? "CROSS JOIN" : "JOIN") +
-                  " product_stock_total stock ON stock.product_id=p.id AND stock.is_low=1"
-                : string.Empty;
-            string lowStockFilter = string.Empty;
-            string expiryCondition = filter.ExpiryFilter switch
-            {
-                "EXPIRED" => "AND EXISTS(SELECT 1 FROM product_lot el WHERE el.product_id=p.id AND el.qty_on_hand>0 AND el.expiry_date<@expiryToday)",
-                "EXPIRING" => "AND EXISTS(SELECT 1 FROM product_lot el WHERE el.product_id=p.id AND el.qty_on_hand>0 AND el.expiry_date>=@expiryToday AND el.expiry_date<=@expirySoon)",
-                _ => string.Empty,
-            };
-
-            string sql = $$"""
-                WITH visible AS MATERIALIZED (
-                    SELECT p.id,p.name FROM product p {{productIndex}} {{join}} {{stockJoin}}
-                    WHERE (@IncludeArchived=1 OR p.is_active=1)
-                      AND (@SaleableOnly=0 OR p.product_class='SALEABLE')
-                      AND (@CategoryId IS NULL OR p.category_id=@CategoryId)
-                      AND (@BrandId IS NULL OR p.brand_id=@BrandId)
-                      {{expiryCondition}}
-                      {{lowStockFilter}}
-                      AND (@NoBarcodeOnly=0 OR NOT EXISTS(SELECT 1 FROM product_barcode pb WHERE pb.product_id=p.id AND pb.lot_id IS NULL))
-                      AND (@MissingLocalNameOnly=0 OR p.name_local IS NULL OR trim(p.name_local)='')
-                      AND (@LooseOnly=0 OR p.is_loose=1)
-                      AND (@afterName IS NULL OR p.name COLLATE NOCASE > @afterName COLLATE NOCASE
-                           OR (p.name COLLATE NOCASE = @afterName COLLATE NOCASE AND p.id>@afterId))
-                      {{search}}
-                    ORDER BY p.name COLLATE NOCASE,p.id LIMIT @limit
-                )
-                SELECT p.id AS Id, p.sku AS Sku, p.name AS Name, p.name_local AS NameLocal,
-                       c.name AS Category, b.name AS Brand, u.code AS Uom,
-                       COALESCE(total.quantity,0) AS StockScaled,
-                       COALESCE(l.selling_price,p.default_selling_price) AS SellingPriceScaled,
-                       COALESCE(l.mrp,p.default_mrp) AS MrpScaled,
-                       p.is_loose AS IsLoose, p.is_active AS IsActive,
-                       EXISTS(SELECT 1 FROM product_barcode pb WHERE pb.product_id=p.id AND pb.lot_id IS NULL) AS HasBarcode
-                FROM visible page JOIN product p ON p.id=page.id
-                LEFT JOIN product_stock_total total ON total.product_id=p.id
-                JOIN category c ON c.id=p.category_id
-                JOIN uom u ON u.id=p.uom_id
-                LEFT JOIN brand b ON b.id=p.brand_id
-                LEFT JOIN product_lot l ON l.id=(
-                    SELECT pl.id FROM product_lot pl WHERE pl.product_id=p.id AND pl.qty_on_hand>0 AND pl.is_active=1
-                    ORDER BY CASE WHEN pl.expiry_date IS NULL THEN 1 ELSE 0 END, pl.expiry_date, pl.id LIMIT 1)
-                ORDER BY page.name COLLATE NOCASE,page.id
-                """;
-            List<ProductListItem> rows = connection.Query<ProductListItem>(sql, parameters).AsList();
-            bool hasMore = rows.Count > limit;
-            if (hasMore) rows.RemoveAt(limit);
-            ProductListItem? last = rows.LastOrDefault();
-            return new ProductSearchPage(rows, hasMore, last?.Name, last?.Id);
-        }, cancellationToken);
-    }
 
     private ValidatedProduct Validate(ProductInput input)
     {
@@ -858,37 +573,6 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
                 """, new { barcode.Barcode, productId, barcode.PackQuantity, barcode.Symbology, barcode.IsPrimary, barcode.Source }, transaction.Transaction);
     }
 
-    private Task<int> BulkChangeAsync(
-        IReadOnlyCollection<long> productIds,
-        string column,
-        long value,
-        string action,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(productIds);
-        long[] ids = productIds.Where(static id => id > 0).Distinct().ToArray();
-        if (ids.Length is < 1 or > 200) throw new DomainException(ErrorCode.Validation, "Select 1 to 200 products per bulk action.");
-        if (column is not ("category_id" or "tax_rate_id")) throw new ArgumentOutOfRangeException(nameof(column));
-        return database.WriteAsync(transaction =>
-        {
-            string masterTable = column == "category_id" ? "category" : "tax_rate";
-            long masterExists = transaction.Connection.ExecuteScalar<long>(
-                $"SELECT COUNT(*) FROM {masterTable} WHERE id=@value", new { value }, transaction.Transaction);
-            if (masterExists == 0) throw new DomainException(ErrorCode.NotFound, masterTable, value);
-            int changed = 0;
-            foreach (long[] batch in ids.Chunk(500))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                int batchChanged = transaction.Connection.Execute(
-                    $"UPDATE product SET {column}=@value,updated_at=datetime('now','localtime') WHERE id IN @ids",
-                    new { value, ids = batch }, transaction.Transaction);
-                audit.Write(transaction, "product", 0, action, new { productIds = batch, value, changed = batchChanged });
-                changed += batchChanged;
-            }
-            return changed;
-        }, cancellationToken);
-    }
-
     private static int CategoryDepth(DbTx transaction, long? parentId)
     {
         if (parentId is null) return 0;
@@ -928,11 +612,6 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
     }
 
     private sealed record ValidatedBarcode(string Barcode, long PackQuantity, string Symbology, bool IsPrimary, string Source);
-    private sealed class SearchBoundary
-    {
-        public string Name { get; init; } = string.Empty;
-        public long Id { get; init; }
-    }
     private sealed record ValidatedProduct(
         string Sku, string Name, string? NameLocal, string? SearchTerms, long CategoryId, long? BrandId,
         long UomId, string? HsnCode, long? TaxRateId, int PriceIncludesTax, int IsLoose, string? PluCode,
@@ -982,12 +661,4 @@ public sealed class CatalogService(DbExecutor database, IAuditLog audit, ISettin
         public string ProductClass { get; init; } = "SALEABLE";
     }
 
-    private sealed class BulkPreviewRow
-    {
-        public long Id { get; init; }
-        public bool IsActive { get; init; }
-        public string ProductClass { get; init; } = "SALEABLE";
-        public long Quantity { get; init; }
-        public long CostValue { get; init; }
-    }
 }

@@ -2,39 +2,52 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
-        Title="{l:Tr Purchasing_NewVendor}" Width="650" Height="650" WindowStartupLocation="CenterOwner">
+        xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+        Title="{l:Tr Purchasing_NewVendor}" Width="660" Height="660" MinWidth="520" MinHeight="460"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
+        NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
   <Grid Margin="20">
-    <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-      <Grid Margin="0,0,18,0">
-        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-        <Grid.RowDefinitions>
-          <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-          <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-          <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-        <StackPanel Margin="0,0,8,10"><TextBlock Text="{l:Tr Catalog_Name}"/><TextBox x:Name="NameBox"/></StackPanel>
-        <StackPanel Grid.Column="1" Margin="8,0,0,10"><TextBlock Text="{l:Tr Purchasing_Contact}"/><TextBox x:Name="ContactBox"/></StackPanel>
-        <StackPanel Grid.Row="1" Margin="0,0,8,10"><TextBlock Text="{l:Tr Purchasing_Phone}"/><TextBox x:Name="PhoneBox"/></StackPanel>
-        <StackPanel Grid.Row="1" Grid.Column="1" Margin="8,0,0,10"><TextBlock Text="{l:Tr Purchasing_AltPhone}"/><TextBox x:Name="AltPhoneBox"/></StackPanel>
-        <StackPanel Grid.Row="2" Margin="0,0,8,10"><TextBlock Text="{l:Tr Purchasing_Email}"/><TextBox x:Name="EmailBox"/></StackPanel>
-        <StackPanel Grid.Row="2" Grid.Column="1" Margin="8,0,0,10"><TextBlock Text="GSTIN"/><TextBox x:Name="GstinBox"/></StackPanel>
-        <StackPanel Grid.Row="3" Margin="0,0,8,10"><TextBlock Text="PAN"/><TextBox x:Name="PanBox"/></StackPanel>
-        <StackPanel Grid.Row="3" Grid.Column="1" Margin="8,0,0,10"><TextBlock Text="{l:Tr Purchasing_Pincode}"/><TextBox x:Name="PincodeBox"/></StackPanel>
-        <StackPanel Grid.Row="4" Margin="0,0,8,10"><TextBlock Text="{l:Tr Purchasing_City}"/><TextBox x:Name="CityBox"/></StackPanel>
-        <StackPanel Grid.Row="4" Grid.Column="1" Margin="8,0,0,10"><TextBlock Text="{l:Tr Purchasing_State}"/><TextBox x:Name="StateBox"/></StackPanel>
-        <StackPanel Grid.Row="5" Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Text="{l:Tr Purchasing_Address}"/><TextBox x:Name="AddressBox"/></StackPanel>
-        <StackPanel Grid.Row="6" Margin="0,0,8,10"><TextBlock Text="{l:Tr Purchasing_Upi}"/><TextBox x:Name="UpiBox"/></StackPanel>
-        <StackPanel Grid.Row="6" Grid.Column="1" Margin="8,0,0,10"><TextBlock Text="{l:Tr Purchasing_Terms}"/><TextBox x:Name="TermsBox" Text="0"/></StackPanel>
-        <StackPanel Grid.Row="7" Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Text="{l:Tr Purchasing_Bank}"/><TextBox x:Name="BankBox"/></StackPanel>
-        <StackPanel Grid.Row="8" Margin="0,0,8,10"><TextBlock Text="{l:Tr Purchasing_OpeningBalance}"/><TextBox x:Name="OpeningBox" Text="0"/></StackPanel>
-        <StackPanel Grid.Row="9" Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Text="{l:Tr Purchasing_Notes}"/><TextBox x:Name="NotesBox" Height="60" AcceptsReturn="True"/></StackPanel>
-        <TextBlock x:Name="ErrorText" Grid.Row="10" Grid.ColumnSpan="2" Foreground="Crimson" TextWrapping="Wrap"/>
-      </Grid>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <StackPanel>
+      <TextBlock x:Name="TitleText" Style="{StaticResource FormTitle}" Text="{l:Tr Purchasing_NewVendor}"/>
+      <TextBlock Style="{StaticResource FormContext}" Text="{l:Tr Purchasing_VendorContext}"/>
+    </StackPanel>
+    <p:FormErrorSummary x:Name="Summary" Grid.Row="1"/>
+    <ScrollViewer x:Name="Scroller" Grid.Row="2" Margin="0,8,0,0" VerticalScrollBarVisibility="Auto">
+      <StackPanel x:Name="Fields" Margin="0,0,10,0">
+        <TextBlock Style="{StaticResource FormSection}" Text="{l:Tr Purchasing_SectionContact}"/>
+        <UniformGrid Columns="2">
+          <p:FormField x:Name="NameField" Label="{l:Tr Catalog_Name}" IsRequired="True"><TextBox x:Name="NameBox" MaxLength="120"/></p:FormField>
+          <p:FormField Label="{l:Tr Purchasing_Contact}"><TextBox x:Name="ContactBox" MaxLength="120"/></p:FormField>
+          <p:FormField Label="{l:Tr Purchasing_Phone}"><TextBox x:Name="PhoneBox" MaxLength="20"/></p:FormField>
+          <p:FormField Label="{l:Tr Purchasing_AltPhone}"><TextBox x:Name="AltPhoneBox" MaxLength="20"/></p:FormField>
+          <p:FormField Label="{l:Tr Purchasing_Email}"><TextBox x:Name="EmailBox" MaxLength="120"/></p:FormField>
+        </UniformGrid>
+        <TextBlock Style="{StaticResource FormSection}" Text="{l:Tr Purchasing_SectionTax}"/>
+        <UniformGrid Columns="2">
+          <p:FormField x:Name="GstinField" Label="GSTIN" Hint="{l:Tr Purchasing_GstinHint}"><TextBox x:Name="GstinBox" MaxLength="15" CharacterCasing="Upper"/></p:FormField>
+          <p:FormField x:Name="PanField" Label="PAN"><TextBox x:Name="PanBox" MaxLength="10" CharacterCasing="Upper"/></p:FormField>
+        </UniformGrid>
+        <TextBlock Style="{StaticResource FormSection}" Text="{l:Tr Purchasing_SectionAddress}"/>
+        <p:FormField Label="{l:Tr Purchasing_Address}"><TextBox x:Name="AddressBox" MaxLength="300"/></p:FormField>
+        <UniformGrid Columns="3">
+          <p:FormField Label="{l:Tr Purchasing_City}"><TextBox x:Name="CityBox" MaxLength="80"/></p:FormField>
+          <p:FormField Label="{l:Tr Purchasing_State}"><TextBox x:Name="StateBox" MaxLength="80"/></p:FormField>
+          <p:FormField x:Name="PincodeField" Label="{l:Tr Purchasing_Pincode}"><TextBox x:Name="PincodeBox" MaxLength="6"/></p:FormField>
+        </UniformGrid>
+        <TextBlock Style="{StaticResource FormSection}" Text="{l:Tr Purchasing_SectionPayment}"/>
+        <UniformGrid Columns="2">
+          <p:FormField Label="{l:Tr Purchasing_Upi}"><TextBox x:Name="UpiBox" MaxLength="80"/></p:FormField>
+          <p:FormField x:Name="TermsField" Label="{l:Tr Purchasing_Terms}" IsRequired="True"><TextBox x:Name="TermsBox" Text="0"/></p:FormField>
+          <p:FormField x:Name="OpeningField" Label="{l:Tr Purchasing_OpeningBalance}" IsRequired="True"><TextBox x:Name="OpeningBox" Text="0"/></p:FormField>
+        </UniformGrid>
+        <p:FormField Label="{l:Tr Purchasing_Bank}"><TextBox x:Name="BankBox" MaxLength="300"/></p:FormField>
+        <p:FormField Label="{l:Tr Purchasing_Notes}"><TextBox x:Name="NotesBox" Height="56" AcceptsReturn="True" TextWrapping="Wrap" MaxLength="500"/></p:FormField>
+      </StackPanel>
     </ScrollViewer>
-    <StackPanel Grid.Row="1" HorizontalAlignment="Right" Orientation="Horizontal" Margin="0,12,0,0">
-      <Button Margin="0,0,8,0" Click="Save_OnClick" Content="{l:Tr Common_Save}"/>
-      <Button Click="Cancel_OnClick" Content="{l:Tr Common_Cancel}"/>
+    <StackPanel Grid.Row="3" Style="{StaticResource FormFooter}">
+      <Button Margin="0,0,8,0" IsCancel="True" Content="{l:Tr Common_Cancel}"/>
+      <Button x:Name="SaveButton" IsDefault="True" Click="Save_OnClick" Content="{l:Tr Common_Save}"/>
     </StackPanel>
   </Grid>
 </Window>

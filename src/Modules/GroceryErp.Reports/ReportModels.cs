@@ -102,9 +102,10 @@ public enum ReportValueKind { Text, Date, Count, Quantity, Money, Percent }
 
 public sealed record ReportColumn(string Key, string Heading, ReportValueKind Kind);
 public sealed record ReportRow(IReadOnlyDictionary<string, object?> Values);
+/// <summary>A displayed report; <see cref="Filters"/> states the applied filters for every export of it.</summary>
 public sealed record TabularReport(string Title, DateRange? Period, IReadOnlyList<ReportColumn> Columns,
     IReadOnlyList<ReportRow> Rows, IReadOnlyDictionary<string, decimal> Totals, bool IsTruncated = false,
-    string? Summary = null);
+    string? Summary = null, string? Filters = null);
 
 public sealed record ReportFilter(DateOnly? From = null, DateOnly? To = null, long? ProductId = null,
     long? LotId = null, long? VendorId = null, long? AssetId = null, string? Status = null, string? PaymentMode = null,

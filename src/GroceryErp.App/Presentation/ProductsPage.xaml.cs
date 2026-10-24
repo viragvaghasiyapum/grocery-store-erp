@@ -1,34 +1,46 @@
-using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using GroceryErp.Catalog;
-using GroceryErp.Core.Errors;
+using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Services;
+using GroceryErp.Expenses;
 using GroceryErp.Inventory;
 using GroceryErp.Localization;
+using GroceryErp.Purchasing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Win32;
 
 namespace GroceryErp.App.Presentation;
 
+/// <summary>
+/// Products: server-side search (exact SKU/barcode first) and filters, keyset pages sized to the
+/// window, page or all-matching selection with reviewed bulk actions, and a slide-in panel with
+/// the product's Basics, Lots and History. Filters are kept for the session.
+/// </summary>
 public partial class ProductsPage : Page
 {
-    private int PageSize => int.TryParse((PageSizeBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int size) ? size : 50;
+    private const string StateKey = nameof(ProductsPage);
+    private const int SearchPageSize = 8;
+    private const int MaxLabelProducts = 200;
+    private const int MaxCountProducts = 100;
     private readonly CatalogService _catalog;
     private readonly ISettings _settings;
     private readonly ProductExcelImporter _importer;
-    private int _searchVersion;
-    private int _refreshVersion;
-    private bool _loadingMasters;
-    private readonly Stack<(string? Name, long? Id)> _previousPages = new();
-    private string? _afterName;
-    private long? _afterId;
-    private ProductSearchPage? _currentPage;
-    private readonly Dictionary<long, bool> _selectedProducts = new();
+    private readonly KeysetPager<NameCursor> _pager = new();
+    private readonly LatestRequest _requests = new();
+    private readonly TableSelection<ProductListItem> _selection = new(static product => product.Id);
+    private readonly FitPageSize _fit;
+    private readonly DispatcherTimer _searchDelay;
+    private readonly bool _loadOnShow;
     private CheckBox? _pageSelectionCheck;
-    private bool _checkboxSelectionUsed;
-    private bool _pageLoading;
-    private CancellationTokenSource? _pageLoadCancellation;
+    private State? _pendingState;
+    private bool _restoring;
+    private long _searchStarted;
 
     public ProductsPage() : this(
         ((App)Application.Current).Services.GetRequiredService<CatalogService>(),
@@ -43,202 +55,553 @@ public partial class ProductsPage : Page
         _catalog = catalog;
         _settings = settings;
         _importer = importer;
-        UpdateSelectionActions();
+        _loadOnShow = loadOnShow;
+        _ = new FilterRow(FilterBar, SearchBox, MoreFiltersToggle, MoreFiltersPanel)
+            .Fold(CategoryFilter).Fold(StatusFilter).Fold(StockFilter).Fold(ExpiryFilter).Fold(ClassFilter);
+        _fit = new FitPageSize(ProductsGrid);
+        _fit.RowsChanged += async (_, _) => await LoadAsync(PageMove.Same);
+        _searchDelay = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromMilliseconds(150) };
+        _searchDelay.Tick += async (_, _) =>
+        {
+            _searchDelay.Stop();
+            await ReloadAsync(_searchStarted);
+        };
+        _selection.Changed += (_, _) => UpdateSelection();
+        Selection.ClearRequested += (_, _) =>
+        {
+            _selection.Clear();
+            ProductsGrid.Items.Refresh();
+        };
+        Selection.AllMatchingRequested += async (_, _) => await SelectAllMatchingAsync();
+        Pager.PreviousRequested += async (_, _) => await LoadAsync(PageMove.Previous);
+        Pager.NextRequested += async (_, _) => await LoadAsync(PageMove.Next);
+        Details.CloseRequested += (_, _) => CloseDetails();
+        Details.ProductChanged += async (_, _) => await LoadAsync(PageMove.Same);
+        IServiceProvider? services = (Application.Current as App)?.ServicesOrNull;
+        Details.Initialize(catalog, services?.GetService<InventoryService>(), BusinessDate,
+            settings.Current.TaxMode == "REGULAR");
+        _pendingState = PageStateStore.Current?.Get<State>(StateKey);
+        ApplyState(_pendingState);
+        PreviewKeyDown += OnPreviewKeyDown;
+        SizeChanged += (_, _) => SizeDetails();
         Loaded += async (_, _) =>
         {
             TranslationSource.Instance.PropertyChanged += TranslationChanged;
-            if (!loadOnShow) return;
+            if (!_loadOnShow) return;
             try
             {
                 await LoadMastersAsync();
-                await RefreshAsync();
+                await LoadAsync(PageMove.First);
             }
-            catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+            catch (Exception exception) { Pager.Status = UserError.Message(exception); }
         };
         Unloaded += (_, _) =>
         {
             TranslationSource.Instance.PropertyChanged -= TranslationChanged;
-            ++_searchVersion;
-            ++_refreshVersion;
-            _pageLoadCancellation?.Cancel();
-            _pageLoading = false;
+            _searchDelay.Stop();
+            _requests.Cancel();
+            PageStateStore.Current?.Set(StateKey, CaptureState());
         };
+    }
+
+    private static DateOnly BusinessDate =>
+        (Application.Current as App)?.ServicesOrNull?.GetService<IClock>()?.BusinessDate ?? DateOnly.FromDateTime(DateTime.Today);
+
+    private sealed record State(string Search, int Class, int Status, long CategoryId, int Stock, int Expiry,
+        long BrandId, long VendorId, bool NoBarcode, bool MissingLocal, bool Loose, bool MoreFilters);
+
+    /// <summary>Makes the next Products page open on active products with expired stock.</summary>
+    internal static void RequestExpiredStock(PageStateStore? store) =>
+        store?.Set(StateKey, new State(string.Empty, 0, 0, 0, 0, 1, 0, 0, false, false, false, false));
+
+    private State CaptureState() => new(SearchBox.Text ?? string.Empty, ClassFilter.SelectedIndex, StatusFilter.SelectedIndex,
+        CategoryFilter.SelectedValue as long? ?? 0, StockFilter.SelectedIndex, ExpiryFilter.SelectedIndex,
+        BrandFilter.SelectedValue as long? ?? 0, VendorFilter.SelectedValue as long? ?? 0,
+        NoBarcodeFilter.IsChecked == true, MissingLocalFilter.IsChecked == true, LooseFilter.IsChecked == true,
+        MoreFiltersToggle.IsChecked == true);
+
+    private void ApplyState(State? state)
+    {
+        if (state is null) return;
+        _restoring = true;
+        SearchBox.Text = state.Search;
+        ClassFilter.SelectedIndex = state.Class;
+        StatusFilter.SelectedIndex = state.Status;
+        StockFilter.SelectedIndex = state.Stock;
+        ExpiryFilter.SelectedIndex = state.Expiry;
+        NoBarcodeFilter.IsChecked = state.NoBarcode;
+        MissingLocalFilter.IsChecked = state.MissingLocal;
+        LooseFilter.IsChecked = state.Loose;
+        MoreFiltersToggle.IsChecked = state.MoreFilters;
+        MoreFiltersPanel.Visibility = state.MoreFilters ? Visibility.Visible : Visibility.Collapsed;
+        _restoring = false;
     }
 
     private void TranslationChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is "Item[]" && IsLoaded)
+        if (e.PropertyName != "Item[]" || !IsLoaded) return;
+        UpdateSelection();
+        _ = RefreshForLanguageAsync();
+    }
+
+    // The "All …" filter items and the row count are set in code, so they follow a reload.
+    private async Task RefreshForLanguageAsync()
+    {
+        try
         {
-            StatusText.Text = TranslationSource.Instance.Format("Catalog_Count", ProductsGrid.Items.Count);
-            UpdateSelectionActions();
+            await LoadMastersAsync();
+            await LoadAsync(PageMove.Same);
         }
-    }
-
-    private async void SearchBox_OnTextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (!IsLoaded) return;
-        ClearSelection();
-        int version = ++_searchVersion;
-        long searchStarted = Stopwatch.GetTimestamp();
-        // Invalidate the current result as soon as the text changes. Waiting for
-        // the debounce would let an older query replace rows for the new search.
-        ++_refreshVersion;
-        _pageLoadCancellation?.Cancel();
-        _pageLoading = true;
-        PreviousPageButton.IsEnabled = false;
-        NextPageButton.IsEnabled = false;
-        await Task.Delay(20);
-        if (version == _searchVersion && IsLoaded) await RefreshAsync(searchStarted: searchStarted);
-    }
-
-    private async void Filter_OnChanged(object sender, RoutedEventArgs e)
-    {
-        if (IsLoaded) { ClearSelection(); await RefreshAsync(); }
-    }
-
-    private async void ExpiryFilter_OnChanged(object sender, RoutedEventArgs e)
-    {
-        if (sender == ExpiredFilter && ExpiredFilter.IsChecked) ExpiringFilter.IsChecked = false;
-        if (sender == ExpiringFilter && ExpiringFilter.IsChecked) ExpiredFilter.IsChecked = false;
-        if (IsLoaded) { ClearSelection(); await RefreshAsync(); }
-    }
-
-    private async void MasterFilter_OnChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (IsLoaded && !_loadingMasters) { ClearSelection(); await RefreshAsync(); }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 
     private async Task LoadMastersAsync()
     {
-        _loadingMasters = true;
+        long? category = CategoryFilter.SelectedValue as long? ?? _pendingState?.CategoryId;
+        long? brand = BrandFilter.SelectedValue as long? ?? _pendingState?.BrandId;
+        long? vendor = VendorFilter.SelectedValue as long? ?? _pendingState?.VendorId;
+        _pendingState = null;
+        IReadOnlyList<MasterItem> categories = await _catalog.GetCategoriesAsync();
+        IReadOnlyList<MasterItem> brands = await _catalog.GetBrandsAsync();
+        PurchasingService? purchasing = (Application.Current as App)?.ServicesOrNull?.GetService<PurchasingService>();
+        IReadOnlyList<VendorItem> vendors = purchasing is null ? [] : await purchasing.GetVendorsAsync(includeInactive: true);
+        _restoring = true;
         try
         {
-            long? categoryId = CategoryFilter.SelectedValue as long?;
-            long? brandId = BrandFilter.SelectedValue as long?;
-            CategoryFilter.ItemsSource = (await _catalog.GetCategoriesAsync()).Where(static item => item.IsActive).ToList();
-            BrandFilter.ItemsSource = (await _catalog.GetBrandsAsync()).Where(static item => item.IsActive).ToList();
-            CategoryFilter.SelectedValue = categoryId;
-            BrandFilter.SelectedValue = brandId;
+            CategoryFilter.ItemsSource = new[] { new MasterItem { Id = 0, Name = TranslationSource.Instance["Catalog_AllCategories"] } }
+                .Concat(categories.Where(static item => item.IsActive)).ToList();
+            BrandFilter.ItemsSource = new[] { new MasterItem { Id = 0, Name = TranslationSource.Instance["Catalog_AllBrands"] } }
+                .Concat(brands.Where(static item => item.IsActive)).ToList();
+            VendorFilter.ItemsSource = new[] { new VendorItem(0, TranslationSource.Instance["Purchasing_AllVendors"], null, null, Money.Zero, true) }
+                .Concat(vendors).ToList();
+            CategoryFilter.SelectedValue = category ?? 0;
+            BrandFilter.SelectedValue = brand ?? 0;
+            VendorFilter.SelectedValue = vendor ?? 0;
+            if (CategoryFilter.SelectedIndex < 0) CategoryFilter.SelectedIndex = 0;
+            if (BrandFilter.SelectedIndex < 0) BrandFilter.SelectedIndex = 0;
+            if (VendorFilter.SelectedIndex < 0) VendorFilter.SelectedIndex = 0;
         }
-        finally { _loadingMasters = false; }
+        finally { _restoring = false; }
     }
 
-    private Task RefreshAsync(long? searchStarted = null, CancellationToken cancellationToken = default) =>
-        LoadPageAsync(null, null, reset: true, searchStarted, cancellationToken);
+    private static string? SelectedTag(ComboBox box) => (box.SelectedItem as ComboBoxItem)?.Tag as string;
 
-    private async Task LoadPageAsync(string? afterName, long? afterId, bool reset,
-        long? searchStarted = null, CancellationToken cancellationToken = default)
+    private static long? NonZero(object? value) => value is long id and > 0 ? id : null;
+
+    private ProductSearchFilter CurrentFilter(int limit) => new(
+        SearchBox.Text,
+        CategoryId: NonZero(CategoryFilter.SelectedValue),
+        BrandId: NonZero(BrandFilter.SelectedValue),
+        LowStockOnly: SelectedTag(StockFilter) == "LOW",
+        NoBarcodeOnly: NoBarcodeFilter.IsChecked == true,
+        MissingLocalNameOnly: MissingLocalFilter.IsChecked == true,
+        IncludeArchived: SelectedTag(StatusFilter) == "ALL",
+        LooseOnly: LooseFilter.IsChecked == true,
+        Limit: limit,
+        ExpiryFilter: SelectedTag(ExpiryFilter) ?? "ALL",
+        ExpiryAsOf: BusinessDate)
     {
+        ArchivedOnly = SelectedTag(StatusFilter) == "ARCHIVED",
+        ProductClass = SelectedTag(ClassFilter) is { Length: > 0 } productClass ? productClass : null,
+        HasStockOnly = SelectedTag(StockFilter) == "HAS",
+        VendorId = NonZero(VendorFilter.SelectedValue),
+        ExactFirst = true,
+    };
+
+    private Task ReloadAsync(long? searchStarted = null)
+    {
+        _selection.Clear();
+        return LoadAsync(PageMove.First, searchStarted);
+    }
+
+    private async Task LoadAsync(PageMove move, long? searchStarted = null)
+    {
+        if (!_pager.CanMove(move)) return;
         using var timing = UiRefreshProbe.Track("products", this, searchStarted);
-        _pageLoadCancellation?.Cancel();
-        var request = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _pageLoadCancellation = request;
-        int version = ++_refreshVersion;
+        using LatestRequest.Scope request = _requests.Begin();
+        Pager.SetLoading(true);
         try
         {
-            _pageLoading = true;
-            PreviousPageButton.IsEnabled = false;
-            NextPageButton.IsEnabled = false;
-            ProductSearchPage page = await _catalog.SearchPageAsync(CurrentFilter(PageSize),
-                afterName, afterId, request.Token);
-            if (version != _refreshVersion || !IsLoaded) return;
-            if (reset) _previousPages.Clear();
-            _afterName = afterName;
-            _afterId = afterId;
-            _currentPage = page;
-            if (searchStarted is not null)
-                timing.SearchShape = page.Items.Count == 0 ? "empty" : "populated";
+            int rows = _fit.Take();
+            int limit = string.IsNullOrWhiteSpace(SearchBox.Text) ? rows : Math.Min(SearchPageSize, rows);
+            NameCursor? cursor = _pager.CursorFor(move);
+            ProductSearchPage page = await _catalog.SearchPageAsync(CurrentFilter(limit), cursor?.Name, cursor?.Id, request.Token);
+            if (!request.IsCurrent || !IsLoaded && _loadOnShow) return;
+            _pager.Commit(move, page.HasMore, page.NextName is null || page.NextId is null ? null : new NameCursor(page.NextName, page.NextId.Value));
+            _selection.Refresh(page.Items);
+            if (searchStarted is not null) timing.SearchShape = page.Items.Count == 0 ? "empty" : "populated";
             timing.Bind(() => ProductsGrid.ItemsSource = page.Items);
             EmptyText.Visibility = page.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            StatusText.Text = TranslationSource.Instance.Format("Catalog_Count", ProductsGrid.Items.Count);
-            PreviousPageButton.IsEnabled = _previousPages.Count > 0;
-            NextPageButton.IsEnabled = page.HasMore;
-            UpdateSelectionActions();
+            Pager.Status = TranslationSource.Instance.Format("Catalog_Count", page.Items.Count);
+            if (Details.Visibility == Visibility.Visible &&
+                page.Items.FirstOrDefault(item => item.Id == Details.ProductId) is { } open)
+                Details.Refresh(open);
+            UpdateSelection();
         }
-        catch (OperationCanceledException) when (request.IsCancellationRequested) { }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (OperationCanceledException) when (request.Token.IsCancellationRequested) { }
+        catch (Exception exception)
         {
-            if (version == _refreshVersion && IsLoaded)
-                StatusText.Text = UserError.Message(exception);
+            if (request.IsCurrent) Pager.Status = UserError.Message(exception);
         }
         finally
         {
-            if (ReferenceEquals(_pageLoadCancellation, request))
-                _pageLoadCancellation = null;
-            if (_refreshVersion == version)
+            if (request.IsCurrent) Pager.Update(_pager.PageNumber, _pager.CanGoBack, _pager.HasMore);
+        }
+    }
+
+    private void SearchBox_OnTextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (!IsLoaded || _restoring) return;
+        // Invalidate the shown result at once; the debounce only delays the query.
+        _requests.Cancel();
+        _searchStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+        Pager.SetLoading(true);
+        _searchDelay.Stop();
+        _searchDelay.Start();
+    }
+
+    private async void Filter_OnChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (IsLoaded && !_restoring) await ReloadAsync();
+    }
+
+    private async void CheckFilter_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (IsLoaded) await ReloadAsync();
+    }
+
+    private void MoreFilters_OnClick(object sender, RoutedEventArgs e) =>
+        MoreFiltersPanel.Visibility = MoreFiltersToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+
+    private async void ClearFilters_OnClick(object sender, RoutedEventArgs e)
+    {
+        _restoring = true;
+        SearchBox.Text = string.Empty;
+        ClassFilter.SelectedIndex = 0;
+        StatusFilter.SelectedIndex = 0;
+        CategoryFilter.SelectedIndex = 0;
+        StockFilter.SelectedIndex = 0;
+        ExpiryFilter.SelectedIndex = 0;
+        BrandFilter.SelectedIndex = 0;
+        VendorFilter.SelectedIndex = 0;
+        NoBarcodeFilter.IsChecked = false;
+        MissingLocalFilter.IsChecked = false;
+        LooseFilter.IsChecked = false;
+        _restoring = false;
+        _searchDelay.Stop();
+        await ReloadAsync();
+    }
+
+    private void OnPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.F)
+        {
+            SearchBox.Focus();
+            SearchBox.SelectAll();
+            e.Handled = true;
+        }
+        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.N)
+        {
+            New_OnClick(this, e);
+            e.Handled = true;
+        }
+    }
+
+    private void ProductsGrid_OnPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (ProductsGrid.SelectedItem is not ProductListItem product) return;
+        if (e.Key == Key.Enter)
+        {
+            _ = OpenDetailsAsync(product);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            _selection.Set(product, !_selection.IsSelected(product));
+            ProductsGrid.Items.Refresh();
+            e.Handled = true;
+        }
+    }
+
+    private async void ProductsGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (Details.Visibility == Visibility.Visible && ProductsGrid.SelectedItem is ProductListItem product &&
+            product.Id != Details.ProductId)
+            await OpenDetailsAsync(product);
+    }
+
+    private async void ProductsGrid_OnDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (ProductsGrid.SelectedItem is ProductListItem product) await OpenDetailsAsync(product);
+    }
+
+    private async Task OpenDetailsAsync(ProductListItem product, bool lots = false)
+    {
+        if (Details.Visibility == Visibility.Visible && Details.ProductId != product.Id && Details.HasUnsavedChanges &&
+            MessageBox.Show(TranslationSource.Instance.Format("Catalog_DiscardChanges", Details.ProductName),
+                TranslationSource.Instance["Catalog_Title"], MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return;
+        if (Details.Visibility != Visibility.Visible)
+        {
+            Details.Visibility = Visibility.Visible;
+            SetPanelOpen(true);
+            SizeDetails();
+            if (SystemParameters.ClientAreaAnimation)
             {
-                _pageLoading = false;
+                var slide = new TranslateTransform();
+                Details.RenderTransform = slide;
+                slide.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(48, 0, TimeSpan.FromMilliseconds(200))
+                { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }, FillBehavior = FillBehavior.Stop });
             }
-            request.Dispose();
         }
+        await Details.OpenAsync(product, lots);
     }
 
-    private ProductSearchFilter CurrentFilter(int limit) => new(
-                SearchBox.Text,
-                CategoryId: CategoryFilter.SelectedValue as long?,
-                BrandId: BrandFilter.SelectedValue as long?,
-                LowStockOnly: LowStockFilter.IsChecked == true,
-                NoBarcodeOnly: NoBarcodeFilter.IsChecked == true,
-                MissingLocalNameOnly: MissingLocalFilter.IsChecked == true,
-                IncludeArchived: ArchivedFilter.IsChecked == true,
-                LooseOnly: LooseFilter.IsChecked == true,
-                Limit: limit,
-                ExpiryFilter: ExpiredFilter.IsChecked ? "EXPIRED" :
-                    ExpiringFilter.IsChecked ? "EXPIRING" : "ALL",
-                ExpiryAsOf: Application.Current is App app
-                    ? app.Services.GetRequiredService<IClock>().BusinessDate
-                    : DateOnly.FromDateTime(DateTime.Today));
-
-    private async void NextPage_OnClick(object sender, RoutedEventArgs e)
+    private void SizeDetails()
     {
-        if (_pageLoading || _currentPage is not { HasMore: true, NextName: not null, NextId: not null } page) return;
-        string? previousName = _afterName;
-        long? previousId = _afterId;
-        await LoadPageAsync(page.NextName, page.NextId, reset: false);
-        if (_afterName == page.NextName && _afterId == page.NextId)
-        {
-            _previousPages.Push((previousName, previousId));
-            PreviousPageButton.IsEnabled = true;
-        }
+        if (Details.Visibility != Visibility.Visible) return;
+        // The list keeps its SKU and name columns; the panel gets the rest for the lot columns.
+        double width = Math.Clamp(ActualWidth * 0.62, 460, 820);
+        DetailsColumn.Width = new GridLength(width);
     }
 
-    private async void PageSize_OnChanged(object sender, SelectionChangedEventArgs e)
+    private void CloseDetails()
     {
-        if (IsLoaded) await RefreshAsync();
+        if (Details.HasUnsavedChanges &&
+            MessageBox.Show(TranslationSource.Instance.Format("Catalog_DiscardChanges", Details.ProductName),
+                TranslationSource.Instance["Catalog_Title"], MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return;
+        Details.Visibility = Visibility.Collapsed;
+        DetailsColumn.Width = new GridLength(0);
+        SetPanelOpen(false);
+        ProductsGrid.Focus();
     }
 
-    private async void PreviousPage_OnClick(object sender, RoutedEventArgs e)
+    // Beside the open panel the list keeps only its title and New product; import and masters return on close.
+    private void SetPanelOpen(bool open)
     {
-        if (_pageLoading || _previousPages.Count == 0) return;
-        (string? name, long? id) = _previousPages.Peek();
-        await LoadPageAsync(name, id, reset: false);
-        if (_afterName == name && _afterId == id)
-        {
-            _previousPages.Pop();
-            PreviousPageButton.IsEnabled = _previousPages.Count > 0;
-        }
-    }
-
-    private void ProductsGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_selectedProducts.Count == 0 && e.AddedItems.Count > 0)
-            _checkboxSelectionUsed = false;
-        UpdateSelectionActions();
+        Visibility secondary = open ? Visibility.Collapsed : Visibility.Visible;
+        ImportMenu.Visibility = secondary;
+        MastersButton.Visibility = secondary;
     }
 
     private void ProductCheck_OnLoaded(object sender, RoutedEventArgs e)
     {
-        if (sender is CheckBox { DataContext: ProductListItem item } box)
-            box.IsChecked = _selectedProducts.ContainsKey(item.Id);
+        if (sender is CheckBox { DataContext: ProductListItem item } box) box.IsChecked = _selection.IsSelected(item);
     }
 
     private void ProductCheck_OnClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not CheckBox { DataContext: ProductListItem item } box) return;
-        _checkboxSelectionUsed = true;
-        if (box.IsChecked == true) _selectedProducts[item.Id] = item.IsActive;
-        else _selectedProducts.Remove(item.Id);
-        UpdateSelectionActions();
+        if (sender is CheckBox { DataContext: ProductListItem item } box) _selection.Set(item, box.IsChecked == true);
+    }
+
+    private void PageSelectionCheck_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        _pageSelectionCheck = sender as CheckBox;
+        UpdateSelection();
+    }
+
+    private void PageSelectionCheck_OnClick(object sender, RoutedEventArgs e)
+    {
+        ProductListItem[] rows = ProductsGrid.Items.OfType<ProductListItem>().ToArray();
+        _selection.SetPage(rows, _selection.PageState(rows) != true);
+        ProductsGrid.Items.Refresh();
+    }
+
+    private void UpdateSelection()
+    {
+        ProductListItem[] rows = ProductsGrid.Items.OfType<ProductListItem>().ToArray();
+        bool? state = _selection.PageState(rows);
+        if (_pageSelectionCheck is not null) _pageSelectionCheck.IsChecked = state;
+        Selection.Show(_selection.Count, _selection.AllMatching, state == true, _pager.HasMore || _pager.CanGoBack,
+            _selection.AllMatching ? FilterSummary() : null);
+    }
+
+    private async Task SelectAllMatchingAsync()
+    {
+        try
+        {
+            int count = await _catalog.CountAsync(CurrentFilter(1));
+            _selection.SelectAllMatching(count);
+            ProductsGrid.Items.Refresh();
+        }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
+    }
+
+    private async Task<IReadOnlyList<long>> SelectedIdsAsync(int maximum, CancellationToken cancellationToken) =>
+        _selection.AllMatching
+            ? await _catalog.ResolveIdsAsync(CurrentFilter(1), maximum, cancellationToken)
+            : _selection.PickedIds.Length <= maximum ? _selection.PickedIds
+                : throw new Core.Errors.DomainException(Core.Errors.ErrorCode.Validation, "Too many products are selected.");
+
+    private string SelectionSummary()
+    {
+        string count = _selection.AllMatching
+            ? TranslationSource.Instance.Format("Selection_AllMatchingCount", _selection.Count)
+            : TranslationSource.Instance.Format("Selection_Count", _selection.Count);
+        return _selection.AllMatching ? $"{count} · {FilterSummary()}" : count;
+    }
+
+    // States the applied filters in words, for the selection bar, the review dialog and the result list.
+    private string FilterSummary() => FilterText.Describe(SearchBox, ClassFilter, StatusFilter, CategoryFilter, StockFilter,
+        ExpiryFilter, BrandFilter, VendorFilter, NoBarcodeFilter, MissingLocalFilter, LooseFilter);
+
+    private async Task RunCatalogBulkAsync(CatalogBulkCommand command, string titleKey, bool destructive = false)
+    {
+        if (_selection.IsEmpty) return;
+        await ShowBulkAsync(CatalogBulk(command, titleKey, destructive));
+    }
+
+    /// <summary>Builds the reviewed bulk action for the current selection and filters.</summary>
+    internal BulkAction CatalogBulk(CatalogBulkCommand command, string titleKey, bool destructive = false) =>
+        new()
+        {
+            Title = TranslationSource.Instance[titleKey],
+            RunLabel = TranslationSource.Instance["Catalog_Apply"],
+            SelectionSummary = SelectionSummary(),
+            Destructive = destructive,
+            Plan = async token =>
+            {
+                CatalogBulkPreview preview = await _catalog.PreviewBulkAsync(
+                    await SelectedIdsAsync(CatalogService.MaxBulkProducts, token), command, token);
+                return new BulkPlan(preview.Rows.Select(static row => new BulkCandidate(row.Id,
+                        string.IsNullOrEmpty(row.Sku) ? row.Name : $"{row.Sku} · {row.Name}", row.Eligible, row.ReasonKey)).ToArray(),
+                    TranslationSource.Instance.Format("Catalog_BulkEffect", preview.EligibleIds.Count,
+                        preview.AffectedQuantity, preview.AffectedCost));
+            },
+            Run = (ids, operation, token) => _catalog.RunBulkBatchAsync(command, ids, operation, token),
+        };
+
+    private async Task ShowBulkAsync(BulkAction bulk)
+    {
+        var window = new BulkActionWindow(bulk) { Owner = Window.GetWindow(this) };
+        window.ShowDialog();
+        if (!window.ChangedAny) return;
+        _selection.Clear();
+        await LoadAsync(PageMove.Same);
+    }
+
+    private async void BulkRemove_OnClick(object sender, RoutedEventArgs e) =>
+        await RunCatalogBulkAsync(new(CatalogBulkAction.Archive), "Catalog_RemoveSelected", destructive: true);
+
+    private async void BulkRestore_OnClick(object sender, RoutedEventArgs e) =>
+        await RunCatalogBulkAsync(new(CatalogBulkAction.Restore), "Catalog_RestoreSelected");
+
+    private async void BulkBarcode_OnClick(object sender, RoutedEventArgs e) =>
+        await RunCatalogBulkAsync(new(CatalogBulkAction.Barcode, TargetCode: _settings.Current.ProductPrefix),
+            "Catalog_GenerateBarcodeSelected");
+
+    private async void BulkCategory_OnClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            IReadOnlyList<MasterItem> categories = await _catalog.GetCategoriesAsync();
+            if (Choose("Catalog_SetCategory", "Catalog_Category", categories.Where(static item => item.IsActive).ToList(),
+                    nameof(MasterItem.Name), nameof(MasterItem.Id)) is long categoryId)
+                await RunCatalogBulkAsync(new(CatalogBulkAction.Category, categoryId), "Catalog_SetCategory");
+        }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
+    }
+
+    private async void BulkTax_OnClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            IReadOnlyList<TaxRateItem> rates = await _catalog.GetTaxRatesAsync();
+            if (Choose("Catalog_SetTaxRate", "Catalog_TaxRate", rates.Where(static item => item.IsActive).ToList(),
+                    nameof(TaxRateItem.Name), nameof(TaxRateItem.Id)) is long taxId)
+                await RunCatalogBulkAsync(new(CatalogBulkAction.Tax, taxId), "Catalog_SetTaxRate");
+        }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
+    }
+
+    private async void BulkClass_OnClick(object sender, RoutedEventArgs e)
+    {
+        var choices = new[]
+        {
+            new { Code = "SALEABLE", Name = TranslationSource.Instance["Catalog_Saleable"] },
+            new { Code = "INTERNAL", Name = TranslationSource.Instance["Catalog_InternalUse"] },
+        };
+        if (Choose("Catalog_SetProductClass", "Catalog_ProductClass", choices, "Name", "Code") is string productClass)
+            await RunCatalogBulkAsync(new(CatalogBulkAction.Classification, TargetCode: productClass), "Catalog_SetProductClass");
+    }
+
+    private object? Choose(string titleKey, string labelKey, System.Collections.IEnumerable items, string display, string value)
+    {
+        var window = new ChoiceWindow(TranslationSource.Instance[titleKey], SelectionSummary(),
+            TranslationSource.Instance[labelKey], items, display, value)
+        { Owner = Window.GetWindow(this) };
+        return window.ShowDialog() == true ? window.SelectedValue : null;
+    }
+
+    private async void BulkLabels_OnClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            IReadOnlyList<long> ids = await SelectedIdsAsync(MaxLabelProducts, CancellationToken.None);
+            CatalogBulkPreview preview = await _catalog.PreviewBulkAsync(ids, new(CatalogBulkAction.Labels));
+            if (preview.EligibleIds.Count == 0)
+            {
+                Pager.Status = TranslationSource.Instance["Catalog_BulkNoneEligible"];
+                return;
+            }
+            var inventory = ((App)Application.Current).Services.GetRequiredService<InventoryService>();
+            new LabelBatchWindow(_catalog, inventory, _settings, productIds: preview.EligibleIds.ToArray())
+            { Owner = Window.GetWindow(this) }.ShowDialog();
+        }
+        catch (Exception exception)
+        {
+            Pager.Status = TranslationSource.Instance.Format("Catalog_LabelsLimit", MaxLabelProducts) + " " + UserError.Message(exception);
+        }
+    }
+
+    private async void Reconcile_OnClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            long[] ids = [.. await SelectedIdsAsync(MaxCountProducts, CancellationToken.None)];
+            IServiceProvider services = ((App)Application.Current).Services;
+            var window = new DirectCountReviewWindow(services.GetRequiredService<DirectStockCountService>(), ids,
+                services.GetRequiredService<IClock>())
+            { Owner = Window.GetWindow(this) };
+            window.ShowDialog();
+            if (!window.HasPosted) return;
+            _selection.Clear();
+            await LoadAsync(PageMove.Same);
+        }
+        catch (Exception exception)
+        {
+            Pager.Status = TranslationSource.Instance.Format("Stock_CountLimit", MaxCountProducts) + " " + UserError.Message(exception);
+        }
+    }
+
+    private async void WriteOffExpired_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_selection.IsEmpty) return;
+        IServiceProvider services = ((App)Application.Current).Services;
+        var moneyOut = services.GetRequiredService<MoneyOutService>();
+        DateOnly date = services.GetRequiredService<IClock>().BusinessDate;
+        var bulk = new BulkAction
+        {
+            Title = TranslationSource.Instance["Catalog_WriteOffExpiredSelected"],
+            RunLabel = TranslationSource.Instance["MoneyOut_WriteOff"],
+            SelectionSummary = SelectionSummary(),
+            Destructive = true,
+            // Each lot becomes a damage document: about 3 ms a lot on a full store.
+            BatchSize = 20,
+            Plan = async token =>
+            {
+                IReadOnlyList<ExpiredWriteOffLot> lots = await moneyOut.PreviewExpiredWriteOffAsync(
+                    await SelectedIdsAsync(CatalogService.MaxBulkProducts, token), date, token);
+                return new BulkPlan(lots.Select(static lot => new BulkCandidate(lot.LotId,
+                        $"{lot.ProductName} · {lot.LotCode} · {lot.ExpiryDate:yyyy-MM-dd}", true)).ToArray(),
+                    TranslationSource.Instance.Format("Catalog_WriteOffEffect", lots.Count,
+                        Quantity.FromScaled(lots.Sum(static lot => lot.Quantity.Scaled)),
+                        Money.FromScaled(lots.Sum(static lot => lot.CostValue.Scaled)), date.ToString("dd MMM yyyy", TranslationSource.FormatCulture)));
+            },
+            Run = (ids, operation, token) => moneyOut.WriteOffExpiredBatchAsync(ids, date, operation, token),
+        };
+        await ShowBulkAsync(bulk);
     }
 
     private async void ProductActive_OnClick(object sender, RoutedEventArgs e)
@@ -250,290 +613,66 @@ public partial class ProductsPage : Page
         try
         {
             await _catalog.SetActiveAsync(item.Id, active, item.IsActive);
-            ClearSelection();
-            await RefreshAsync();
+            await LoadAsync(PageMove.Same);
         }
         catch (Exception exception)
         {
             box.IsChecked = item.IsActive;
-            ShowError(exception);
+            Pager.Status = UserError.Message(exception);
         }
         finally { box.IsEnabled = true; }
-    }
-
-    private void PageSelectionCheck_OnLoaded(object sender, RoutedEventArgs e)
-    {
-        _pageSelectionCheck = sender as CheckBox;
-        UpdatePageSelectionCheck();
-    }
-
-    private void PageSelectionCheck_OnClick(object sender, RoutedEventArgs e)
-    {
-        ProductListItem[] pageItems = ProductsGrid.Items.OfType<ProductListItem>().ToArray();
-        if (pageItems.Length == 0) return;
-        bool allSelected = pageItems.All(item => _selectedProducts.ContainsKey(item.Id));
-        _checkboxSelectionUsed = true;
-        foreach (ProductListItem item in pageItems)
-        {
-            if (allSelected) _selectedProducts.Remove(item.Id);
-            else _selectedProducts[item.Id] = item.IsActive;
-        }
-        if (allSelected) ProductsGrid.UnselectAll();
-        ProductsGrid.Items.Refresh();
-        UpdateSelectionActions();
-    }
-
-    private void UpdatePageSelectionCheck()
-    {
-        if (_pageSelectionCheck is null) return;
-        ProductListItem[] pageItems = ProductsGrid.Items.OfType<ProductListItem>().ToArray();
-        int selected = pageItems.Count(item => _selectedProducts.ContainsKey(item.Id));
-        _pageSelectionCheck.IsChecked = selected == 0 ? false : selected == pageItems.Length ? true : null;
-    }
-
-    private void ClearSelection()
-    {
-        _selectedProducts.Clear();
-        _checkboxSelectionUsed = false;
-        ProductsGrid?.UnselectAll();
-        if (ProductsGrid is not null) ProductsGrid.Items.Refresh();
-        UpdateSelectionActions();
-    }
-
-    private void UpdateSelectionActions()
-    {
-        if (EditButton is null) return;
-        long[] ids = SelectedProductIds();
-        ProductListItem? product = SelectedSingleProduct();
-        bool single = ids.Length == 1 && product is not null;
-        bool active = single && product!.IsActive;
-        bool archived = single && !product!.IsActive;
-        bool multiple = ids.Length > 1;
-        EditButton.IsEnabled = single;
-        LotsButton.IsEnabled = single;
-        ReconcileButton.IsEnabled = single;
-        LedgerButton.IsEnabled = single;
-        LabelsButton.IsEnabled = single && active;
-        BarcodeButton.IsEnabled = active;
-        RestoreButton.IsEnabled = archived;
-        BulkActionsMenu.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
-        BulkActionsMenu.IsEnabled = multiple;
-        BulkRemoveButton.IsEnabled = multiple && _selectedProducts.Values.All(static value => value);
-        BulkRestoreButton.IsEnabled = multiple && _selectedProducts.Values.All(static value => !value);
-        BulkBarcodeButton.IsEnabled = multiple && _selectedProducts.Values.All(static value => value);
-        BulkReconcileButton.IsEnabled = multiple && ids.Length <= 100;
-        SelectedCountText.Text = TranslationSource.Instance.Format("Selection_Count", ids.Length);
-        UpdatePageSelectionCheck();
-    }
-
-    private long[] SelectedProductIds() => _selectedProducts.Count > 0 || _checkboxSelectionUsed
-        ? _selectedProducts.Keys.ToArray()
-        : ProductsGrid.SelectedItems.Cast<ProductListItem>().Select(static item => item.Id).ToArray();
-
-    private ProductListItem? SelectedSingleProduct()
-    {
-        long[] ids = SelectedProductIds();
-        if (ids.Length != 1) return null;
-        return (_currentPage?.Items ?? []).FirstOrDefault(item => item.Id == ids[0])
-            ?? (ProductsGrid.SelectedItem is ProductListItem item && item.Id == ids[0] ? item : null);
-    }
-
-    private async void BulkRemove_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (_selectedProducts.Count == 0 || _selectedProducts.Values.Any(static active => !active)) return;
-        try
-        {
-            CatalogBulkPreview preview = await _catalog.PreviewBulkAsync(_selectedProducts.Keys.ToArray(),
-                CatalogBulkAction.Archive);
-            if (!ConfirmBulkPreview(preview)) return;
-            int changed = await _catalog.BulkRemoveAsync(preview.EligibleIds);
-            ClearSelection();
-            await RefreshAsync();
-            StatusText.Text = TranslationSource.Instance.Format("Catalog_BulkRemoved", changed);
-        }
-        catch (Exception exception) { ShowError(exception); }
-    }
-
-    private async void BulkRestore_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (_selectedProducts.Count == 0 || _selectedProducts.Values.Any(static active => active)) return;
-        try
-        {
-            CatalogBulkPreview preview = await _catalog.PreviewBulkAsync(_selectedProducts.Keys.ToArray(),
-                CatalogBulkAction.Restore);
-            if (!ConfirmBulkPreview(preview)) return;
-            int changed = await _catalog.BulkRestoreAsync(preview.EligibleIds);
-            ClearSelection();
-            await RefreshAsync();
-            StatusText.Text = TranslationSource.Instance.Format("Catalog_BulkRestored", changed);
-        }
-        catch (Exception exception) { ShowError(exception); }
-    }
-
-    private bool ConfirmBulkPreview(CatalogBulkPreview preview)
-    {
-        if (preview.EligibleIds.Count == 0)
-        {
-            StatusText.Text = TranslationSource.Instance["Catalog_BulkNoneEligible"];
-            return false;
-        }
-        return MessageBox.Show(TranslationSource.Instance.Format("Catalog_BulkPreview",
-                preview.Selected, preview.EligibleIds.Count, preview.Skipped,
-                preview.AffectedQuantity, preview.AffectedCost),
-            TranslationSource.Instance["Catalog_BulkActions"], MessageBoxButton.YesNo,
-            MessageBoxImage.Question) == MessageBoxResult.Yes;
-    }
-
-    private void ProductsGrid_OnDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (SelectedSingleProduct() is not null) Edit_OnClick(sender, e);
-    }
-
-    private async void GenerateBarcode_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (SelectedSingleProduct() is not { IsActive: true } product) return;
-        try
-        {
-            string barcode = await _catalog.GenerateInternalBarcodeAsync(product.Id, _settings.Current.ProductPrefix);
-            await RefreshAsync();
-            StatusText.Text = $"{TranslationSource.Instance["Catalog_GenerateBarcode"]}: {barcode}";
-        }
-        catch (Exception exception)
-        {
-            ShowError(exception);
-        }
     }
 
     private async void New_OnClick(object sender, RoutedEventArgs e)
     {
         var editor = new ProductEditorWindow(_catalog) { Owner = Window.GetWindow(this) };
-        if (editor.ShowDialog() == true) await RefreshAsync();
-    }
-
-    private async void Edit_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (SelectedSingleProduct() is not ProductListItem product) return;
-        var editor = new ProductEditorWindow(_catalog, product.Id) { Owner = Window.GetWindow(this) };
-        if (editor.ShowDialog() == true) await RefreshAsync();
-    }
-
-    private void Lots_OnClick(object sender, RoutedEventArgs e) => OpenStock(showLedger: false);
-
-    private async void Reconcile_OnClick(object sender, RoutedEventArgs e)
-    {
-        long[] ids = SelectedProductIds();
-        if (ids.Length is < 1 or > 100) return;
-        try
-        {
-            IServiceProvider services = ((App)Application.Current).Services;
-            var counts = services.GetRequiredService<DirectStockCountService>();
-            var window = new DirectCountReviewWindow(counts, ids, services.GetRequiredService<IClock>())
-            { Owner = Window.GetWindow(this) };
-            window.ShowDialog();
-            if (window.HasPosted) await RefreshAsync();
-        }
-        catch (Exception exception) { ShowError(exception); }
-    }
-
-    private void Ledger_OnClick(object sender, RoutedEventArgs e) => OpenStock(showLedger: true);
-
-    private void OpenStock(bool showLedger)
-    {
-        if (SelectedSingleProduct() is not ProductListItem product) return;
-        var inventory = ((App)Application.Current).Services.GetRequiredService<InventoryService>();
-        new ProductStockWindow(inventory, product, showLedger) { Owner = Window.GetWindow(this) }.ShowDialog();
+        if (editor.ShowDialog() == true) await LoadAsync(PageMove.Same);
     }
 
     private async void Masters_OnClick(object sender, RoutedEventArgs e)
     {
-        var masters = new CatalogMastersWindow(_catalog) { Owner = Window.GetWindow(this) };
-        masters.ShowDialog();
-        await LoadMastersAsync();
-        await RefreshAsync();
-    }
-
-    private async void Restore_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (SelectedSingleProduct() is not { IsActive: false } product) return;
+        new CatalogMastersWindow(_catalog) { Owner = Window.GetWindow(this) }.ShowDialog();
         try
         {
-            await _catalog.RestoreAsync(product.Id);
-            ClearSelection();
-            await RefreshAsync();
+            await LoadMastersAsync();
+            await LoadAsync(PageMove.Same);
         }
-        catch (Exception exception) { ShowError(exception); }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 
     private async void Import_OnClick(object sender, RoutedEventArgs e)
     {
         var import = new ProductImportWindow(_importer) { Owner = Window.GetWindow(this) };
-        if (import.ShowDialog() == true) { ClearSelection(); await RefreshAsync(); }
+        if (import.ShowDialog() == true) await ReloadAsync();
     }
 
-    private void Labels_OnClick(object sender, RoutedEventArgs e)
+    private async void OpeningImport_OnClick(object sender, RoutedEventArgs e)
     {
-        long[] ids = SelectedProductIds();
-        if (ids.Length != 1) return;
-        OpenLabels(ids);
-    }
-
-    private async void BulkLabels_OnClick(object sender, RoutedEventArgs e)
-    {
-        long[] ids = SelectedProductIds();
-        if (ids.Length < 2) return;
+        var picker = new OpenFileDialog { Filter = "Excel workbook (*.xlsx)|*.xlsx" };
+        if (picker.ShowDialog() != true) return;
         try
         {
-            CatalogBulkPreview preview = await _catalog.PreviewBulkAsync(ids, CatalogBulkAction.Labels);
-            if (ConfirmBulkPreview(preview)) OpenLabels(preview.EligibleIds.ToArray());
+            OpeningStockExcelImporter importer = ((App)Application.Current).Services.GetRequiredService<OpeningStockExcelImporter>();
+            OpeningStockImportPreview preview = await importer.DryRunAsync(picker.FileName);
+            var review = new OpeningStockPreviewWindow(preview) { Owner = Window.GetWindow(this) };
+            if (review.ShowDialog() != true) return;
+            OpeningStockLine[] selectedLines = preview.Rows.Where(static row => row.IsValid)
+                .Select(static row => row.Line!).ToArray();
+            await importer.ImportAsync(preview, ImportJobs.OperationIdFor("OPENING_STOCK", selectedLines));
+            await ReloadAsync();
         }
-        catch (Exception exception) { ShowError(exception); }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 
-    private void OpenLabels(long[] ids)
+    private void OpeningTemplate_OnClick(object sender, RoutedEventArgs e)
     {
+        var picker = new SaveFileDialog { Filter = "Excel workbook (*.xlsx)|*.xlsx", FileName = "opening-stock-template.xlsx" };
+        if (picker.ShowDialog() != true) return;
         try
         {
-            var inventory = ((App)Application.Current).Services.GetRequiredService<InventoryService>();
-            var labels = new LabelBatchWindow(_catalog, inventory, _settings, productIds: ids)
-            {
-                Owner = Window.GetWindow(this),
-            };
-            labels.ShowDialog();
+            OpeningStockExcelImporter.WriteTemplate(picker.FileName);
+            Pager.Status = TranslationSource.Instance["Stock_TemplateSaved"];
         }
-        catch (Exception exception)
-        {
-            ShowError(exception);
-        }
-    }
-
-    private async void Bulk_OnClick(object sender, RoutedEventArgs e)
-    {
-        long[] ids = SelectedProductIds();
-        if (ids.Length < 2) return;
-        var bulk = new CatalogBulkEditWindow(_catalog, ids) { Owner = Window.GetWindow(this) };
-        if (bulk.ShowDialog() == true) await RefreshAsync();
-    }
-
-    private async void BulkBarcode_OnClick(object sender, RoutedEventArgs e)
-    {
-        long[] ids = SelectedProductIds();
-        if (ids.Length < 2 || _selectedProducts.Values.Any(static active => !active)) return;
-        try
-        {
-            BulkActionsMenu.IsEnabled = false;
-            foreach (long id in ids)
-                await _catalog.GenerateInternalBarcodeAsync(id, _settings.Current.ProductPrefix);
-            ClearSelection();
-            await RefreshAsync();
-            StatusText.Text = TranslationSource.Instance.Format("Catalog_BarcodesGenerated", ids.Length);
-        }
-        catch (Exception exception) { ShowError(exception); }
-        finally { UpdateSelectionActions(); }
-    }
-
-    private static void ShowError(Exception exception)
-    {
-        string message = UserError.Message(exception);
-        MessageBox.Show(message, TranslationSource.Instance["Catalog_Title"], MessageBoxButton.OK, MessageBoxImage.Error);
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 }

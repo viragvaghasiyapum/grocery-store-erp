@@ -3,6 +3,8 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
  xmlns:local="clr-namespace:GroceryErp.App.Presentation"
+ xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+ FontFamily="{StaticResource AppFont}" NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN"
  Title="{l:Tr Sales_History_Title}" NumberSubstitution.Substitution="European"
  ScrollViewer.CanContentScroll="False">
  <Page.Resources>
@@ -11,50 +13,46 @@
   <local:PaymentModesConverter x:Key="PaymentModesConverter"/>
   <local:SaleActivityConverter x:Key="SaleActivityConverter"/>
  </Page.Resources>
- <Grid Margin="16,12,16,12">
+ <Grid Margin="14,8,14,8">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
    <RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <Grid Grid.Row="0">
-   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-   <TextBlock FontSize="22" FontWeight="SemiBold" Text="{l:Tr Sales_History_Title}"/>
-   <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-    <TextBlock x:Name="StatusText" MaxWidth="260" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-    <Button Margin="8,0,0,0" Click="DayEnd_OnClick" Content="{l:Tr Sales_DayEnd}"/>
-    <Button x:Name="ExportButton" Margin="6,0,0,0" Click="Export_OnClick" Content="{l:Tr Sales_Export}"/>
-    <Button x:Name="CancelExportButton" Margin="6,0,0,0" IsEnabled="False" Click="CancelExport_OnClick" Content="{l:Tr Common_Cancel}"/>
+  <DockPanel Grid.Row="0" Margin="0,0,0,6">
+   <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+    <Button Style="{StaticResource ToolbarButton}" Click="DayEnd_OnClick" Content="{l:Tr Sales_DayEnd}"/>
+    <Button x:Name="ExportButton" Style="{StaticResource ToolbarButton}" Click="Export_OnClick" Content="{l:Tr Sales_Export}"/>
+    <Button x:Name="CancelExportButton" Style="{StaticResource ToolbarButton}" Margin="0" IsEnabled="False" Click="CancelExport_OnClick" Content="{l:Tr Common_Cancel}"/>
     <ProgressBar x:Name="ExportProgress" Width="64" Height="5" Margin="10,0,0,0" VerticalAlignment="Center" IsIndeterminate="True" Visibility="Collapsed"/>
    </StackPanel>
-  </Grid>
-  <StackPanel Grid.Row="1" Margin="0,6,0,4">
-  <WrapPanel>
-   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Sales_From}"/><DatePicker x:Name="FromPicker" Width="130" SelectedDateFormat="Short" AutomationProperties.Name="{l:Tr Sales_From}"/></StackPanel>
-   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Sales_To}"/><DatePicker x:Name="ToPicker" Width="130" SelectedDateFormat="Short" AutomationProperties.Name="{l:Tr Sales_To}"/></StackPanel>
-   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Sales_Invoice}"/><TextBox x:Name="InvoiceBox" Width="140" Height="32" VerticalContentAlignment="Center" KeyDown="Filter_OnKeyDown" AutomationProperties.Name="{l:Tr Sales_Invoice}"/></StackPanel>
-   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Catalog_Name}"/><TextBox x:Name="ProductBox" Width="170" Height="32" VerticalContentAlignment="Center" KeyDown="Filter_OnKeyDown" AutomationProperties.Name="{l:Tr Catalog_Name}"/></StackPanel>
-   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Purchasing_Status}"/>
-    <ComboBox x:Name="StatusBox" Width="150" Height="32" SelectedIndex="0" AutomationProperties.Name="{l:Tr Purchasing_Status}">
-     <ComboBoxItem Content="{l:Tr Sales_All}"/><ComboBoxItem Content="{l:Tr Sales_CompletedStatus}" Tag="Completed"/>
-     <ComboBoxItem Content="{l:Tr Sales_Status_PartiallyRefunded}" Tag="PartiallyRefunded"/>
-     <ComboBoxItem Content="{l:Tr Sales_Status_Refunded}" Tag="Refunded"/>
-     <ComboBoxItem Content="{l:Tr Sales_Void}" Tag="Void"/>
-    </ComboBox>
-   </StackPanel>
-   <Button Margin="0,18,6,4" Click="Refresh_OnClick" Content="{l:Tr Sales_Search}" FontWeight="SemiBold"/>
-   <Button Margin="0,18,0,4" Click="ClearFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
+   <TextBlock Style="{StaticResource PageTitle}" Text="{l:Tr Sales_History_Title}"/>
+  </DockPanel>
+  <StackPanel Grid.Row="1" Margin="0,0,0,2">
+  <WrapPanel x:Name="FilterBar">
+   <ui:TextBox x:Name="InvoiceBox" Width="150" Margin="0,0,6,4" PlaceholderText="{l:Tr Sales_Invoice}" KeyDown="Filter_OnKeyDown" AutomationProperties.Name="{l:Tr Sales_Invoice}" ToolTip="Ctrl+F"/>
+   <ui:TextBox x:Name="ProductBox" Width="190" Margin="0,0,6,4" PlaceholderText="{l:Tr Sales_ProductFilter}" KeyDown="Filter_OnKeyDown" AutomationProperties.Name="{l:Tr Sales_ProductFilter}"/>
+   <TextBlock x:Name="FromLabel" Style="{StaticResource FilterLabel}" Text="{l:Tr Sales_From}"/>
+   <DatePicker x:Name="FromPicker" Width="118" Margin="0,0,6,4" SelectedDateFormat="Short" AutomationProperties.Name="{l:Tr Sales_From}"/>
+   <TextBlock x:Name="ToLabel" Style="{StaticResource FilterLabel}" Text="{l:Tr Sales_To}"/>
+   <DatePicker x:Name="ToPicker" Width="118" Margin="0,0,6,4" SelectedDateFormat="Short" AutomationProperties.Name="{l:Tr Sales_To}"/>
+   <ComboBox x:Name="StatusBox" Width="150" Margin="0,0,6,4" SelectedIndex="0" AutomationProperties.Name="{l:Tr Purchasing_Status}">
+    <ComboBoxItem Content="{l:Tr Purchasing_AnyStatus}"/><ComboBoxItem Content="{l:Tr Sales_CompletedStatus}" Tag="Completed"/>
+    <ComboBoxItem Content="{l:Tr Sales_Status_PartiallyRefunded}" Tag="PartiallyRefunded"/>
+    <ComboBoxItem Content="{l:Tr Sales_Status_Refunded}" Tag="Refunded"/>
+    <ComboBoxItem Content="{l:Tr Sales_Void}" Tag="Void"/>
+   </ComboBox>
+   <ToggleButton x:Name="MoreFiltersToggle" Margin="0,0,6,4" MinHeight="32" Padding="10,4" Click="MoreFilters_OnClick" Content="{l:Tr Common_MoreFilters}"/>
+   <Button Style="{StaticResource ToolbarButton}" Margin="0,0,6,4" Click="Refresh_OnClick" Content="{l:Tr Sales_Search}" FontWeight="SemiBold" ToolTip="Enter"/>
+   <Button Style="{StaticResource ToolbarButton}" Margin="0,0,0,4" Click="ClearFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
   </WrapPanel>
-  <local:AnimatedSection Header="{l:Tr Sales_MoreFilters}" IsExpanded="False" Margin="0,0,0,2">
-   <WrapPanel Margin="0,4,0,0">
-   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Sales_Customer}"/><TextBox x:Name="CustomerBox" Width="170" Height="32" VerticalContentAlignment="Center" KeyDown="Filter_OnKeyDown" AutomationProperties.Name="{l:Tr Sales_Customer}"/></StackPanel>
-   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Purchasing_Mode}"/>
-    <ComboBox x:Name="PaymentBox" Width="115" Height="32" SelectedIndex="0" AutomationProperties.Name="{l:Tr Purchasing_Mode}">
-     <ComboBoxItem Content="{l:Tr Sales_All}"/><ComboBoxItem Content="{l:Tr Sales_CashLabel}" Tag="Cash"/>
-     <ComboBoxItem Content="{l:Tr Sales_UpiLabel}" Tag="Upi"/><ComboBoxItem Content="{l:Tr Sales_CardLabel}" Tag="Card"/>
-    </ComboBox>
-   </StackPanel>
-   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Sales_Minimum}"/><TextBox x:Name="MinimumBox" Width="100" Height="32" VerticalContentAlignment="Center" KeyDown="Filter_OnKeyDown" AutomationProperties.Name="{l:Tr Sales_Minimum}"/></StackPanel>
-   <StackPanel Margin="0,0,10,4"><TextBlock Margin="0,0,0,2" Text="{l:Tr Sales_Maximum}"/><TextBox x:Name="MaximumBox" Width="100" Height="32" VerticalContentAlignment="Center" KeyDown="Filter_OnKeyDown" AutomationProperties.Name="{l:Tr Sales_Maximum}"/></StackPanel>
-   </WrapPanel>
-  </local:AnimatedSection>
+  <WrapPanel x:Name="MoreFiltersPanel" Visibility="Collapsed">
+   <ui:TextBox x:Name="CustomerBox" Width="190" Margin="0,0,6,4" PlaceholderText="{l:Tr Sales_Customer}" KeyDown="Filter_OnKeyDown" AutomationProperties.Name="{l:Tr Sales_Customer}"/>
+   <ComboBox x:Name="PaymentBox" Width="130" Margin="0,0,10,4" SelectedIndex="0" AutomationProperties.Name="{l:Tr Purchasing_Mode}">
+    <ComboBoxItem Content="{l:Tr Sales_AnyPayment}"/><ComboBoxItem Content="{l:Tr Sales_CashLabel}" Tag="Cash"/>
+    <ComboBoxItem Content="{l:Tr Sales_UpiLabel}" Tag="Upi"/><ComboBoxItem Content="{l:Tr Sales_CardLabel}" Tag="Card"/>
+   </ComboBox>
+   <TextBlock Style="{StaticResource FilterLabel}" Text="{l:Tr Sales_AmountBetween}"/>
+   <TextBox x:Name="MinimumBox" Width="90" Margin="0,0,4,4" KeyDown="Filter_OnKeyDown" AutomationProperties.Name="{l:Tr Sales_Minimum}" ToolTip="{l:Tr Sales_Minimum}"/>
+   <TextBox x:Name="MaximumBox" Width="90" Margin="0,0,0,4" KeyDown="Filter_OnKeyDown" AutomationProperties.Name="{l:Tr Sales_Maximum}" ToolTip="{l:Tr Sales_Maximum}"/>
+  </WrapPanel>
   </StackPanel>
   <DataGrid x:Name="HistoryGrid" Grid.Row="2" Margin="0,0,0,6" Style="{StaticResource CompactTableGrid}"
             SelectionChanged="HistoryGrid_OnSelectionChanged">
@@ -134,21 +132,16 @@
    </Grid>
    </Border></Grid>
   </Grid>
-  <Grid Grid.Row="3">
-   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-   <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-    <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
-    <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" SelectedIndex="2" SelectionChanged="PageSize_OnChanged">
-     <ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/>
-    </ComboBox>
-    <Button x:Name="PreviousButton" Margin="12,0,0,0" Click="Previous_OnClick" Content="{l:Tr Sales_Previous}"/>
-    <Button x:Name="NextButton" Margin="6,0,0,0" Click="Next_OnClick" Content="{l:Tr Sales_Next}"/>
+  <DockPanel Grid.Row="3" Margin="0,2,0,0">
+   <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+    <Button x:Name="ReprintButton" Style="{StaticResource ToolbarButton}" Click="Reprint_OnClick" Content="{l:Tr Sales_Reprint}"/>
+    <Button x:Name="VoidButton" Style="{StaticResource ToolbarButton}" Click="Void_OnClick" Content="{l:Tr Sales_Void}"/>
+    <Button x:Name="ReturnButton" Style="{StaticResource ToolbarButton}" Margin="0,0,18,0" Click="Return_OnClick" Content="{l:Tr Sales_Return}"/>
+    <TextBlock x:Name="PageText" Style="{StaticResource StatusText}" Margin="0,0,8,0"/>
+    <Button x:Name="PreviousButton" Style="{StaticResource ToolbarButton}" Click="Previous_OnClick" Content="{l:Tr Sales_Previous}"/>
+    <Button x:Name="NextButton" Style="{StaticResource ToolbarButton}" Margin="0" Click="Next_OnClick" Content="{l:Tr Sales_Next}"/>
    </StackPanel>
-   <StackPanel Grid.Column="1" Orientation="Horizontal">
-    <Button x:Name="ReprintButton" Margin="0,0,8,0" Click="Reprint_OnClick" Content="{l:Tr Sales_Reprint}"/>
-    <Button x:Name="VoidButton" Margin="0,0,8,0" Click="Void_OnClick" Content="{l:Tr Sales_Void}"/>
-    <Button x:Name="ReturnButton" Click="Return_OnClick" Content="{l:Tr Sales_Return}"/>
-   </StackPanel>
-  </Grid>
+   <TextBlock x:Name="StatusText" Style="{StaticResource StatusText}" AutomationProperties.LiveSetting="Polite"/>
+  </DockPanel>
  </Grid>
 </Page>

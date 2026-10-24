@@ -3,96 +3,93 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     xmlns:p="clr-namespace:GroceryErp.App.Presentation"
-    Title="{l:Tr Purchasing_Title}" ScrollViewer.CanContentScroll="False">
-  <Grid Margin="16,12,16,12">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <TextBlock FontSize="22" FontWeight="SemiBold" Text="{l:Tr Purchasing_Title}" />
-    <TabControl x:Name="PurchasingTabs" Grid.Row="1" Margin="0,8,0,0">
-      <TabItem Header="{l:Tr Purchasing_Purchases}">
-        <Grid Margin="0,6,0,0">
-          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-          <WrapPanel Margin="0,0,0,6">
-            <Button Margin="0,0,8,0" Click="NewPurchase_OnClick" Content="{l:Tr Purchasing_NewPurchase}" />
-            <Button x:Name="OpenDraftButton" IsEnabled="False" Margin="0,0,8,0" Click="OpenDraft_OnClick" Content="{l:Tr Purchasing_EditDraft}" />
-            <Button x:Name="ViewInvoiceButton" IsEnabled="False" Margin="0,0,8,0" Click="ViewInvoice_OnClick" Content="{l:Tr Purchasing_ViewInvoice}" />
-            <Button x:Name="CancelPurchaseButton" IsEnabled="False" Margin="0,0,8,0" Click="CancelPurchase_OnClick" Content="{l:Tr Purchasing_CancelPurchase}" />
-            <Button x:Name="VendorReturnButton" IsEnabled="False" Margin="0,0,8,0" Click="VendorReturn_OnClick" Content="{l:Tr Purchasing_VendorReturn}" />
-            <Button x:Name="ReturnHistoryButton" IsEnabled="False" Margin="0,0,8,0" Click="ReturnHistory_OnClick" Content="{l:Tr Purchasing_ReturnHistory}" />
-            <Button Margin="0,0,12,0" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
-            <Button x:Name="BulkCancelPurchaseButton" IsEnabled="False" Visibility="Collapsed" Margin="0,0,8,0" Click="BulkCancelPurchases_OnClick" Content="{l:Tr Purchasing_CancelSelected}"/>
-            <TextBlock x:Name="PurchaseSelectedCountText" VerticalAlignment="Center" Text="0 selected"/>
-          </WrapPanel>
-          <p:AnimatedSection x:Name="PurchaseFiltersSection" Grid.Row="1" Header="{l:Tr Purchasing_Filters}" Margin="0,0,0,8" IsExpanded="False">
-          <WrapPanel Margin="0,8,0,0">
-            <StackPanel Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Reports_From}"/><DatePicker x:Name="PurchaseFromBox" Width="130" ToolTip="{l:Tr Reports_From}"/></StackPanel>
-            <StackPanel Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Reports_To}"/><DatePicker x:Name="PurchaseToBox" Width="130" ToolTip="{l:Tr Reports_To}"/></StackPanel>
-            <StackPanel Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Purchasing_Vendor}"/><ComboBox x:Name="PurchaseVendorFilter" Width="170" DisplayMemberPath="Name" SelectedValuePath="Id" ToolTip="{l:Tr Purchasing_Vendor}"/></StackPanel>
-            <StackPanel Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Purchasing_Status}"/><ComboBox x:Name="PurchaseStatusFilter" Width="125" SelectedIndex="0" SelectedValuePath="Tag"><ComboBoxItem Content="{l:Tr Purchasing_FilterAll}" Tag=""/><ComboBoxItem Content="{l:Tr Purchasing_StatusDraft}" Tag="DRAFT"/><ComboBoxItem Content="{l:Tr Purchasing_StatusPosted}" Tag="POSTED"/><ComboBoxItem Content="{l:Tr Purchasing_StatusVoided}" Tag="CANCELLED"/></ComboBox></StackPanel>
-            <StackPanel Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Purchasing_LineType}"/><ComboBox x:Name="PurchaseTypeFilter" Width="125" SelectedIndex="0" SelectedValuePath="Tag"><ComboBoxItem Content="{l:Tr Purchasing_FilterAll}" Tag=""/><ComboBoxItem Content="{l:Tr Purchasing_TypeProduct}" Tag="PRODUCT"/><ComboBoxItem Content="{l:Tr Purchasing_TypeInternal}" Tag="INTERNAL"/><ComboBoxItem Content="{l:Tr Purchasing_TypeExpense}" Tag="EXPENSE"/></ComboBox></StackPanel>
-            <StackPanel Margin="0,0,8,0"><TextBlock Margin="0,0,0,4" Text="{l:Tr Purchasing_ProductFilter}"/><TextBox x:Name="PurchaseProductFilter" Width="190" ToolTip="{l:Tr Purchasing_ProductFilter}" AutomationProperties.Name="{l:Tr Purchasing_ProductFilter}"/></StackPanel>
-            <Button Margin="0,18,8,0" Click="FilterPurchases_OnClick" Content="{l:Tr Purchasing_Filter}"/>
-            <Button Margin="0,18,0,0" Click="ClearPurchaseFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
-          </WrapPanel>
-          </p:AnimatedSection>
-          <DataGrid x:Name="PurchasesGrid" Grid.Row="2" Style="{StaticResource CompactTableGrid}" SelectionMode="Single" SelectionChanged="PurchasesGrid_OnSelectionChanged">
-            <DataGrid.Columns>
-              <DataGridTemplateColumn Width="42">
-                <DataGridTemplateColumn.HeaderTemplate><DataTemplate>
-                  <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" IsThreeState="True" Loaded="PurchasePageCheck_OnLoaded" Click="PurchasePageCheck_OnClick" AutomationProperties.Name="{l:Tr Selection_ThisPage}"/>
-                </DataTemplate></DataGridTemplateColumn.HeaderTemplate>
-                <DataGridTemplateColumn.CellTemplate><DataTemplate>
-                  <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" Loaded="PurchaseCheck_OnLoaded" Click="PurchaseCheck_OnClick" AutomationProperties.Name="{l:Tr Purchasing_SelectPurchase}"/>
-                </DataTemplate></DataGridTemplateColumn.CellTemplate>
-              </DataGridTemplateColumn>
-              <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Grn}" Binding="{Binding DocumentNumber}" />
-              <DataGridTextColumn Width="250" Header="{l:Tr Purchasing_Vendor}" Binding="{Binding VendorName}" />
-              <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Invoice}" Binding="{Binding VendorInvoiceNumber}" />
-              <DataGridTextColumn Width="110" Header="{l:Tr Purchasing_Received}" Binding="{Binding ReceivedDate}" />
-              <DataGridTextColumn Width="100" Header="{l:Tr Purchasing_Status}" Binding="{Binding Status}" />
-              <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Total}" Binding="{Binding GrandTotal}" />
-            </DataGrid.Columns>
-          </DataGrid>
-          <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
-            <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{l:Tr Common_RowsPerPage}"/>
-            <ComboBox x:Name="PageSizeBox" ToolTip="{l:Tr Common_RowsPerPage}" Width="120" SelectedIndex="2" SelectionChanged="PageSize_OnChanged"><ComboBoxItem Content="20"/><ComboBoxItem Content="30"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/></ComboBox>
-            <Button x:Name="PreviousPurchaseButton" IsEnabled="False" Margin="8,0" Click="PreviousPurchase_OnClick" Content="{l:Tr Sales_Previous}"/>
-            <Button x:Name="NextPurchaseButton" IsEnabled="False" Click="NextPurchase_OnClick" Content="{l:Tr Sales_Next}"/>
-          </StackPanel>
-        </Grid>
-      </TabItem>
-      <TabItem Header="{l:Tr Purchasing_Vendors}">
-        <Grid Margin="0,6,0,0">
-          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-          <WrapPanel Margin="0,0,0,8">
-            <Button Margin="0,0,8,0" Click="NewVendor_OnClick" Content="{l:Tr Purchasing_NewVendor}" />
-            <Button x:Name="EditVendorButton" IsEnabled="False" Margin="0,0,8,0" Click="EditVendor_OnClick" Content="{l:Tr Purchasing_EditVendor}" />
-            <Button x:Name="VendorLedgerButton" IsEnabled="False" Margin="0,0,8,0" Click="VendorLedger_OnClick" Content="{l:Tr Purchasing_VendorLedger}" />
-            <Button x:Name="PaymentButton" Margin="0,0,8,0" Click="Payment_OnClick" Content="{l:Tr Purchasing_Payment}" />
-            <Button Margin="0,0,12,0" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}" />
-            <Button x:Name="ActivateVendorsButton" IsEnabled="False" Visibility="Collapsed" Margin="0,0,8,0" Click="ActivateVendors_OnClick" Content="{l:Tr Purchasing_ActivateSelectedVendors}"/>
-            <Button x:Name="DeactivateVendorsButton" IsEnabled="False" Visibility="Collapsed" Margin="0,0,8,0" Click="DeactivateVendors_OnClick" Content="{l:Tr Purchasing_DeactivateSelectedVendors}"/>
-            <TextBlock x:Name="VendorSelectedCountText" VerticalAlignment="Center" Text="0 selected"/>
-          </WrapPanel>
-          <DataGrid x:Name="VendorsGrid" Grid.Row="1" Style="{StaticResource CompactTableGrid}" SelectionMode="Single" SelectionChanged="VendorsGrid_OnSelectionChanged">
-            <DataGrid.Columns>
-              <DataGridTemplateColumn Width="42">
-                <DataGridTemplateColumn.HeaderTemplate><DataTemplate>
-                  <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" IsThreeState="True" Loaded="VendorPageCheck_OnLoaded" Click="VendorPageCheck_OnClick" AutomationProperties.Name="{l:Tr Selection_ThisPage}"/>
-                </DataTemplate></DataGridTemplateColumn.HeaderTemplate>
-                <DataGridTemplateColumn.CellTemplate><DataTemplate>
-                  <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" Loaded="VendorCheck_OnLoaded" Click="VendorCheck_OnClick" AutomationProperties.Name="{l:Tr Purchasing_SelectVendor}"/>
-                </DataTemplate></DataGridTemplateColumn.CellTemplate>
-              </DataGridTemplateColumn>
-              <DataGridTextColumn Width="280" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}" />
-              <DataGridTextColumn Width="150" Header="{l:Tr Purchasing_Phone}" Binding="{Binding Phone}" />
-              <DataGridTextColumn Width="180" Header="GSTIN" Binding="{Binding Gstin}" />
-              <DataGridTextColumn Width="140" Header="{l:Tr Purchasing_Balance}" Binding="{Binding BalanceDue}" />
-              <DataGridCheckBoxColumn Width="90" Header="{l:Tr Catalog_Active}" Binding="{Binding IsActive}" />
-            </DataGrid.Columns>
-          </DataGrid>
-        </Grid>
-      </TabItem>
-    </TabControl>
-    <TextBlock x:Name="StatusText" Grid.Row="2" Margin="0,10,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Title="{l:Tr Purchasing_Title}" FontFamily="{StaticResource AppFont}"
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European"
+    ScrollViewer.CanContentScroll="False">
+  <Grid Margin="14,8,14,8">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <DockPanel Margin="0,0,0,6">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <Button x:Name="OpenButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="Open_OnClick" Content="{l:Tr Purchasing_Open}"/>
+        <Button x:Name="VendorReturnButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="VendorReturn_OnClick" Content="{l:Tr Purchasing_VendorReturn}"/>
+        <Button x:Name="ReturnHistoryButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="ReturnHistory_OnClick" Content="{l:Tr Purchasing_ReturnHistory}"/>
+        <Button x:Name="CancelPurchaseButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="CancelPurchase_OnClick" Content="{l:Tr Purchasing_CancelPurchase}"/>
+        <Button Style="{StaticResource ToolbarButton}" Margin="0" Click="NewPurchase_OnClick" Content="{l:Tr Purchasing_NewPurchase}" FontWeight="SemiBold"
+                ToolTip="Ctrl+N"/>
+      </StackPanel>
+      <TextBlock Style="{StaticResource PageTitle}" Text="{l:Tr Purchasing_Title}"/>
+    </DockPanel>
+    <WrapPanel x:Name="FilterBar" Grid.Row="1" Margin="0,0,0,2">
+      <ui:TextBox x:Name="DocumentFilter" Width="190" Margin="0,0,6,4" PlaceholderText="{l:Tr Purchasing_DocumentFilter}"
+                  TextChanged="Text_OnChanged" AutomationProperties.Name="{l:Tr Purchasing_DocumentFilter}" ToolTip="Ctrl+F"/>
+      <ComboBox x:Name="VendorFilter" Width="190" Margin="0,0,6,4" DisplayMemberPath="Name" SelectedValuePath="Id"
+                SelectionChanged="Filter_OnChanged" AutomationProperties.Name="{l:Tr Purchasing_Vendor}"/>
+      <ComboBox x:Name="StatusFilter" Width="120" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged"
+                AutomationProperties.Name="{l:Tr Purchasing_Status}">
+        <ComboBoxItem Tag="" Content="{l:Tr Purchasing_AnyStatus}"/>
+        <ComboBoxItem Tag="DRAFT" Content="{l:Tr Purchasing_StatusDraft}"/>
+        <ComboBoxItem Tag="POSTED" Content="{l:Tr Purchasing_StatusPosted}"/>
+        <ComboBoxItem Tag="CANCELLED" Content="{l:Tr Purchasing_StatusVoided}"/>
+      </ComboBox>
+      <TextBlock x:Name="FromLabel" Style="{StaticResource FilterLabel}" Text="{l:Tr Reports_From}"/>
+      <DatePicker x:Name="FromBox" SelectedDateFormat="Short" Width="118" Margin="0,0,6,4" SelectedDateChanged="Date_OnChanged" AutomationProperties.Name="{l:Tr Reports_From}"/>
+      <TextBlock x:Name="ToLabel" Style="{StaticResource FilterLabel}" Text="{l:Tr Reports_To}"/>
+      <DatePicker x:Name="ToBox" SelectedDateFormat="Short" Width="118" Margin="0,0,6,4" SelectedDateChanged="Date_OnChanged" AutomationProperties.Name="{l:Tr Reports_To}"/>
+      <ToggleButton x:Name="MoreFiltersToggle" Margin="0,0,6,4" MinHeight="32" Padding="10,4" Click="MoreFilters_OnClick"
+                    Content="{l:Tr Common_MoreFilters}"/>
+      <Button Style="{StaticResource ToolbarButton}" Margin="0,0,0,4" Click="ClearFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
+    </WrapPanel>
+    <WrapPanel x:Name="MoreFiltersPanel" Grid.Row="2" Margin="0,0,0,2" Visibility="Collapsed">
+      <ComboBox x:Name="TypeFilter" Width="150" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged"
+                AutomationProperties.Name="{l:Tr Purchasing_LineType}">
+        <ComboBoxItem Tag="" Content="{l:Tr Purchasing_AnyLineType}"/>
+        <ComboBoxItem Tag="PRODUCT" Content="{l:Tr Purchasing_TypeProduct}"/>
+        <ComboBoxItem Tag="INTERNAL" Content="{l:Tr Purchasing_TypeInternal}"/>
+        <ComboBoxItem Tag="EXPENSE" Content="{l:Tr Purchasing_TypeExpense}"/>
+      </ComboBox>
+      <ui:TextBox x:Name="ProductFilter" Width="200" Margin="0,0,10,4" PlaceholderText="{l:Tr Purchasing_ProductFilter}"
+                  TextChanged="Text_OnChanged" AutomationProperties.Name="{l:Tr Purchasing_ProductFilter}"/>
+      <CheckBox x:Name="ReturnableFilter" Margin="0,0,0,4" VerticalAlignment="Center" Click="Check_OnClick" Content="{l:Tr Purchasing_ReturnableOnly}"/>
+    </WrapPanel>
+    <p:SelectionBar x:Name="Selection" Grid.Row="1" Covers="{Binding ElementName=FilterBar}">
+      <p:SelectionBar.Actions>
+        <Menu VerticalAlignment="Center" Background="Transparent">
+          <MenuItem Header="{l:Tr Catalog_BulkActions}">
+            <MenuItem Click="BulkVoid_OnClick" Header="{l:Tr Purchasing_CancelSelected}"/>
+          </MenuItem>
+        </Menu>
+      </p:SelectionBar.Actions>
+    </p:SelectionBar>
+    <Grid Grid.Row="3">
+      <DataGrid x:Name="PurchasesGrid" Style="{StaticResource CompactTableGrid}" SelectionMode="Single"
+                SelectionChanged="PurchasesGrid_OnSelectionChanged" MouseDoubleClick="PurchasesGrid_OnDoubleClick"
+                PreviewKeyDown="PurchasesGrid_OnPreviewKeyDown" AutomationProperties.Name="{l:Tr Purchasing_Purchases}">
+        <DataGrid.Columns>
+          <DataGridTemplateColumn Width="40" CanUserReorder="False" CanUserResize="False">
+            <DataGridTemplateColumn.HeaderTemplate><DataTemplate>
+              <CheckBox HorizontalAlignment="Center" IsThreeState="True" Loaded="PageCheck_OnLoaded" Click="PageCheck_OnClick"
+                        AutomationProperties.Name="{l:Tr Selection_ThisPage}"/>
+            </DataTemplate></DataGridTemplateColumn.HeaderTemplate>
+            <DataGridTemplateColumn.CellTemplate><DataTemplate>
+              <CheckBox HorizontalAlignment="Center" Loaded="RowCheck_OnLoaded" Click="RowCheck_OnClick"
+                        AutomationProperties.Name="{l:Tr Purchasing_SelectPurchase}"/>
+            </DataTemplate></DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Grn}" Binding="{Binding DocumentNumber}"/>
+          <DataGridTextColumn Width="2*" MinWidth="160" Header="{l:Tr Purchasing_Vendor}" Binding="{Binding VendorName}"/>
+          <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Invoice}" Binding="{Binding VendorInvoiceNumber}"/>
+          <DataGridTextColumn Width="118" Header="{l:Tr Purchasing_Received}" Binding="{Binding ReceivedDate, StringFormat=dd MMM yyyy}"/>
+          <DataGridTextColumn Width="95" Header="{l:Tr Purchasing_Status}" Binding="{Binding Status, Converter={StaticResource PurchaseStatusConverter}}"/>
+          <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Total}" Binding="{Binding GrandTotal}"/>
+        </DataGrid.Columns>
+      </DataGrid>
+      <TextBlock x:Name="EmptyText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
+                 TextWrapping="Wrap" Text="{l:Tr Purchasing_Empty}"/>
+    </Grid>
+    <p:PagerBar x:Name="Pager" Grid.Row="4"/>
   </Grid>
 </Page>

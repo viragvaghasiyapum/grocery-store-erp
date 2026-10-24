@@ -1,6 +1,6 @@
-using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Services;
 using GroceryErp.Expenses;
@@ -20,14 +20,17 @@ public sealed class MoneyOutCorrectionWindow : Window
     private readonly ExpenseItem? _expense;
     private readonly TextBox _quantity = new();
     private readonly TextBox _amount = new();
-    private readonly TextBox _notes = new();
+    private readonly TextBox _notes = new() { MaxLength = 500 };
     private readonly TextBox _reason = new() { MaxLength = 240 };
-    private readonly TextBox _paidTo = new();
-    private readonly TextBox _reference = new();
+    private readonly TextBox _paidTo = new() { MaxLength = 120 };
+    private readonly TextBox _reference = new() { MaxLength = 120 };
     private readonly ComboBox _code = new();
     private readonly ComboBox _category = new() { DisplayMemberPath = "Name", SelectedValuePath = "Id" };
     private readonly DatePicker _date = new() { SelectedDateFormat = DatePickerFormat.Short };
-    private readonly TextBlock _error = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+    private readonly FormErrorSummary _summary = new();
+    private readonly StackPanel _fields = new();
+    private readonly Dictionary<Control, FormField> _fieldOf = [];
+    private readonly Button _save = new() { MinWidth = 80, IsDefault = true };
 
     public MoneyOutCorrectionWindow(MoneyOutService service, DamageItem damage, CorrectionDating dating, bool voidEntry)
         : this(service, dating, voidEntry, voidEntry ? "MoneyOut_VoidDamage" : "MoneyOut_CorrectDamage")
@@ -35,9 +38,9 @@ public sealed class MoneyOutCorrectionWindow : Window
         _damage = damage;
         if (!voidEntry)
         {
-            AddField(T("Stock_Quantity"), _quantity, damage.Quantity.Value.ToString("0.000", TranslationSource.FormatCulture));
-            AddField(T("MoneyOut_Recovered"), _amount, damage.RecoveredAmount.Value.ToString("0.000", TranslationSource.FormatCulture));
-            AddField(T("MoneyOut_Reason"), _code);
+            AddField("Stock_Quantity", _quantity, damage.Quantity.Value.ToString("0.###", TranslationSource.FormatCulture), required: true);
+            AddField("MoneyOut_Recovered", _amount, damage.RecoveredAmount.Value.ToString("0.###", TranslationSource.FormatCulture));
+            AddField("MoneyOut_Reason", _code, required: true);
             AddOption("EXPIRED", "MoneyOut_ReasonExpired");
             AddOption("BROKEN", "MoneyOut_ReasonBroken");
             AddOption("SPOILED", "MoneyOut_ReasonSpoiled");
@@ -46,7 +49,7 @@ public sealed class MoneyOutCorrectionWindow : Window
             AddOption("CUSTOMER_RETURN", "MoneyOut_ReasonReturn");
             AddOption("OTHER", "MoneyOut_ReasonOther");
             SelectCode(damage.Reason);
-            AddField(T("Purchasing_Notes"), _notes, damage.Notes ?? "");
+            AddField("Purchasing_Notes", _notes, damage.Notes ?? "");
         }
         Finish();
     }
@@ -57,16 +60,16 @@ public sealed class MoneyOutCorrectionWindow : Window
         _salary = salary;
         if (!voidEntry)
         {
-            AddField(T("MoneyOut_Salary"), _amount, salary.Amount.Value.ToString("0.000", TranslationSource.FormatCulture));
-            AddField(T("MoneyOut_PayDate"), _date);
+            AddField("MoneyOut_Salary", _amount, salary.Amount.Value.ToString("0.###", TranslationSource.FormatCulture), required: true);
+            AddField("MoneyOut_PayDate", _date, required: true);
             _date.SelectedDate = salary.PayDate.ToDateTime(TimeOnly.MinValue);
-            AddField(T("Purchasing_Mode"), _code);
+            AddField("Purchasing_Mode", _code, required: true);
             AddOption("CASH", "MoneyOut_ModeCash");
             AddOption("UPI", null);
             AddOption("BANK", "MoneyOut_ModeBank");
             AddOption("OTHER", "MoneyOut_ReasonOther");
             SelectCode(salary.Mode);
-            AddField(T("Purchasing_Notes"), _notes, salary.Notes ?? "");
+            AddField("Purchasing_Notes", _notes, salary.Notes ?? "");
         }
         Finish();
     }
@@ -78,22 +81,22 @@ public sealed class MoneyOutCorrectionWindow : Window
         _expense = expense;
         if (!voidEntry)
         {
-            AddField(T("Purchasing_Date"), _date);
+            AddField("Purchasing_Date", _date, required: true);
             _date.SelectedDate = expense.Date.ToDateTime(TimeOnly.MinValue);
-            AddField(T("Catalog_Category"), _category);
+            AddField("Catalog_Category", _category, required: true);
             _category.ItemsSource = categories;
             _category.SelectedValue = expense.CategoryId;
-            AddField(T("MoneyOut_Amount"), _amount, expense.Amount.Value.ToString("0.000", TranslationSource.FormatCulture));
-            AddField(T("Purchasing_Mode"), _code);
+            AddField("MoneyOut_Amount", _amount, expense.Amount.Value.ToString("0.###", TranslationSource.FormatCulture), required: true);
+            AddField("Purchasing_Mode", _code, required: true);
             AddOption("CASH", "MoneyOut_ModeCash");
             AddOption("UPI", null);
             AddOption("BANK", "MoneyOut_ModeBank");
             AddOption("CARD", "MoneyOut_ModeCard");
             AddOption("OTHER", "MoneyOut_ReasonOther");
             SelectCode(expense.Mode);
-            AddField(T("MoneyOut_PaidTo"), _paidTo, expense.PaidTo ?? "");
-            AddField(T("MoneyOut_Reference"), _reference, expense.Reference ?? "");
-            AddField(T("Purchasing_Notes"), _notes, expense.Notes ?? "");
+            AddField("MoneyOut_PaidTo", _paidTo, expense.PaidTo ?? "");
+            AddField("MoneyOut_Reference", _reference, expense.Reference ?? "");
+            AddField("Purchasing_Notes", _notes, expense.Notes ?? "");
         }
         Finish();
     }
@@ -103,31 +106,50 @@ public sealed class MoneyOutCorrectionWindow : Window
         _service = service;
         _void = voidEntry;
         Title = T(titleKey);
-        Width = 440;
-        SizeToContent = SizeToContent.Height;
-        MinHeight = 240;
+        Width = 460;
+        Height = 560;
+        MinHeight = 320;
+        ShowInTaskbar = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        ResizeMode = ResizeMode.CanResize;
-        Content = new ScrollViewer { Content = new StackPanel { Margin = new Thickness(18) }, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        Body.Children.Add(new TextBlock
-        {
-            Text = CorrectionDetailsPanel.Describe(dating),
-            TextWrapping = TextWrapping.Wrap,
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 6),
-        });
+        SetResourceReference(FontFamilyProperty, "AppFont");
+        NumberSubstitution.SetCultureSource(this, NumberCultureSource.Override);
+        NumberSubstitution.SetCultureOverride(this, System.Windows.Markup.XmlLanguage.GetLanguage("en-IN").GetSpecificCulture());
+        NumberSubstitution.SetSubstitution(this, NumberSubstitutionMethod.European);
+        var title = new TextBlock { Text = Title };
+        title.SetResourceReference(StyleProperty, "FormTitle");
+        var treatment = new TextBlock { Text = CorrectionDetailsPanel.Describe(dating), FontWeight = FontWeights.SemiBold };
+        treatment.SetResourceReference(StyleProperty, "FormContext");
+        var header = new StackPanel { Children = { title, treatment } };
         if (voidEntry)
-            Body.Children.Add(new TextBlock { Text = T("MoneyOut_VoidExplanation"), TextWrapping = TextWrapping.Wrap });
+        {
+            var explanation = new TextBlock { Text = T("MoneyOut_VoidExplanation") };
+            explanation.SetResourceReference(StyleProperty, "FormContext");
+            header.Children.Add(explanation);
+        }
+        var layout = new Grid { Margin = new Thickness(20) };
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.Children.Add(header);
+        Grid.SetRow(_summary, 1);
+        layout.Children.Add(_summary);
+        var scroller = new ScrollViewer
+        {
+            Content = _fields,
+            Margin = new Thickness(0, 8, 0, 0),
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        Grid.SetRow(scroller, 2);
+        layout.Children.Add(scroller);
+        Content = layout;
     }
 
-    private StackPanel Body => (StackPanel)((ScrollViewer)Content).Content;
-
-    private void AddField(string label, Control control, string? value = null)
+    private void AddField(string labelKey, Control control, string? value = null, bool required = false)
     {
-        Body.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0, 7, 0, 3) });
-        control.MinHeight = 28;
-        System.Windows.Automation.AutomationProperties.SetName(control, label);
-        Body.Children.Add(control);
+        var field = new FormField { Label = T(labelKey), IsRequired = required, Content = control };
+        _fieldOf[control] = field;
+        _fields.Children.Add(field);
         if (control is TextBox text && value is not null) text.Text = value;
     }
 
@@ -139,81 +161,55 @@ public sealed class MoneyOutCorrectionWindow : Window
 
     private void Finish()
     {
-        AddField(T("MoneyOut_CorrectionReason"), _reason);
-        _reason.ToolTip = T("MoneyOut_CorrectionReasonRequired");
-        Body.Children.Add(_error);
-        var buttons = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 15, 0, 0)
-        };
-        var cancel = new Button
-        {
-            Content = T("Common_Cancel"),
-            MinWidth = 80,
-            IsCancel = true,
-            Margin = new Thickness(0, 0, 8, 0)
-        };
-        cancel.Click += (_, _) => Close();
-        buttons.Children.Add(cancel);
-        var save = new Button { Content = T(_void ? "MoneyOut_Void" : "Common_Save"), MinWidth = 80, IsDefault = true };
-        save.Click += Save_OnClick;
-        buttons.Children.Add(save);
-        Body.Children.Add(buttons);
-        Loaded += (_, _) => (_void ? _reason : Body.Children.OfType<Control>().FirstOrDefault())?.Focus();
+        AddField("MoneyOut_CorrectionReason", _reason, required: true);
+        _fieldOf[_reason].Hint = T("MoneyOut_CorrectionReasonRequired");
+        var cancel = new Button { Content = T("Common_Cancel"), MinWidth = 80, IsCancel = true, Margin = new Thickness(0, 0, 8, 0) };
+        _save.Content = T(_void ? "MoneyOut_Void" : "Common_Save");
+        _save.Click += Save_OnClick;
+        var footer = new StackPanel { Children = { cancel, _save } };
+        footer.SetResourceReference(StyleProperty, "FormFooter");
+        Grid.SetRow(footer, 3);
+        ((Grid)Content).Children.Add(footer);
+        Loaded += (_, _) => (_void ? _fieldOf[_reason] : _fields.Children.OfType<FormField>().First()).FocusInput();
     }
 
     private async void Save_OnClick(object sender, RoutedEventArgs e)
     {
-        Button? saveButton = sender as Button;
-        if (saveButton is not null) saveButton.IsEnabled = false;
+        var form = new FormValidator();
+        string? reason = form.Text(_fieldOf[_reason], _reason.Text, required: true, maxLength: 240);
+        string code = (_code.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "";
+        Quantity? quantity = !_void && _damage is not null ? form.Quantity(_fieldOf[_quantity], _quantity.Text, positive: false) : null;
+        Money? amount = !_void && _fieldOf.ContainsKey(_amount)
+            ? form.Money(_fieldOf[_amount], _amount.Text, required: _damage is null) : null;
+        DateOnly? date = !_void && _fieldOf.ContainsKey(_date) ? form.Date(_fieldOf[_date], _date.SelectedDate) : null;
+        long? category = !_void && _expense is not null ? form.Choice(_fieldOf[_category], _category.SelectedValue) : null;
+        if (!form.Apply(_fields, _summary)) return;
+        _save.IsEnabled = false;
         try
         {
-            if (string.IsNullOrWhiteSpace(_reason.Text))
-                throw new FormatException(T("MoneyOut_CorrectionReasonRequired"));
-            string code = (_code.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "";
             if (_damage is { } damage)
                 await (_void
-                    ? _service.VoidDamageAsync(damage, _reason.Text, _operationId)
-                    : _service.CorrectDamageAsync(damage,
-                        new(new Quantity(Parse(_quantity.Text)), new Money(Parse(_amount.Text)), code, _notes.Text),
-                        _reason.Text, _operationId));
+                    ? _service.VoidDamageAsync(damage, reason!, _operationId)
+                    : _service.CorrectDamageAsync(damage, new(quantity!.Value, amount ?? Money.Zero, code, _notes.Text),
+                        reason!, _operationId));
             else if (_salary is { } salary)
-            {
-                if (_void) await _service.VoidSalaryPaymentAsync(salary, _reason.Text, _operationId);
-                else
-                {
-                    if (_date.SelectedDate is not { } date) throw new FormatException(T("MoneyOut_PayDate"));
-                    await _service.CorrectSalaryPaymentAsync(salary,
-                        new(DateOnly.FromDateTime(date), new Money(Parse(_amount.Text)), code, _notes.Text),
-                        _reason.Text, _operationId);
-                }
-            }
+                await (_void
+                    ? _service.VoidSalaryPaymentAsync(salary, reason!, _operationId)
+                    : _service.CorrectSalaryPaymentAsync(salary, new(date!.Value, amount!.Value, code, _notes.Text),
+                        reason!, _operationId));
             else if (_expense is { } expense)
-            {
-                if (_void) await _service.VoidExpenseAsync(expense, _reason.Text, _operationId);
-                else
-                {
-                    if (_date.SelectedDate is not { } date || _category.SelectedValue is not long category)
-                        throw new FormatException(T("MoneyOut_ValidNumber"));
-                    await _service.CorrectExpenseAsync(expense, new(DateOnly.FromDateTime(date), category,
-                        new Money(Parse(_amount.Text)), code, _paidTo.Text, _reference.Text, _notes.Text),
-                        _reason.Text, _operationId);
-                }
-            }
+                await (_void
+                    ? _service.VoidExpenseAsync(expense, reason!, _operationId)
+                    : _service.CorrectExpenseAsync(expense, new(date!.Value, category!.Value, amount!.Value, code,
+                        _paidTo.Text, _reference.Text, _notes.Text), reason!, _operationId));
             DialogResult = true;
         }
         catch (Exception exception)
         {
-            _error.Text = exception is FormatException ? exception.Message : UserError.Message(exception);
-            if (saveButton is not null) saveButton.IsEnabled = true;
+            _summary.ShowMessage(UserError.Message(exception));
+            _save.IsEnabled = true;
         }
     }
-
-    private static decimal Parse(string value) => decimal.TryParse(value, NumberStyles.Number,
-        CultureInfo.GetCultureInfo("en-IN"), out decimal result)
-        ? result : throw new FormatException(T("MoneyOut_ValidNumber"));
 
     private static string T(string key) => TranslationSource.Instance[key];
 }

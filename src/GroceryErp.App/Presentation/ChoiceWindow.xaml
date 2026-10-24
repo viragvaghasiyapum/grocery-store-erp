@@ -1,0 +1,20 @@
+<Window x:Class="GroceryErp.App.Presentation.ChoiceWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+    Width="420" SizeToContent="Height" MinHeight="200" ResizeMode="NoResize"
+    WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+  <StackPanel Margin="20">
+    <TextBlock x:Name="TitleText" Style="{StaticResource FormTitle}"/>
+    <TextBlock x:Name="ContextText" Style="{StaticResource FormContext}" Margin="0,4,0,12"/>
+    <p:FormField x:Name="ChoiceField" IsRequired="True" Margin="0">
+      <ComboBox x:Name="ChoiceBox"/>
+    </p:FormField>
+    <StackPanel Style="{StaticResource FormFooter}" Margin="0,16,0,0">
+      <Button Margin="0,0,8,0" IsCancel="True" Content="{l:Tr Common_Cancel}"/>
+      <Button IsDefault="True" Click="Continue_OnClick" Content="{l:Tr Common_Continue}"/>
+    </StackPanel>
+  </StackPanel>
+</Window>
