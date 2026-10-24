@@ -48,10 +48,9 @@ public sealed class PhaseOneSnapshotTests
             .ShouldBe("Current master name");
         db.ExecuteScalar<string>("SELECT lot_code_snapshot FROM purchase_line WHERE id=1")
             .ShouldBe("L-PURCHASE");
-        db.ExecuteScalar<string>("SELECT product_name_snapshot FROM stock_count_line WHERE id=1")
-            .ShouldBe("Current master name");
-        db.ExecuteScalar<string>("SELECT lot_code_snapshot FROM stock_count_line WHERE id=1")
-            .ShouldBe("L-OLD");
+        // The ledger-era count sheets were snapshotted at schema 29 and removed at 36.
+        db.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_schema WHERE name IN ('stock_count','stock_count_line')")
+            .ShouldBe(0);
 
         long category = db.ExecuteScalar<long>("SELECT id FROM category LIMIT 1");
         long uom = db.ExecuteScalar<long>("SELECT id FROM uom LIMIT 1");

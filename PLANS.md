@@ -31,7 +31,7 @@ Section references like "impl §5.6" point into `implementation.md`.
 - **All numbers are always English digits `0–9`**, whichever language is chosen — on screen, in
   input fields, on receipts and labels, in reports and exports.
 - **Modular:** one project per business module; modules talk only through each other's `Contracts`.
-- **Current schema-28 compatibility:** the stock ledger is append-only. **Target schema-29+ contract:** direct lot quantity with source-document reconciliation; finalized sale and purchase snapshots remain immutable.
+- **Stock (schema 36):** a lot's quantity is authoritative and changes only with the business document that causes it; there is no stock ledger. Source documents reconcile every lot, and finalized sale and purchase snapshots remain immutable.
 
 ---
 
@@ -131,7 +131,7 @@ Dependency rules (enforced by architecture tests, impl §18.9):
 | Depreciation | `Core` `Depreciation` |
 | EAN / GS1 / weighing-scale parsing | `Core` barcode algorithms |
 | Fiscal year, business date | `Core` `FiscalYear`, `IClock` |
-| Stock changes, FEFO | `Inventory` `IStockLedger` — nowhere else |
+| Lot quantity changes, FEFO | `Inventory` `ILotQuantities` — nowhere else |
 | SQL | the owning module's `Infrastructure` repository |
 | Transactions | Application services via `DbExecutor.WriteAsync` |
 | Document numbers | `DocNumberService` inside the finalizing transaction |
@@ -330,21 +330,27 @@ Module `Domain`/`Application` namespaces can't be covered by a per-project ban (
 
 ## 12. Inventory Practices
 
-**Target rule after the coordinated stock cutover:** replace `IStockLedger.Post` with one transactional service operation per business action. A lot's quantity is authoritative. Every increment or decrement has an immutable source document and operation ID; conditional updates prevent negative stock. Preserve a bounded product total projection. Full source arithmetic runs in maintenance, not on every UI write. Until cutover, the compatibility rules below describe only the existing schema-28 implementation.
+A lot's quantity is authoritative. Schema 36 removed the stock ledger (`stock_movement`) and the old count sheets; the business documents are the stock record.
 
-- Stock changes **only** through `IStockLedger.Post`. No code outside the Inventory module writes
-  `stock_movement`; nothing anywhere writes `product_lot.qty_on_hand` directly.
-- Every movement references its origin (`ref_type`, `ref_id`) and uses the correct movement type.
-- Critical stock changes happen inside the same transaction as the document that causes them.
-- FEFO allocation lives only in `IStockLedger.AllocateFefo`; callers pass what is already reserved
-  on the current bill.
-- Prevent duplicate movements: every finalizing command claims its `OpId` (impl §3.15), and
+- Lot quantity changes **only** through `ILotQuantities.Change` (or `CorrectDamage`), with the
+  `LotChangeKind` of the document that causes it. Nothing else writes `product_lot.qty_on_hand`.
+  Each change is one conditional update that never leaves a lot negative and, for a sale, needs an
+  active lot that expiry blocking allows.
+- Every change runs inside the same transaction as its document, which records the quantity and
+  cost: sale, return, purchase, vendor return, damage, internal use or direct origin. Only a damage
+  correction, which has no other document, also saves an immutable `stock_correction`.
+- FEFO allocation lives only in `ILotQuantities.AllocateFefo`; callers pass what is already
+  reserved on the current bill.
+- Prevent duplicate changes: every finalizing command claims its `OpId` (impl §3.15), and
   finalizing services also check the document status **inside** the transaction
   (DRAFT → COMPLETED/POSTED), so a repeated attempt replays the original result or fails with
   `SaleFinalized` / `PurchaseFinalized` — it never posts twice.
-- Corrections are new movements (void, return, adjustment, cancel) — never edits or deletes.
+- Corrections are new documents (void, return, damage, damage correction, reviewed count) — never
+  edits or deletes of posted ones.
 - Expired lots are excluded from sale unless the setting says otherwise.
-- The lot cache may only be rebuilt from the ledger (impl §10.8).
+- Source-document reconciliation (`LotSourceReconciliation`) checks lots: a reviewed count's
+  affected lots inside its write, and every lot in weekly maintenance. Never rebuild lot
+  quantities from anything else.
 
 ---
 
@@ -401,7 +407,10 @@ a database error.
   `integrity_check`, foreign keys, schema version) before touching the live database, and keeps
   the replaced database until the restored one has started successfully (impl §16.5).
 - Never extract zip entries by their stored path; extract known entries to fixed file names.
-- Respect the startup checks: capability check, clock sanity, lot-cache integrity, free disk space.
+- Respect the startup checks: capability check, clock sanity, free disk space.
+- Compaction (`BackupService.Compact`) runs only between sign-in and the shell, copies with
+  `VACUUM INTO`, proves the copy holds every row and the same totals, saves it as a verified
+  backup and swaps it in through the restore markers. Never `VACUUM` the live store.
 - Single-instance guard stays in place.
 
 ---

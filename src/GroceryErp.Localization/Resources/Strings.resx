@@ -6,7 +6,6 @@
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
   <data name="App_Title" xml:space="preserve"><value>Hare Krushna</value></data>
   <data name="App_UnexpectedError" xml:space="preserve"><value>An unexpected error occurred. Details were written to the log.</value></data>
-  <data name="Shell_Language" xml:space="preserve"><value>Language</value></data>
   <data name="Shell_English" xml:space="preserve"><value>English</value></data>
   <data name="Shell_Gujarati" xml:space="preserve"><value>Gujarati</value></data>
   <data name="Shell_PrinterChecking" xml:space="preserve"><value>Printer: Checking</value></data>
@@ -30,7 +29,6 @@
   <data name="Settings_ScannerPortMissing" xml:space="preserve"><value>{0} (currently missing)</value></data>
   <data name="Settings_SaveScannerPort" xml:space="preserve"><value>Save scanner port</value></data>
   <data name="Settings_ScannerPortSaved" xml:space="preserve"><value>Scanner port saved.</value></data>
-  <data name="Demo_Navigation" xml:space="preserve"><value>Welcome</value></data>
   <data name="Demo_Title" xml:space="preserve"><value>Your store, ready for business</value></data>
   <data name="Demo_Body" xml:space="preserve"><value>Use the menu to manage your store. The amount and date below are formatting examples.</value></data>
   <data name="Demo_AmountLabel" xml:space="preserve"><value>Sample amount</value></data>
@@ -133,7 +131,6 @@
   <data name="Lock_Action" xml:space="preserve"><value>Unlock</value></data>
   <data name="Lock_Command" xml:space="preserve"><value>Lock</value></data>
   <data name="Startup_LowDisk" xml:space="preserve"><value>Less than 1 GB of free disk space is available. Make space before continuing.</value></data>
-  <data name="Startup_LotCache" xml:space="preserve"><value>The stock check found a change made outside the app. Keep using the app, take a backup, and contact support.</value></data>
   <data name="Startup_ClockWarning" xml:space="preserve"><value>The computer clock is behind the last bill dated {0:d}. Continue only after confirming the date.</value></data>
   <data name="Startup_RestorePending" xml:space="preserve"><value>A restored database is waiting for confirmation. Choose Yes to keep the restored data, No to undo the restore, or Cancel to leave it pending and close the application.</value></data>
   <data name="Startup_RestoreUndone" xml:space="preserve"><value>The restore was undone. The previous database has been put back.</value></data>
@@ -143,15 +140,11 @@
   <data name="Startup_PrintReview" xml:space="preserve"><value>Saved print jobs need review. Check the printed paper, then open Billing and press Ctrl+P to review each job before retrying.</value></data>
   <data name="Catalog_Navigation" xml:space="preserve"><value>Products</value></data>
   <data name="Catalog_Title" xml:space="preserve"><value>Products</value></data>
-  <data name="Catalog_Subtitle" xml:space="preserve"><value>Find products, review stock, and manage labels.</value></data>
   <data name="Catalog_LowStock" xml:space="preserve"><value>Low stock</value></data>
-  <data name="Catalog_IncludeArchived" xml:space="preserve"><value>Include archived</value></data>
   <data name="Catalog_Empty" xml:space="preserve"><value>No products match these filters.</value></data>
-  <data name="Catalog_Restore" xml:space="preserve"><value>Restore product</value></data>
   <data name="Catalog_SearchHint" xml:space="preserve"><value>Search by SKU, name, local name, alias, or brand</value></data>
   <data name="Catalog_NoBarcode" xml:space="preserve"><value>No barcode</value></data>
   <data name="Catalog_MissingLocal" xml:space="preserve"><value>Missing local name</value></data>
-  <data name="Catalog_Archived" xml:space="preserve"><value>Include archived</value></data>
   <data name="Catalog_Sku" xml:space="preserve"><value>SKU</value></data>
   <data name="Catalog_Name" xml:space="preserve"><value>Name</value></data>
   <data name="Catalog_NameLocal" xml:space="preserve"><value>Gujarati name</value></data>
@@ -159,12 +152,7 @@
   <data name="Catalog_Stock" xml:space="preserve"><value>Stock</value></data>
   <data name="Catalog_Price" xml:space="preserve"><value>Price</value></data>
   <data name="Catalog_Active" xml:space="preserve"><value>Active</value></data>
-  <data name="Catalog_GenerateBarcode" xml:space="preserve"><value>Generate barcode</value></data>
-  <data name="Catalog_Remove" xml:space="preserve"><value>Remove</value></data>
   <data name="Catalog_Count" xml:space="preserve"><value>Products: {0}</value></data>
-  <data name="Catalog_RemoveConfirm" xml:space="preserve"><value>Remove “{0}”? Products with history will be archived.</value></data>
-  <data name="Catalog_Deleted" xml:space="preserve"><value>Product deleted.</value></data>
-  <data name="Catalog_ArchivedResult" xml:space="preserve"><value>Product archived because it has transaction history.</value></data>
   <data name="Error_NotFound" xml:space="preserve"><value>The requested item was not found.</value></data>
   <data name="Error_Validation" xml:space="preserve"><value>Check the entered values and try again.</value></data>
   <data name="Error_BarcodeExists" xml:space="preserve"><value>This barcode is already assigned.</value></data>
@@ -251,10 +239,7 @@
   <data name="Catalog_AllowFraction" xml:space="preserve"><value>Allow fractional quantities</value></data>
   <data name="Catalog_TaxRates" xml:space="preserve"><value>Tax rates</value></data>
   <data name="Catalog_TaxPercent" xml:space="preserve"><value>Tax percentage</value></data>
-  <data name="Catalog_BulkEdit" xml:space="preserve"><value>Bulk edit</value></data>
   <data name="Catalog_Apply" xml:space="preserve"><value>Apply</value></data>
-  <data name="Catalog_SelectedCount" xml:space="preserve"><value>Products selected: {0}</value></data>
-  <data name="Catalog_BulkComplete" xml:space="preserve"><value>{0} products updated.</value></data>
   <data name="Purchasing_Navigation" xml:space="preserve"><value>Purchases</value></data>
   <data name="Purchasing_Title" xml:space="preserve"><value>Purchases</value></data>
   <data name="Purchasing_Purchases" xml:space="preserve"><value>Purchases</value></data>
@@ -267,17 +252,9 @@
   <data name="Purchasing_Total" xml:space="preserve"><value>Total</value></data>
   <data name="Purchasing_Phone" xml:space="preserve"><value>Phone</value></data>
   <data name="Purchasing_Balance" xml:space="preserve"><value>Balance due</value></data>
-  <data name="Stock_Navigation" xml:space="preserve"><value>Stock</value></data>
-  <data name="Stock_Title" xml:space="preserve"><value>Stock and lots</value></data>
-  <data name="Stock_Overview" xml:space="preserve"><value>Overview</value></data>
   <data name="Stock_Lots" xml:space="preserve"><value>Lots</value></data>
-  <data name="Stock_MoveDate" xml:space="preserve"><value>Date</value></data>
-  <data name="Stock_MovementType" xml:space="preserve"><value>Movement</value></data>
   <data name="Stock_Mrp" xml:space="preserve"><value>MRP</value></data>
   <data name="Stock_Quantity" xml:space="preserve"><value>Quantity</value></data>
-  <data name="Stock_CostValue" xml:space="preserve"><value>Value at cost</value></data>
-  <data name="Stock_Reorder" xml:space="preserve"><value>Reorder level</value></data>
-  <data name="Stock_Low" xml:space="preserve"><value>Low stock</value></data>
   <data name="Stock_LotCode" xml:space="preserve"><value>Lot code</value></data>
   <data name="Stock_Batch" xml:space="preserve"><value>Batch</value></data>
   <data name="Stock_Expiry" xml:space="preserve"><value>Expiry</value></data>
@@ -327,7 +304,6 @@
   <data name="Purchasing_BillTotal" xml:space="preserve"><value>Vendor bill total</value></data>
   <data name="Purchasing_SaveDraft" xml:space="preserve"><value>Save draft</value></data>
   <data name="Purchasing_DraftSaved" xml:space="preserve"><value>Draft saved. You can reopen it from Purchases.</value></data>
-  <data name="Purchasing_EditDraft" xml:space="preserve"><value>Open draft</value></data>
   <data name="Purchasing_EntryHint" xml:space="preserve"><value>Enter received quantities and rates. Compare the calculated amount with the supplier bill before posting.</value></data>
   <data name="Purchasing_ProductSearchHint" xml:space="preserve"><value>Scan a barcode or search by name or SKU, then press Enter.</value></data>
   <data name="Purchasing_FindProduct" xml:space="preserve"><value>Find product</value></data>
@@ -349,14 +325,10 @@
   <data name="Stock_OpeningPreview" xml:space="preserve"><value>Review opening stock</value></data>
   <data name="Stock_OpeningPreviewSummary" xml:space="preserve"><value>{0} valid rows; {1} errors. Correct the workbook if any row has an error.</value></data>
   <data name="Stock_ImportReviewed" xml:space="preserve"><value>Import reviewed rows</value></data>
-  <data name="Stock_Adjust" xml:space="preserve"><value>Adjust stock</value></data>
   <data name="Stock_Count" xml:space="preserve"><value>Stock count</value></data>
-  <data name="Stock_AdjustQuantity" xml:space="preserve"><value>Quantity change (+ or −)</value></data>
   <data name="Stock_Reason" xml:space="preserve"><value>Reason</value></data>
   <data name="Stock_ReviewCount" xml:space="preserve"><value>Review differences</value></data>
-  <data name="Stock_NewLotsAdded" xml:space="preserve"><value>{0} new lots added. Count them before review.</value></data>
   <data name="Stock_ReviewSummary" xml:space="preserve"><value>{0} lots differ; net value {1}</value></data>
-  <data name="Stock_CountProgress" xml:space="preserve"><value>{0} of {1} lots counted</value></data>
   <data name="Stock_InvalidCount" xml:space="preserve"><value>Counted quantities must be valid non-negative numbers.</value></data>
   <data name="Stock_DifferenceValue" xml:space="preserve"><value>Difference value</value></data>
   <data name="Stock_Expected" xml:space="preserve"><value>Expected</value></data>
@@ -366,19 +338,7 @@
   <data name="Purchasing_ViewInvoice" xml:space="preserve"><value>View invoice</value></data>
   <data name="Purchasing_CancelConfirm" xml:space="preserve"><value>Cancel this purchase and reverse its untouched stock?</value></data>
   <data name="Purchasing_CancelBlocked" xml:space="preserve"><value>This purchase has stock movements after receipt, so it cannot be cancelled. Use a stock adjustment for a correction; vendor returns are not yet available.</value></data>
-  <data name="Stock_Ledger" xml:space="preserve"><value>Stock ledger</value></data>
-  <data name="Stock_FilterFrom" xml:space="preserve"><value>From</value></data>
-  <data name="Stock_FilterTo" xml:space="preserve"><value>To</value></data>
-  <data name="Stock_ApplyFilter" xml:space="preserve"><value>Apply filter</value></data>
-  <data name="Stock_AllMovements" xml:space="preserve"><value>All movements</value></data>
-  <data name="Stock_LedgerSelectProduct" xml:space="preserve"><value>Select a product in Overview to view its stock movements.</value></data>
   <data name="Stock_Source" xml:space="preserve"><value>Source</value></data>
-  <data name="Stock_SourceId" xml:space="preserve"><value>Source ID</value></data>
-  <data name="Stock_ChangePrice" xml:space="preserve"><value>Change price</value></data>
-  <data name="Stock_BlockToggle" xml:space="preserve"><value>Block / unblock lot</value></data>
-  <data name="Stock_Valuation" xml:space="preserve"><value>Valuation</value></data>
-  <data name="Stock_SellingValue" xml:space="preserve"><value>Value at selling price</value></data>
-  <data name="Stock_MrpValue" xml:space="preserve"><value>Value at MRP</value></data>
   <data name="Stock_OpeningTemplate" xml:space="preserve"><value>Save opening template</value></data>
   <data name="Stock_TemplateSaved" xml:space="preserve"><value>Opening-stock template saved.</value></data>
   <data name="Sales_Pos_Navigation" xml:space="preserve"><value>Billing (POS)</value></data>
@@ -420,7 +380,6 @@
   <data name="Sales_Return" xml:space="preserve"><value>Return</value></data>
   <data name="Sales_DayEnd" xml:space="preserve"><value>Day-end summary</value></data>
   <data name="Sales_Action" xml:space="preserve"><value>Sale action</value></data>
-  <data name="Sales_Resellable" xml:space="preserve"><value>Return to saleable stock</value></data>
   <data name="Sales_Confirm" xml:space="preserve"><value>Confirm</value></data>
   <data name="Error_PaymentShort" xml:space="preserve"><value>The payment does not cover the bill total.</value></data>
   <data name="Error_OverpaymentNonCash" xml:space="preserve"><value>Change can only be returned when the payment includes cash.</value></data>
@@ -440,40 +399,22 @@
   <data name="Receipt_CompositionNotice" xml:space="preserve"><value>Composition taxable person, not eligible to collect tax on supplies</value></data>
   <data name="MoneyOut_Navigation" xml:space="preserve"><value>Money out</value></data>
   <data name="MoneyOut_Title" xml:space="preserve"><value>Money out, damages and payroll</value></data>
-  <data name="MoneyOut_Expiry" xml:space="preserve"><value>Expiry</value></data>
   <data name="MoneyOut_Expired" xml:space="preserve"><value>Expired</value></data>
-  <data name="MoneyOut_Critical" xml:space="preserve"><value>Critical (7 days)</value></data>
-  <data name="MoneyOut_Soon" xml:space="preserve"><value>Soon</value></data>
   <data name="MoneyOut_Damages" xml:space="preserve"><value>Damages</value></data>
   <data name="MoneyOut_Expenses" xml:space="preserve"><value>Expenses</value></data>
-  <data name="MoneyOut_Payroll" xml:space="preserve"><value>Employees and payroll</value></data>
   <data name="MoneyOut_Employees" xml:space="preserve"><value>Employees</value></data>
-  <data name="MoneyOut_SelectSalary" xml:space="preserve"><value>Select salary</value></data>
-  <data name="MoneyOut_SearchHistory" xml:space="preserve"><value>Search history</value></data>
   <data name="MoneyOut_RecordDamage" xml:space="preserve"><value>Record damage</value></data>
   <data name="MoneyOut_WriteOff" xml:space="preserve"><value>Write off expired</value></data>
-  <data name="MoneyOut_BlockLot" xml:space="preserve"><value>Block lot</value></data>
-  <data name="MoneyOut_MarkDown" xml:space="preserve"><value>Mark down</value></data>
-  <data name="MoneyOut_PrintVendorList" xml:space="preserve"><value>Print vendor list</value></data>
-  <data name="MoneyOut_VendorListTitle" xml:space="preserve"><value>Expiry list for vendors</value></data>
-  <data name="MoneyOut_DaysLeft" xml:space="preserve"><value>Days left</value></data>
-  <data name="MoneyOut_Bucket" xml:space="preserve"><value>Status</value></data>
   <data name="MoneyOut_Cost" xml:space="preserve"><value>Cost</value></data>
   <data name="MoneyOut_Recovered" xml:space="preserve"><value>Recovered</value></data>
   <data name="MoneyOut_Reason" xml:space="preserve"><value>Reason</value></data>
   <data name="MoneyOut_SaveExpense" xml:space="preserve"><value>Save expense</value></data>
   <data name="MoneyOut_RepeatLastMonth" xml:space="preserve"><value>Repeat last month</value></data>
-  <data name="MoneyOut_AddCategory" xml:space="preserve"><value>Add category</value></data>
   <data name="MoneyOut_Amount" xml:space="preserve"><value>Amount</value></data>
   <data name="MoneyOut_PaidTo" xml:space="preserve"><value>Paid to</value></data>
   <data name="MoneyOut_Reference" xml:space="preserve"><value>Reference</value></data>
   <data name="MoneyOut_OpenAssets" xml:space="preserve"><value>Open assets</value></data>
   <data name="MoneyOut_AssetWarning" xml:space="preserve"><value>This looks like an asset purchase. Record it in Assets instead of expenses.</value></data>
-  <data name="MoneyOut_ExpiryAlertTitle" xml:space="preserve"><value>Expiry attention needed</value></data>
-  <data name="MoneyOut_ExpiryAlertBody" xml:space="preserve"><value>{0} expired or critical lot(s) need attention.</value></data>
-  <data name="MoneyOut_Later" xml:space="preserve"><value>Later</value></data>
-  <data name="MoneyOut_ViewExpiry" xml:space="preserve"><value>View expiry</value></data>
-  <data name="MoneyOut_AddEmployee" xml:space="preserve"><value>Add employee</value></data>
   <data name="MoneyOut_PrepareSalary" xml:space="preserve"><value>Prepare run</value></data>
   <data name="MoneyOut_PostSalary" xml:space="preserve"><value>Post salary</value></data>
   <data name="MoneyOut_Role" xml:space="preserve"><value>Role</value></data>
@@ -486,7 +427,6 @@
   <data name="MoneyOut_Bonus" xml:space="preserve"><value>Bonus</value></data>
   <data name="Assets_Navigation" xml:space="preserve"><value>Assets</value></data>
   <data name="Assets_Title" xml:space="preserve"><value>Assets and depreciation</value></data>
-  <data name="Assets_Add" xml:space="preserve"><value>Add asset</value></data>
   <data name="Assets_Cost" xml:space="preserve"><value>Cost</value></data>
   <data name="Assets_Method" xml:space="preserve"><value>Method</value></data>
   <data name="Assets_Rate" xml:space="preserve"><value>Rate %</value></data>
@@ -515,17 +455,14 @@
   <data name="Assets_SearchHint" xml:space="preserve"><value>Asset name or category</value></data>
   <data name="Assets_IncludeDisposed" xml:space="preserve"><value>Include disposed</value></data>
   <data name="Assets_DisposalDate" xml:space="preserve"><value>Disposal date</value></data>
-  <data name="Assets_SelectToDispose" xml:space="preserve"><value>Select an asset to dispose</value></data>
   <data name="Assets_EditSelected" xml:space="preserve"><value>Edit selected</value></data>
   <data name="Assets_PostAllHint" xml:space="preserve"><value>Posts due depreciation for all eligible assets.</value></data>
   <data name="MoneyOut_New" xml:space="preserve"><value>New</value></data>
   <data name="MoneyOut_Active" xml:space="preserve"><value>Active</value></data>
-  <data name="MoneyOut_ChooseCategory" xml:space="preserve"><value>Choose category to edit</value></data>
   <data name="MoneyOut_RepeatCategories" xml:space="preserve"><value>Choose categories to repeat (uses current category when none are selected)</value></data>
   <data name="MoneyOut_CategoryName" xml:space="preserve"><value>Category name</value></data>
   <data name="MoneyOut_LocalName" xml:space="preserve"><value>Gujarati name</value></data>
   <data name="MoneyOut_EmployeeName" xml:space="preserve"><value>Employee name</value></data>
-  <data name="MoneyOut_EmployeeId" xml:space="preserve"><value>Employee ID</value></data>
   <data name="MoneyOut_JoinDate" xml:space="preserve"><value>Join date</value></data>
   <data name="MoneyOut_LeaveDate" xml:space="preserve"><value>Leave date</value></data>
   <data name="MoneyOut_PayDate" xml:space="preserve"><value>Pay date</value></data>
@@ -539,13 +476,9 @@
   <data name="MoneyOut_ReasonLost" xml:space="preserve"><value>Lost</value></data>
   <data name="MoneyOut_ReasonReturn" xml:space="preserve"><value>Customer return</value></data>
   <data name="MoneyOut_ReasonOther" xml:space="preserve"><value>Other</value></data>
-  <data name="MoneyOut_BulkConfirm" xml:space="preserve"><value>Write off {0} selected expired lots? Stock and profit will change.</value></data>
   <data name="MoneyOut_DamageConfirm" xml:space="preserve"><value>Record {0} units as damage from lot {1}? Stock and profit will change.</value></data>
-  <data name="MoneyOut_ValidNumber" xml:space="preserve"><value>Enter a valid number using English digits.</value></data>
-  <data name="MoneyOut_BlockConfirm" xml:space="preserve"><value>Block lot {0} from sale?</value></data>
   <data name="MoneyOut_DraftsFound" xml:space="preserve"><value>{0} draft(s) ready for review.</value></data>
   <data name="MoneyOut_Saved" xml:space="preserve"><value>Saved.</value></data>
-  <data name="MoneyOut_Ready" xml:space="preserve"><value>Ready.</value></data>
   <data name="Dashboard_Navigation" xml:space="preserve"><value>Dashboard</value></data>
   <data name="Dashboard_Title" xml:space="preserve"><value>Business dashboard</value></data>
   <data name="Dashboard_TodaySales" xml:space="preserve"><value>Today's sales</value></data>
@@ -559,18 +492,13 @@
   <data name="Reports_Navigation" xml:space="preserve"><value>Reports</value></data>
   <data name="Reports_Title" xml:space="preserve"><value>Reports and profit &amp; loss</value></data>
   <data name="Reports_ExportExcel" xml:space="preserve"><value>Export Excel</value></data>
-  <data name="Purchasing_Filter" xml:space="preserve"><value>Filter</value></data>
   <data name="Purchasing_ClearFilters" xml:space="preserve"><value>Clear filters</value></data>
   <data name="Purchasing_ProductFilter" xml:space="preserve"><value>Product</value></data>
   <data name="Purchasing_SelectPurchase" xml:space="preserve"><value>Select purchase</value></data>
   <data name="Purchasing_CancelSelected" xml:space="preserve"><value>Void selected purchases</value></data>
-  <data name="Purchasing_BulkCancelConfirm" xml:space="preserve"><value>Cancel {0} selected purchases? Only purchases with untouched stock can be cancelled. Some may fail while others succeed.</value></data>
-  <data name="Purchasing_BulkCancelResult" xml:space="preserve"><value>{0} purchases cancelled; {1} failed.</value></data>
   <data name="Purchasing_SelectVendor" xml:space="preserve"><value>Select vendor</value></data>
   <data name="Purchasing_ActivateSelectedVendors" xml:space="preserve"><value>Activate selected</value></data>
   <data name="Purchasing_DeactivateSelectedVendors" xml:space="preserve"><value>Deactivate selected</value></data>
-  <data name="Purchasing_DeactivateVendorsConfirm" xml:space="preserve"><value>Deactivate {0} selected vendors? They will remain in purchase and payment history but cannot be used for new purchases.</value></data>
-  <data name="Purchasing_VendorStatusChanged" xml:space="preserve"><value>{0} vendor statuses changed.</value></data>
   <data name="Reports_ExportFullCsv" xml:space="preserve"><value>Export full CSV</value></data>
   <data name="Reports_CancelExport" xml:space="preserve"><value>Cancel export</value></data>
   <data name="Reports_ExportedRows" xml:space="preserve"><value>Exported {0} rows.</value></data>
@@ -591,7 +519,6 @@
   <data name="Pnl_Head_Depreciation" xml:space="preserve"><value>Depreciation</value></data>
   <data name="Pnl_Head_AssetDisposal" xml:space="preserve"><value>Asset disposal gain/(loss)</value></data>
   <data name="Reports_FilterProduct" xml:space="preserve"><value>Product ID</value></data>
-  <data name="Reports_FilterLot" xml:space="preserve"><value>Lot ID</value></data>
   <data name="Reports_FilterVendor" xml:space="preserve"><value>Vendor ID</value></data>
   <data name="Reports_FilterAsset" xml:space="preserve"><value>Asset ID for schedule</value></data>
   <data name="Reports_FilterSlowDays" xml:space="preserve"><value>Slow-mover days</value></data>
@@ -698,16 +625,13 @@
   <data name="Sales_RoundOff" xml:space="preserve"><value>Round off</value></data>
   <data name="Sales_Savings" xml:space="preserve"><value>You saved ₹{0}</value></data>
   <data name="Sales_ReturnLine" xml:space="preserve"><value>Item to return</value></data>
-  <data name="Sales_ReturnQuantity" xml:space="preserve"><value>Return quantity</value></data>
   <data name="Sales_ReturnQtyHeader" xml:space="preserve"><value>Return qty</value></data>
   <data name="Sales_ResellableShort" xml:space="preserve"><value>Resellable</value></data>
-  <data name="Sales_ReturnRemaining" xml:space="preserve"><value>Available to return: {0}</value></data>
   <data name="Sales_RefundMode" xml:space="preserve"><value>Refund by</value></data>
   <data name="Sales_ReasonRequired" xml:space="preserve"><value>Enter a reason.</value></data>
   <data name="Sales_ReturnQuantityInvalid" xml:space="preserve"><value>Enter a quantity within the amount available to return.</value></data>
   <data name="Sales_From" xml:space="preserve"><value>From</value></data>
   <data name="Sales_To" xml:space="preserve"><value>To</value></data>
-  <data name="Sales_All" xml:space="preserve"><value>All</value></data>
   <data name="Sales_CompletedStatus" xml:space="preserve"><value>Completed</value></data>
   <data name="Sales_Minimum" xml:space="preserve"><value>Minimum ₹</value></data>
   <data name="Sales_Maximum" xml:space="preserve"><value>Maximum ₹</value></data>
@@ -719,7 +643,6 @@
   <data name="Sales_DetailHeading" xml:space="preserve"><value>{0}  ·  {1}</value></data>
   <data name="Sales_Reprinted" xml:space="preserve"><value>Reprinted {0}.</value></data>
   <data name="Sales_NothingToReturn" xml:space="preserve"><value>All items on this bill have already been returned.</value></data>
-  <data name="Sales_DayEndResult" xml:space="preserve"><value>{0} bills · ₹{1} net · ₹{2} cash expected</value></data>
   <data name="Sales_Invoice" xml:space="preserve"><value>Invoice</value></data>
   <data name="Sales_Date" xml:space="preserve"><value>Date</value></data>
   <data name="Sales_ChooseLot" xml:space="preserve"><value>Choose lot</value></data>
@@ -786,7 +709,7 @@
   <data name="Sales_DiscountPreview" xml:space="preserve"><value>Discount: ₹{0}</value></data>
   <data name="Sales_DiscountInvalid" xml:space="preserve"><value>Enter an amount within the subtotal or a percent from 0 to 100.</value></data>
   <data name="Sales_ReturnsTab" xml:space="preserve"><value>Returns</value></data>
-  <data name="Sales_MovementsTab" xml:space="preserve"><value>Activity</value></data>
+  <data name="Sales_ActivityTab" xml:space="preserve"><value>Activity</value></data>
   <data name="Sales_Activity_COMPLETED" xml:space="preserve"><value>Completed</value></data>
   <data name="Sales_Activity_PARTIAL_RETURN" xml:space="preserve"><value>Partial return</value></data>
   <data name="Sales_Activity_REFUNDED" xml:space="preserve"><value>Fully refunded</value></data>
@@ -818,25 +741,13 @@
   <data name="Stock_Expiry_NONE" xml:space="preserve"><value>No expiry</value></data>
   <data name="Stock_Expiry_BLOCKED" xml:space="preserve"><value>Blocked</value></data>
   <data name="Stock_Expiry_EMPTY" xml:space="preserve"><value>Empty</value></data>
-  <data name="Stock_WriteOffExpired" xml:space="preserve"><value>Write off expired</value></data>
-  <data name="Stock_WriteOffConfirm" xml:space="preserve"><value>Write off all {1} units in lot {0}? This records a damage document and cannot be undone.</value></data>
   <data name="Stock_SelectLot" xml:space="preserve"><value>Select lot</value></data>
   <data name="Stock_BlockSelected" xml:space="preserve"><value>Block selected</value></data>
   <data name="Stock_UnblockSelected" xml:space="preserve"><value>Unblock selected</value></data>
-  <data name="Stock_WriteOffSelectedExpired" xml:space="preserve"><value>Write off selected expired</value></data>
-  <data name="Stock_BlockSelectedConfirm" xml:space="preserve"><value>Block {0} selected lots? Blocked lots cannot be used in new sales.</value></data>
-  <data name="Stock_LotStatusChanged" xml:space="preserve"><value>{0} lot statuses changed.</value></data>
-  <data name="Stock_BulkWriteOffConfirm" xml:space="preserve"><value>Write off all stock in {0} selected expired lots? This creates damage documents and cannot be undone.</value></data>
-  <data name="Stock_BulkWriteOffResult" xml:space="preserve"><value>{0} expired lots written off.</value></data>
-  <data name="Stock_SourceDocument" xml:space="preserve"><value>Source document</value></data>
-  <data name="Stock_OpenSource" xml:space="preserve"><value>Open source</value></data>
   <data name="Stock_SourceDoc_Purchase" xml:space="preserve"><value>Purchase</value></data>
-  <data name="Stock_Status_Posted" xml:space="preserve"><value>Posted</value></data>
-  <data name="Stock_Status_Cancelled" xml:space="preserve"><value>Cancelled</value></data>
   <data name="Stock_SourceDoc_Sale" xml:space="preserve"><value>Sale</value></data>
   <data name="Stock_SourceDoc_Return" xml:space="preserve"><value>Sale return</value></data>
   <data name="Stock_SourceDoc_Damage" xml:space="preserve"><value>Damage</value></data>
-  <data name="Stock_SourceDoc_Count" xml:space="preserve"><value>Stock count</value></data>
   <data name="Stock_SourceDoc_Opening" xml:space="preserve"><value>Opening stock</value></data>
   <data name="Stock_SourceDoc_Adjustment" xml:space="preserve"><value>Stock adjustment</value></data>
   <data name="Sales_LastScan" xml:space="preserve"><value>Last: {0} · Stock {1} · MRP ₹{2}</value></data>
@@ -943,7 +854,6 @@
   <data name="Reports_Payment" xml:space="preserve"><value>Payment mode</value></data>
   <data name="Reports_InvalidDates" xml:space="preserve"><value>End date must be on or after start date.</value></data>
   <data name="Reports_InvalidFilter" xml:space="preserve"><value>Enter a valid positive filter value.</value></data>
-  <data name="Reports_MonthCount" xml:space="preserve"><value>{0} months</value></data>
   <data name="Reports_RowCount" xml:space="preserve"><value>{0} rows</value></data>
   <data name="Reports_Period_ThisMonth" xml:space="preserve"><value>This month</value></data>
   <data name="Reports_Period_LastMonth" xml:space="preserve"><value>Last month</value></data>
@@ -956,7 +866,6 @@
   <data name="Reports_Kind_CategorySales" xml:space="preserve"><value>Category-wise sales and margin</value></data>
   <data name="Reports_Kind_HourlySales" xml:space="preserve"><value>Hourly sales</value></data>
   <data name="Reports_Kind_StockValue" xml:space="preserve"><value>Current unsold stock</value></data>
-  <data name="Reports_Kind_StockLedger" xml:space="preserve"><value>Stock ledger</value></data>
   <data name="Reports_Kind_LowStock" xml:space="preserve"><value>Low stock and reorder</value></data>
   <data name="Reports_Kind_SlowMovers" xml:space="preserve"><value>Slow movers</value></data>
   <data name="Reports_Kind_Expiry" xml:space="preserve"><value>Expiry</value></data>
@@ -1053,7 +962,6 @@
   <data name="Reports_Column_Period" xml:space="preserve"><value>Period</value></data>
   <data name="Reports_PnlSummary" xml:space="preserve"><value>Gross profit ₹{0:N3} ({1:N3}%) · Net profit ₹{2:N3} ({3:N3}%)</value></data>
   <data name="Reports_PreviousNet" xml:space="preserve"><value> · Previous ₹{0:N3}</value></data>
-  <data name="Reports_MatrixTitle" xml:space="preserve"><value>Profit and loss — monthly matrix</value></data>
   <data name="Reports_Section_Income" xml:space="preserve"><value>Income</value></data>
   <data name="Reports_Section_NetSales" xml:space="preserve"><value>Net sales</value></data>
   <data name="Reports_Section_Cogs" xml:space="preserve"><value>Cost of goods sold</value></data>
@@ -1116,15 +1024,7 @@
   <data name="Selection_Count" xml:space="preserve"><value>{0} selected</value></data>
   <data name="Catalog_RemoveSelected" xml:space="preserve"><value>Remove selected</value></data>
   <data name="Catalog_RestoreSelected" xml:space="preserve"><value>Restore selected</value></data>
-  <data name="Catalog_BulkRemoveConfirm" xml:space="preserve"><value>Remove or archive {0} selected products?</value></data>
-  <data name="Catalog_BulkRemoved" xml:space="preserve"><value>{0} products removed or archived.</value></data>
-  <data name="Catalog_BulkRestored" xml:space="preserve"><value>{0} products restored.</value></data>
-  <data name="Stock_CorrectLot" xml:space="preserve"><value>Correct lot</value></data>
-  <data name="Stock_CostCorrection" xml:space="preserve"><value>Unit cost for remaining stock and future transactions</value></data>
-  <data name="Stock_QuantityCorrection" xml:space="preserve"><value>Quantity adjustment (+ or -)</value></data>
-  <data name="Stock_CorrectionReason" xml:space="preserve"><value>Correction reason</value></data>
   <data name="Stock_CompletedBillPrices" xml:space="preserve"><value>Completed bills keep their original selling price.</value></data>
-  <data name="MoneyOut_NewEntry" xml:space="preserve"><value>New entry</value></data>
   <data name="MoneyOut_CorrectDamage" xml:space="preserve"><value>Correct damage write-off</value></data>
   <data name="MoneyOut_CorrectSalary" xml:space="preserve"><value>Correct salary payment</value></data>
   <data name="MoneyOut_PostedPayments" xml:space="preserve"><value>Posted payments</value></data>
@@ -1132,25 +1032,16 @@
   <data name="MoneyOut_CorrectionReasonRequired" xml:space="preserve"><value>Required for the audit record</value></data>
   <data name="Sales_ViewBillItems" xml:space="preserve"><value>View bill items</value></data>
   <data name="Assets_ViewTimeline" xml:space="preserve"><value>View timeline</value></data>
-  <data name="Catalog_Filters" xml:space="preserve"><value>Filters ▾</value></data>
   <data name="Common_Actions" xml:space="preserve"><value>Actions ▾</value></data>
-  <data name="Catalog_BasicDetails" xml:space="preserve"><value>Product details</value></data>
-  <data name="Catalog_PricingStock" xml:space="preserve"><value>Pricing &amp; stock</value></data>
-  <data name="Purchasing_Filters" xml:space="preserve"><value>Purchase filters</value></data>
+  <data name="Common_MoreActions" xml:space="preserve"><value>More ▾</value></data>
   <data name="Purchasing_AdditionalDetails" xml:space="preserve"><value>Notes and charges</value></data>
-  <data name="Stock_OverviewSearch" xml:space="preserve"><value>Product or SKU</value></data>
   <data name="Stock_LotSearch" xml:space="preserve"><value>Product, lot or batch</value></data>
-  <data name="Assets_DisposalDetails" xml:space="preserve"><value>Dispose selected asset</value></data>
   <data name="Assets_FinancialLocked" xml:space="preserve"><value>This asset is disposed. Its name, category, vendor and notes can change; its financial terms are final.</value></data>
-  <data name="MoneyOut_ExpenseEntry" xml:space="preserve"><value>Expense entry</value></data>
-  <data name="MoneyOut_DamageEntry" xml:space="preserve"><value>Record damage</value></data>
   <data name="MoneyOut_CategoryDetails" xml:space="preserve"><value>Expense categories</value></data>
   <data name="MoneyOut_EmployeeDetails" xml:space="preserve"><value>Employee details</value></data>
-  <data name="MoneyOut_AdvanceDetails" xml:space="preserve"><value>Record advance</value></data>
   <data name="Catalog_BulkActions" xml:space="preserve"><value>Bulk actions ▾</value></data>
   <data name="Catalog_PrintLabelsSelected" xml:space="preserve"><value>Print labels for selected</value></data>
   <data name="Catalog_GenerateBarcodeSelected" xml:space="preserve"><value>Generate barcodes for selected</value></data>
-  <data name="Catalog_BarcodesGenerated" xml:space="preserve"><value>Barcodes generated for {0} products.</value></data>
   <data name="History_LegacyPurchaseSnapshot" xml:space="preserve"><value>Legacy invoice: product name and SKU were copied from the catalog during migration; older values could not be verified.</value></data>
   <data name="History_LegacyUnknown" xml:space="preserve"><value>Legacy unknown</value></data>
   <data name="Stock_ReconcileSelected" xml:space="preserve"><value>Reconcile selected stock</value></data>
@@ -1160,9 +1051,6 @@
   <data name="Stock_CountPagePosted" xml:space="preserve"><value>Reviewed count page posted. Continue with the next page or close.</value></data>
   <data name="Purchasing_LineType" xml:space="preserve"><value>Type</value></data>
   <data name="Purchasing_ExpenseCategory" xml:space="preserve"><value>Expense category</value></data>
-  <data name="Purchasing_KindProduct" xml:space="preserve"><value>Product — saleable lot</value></data>
-  <data name="Purchasing_KindInternal" xml:space="preserve"><value>Internal use — excluded from P/L</value></data>
-  <data name="Purchasing_KindExpense" xml:space="preserve"><value>Expense — no stock lot</value></data>
   <data name="Purchasing_ReturnHistory" xml:space="preserve"><value>Return history</value></data>
   <data name="Purchasing_ReturnCancelled" xml:space="preserve"><value>Cancelled</value></data>
   <data name="Purchasing_ReturnCancelledDate" xml:space="preserve"><value>Cancelled date</value></data>
@@ -1177,7 +1065,6 @@
   <data name="Catalog_FirstLot" xml:space="preserve"><value>First lot</value></data>
   <data name="Catalog_AddFirstLot" xml:space="preserve"><value>Add first lot with this product</value></data>
   <data name="Stock_ConsumeInternal" xml:space="preserve"><value>Consume for internal use</value></data>
-  <data name="Purchasing_FilterAll" xml:space="preserve"><value>All</value></data>
   <data name="Purchasing_TypeProduct" xml:space="preserve"><value>Product</value></data>
   <data name="Purchasing_TypeInternal" xml:space="preserve"><value>Internal use</value></data>
   <data name="Purchasing_TypeExpense" xml:space="preserve"><value>Expense</value></data>
@@ -1197,15 +1084,9 @@
   <data name="Stock_LotDamageContext" xml:space="preserve"><value>{0} — {1} · {2} available · {3} unit cost</value></data>
   <data name="Stock_DamageQuantityRange" xml:space="preserve"><value>Damage quantity must be within the available lot quantity.</value></data>
   <data name="Stock_BulkDamageQuantityRange" xml:space="preserve"><value>Each damage quantity must be within its lot's available quantity.</value></data>
-  <data name="Stock_ChooseDate" xml:space="preserve"><value>Choose a date.</value></data>
-  <data name="Stock_DeleteZeroConfirm" xml:space="preserve"><value>Delete empty lot {0}?</value></data>
-  <data name="Stock_DeleteSelectedPreview" xml:space="preserve"><value>{0} selected · {1} eligible empty lots · {2} skipped. Delete eligible lots?</value></data>
-  <data name="Stock_DeleteNoneEligible" xml:space="preserve"><value>No selected lot can be deleted. Lots must be empty and have no historical references.</value></data>
   <data name="Stock_DeleteHasStock" xml:space="preserve"><value>This lot still has stock.</value></data>
   <data name="Stock_DeleteOpenBill" xml:space="preserve"><value>A held or draft bill still uses this lot.</value></data>
-  <data name="Stock_HistoricalLedgerNote" xml:space="preserve"><value>Movements recorded before the direct-stock upgrade. Current quantities are in each product's Lots.</value></data>
   <data name="Stock_NetLoss" xml:space="preserve"><value>Net loss</value></data>
-  <data name="Catalog_BulkPreview" xml:space="preserve"><value>{0} selected · {1} eligible · {2} skipped · {3} stock units · {4} cost value. Continue?</value></data>
   <data name="Catalog_BulkNoneEligible" xml:space="preserve"><value>No selected products are eligible for this action.</value></data>
   <data name="Reports_IncludeExpired" xml:space="preserve"><value>Include expired stock</value></data>
   <data name="Sales_RecreateTitle" xml:space="preserve"><value>Review return product and lot</value></data>
@@ -1224,7 +1105,6 @@
   <data name="Sales_RecreateLotExpiry" xml:space="preserve"><value>Lot expiry date</value></data>
   <data name="Sales_RecreateSave" xml:space="preserve"><value>Use these details</value></data>
   <data name="Sales_RecreateReview" xml:space="preserve"><value>Not saved on the original sale. Check it.</value></data>
-  <data name="Sales_MoreFilters" xml:space="preserve"><value>More filters</value></data>
   <data name="Error_AnnualReportInvalid" xml:space="preserve"><value>The finalized report for {0} failed its checksum. Restore a verified backup before relying on it.</value></data>
   <data name="Error_EntryChanged" xml:space="preserve"><value>This entry changed since it was loaded. Refresh and try again.</value></data>
   <data name="Error_EntryVoided" xml:space="preserve"><value>This entry is void and cannot be changed.</value></data>
@@ -1384,7 +1264,6 @@
   <data name="Catalog_ExpiredStock" xml:space="preserve"><value>Expired stock</value></data>
   <data name="Catalog_FormContext" xml:space="preserve"><value>Fields marked * are required. A new product can add its first lot here.</value></data>
   <data name="Catalog_HasStock" xml:space="preserve"><value>Has stock</value></data>
-  <data name="Catalog_HistoryTab" xml:space="preserve"><value>History (before upgrade)</value></data>
   <data name="Catalog_HsnDigits" xml:space="preserve"><value>Use 4, 6 or 8 digits.</value></data>
   <data name="Catalog_ImportMenu" xml:space="preserve"><value>Import ▾</value></data>
   <data name="Catalog_LabelsLimit" xml:space="preserve"><value>Labels can be printed for up to {0} products at a time.</value></data>
@@ -1511,4 +1390,27 @@
   <data name="Assets_Empty" xml:space="preserve"><value>No assets match these filters.</value></data>
   <data name="Assets_FormContext" xml:space="preserve"><value>Fields marked * are required. Buying an asset is not an expense; its depreciation is.</value></data>
   <data name="Assets_InUseBeforePurchase" xml:space="preserve"><value>The in-use date is before the purchase date.</value></data>
+  <data name="Sales_ActivityEvent" xml:space="preserve"><value>Event</value></data>
+  <data name="Settings_BackupReason_LedgerArchive" xml:space="preserve"><value>Before stock ledger removal (from schema {0}); kept permanently</value></data>
+  <data name="Settings_BackupReason_PreCompact" xml:space="preserve"><value>Before compacting the database</value></data>
+  <data name="Settings_CompactAction" xml:space="preserve"><value>Compact database</value></data>
+  <data name="Settings_CompactStatus" xml:space="preserve"><value>{0} of the {1} database is unused space. Compacting gives it back to the disk.</value></data>
+  <data name="Settings_CompactNotNeeded" xml:space="preserve"><value>The {1} database has little unused space ({0}).</value></data>
+  <data name="Settings_CompactNoSpace" xml:space="preserve"><value>Compacting needs {0} of free disk space, but only {1} is free. Free some space and try again.</value></data>
+  <data name="Settings_CompactConfirm" xml:space="preserve"><value>Compacting copies the database without its {0} of unused space, checks that the copy holds every record, saves the copy as a verified backup and then switches to it. It needs {1} of free disk space and can take several minutes for a large store. The app will close now and compact after the next sign-in, before billing opens. Continue?</value></data>
+  <data name="Settings_CompactRestart" xml:space="preserve"><value>The app will close now. Open it again and sign in; the database is compacted before the main window opens.</value></data>
+  <data name="Startup_CompactOffer" xml:space="preserve"><value>The database has {0} of unused space out of {1}, for example after the stock ledger was removed. Compact it now? This can take several minutes for a large store, and billing waits until it finishes. You can also do it later from Settings, Backup.</value></data>
+  <data name="Settings_CompactTitle" xml:space="preserve"><value>Compacting the database</value></data>
+  <data name="Settings_CompactContext" xml:space="preserve"><value>The app copies the database without its unused space, checks that the copy holds every record, saves it as a verified backup and then switches to it. Until then the original stays untouched.</value></data>
+  <data name="Settings_CompactStageCopying" xml:space="preserve"><value>Copying the records</value></data>
+  <data name="Settings_CompactStageVerifying" xml:space="preserve"><value>Checking that the copy holds every record</value></data>
+  <data name="Settings_CompactStageBackingUp" xml:space="preserve"><value>Saving the copy as a verified backup</value></data>
+  <data name="Settings_CompactStageSwapping" xml:space="preserve"><value>Switching to the compact database</value></data>
+  <data name="Settings_CompactPercent" xml:space="preserve"><value>{0}% copied</value></data>
+  <data name="Settings_CompactCancelling" xml:space="preserve"><value>Cancelling…</value></data>
+  <data name="Settings_CompactCancelled" xml:space="preserve"><value>Cancelled. The database was not changed.</value></data>
+  <data name="Settings_CompactDone" xml:space="preserve"><value>The database is compacted.</value></data>
+  <data name="Settings_CompactDoneDetail" xml:space="preserve"><value>Its size went from {0} to {1}. Verified backup: {2}</value></data>
+  <data name="Settings_CompactFailed" xml:space="preserve"><value>Compacting did not finish. The original database was kept.</value></data>
+  <data name="Error_CompactionFailed" xml:space="preserve"><value>The database could not be compacted. The original database was kept; try again from Settings, Backup.</value></data>
 </root>

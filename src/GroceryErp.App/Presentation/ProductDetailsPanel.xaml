@@ -18,7 +18,7 @@
         </StackPanel>
       </DockPanel>
       <TabControl x:Name="Tabs" Grid.Row="1" SelectionChanged="Tabs_OnSelectionChanged">
-        <TabItem x:Name="BasicsTab" Header="{l:Tr Catalog_BasicsTab}">
+        <TabItem x:Name="BasicsTab" Header="{l:Tr Catalog_BasicsTab}" SizeChanged="TabHeader_OnSizeChanged">
           <Grid Margin="0,4,0,0">
             <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
             <p:ProductForm x:Name="Form"/>
@@ -31,13 +31,13 @@
             </DockPanel>
           </Grid>
         </TabItem>
-        <TabItem x:Name="LotsTab" Header="{l:Tr Stock_Lots}">
+        <TabItem x:Name="LotsTab" Header="{l:Tr Stock_Lots}" SizeChanged="TabHeader_OnSizeChanged">
           <ContentControl x:Name="LotsHost" Margin="0,4,0,0" Focusable="False"/>
         </TabItem>
-        <TabItem x:Name="HistoryTab" Header="{l:Tr Catalog_HistoryTab}">
-          <ContentControl x:Name="HistoryHost" Margin="0,4,0,0" Focusable="False"/>
-        </TabItem>
       </TabControl>
+      <!-- The selected tab's actions share the tab row, right of the headers, so the table keeps that height. -->
+      <ContentControl x:Name="TabActionsHost" Grid.Row="1" VerticalAlignment="Top" Focusable="False" IsTabStop="False"
+                      Visibility="Collapsed"/>
     </Grid>
   </Border>
 </UserControl>

@@ -6,6 +6,7 @@ using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
+using GroceryErp.Inventory.Contracts;
 
 namespace GroceryErp.Expenses;
 
@@ -203,8 +204,8 @@ public sealed partial class MoneyOutService
                 correctionReason,
             }, transaction.Transaction);
             if (restoredLot is null && restored != Quantity.Zero)
-                stock.Post(transaction, new(periods.Today, current.ProductId, current.LotId, "ADJUSTMENT",
-                    restored, unitCost, "damage_correction", id, correctionReason));
+                stock.CorrectDamage(transaction, new(periods.Today, current.ProductId, current.LotId,
+                    restored, unitCost, id, correctionReason));
             audit.Write(transaction, "damage", original.Id, replacement.Quantity == Quantity.Zero ? "VOID" : "CORRECT", new
             {
                 correctionId = id,
@@ -259,8 +260,7 @@ public sealed partial class MoneyOutService
         }, transaction.Transaction);
         long originId = transaction.Connection.ExecuteScalar<long>(
             "SELECT id FROM direct_stock_origin WHERE lot_id=@lotId", new { lotId }, transaction.Transaction);
-        stock.Post(transaction, new(periods.Today, damage.ProductId, lotId, "DIRECT_ENTRY", quantity,
-            Money.FromScaled(damage.UnitCost), "direct_stock_origin", originId, reason));
+        stock.Change(transaction, new(periods.Today, damage.ProductId, lotId, LotChangeKind.DirectEntry, quantity));
         return lotId;
     }
 

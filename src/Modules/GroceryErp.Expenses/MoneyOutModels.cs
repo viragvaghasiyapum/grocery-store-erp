@@ -3,14 +3,6 @@ using GroceryErp.Core.Time;
 
 namespace GroceryErp.Expenses;
 
-public sealed record ExpiryLot(
-    long LotId, long ProductId, string Sku, string ProductName, string? ProductNameLocal, string LotCode,
-    string? BatchNumber, DateOnly ExpiryDate, int DaysLeft, Quantity Quantity,
-    Money CostValue, string Bucket, long? VendorId, string? VendorName);
-
-public sealed record ExpiryPage(IReadOnlyList<ExpiryLot> Items, bool HasMore,
-    DateOnly? NextDate, long? NextId);
-
 public sealed record DamageInput(
     long LotId, DateOnly Date, Quantity Quantity, string Reason,
     Money RecoveredAmount, string? Notes);

@@ -26,7 +26,6 @@ public sealed record AppSettings(
     public bool PricesIncludeTax => GetBool("tax.prices_include_tax", true);
     public int BillRoundTo => GetInt("bill.round_to", 1000, 0, int.MaxValue);
     public int ExpiryDefaultAlertDays => GetInt("expiry.default_alert_days", 30, 0, 3650);
-    public bool ExpiryPopupOnLogin => GetBool("expiry.popup_on_login", true);
     public bool BlockExpiredLots => GetBool("pos.block_expired", true);
     public bool VoidSameDayOnly => GetBool("pos.void_same_day_only", true);
     public string LotPrefix => Get("barcode.lot_prefix", "20");

@@ -4,6 +4,7 @@ using GroceryErp.Core.Errors;
 using GroceryErp.Core.Messages;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Services;
+using GroceryErp.Inventory.Contracts;
 
 namespace GroceryErp.Expenses;
 
@@ -67,8 +68,8 @@ public sealed partial class MoneyOutService
                     operationId,
                     lotId = line.LotId
                 }, tx.Transaction);
-                stock.Post(tx, new(date, lot.ProductId, line.LotId, "DAMAGE",
-                    new Quantity(-line.Quantity.Value), unitCost, "damage", id, reason));
+                stock.Change(tx, new(date, lot.ProductId, line.LotId, LotChangeKind.Damage,
+                    new Quantity(-line.Quantity.Value)));
                 audit.Write(tx, "damage", id, "CREATE", new
                 {
                     document,
@@ -186,8 +187,7 @@ public sealed partial class MoneyOutService
                     operationId = batchOperationId,
                     lotId
                 }, tx.Transaction);
-                stock.Post(tx, new(date, lot.ProductId, lotId, "DAMAGE", new Quantity(-quantity.Value),
-                    unitCost, "damage", id, "EXPIRED"));
+                stock.Change(tx, new(date, lot.ProductId, lotId, LotChangeKind.Damage, new Quantity(-quantity.Value)));
                 audit.Write(tx, "damage", id, "CREATE", new { document, bulk = batchOperationId, quantity = quantity.Scaled });
                 outcome.Add(new BulkItemResult(lotId, BulkItemOutcome.Changed));
                 products.Add(lot.ProductId);

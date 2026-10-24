@@ -275,7 +275,6 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
                 deltaTo,
                 deltaSign,
                 filter.ProductId,
-                filter.LotId,
                 filter.VendorId,
                 filter.Status,
                 filter.PaymentMode,
@@ -352,7 +351,6 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
                         from = Iso(from),
                         to = Iso(to),
                         filter.ProductId,
-                        filter.LotId,
                         filter.VendorId,
                         filter.Status,
                         filter.PaymentMode,
@@ -514,7 +512,6 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
                 parts.Add($"{Text(key, fallback)}: {Convert.ToString(text, CultureInfo.InvariantCulture)}");
         }
         Add("Reports_FilterProduct", "Product", filter.ProductId);
-        Add("Reports_FilterLot", "Lot", filter.LotId);
         Add("Reports_FilterVendor", "Vendor", filter.VendorId);
         Add("Reports_FilterAsset", "Asset", filter.AssetId);
         Add("Reports_Status", "Status", filter.Status);
@@ -807,15 +804,13 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
     }
 
     private static string SelectReportSql(ReportKind kind, ReportFilter filter, string defaultSql) =>
-        (kind, filter.ProductId, filter.LotId) switch
+        (kind, filter.ProductId) switch
         {
-            (ReportKind.StockValue, _, _) when !filter.IncludeExpired => ReportDefinitions.StockValueWithoutExpired,
-            (ReportKind.ItemSales, not null, _) => ReportDefinitions.ItemSalesForProduct,
-            (ReportKind.CategorySales, _, _) => ReportDefinitions.CategorySalesFromDay,
-            (ReportKind.GstSummary, _, _) => ReportDefinitions.GstSummaryFromDay,
-            (ReportKind.HourlySales, _, _) => ReportDefinitions.HourlySalesFromDay,
-            (ReportKind.StockLedger, _, not null) => ReportDefinitions.StockLedgerForLot,
-            (ReportKind.StockLedger, not null, _) => ReportDefinitions.StockLedgerForProduct,
+            (ReportKind.StockValue, _) when !filter.IncludeExpired => ReportDefinitions.StockValueWithoutExpired,
+            (ReportKind.ItemSales, not null) => ReportDefinitions.ItemSalesForProduct,
+            (ReportKind.CategorySales, _) => ReportDefinitions.CategorySalesFromDay,
+            (ReportKind.GstSummary, _) => ReportDefinitions.GstSummaryFromDay,
+            (ReportKind.HourlySales, _) => ReportDefinitions.HourlySalesFromDay,
             _ => defaultSql,
         };
 

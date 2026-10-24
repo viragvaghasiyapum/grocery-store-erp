@@ -42,7 +42,9 @@
             <Button x:Name="ExportButton" Margin="0,0,8,8" Click="Export_OnClick" Content="{l:Tr Settings_ExportUsb}"/>
             <ProgressBar x:Name="ExportProgress" Width="64" Height="5" Margin="0,0,12,8" VerticalAlignment="Center" IsIndeterminate="True" Visibility="Collapsed"/>
             <Button x:Name="RestoreActionButton" Margin="0,0,8,8" Click="Restore_OnClick" Content="{l:Tr Settings_RestoreAction}"/>
+            <Button x:Name="CompactButton" Margin="0,0,8,8" Click="Compact_OnClick" Content="{l:Tr Settings_CompactAction}"/>
           </WrapPanel>
+          <TextBlock x:Name="CompactStatus" TextWrapping="Wrap" Opacity="0.72"/>
           <TextBlock Margin="0,10,0,4" Text="{l:Tr Settings_RemovableDrive}"/>
           <DockPanel><Button DockPanel.Dock="Right" Margin="8,0,0,0" Click="RefreshDrives_OnClick" Content="{l:Tr Stock_Refresh}"/>
             <ComboBox x:Name="RemovableDrives" MinWidth="260"/>

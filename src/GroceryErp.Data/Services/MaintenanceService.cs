@@ -9,7 +9,7 @@ using Microsoft.Data.Sqlite;
 
 namespace GroceryErp.Data.Services;
 
-public sealed record StartupHealth(bool FreeDiskWarning, string? LastSaleDate, bool LotCacheHealthy);
+public sealed record StartupHealth(bool FreeDiskWarning, string? LastSaleDate);
 
 /// Runs the checks and maintenance that are intentionally kept outside the UI thread.
 public sealed class MaintenanceService(
@@ -23,19 +23,13 @@ public sealed class MaintenanceService(
     public async Task<StartupHealth> CheckBeforeShellAsync(CancellationToken cancellationToken = default)
     {
         using var timing = PerformanceMetrics.TrackMaintenance("startup");
-        (string? lastSaleDate, bool lotCacheHealthy) = await database.ReadAsync(connection =>
-        {
-            string? lastDate = connection.ExecuteScalar<string?>("SELECT MAX(sale_date) FROM sale WHERE status = 'COMPLETED'");
-            // Each lot quantity commits with its document, so an interrupted session
-            // needs no repair. A movement written after the upgrade is a defect.
-            bool healthy = connection.ExecuteScalar<long>("""
-                SELECT movement_high_water=(SELECT COALESCE(MAX(id),0) FROM stock_movement)
-                FROM direct_stock_live
-                """) == 1;
-            return (lastDate, healthy);
-        }, cancellationToken).ConfigureAwait(false);
+        // Each lot quantity commits with its document, so an interrupted session needs no
+        // stock repair; weekly maintenance reconciles every lot with its documents.
+        string? lastSaleDate = await database.ReadAsync(connection =>
+            connection.ExecuteScalar<string?>("SELECT MAX(sale_date) FROM sale WHERE status = 'COMPLETED'"),
+            cancellationToken).ConfigureAwait(false);
 
-        return new(HasLowDiskSpace(paths.Root), lastSaleDate, lotCacheHealthy);
+        return new(HasLowDiskSpace(paths.Root), lastSaleDate);
     }
 
     public Task BeginSessionAsync(CancellationToken cancellationToken = default) =>

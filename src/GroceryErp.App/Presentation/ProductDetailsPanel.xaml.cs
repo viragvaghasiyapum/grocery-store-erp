@@ -8,9 +8,8 @@ using GroceryErp.Localization;
 namespace GroceryErp.App.Presentation;
 
 /// <summary>
-/// The Products slide-in panel for one product: Basics (the product form), Lots and the read-only
-/// pre-cutover History. Lots and History are created only when their tab is first selected, and
-/// are released when another product opens.
+/// The Products slide-in panel for one product: Basics (the product form) and Lots. The Lots
+/// view is created only when its tab is first selected, and is released when another product opens.
 /// </summary>
 public partial class ProductDetailsPanel : UserControl
 {
@@ -64,7 +63,7 @@ public partial class ProductDetailsPanel : UserControl
         _product = product;
         ShowSummary(product);
         LotsHost.Content = null;
-        HistoryHost.Content = null;
+        TabActionsHost.Content = null;
         SavedText.Text = string.Empty;
         if (lotsFirst) Tabs.SelectedItem = LotsTab;
         EnsureTabContent();
@@ -104,15 +103,24 @@ public partial class ProductDetailsPanel : UserControl
 
     private void EnsureTabContent()
     {
-        if (_product is null || _inventory is null) return;
-        if (Tabs.SelectedItem == LotsTab && LotsHost.Content is null)
+        if (_product is not null && _inventory is not null && Tabs.SelectedItem == LotsTab && LotsHost.Content is null)
         {
             var lots = new ProductLotsView(_inventory, _product.Id, _product.ProductClass == "INTERNAL");
             lots.StockChanged += (_, _) => ProductChanged?.Invoke(this, EventArgs.Empty);
             LotsHost.Content = lots;
+            TabActionsHost.Content = lots.DetachActions();
         }
-        else if (Tabs.SelectedItem == HistoryTab && HistoryHost.Content is null)
-            HistoryHost.Content = new ProductLedgerView(_inventory, _product.Id);
+        TabActionsHost.Visibility = Tabs.SelectedItem == LotsTab && TabActionsHost.Content is not null
+            ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    // Keeps the tab actions level with the headers and starting just after the last one.
+    private void TabHeader_OnSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!LotsTab.IsLoaded || LotsTab.ActualWidth <= 0) return;
+        Point corner = LotsTab.TranslatePoint(new Point(LotsTab.ActualWidth, 0), Tabs);
+        TabActionsHost.Margin = new Thickness(corner.X + 12, corner.Y, 0, 0);
+        TabActionsHost.Height = LotsTab.ActualHeight;
     }
 
     private async void Save_OnClick(object sender, RoutedEventArgs e)

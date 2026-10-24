@@ -13,7 +13,7 @@ namespace GroceryErp.Purchasing;
 
 public sealed partial class PurchasingService(
     DbExecutor database,
-    IStockLedger ledger,
+    ILotQuantities stock,
     DocNumberService numbers,
     PeriodGuard periods,
     ISettings settings,
@@ -382,8 +382,7 @@ public sealed partial class PurchasingService(
                 transaction.Connection.Execute("""
                     UPDATE purchase_line SET lot_code_snapshot=@lotCode,lot_id_snapshot=@lotId WHERE id=@id
                     """, new { lotCode, lotId, id = row.Id }, transaction.Transaction);
-                ledger.Post(transaction, new(header.ReceivedDate, row.ProductId, lotId, "PURCHASE", received,
-                    landed[index], "purchase_line", row.Id));
+                stock.Change(transaction, new(header.ReceivedDate, row.ProductId, lotId, LotChangeKind.Purchase, received));
                 lotIds.Add(lotId);
                 changedProducts.Add(row.ProductId);
             }
@@ -474,8 +473,8 @@ public sealed partial class PurchasingService(
     {
         foreach (CancelLotRow lot in lots)
         {
-            ledger.Post(transaction, new(cancellationDate, lot.ProductId, lot.LotId, "PURCHASE_CANCEL",
-                Quantity.FromScaled(-lot.Received), Money.FromScaled(lot.UnitCost), "purchase_line", lot.PurchaseLineId));
+            stock.Change(transaction, new(cancellationDate, lot.ProductId, lot.LotId, LotChangeKind.PurchaseVoid,
+                Quantity.FromScaled(-lot.Received)));
             transaction.Connection.Execute("UPDATE product_lot SET is_active=0 WHERE id=@LotId", lot, transaction.Transaction);
             products.Add(lot.ProductId);
         }
@@ -777,9 +776,8 @@ public sealed partial class PurchasingService(
                     cost = lineCost.Scaled,
                     taxMode = purchase.TaxMode ?? settings.Current.TaxMode,
                 }), transaction.Transaction);
-                ledger.Post(transaction, new(input.Date, lot.ProductId, lot.LotId, "VENDOR_RETURN",
-                    Quantity.FromScaled(-line.Quantity.Scaled), Money.FromScaled(lot.UnitCost),
-                    "vendor_return", returnId, reason));
+                stock.Change(transaction, new(input.Date, lot.ProductId, lot.LotId, LotChangeKind.VendorReturn,
+                    Quantity.FromScaled(-line.Quantity.Scaled)));
             }
             audit.Write(transaction, "vendor_return", returnId, "POST", new
             {
@@ -824,9 +822,8 @@ public sealed partial class PurchasingService(
                 """, new { returnId }, transaction.Transaction).ToList();
             foreach (var line in lines)
             {
-                ledger.Post(transaction, new(date, line.ProductId, line.LotId, "VENDOR_RETURN_CANCEL",
-                    Quantity.FromScaled(line.Quantity), Money.FromScaled(line.UnitCost),
-                    "vendor_return", returnId, cleanReason));
+                stock.Change(transaction, new(date, line.ProductId, line.LotId, LotChangeKind.VendorReturnCancel,
+                    Quantity.FromScaled(line.Quantity)));
                 changedProducts.Add(line.ProductId);
             }
             transaction.Connection.Execute("""
@@ -883,8 +880,8 @@ public sealed partial class PurchasingService(
                 date = Format(date),
                 reason = Optional(reason, 500)
             }, transaction.Transaction);
-            ledger.Post(transaction, new(date, lot.ProductId, lotId, "INTERNAL_USE", Quantity.FromScaled(-quantity.Scaled),
-                Money.FromScaled(lot.UnitCost), "internal_use_record", id, reason));
+            stock.Change(transaction, new(date, lot.ProductId, lotId, LotChangeKind.InternalUse,
+                Quantity.FromScaled(-quantity.Scaled)));
             audit.Write(transaction, "internal_use_record", id, "CONSUME", new { lotId, quantity = quantity.Scaled });
             OperationGuard.Complete(transaction, operationId, "internal_use_record", id);
             return id;

@@ -21,10 +21,17 @@ public sealed class NullMigrationBackup : IMigrationBackup
 
 public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMigrationBackup backup)
 {
-    public const int LatestVersion = 35;
+    public const int LatestVersion = 36;
 
-    public void Run()
+    /// <summary>Backup reason for the last store that still holds the stock ledger; rotation keeps it.</summary>
+    public const string LedgerArchiveReason = "pre-ledger-removal";
+
+    public void Run() => RunTo(LatestVersion);
+
+    // Tests and the scale audit stop at an older version to rehearse a later upgrade.
+    internal void RunTo(int targetVersion)
     {
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(targetVersion, LatestVersion);
         DapperSetup.Register();
         factory.EnsureWal();
         List<Script> scripts = LoadEmbedded();
@@ -35,10 +42,13 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
             throw new DomainException(ErrorCode.DatabaseNewerThanApp, current + 1, LatestVersion);
         if (current > LatestVersion)
             throw new DomainException(ErrorCode.DatabaseNewerThanApp, current, LatestVersion);
-        if (current == LatestVersion) return;
-        if (current > 0) backup.CreateBeforeMigration($"pre-migration-v{current}");
+        if (current >= targetVersion) return;
+        // The backup before schema 36 is the only remaining copy of the stock ledger.
+        if (current > 0)
+            backup.CreateBeforeMigration(current < 36 && targetVersion >= 36
+                ? $"{LedgerArchiveReason}-v{current}" : $"pre-migration-v{current}");
 
-        foreach (Script script in scripts.Where(item => item.Version > current))
+        foreach (Script script in scripts.Where(item => item.Version > current && item.Version <= targetVersion))
         {
             if (script.Version == 29)
                 connection.Execute("PRAGMA foreign_keys=OFF;");
@@ -65,11 +75,15 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
                 PhaseOneMigration? phaseOne = script.Version == 29
                     ? PhaseOneMigration.Prepare(connection, transaction) : null;
                 int closedCounts = script.Version == 33 ? DirectStockCutover.Prepare(connection, transaction) : 0;
+                IReadOnlyList<LedgerRemoval.PnlTotal>? pnlBefore = script.Version == 36
+                    ? LedgerRemoval.Prepare(connection, transaction) : null;
                 connection.Execute(sql, transaction: transaction);
                 if (phaseOne is not null)
                     phaseOne.Finish(connection, transaction);
                 if (script.Version == 33)
                     DirectStockCutover.Finish(connection, transaction, closedCounts);
+                if (pnlBefore is not null)
+                    LedgerRemoval.Finish(connection, transaction, pnlBefore);
                 if (script.Version == 19)
                     DashboardTopProjection.Rebuild(connection, transaction, DateOnly.FromDateTime(DateTime.Now));
                 if (script.Version != 16)

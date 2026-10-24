@@ -40,6 +40,7 @@ public partial class ProductLotsView : UserControl
         _isInternal = isInternal;
         InitializeComponent();
         ConsumeButton.Visibility = isInternal ? Visibility.Visible : Visibility.Collapsed;
+        _ = new ActionStrip(ActionBar, ActionButtons, MoreActionsMenu, MoreActions);
         _ = new FilterRow(FilterBar, SearchBox, MoreFiltersToggle, MoreFiltersPanel).Fold(ExpiryFilter).Fold(StatusFilter);
         // Source and expiry cells are converted in code, so a reload shows them in the new language.
         LanguageRefresh.Attach(this, () => _ = LoadAsync(PageMove.Same));
@@ -69,6 +70,18 @@ public partial class ProductLotsView : UserControl
 
     /// <summary>Raised after a lot write so the product row and panel header refresh.</summary>
     public event EventHandler? StockChanged;
+
+    /// <summary>
+    /// Removes the lot action row so a host can show it elsewhere, aligned to the right; the
+    /// actions keep working and still fold behind More when the new place is narrow.
+    /// </summary>
+    internal FrameworkElement DetachActions()
+    {
+        ((Panel)ActionBar.Parent).Children.Remove(ActionBar);
+        ActionBar.Margin = new Thickness(0);
+        ActionButtons.HorizontalAlignment = HorizontalAlignment.Right;
+        return ActionBar;
+    }
 
     public Task ReloadAsync()
     {

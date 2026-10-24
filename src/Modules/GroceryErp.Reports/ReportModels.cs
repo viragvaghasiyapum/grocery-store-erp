@@ -93,7 +93,7 @@ public sealed record TopProduct(long ProductId, string Name, string? LocalName, 
 
 public enum ReportKind
 {
-    SalesRegister, ItemSales, CategorySales, HourlySales, StockValue, StockLedger, LowStock,
+    SalesRegister, ItemSales, CategorySales, HourlySales, StockValue, LowStock,
     SlowMovers, Expiry, Damages, Expenses, SalaryRegister, AssetRegister, VendorPayables,
     PurchaseRegister, GstSummary, AuditLog, AssetSchedule, StockReconciliation
 }
@@ -108,6 +108,6 @@ public sealed record TabularReport(string Title, DateRange? Period, IReadOnlyLis
     string? Summary = null, string? Filters = null);
 
 public sealed record ReportFilter(DateOnly? From = null, DateOnly? To = null, long? ProductId = null,
-    long? LotId = null, long? VendorId = null, long? AssetId = null, string? Status = null, string? PaymentMode = null,
+    long? VendorId = null, long? AssetId = null, string? Status = null, string? PaymentMode = null,
     string? Entity = null, string? Action = null, int SlowMoverDays = 90, int Limit = 5000,
     bool IncludeExpired = true, bool MismatchesOnly = false);

@@ -16,7 +16,7 @@ namespace GroceryErp.Integration.Tests;
 public sealed class StockInTests
 {
     [Fact]
-    public async Task CatalogPurchaseVendorReturnAndCancellation_ChangeLotsWithoutMovements()
+    public async Task CatalogPurchaseVendorReturnAndCancellation_ChangeOnlyTheirLots()
     {
         using var fixture = new StockInFixture();
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -45,7 +45,6 @@ public sealed class StockInTests
             "Credit cancelled", OperationGuard.NewId(), ct);
         using (var db = fixture.Factory.Open())
         {
-            db.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement").ShouldBe(0L);
             db.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id",
                 new { id = cancelled.LotIds.Single() }).ShouldBe(0L);
             db.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id",
@@ -235,27 +234,20 @@ public sealed class StockInTests
     }
 
     [Fact]
-    public async Task Adjustments_AreReasonedCorrections_ThatKeepEachLotReconciled()
+    public async Task CountedDeficits_AreReasonedDamage_ThatKeepEachLotReconciled()
     {
         using var fixture = new StockInFixture();
         CancellationToken ct = TestContext.Current.CancellationToken;
         long draft = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("CORRECTIONS"), ct);
         PostedPurchase posted = await fixture.Purchasing.PostAsync(draft, OperationGuard.NewId(), ct);
-        await fixture.Inventory.AdjustAsync(posted.LotIds[0], fixture.Date,
-            new Quantity(-1), "First", OperationGuard.NewId(), ct);
-        await fixture.Inventory.AdjustAsync(posted.LotIds[0], fixture.Date,
-            new Quantity(-2), "Second", OperationGuard.NewId(), ct);
-        await Should.ThrowAsync<DomainException>(() => fixture.Inventory.AdjustAsync(posted.LotIds[0],
-            fixture.Date, new Quantity(-100), "Too many", OperationGuard.NewId(), ct));
+        await fixture.CountAsync(posted.LotIds[0], new Quantity(10), "First", ct);
+        await fixture.CountAsync(posted.LotIds[0], new Quantity(8), "Second", ct);
         using var connection = fixture.Factory.Open();
-        connection.Query<long>("""
-            SELECT quantity_delta FROM stock_correction WHERE lot_id=@lotId ORDER BY id
-            """, new { lotId = posted.LotIds[0] }).ShouldBe([-1000L, -2000L]);
+        connection.Query<long>("SELECT qty FROM damage WHERE lot_id=@lotId ORDER BY id",
+            new { lotId = posted.LotIds[0] }).ShouldBe([1000L, 2000L]);
         connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id",
             new { id = posted.LotIds[0] }).ShouldBe(8000L);
         LotSourceReconciliation.CheckLot(connection, null, posted.LotIds[0]).ShouldBeNull();
-        (await fixture.Inventory.GetLedgerPageAsync(fixture.ProductId, DateOnly.MinValue,
-            DateOnly.MaxValue, cancellationToken: ct)).Items.ShouldBeEmpty();
         await Should.ThrowAsync<DomainException>(() => fixture.Purchasing.CancelAsync(
             draft, fixture.Date, OperationGuard.NewId(), ct));
     }
@@ -283,12 +275,9 @@ public sealed class StockInTests
             connection.ExecuteScalar<long>("SELECT is_low FROM product_stock_total WHERE product_id=@id",
                 new { id = fixture.ProductId }).ShouldBe(0);
         }
-        await fixture.Inventory.AdjustAsync(purchase.LotIds[0], fixture.Date,
-            new Quantity(-2), "Projection test", OperationGuard.NewId(), ct);
+        await fixture.CountAsync(purchase.LotIds[0], new Quantity(9), "Projection test", ct);
         using var verify = fixture.Factory.Open();
         verify.ExecuteScalar<long>("SELECT is_low FROM product_stock_total WHERE product_id=@id",
-            new { id = fixture.ProductId }).ShouldBe(1);
-        verify.ExecuteScalar<long>("SELECT is_low FROM v_product_stock WHERE product_id=@id",
             new { id = fixture.ProductId }).ShouldBe(1);
         var catalog = new CatalogService(fixture.Database, new AuditLog(), fixture.Settings);
         (await catalog.SearchPageAsync(new ProductSearchFilter(LowStockOnly: true),
@@ -439,11 +428,10 @@ public sealed class StockInTests
                 .ShouldBe(2825000L);
         }
 
-        StockValuationItem valuation = (await fixture.Inventory.GetValuationAsync(TestContext.Current.CancellationToken)).Single();
-        valuation.Quantity.ShouldBe(new Quantity(11));
-        valuation.CostValue.ShouldBe(new Money(2600.004m));
-        valuation.SellingValue.ShouldBe(new Money(3300));
-        valuation.MrpValue.ShouldBe(new Money(3850));
+        using (var connection = fixture.Factory.Open())
+            connection.QuerySingle<(long Quantity, long Cost, long Selling, long Mrp)>("""
+                SELECT quantity,cost_value,selling_value,mrp_value FROM product_stock_total WHERE product_id=@id
+                """, new { id = fixture.ProductId }).ShouldBe((11_000L, 2_600_004L, 3_300_000L, 3_850_000L));
 
         await fixture.Purchasing.RecordPaymentAsync(new(fixture.VendorId, purchaseId, fixture.Date, new Money(500), "UPI", "TX1", null),
             OperationGuard.NewId(), TestContext.Current.CancellationToken);
@@ -456,19 +444,18 @@ public sealed class StockInTests
             connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = posted.LotIds[0] }).ShouldBe(0L);
             connection.ExecuteScalar<long>("SELECT quantity FROM product_stock_total WHERE product_id=@id", new { id = fixture.ProductId }).ShouldBe(0L);
             connection.ExecuteScalar<string>("SELECT status FROM purchase WHERE id=@purchaseId", new { purchaseId }).ShouldBe("CANCELLED");
-            connection.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement").ShouldBe(0L);
             LotSourceReconciliation.CheckLot(connection, null, posted.LotIds[0]).ShouldBeNull();
         }
     }
 
     [Fact]
-    public async Task Purchase_CannotCancelAfterLotWasAdjusted()
+    public async Task Purchase_CannotCancelAfterACountTouchedItsLot()
     {
         using var fixture = new StockInFixture();
         long purchaseId = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("INV-2"), TestContext.Current.CancellationToken);
         PostedPurchase posted = await fixture.Purchasing.PostAsync(purchaseId, OperationGuard.NewId(), TestContext.Current.CancellationToken);
-        await fixture.Inventory.AdjustAsync(posted.LotIds[0], fixture.Date, new Quantity(-1), "Damaged during handling",
-            OperationGuard.NewId(), TestContext.Current.CancellationToken);
+        await fixture.CountAsync(posted.LotIds[0], new Quantity(10), "Damaged during handling",
+            TestContext.Current.CancellationToken);
 
         DomainException exception = await Should.ThrowAsync<DomainException>(() => fixture.Purchasing.CancelAsync(
             purchaseId, fixture.Date, OperationGuard.NewId(), TestContext.Current.CancellationToken));
@@ -482,7 +469,8 @@ public sealed class StockInTests
         CancellationToken ct = TestContext.Current.CancellationToken;
         long purchaseId = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("INV-RETURN"), ct);
         PostedPurchase purchase = await fixture.Purchasing.PostAsync(purchaseId, OperationGuard.NewId(), ct);
-        await fixture.Inventory.SetLotActiveAsync(purchase.LotIds[0], false, ct);
+        using (var block = fixture.Factory.Open())
+            block.Execute("UPDATE product_lot SET is_active=0 WHERE id=@id", new { id = purchase.LotIds[0] });
         await fixture.Settings.SaveAsync(new Dictionary<string, string> { ["tax.mode"] = "COMPOSITION" }, ct);
         VendorReturnLot lot = (await fixture.Purchasing.GetVendorReturnLotsAsync(purchaseId, ct)).Single();
         lot.Returnable.ShouldBe(new Quantity(11));
@@ -626,40 +614,11 @@ public sealed class StockInTests
             .ShouldBe(205);
         connection.ExecuteScalar<long>("SELECT SUM(qty_on_hand) FROM product_lot WHERE batch_no LIKE 'IMPORT-%'")
             .ShouldBe(205_000);
-        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement").ShouldBe(0);
         OpeningStockLine[] changed = lines.ToArray();
         changed[0] = changed[0] with { Quantity = new Quantity(2) };
         DomainException conflict = await Should.ThrowAsync<DomainException>(() =>
             fixture.Inventory.ImportOpeningStockAsync(changed, operationId, TestContext.Current.CancellationToken));
         conflict.Code.ShouldBe(ErrorCode.Validation);
-    }
-
-    [Fact]
-    public async Task LotEdits_RejectStaleValuesWithoutOverwritingNewerEdits()
-    {
-        using var fixture = new StockInFixture();
-        long lotId = await fixture.Inventory.ImportOpeningStockAsync(
-            [new(fixture.ProductId, Quantity.One, new Money(20), new Money(30), new Money(35),
-                fixture.Date.AddMonths(2), "CAS", fixture.Date)],
-            OperationGuard.NewId(), TestContext.Current.CancellationToken);
-        await fixture.Inventory.ChangeLotPriceAsync(lotId, new Money(31), new Money(35),
-            new Money(30), new Money(35), TestContext.Current.CancellationToken);
-        DomainException stalePrice = await Should.ThrowAsync<DomainException>(() =>
-            fixture.Inventory.ChangeLotPriceAsync(lotId, new Money(32), new Money(35),
-                new Money(30), new Money(35), TestContext.Current.CancellationToken));
-        stalePrice.Code.ShouldBe(ErrorCode.Validation);
-        await fixture.Inventory.SetLotActiveAsync(lotId, false, true, TestContext.Current.CancellationToken);
-        DomainException staleActive = await Should.ThrowAsync<DomainException>(() =>
-            fixture.Inventory.SetLotActiveAsync(lotId, true, true, TestContext.Current.CancellationToken));
-        staleActive.Code.ShouldBe(ErrorCode.Validation);
-        using var connection = fixture.Factory.Open();
-        connection.QuerySingle<(long Price, long Active)>("""
-            SELECT selling_price AS Price,is_active AS Active FROM product_lot WHERE id=@lotId
-            """, new { lotId }).ShouldBe((31_000L, 0L));
-        connection.QuerySingle<(long Quantity, long Cost, long Selling, long Mrp)>("""
-            SELECT quantity,cost_value,selling_value,mrp_value
-            FROM product_stock_total WHERE product_id=@productId
-            """, new { productId = fixture.ProductId }).ShouldBe((1_000L, 20_000L, 31_000L, 35_000L));
     }
 
     [Fact]
@@ -688,6 +647,10 @@ public sealed class StockInTests
             SELECT qty_on_hand AS Quantity,unit_cost AS Cost,selling_price AS Price
             FROM product_lot WHERE id=@lotId
             """, new { lotId }).ShouldBe((4_000L, 20_000L, 32_000L));
+        connection.QuerySingle<(long Quantity, long Cost, long Selling, long Mrp)>("""
+            SELECT quantity,cost_value,selling_value,mrp_value
+            FROM product_stock_total WHERE product_id=@productId
+            """, new { productId = fixture.ProductId }).ShouldBe((4_000L, 80_000L, 128_000L, 140_000L));
         connection.ExecuteScalar<string>("SELECT updated_at FROM product_lot WHERE id=@lotId",
             new { lotId }).ShouldNotBeNullOrWhiteSpace();
     }
@@ -707,8 +670,7 @@ public sealed class StockInTests
         withStock.BlockReason.ShouldBe("Stock_DeleteHasStock");
         await Should.ThrowAsync<DomainException>(() => fixture.Inventory.DeleteZeroLotAsync(
             lotId, lot.DetailVersion, ct));
-        await fixture.Inventory.AdjustAsync(lotId, fixture.Date, new Quantity(-1),
-            "Test zero", OperationGuard.NewId(), ct);
+        await fixture.CountAsync(lotId, Quantity.Zero, "Test zero", ct);
         long heldSale;
         using (var connection = fixture.Factory.Open())
         {
@@ -732,7 +694,7 @@ public sealed class StockInTests
         using var after = fixture.Factory.Open();
         after.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot WHERE id=@lotId", new { lotId }).ShouldBe(0);
         after.ExecuteScalar<long>("SELECT COUNT(*) FROM direct_stock_origin WHERE lot_id=@lotId", new { lotId }).ShouldBe(1);
-        after.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_correction WHERE lot_id=@lotId", new { lotId }).ShouldBe(1);
+        after.ExecuteScalar<long>("SELECT COUNT(*) FROM damage WHERE lot_id=@lotId", new { lotId }).ShouldBe(1);
     }
 
     [Fact]
@@ -804,38 +766,6 @@ public sealed class StockInTests
     }
 
     [Fact]
-    public async Task LotCorrection_RevaluesRemainingStockThroughCorrectionsAndKeepsQuantityAccurate()
-    {
-        using var fixture = new StockInFixture();
-        long lotId = await fixture.Inventory.ImportOpeningStockAsync(
-            [new(fixture.ProductId, new Quantity(10), new Money(20), new Money(30), new Money(35),
-                fixture.Date.AddMonths(2), "OLD", fixture.Date)],
-            OperationGuard.NewId(), TestContext.Current.CancellationToken);
-        LotItem original = (await fixture.Inventory.GetLotsByIdsAsync([lotId], TestContext.Current.CancellationToken)).Single();
-        await fixture.Inventory.CorrectLotAsync(new(original, "FIXED", fixture.Date.AddMonths(3),
-            new Money(25), new Money(32), new Money(35), new Quantity(-2), fixture.Date,
-            "Receiving count and cost correction"), OperationGuard.NewId(), TestContext.Current.CancellationToken);
-
-        using var connection = fixture.Factory.Open();
-        connection.QuerySingle<(long Quantity, long Cost, long Selling)>("""
-            SELECT quantity,cost_value,selling_value FROM product_stock_total WHERE product_id=@id
-            """, new { id = fixture.ProductId }).ShouldBe((8_000L, 200_000L, 256_000L));
-        connection.ExecuteScalar<long>("""
-            SELECT COALESCE(SUM(CAST(ROUND(-quantity_delta*unit_cost/1000.0) AS INTEGER)),0)
-            FROM stock_correction WHERE lot_id=@lotId AND source_kind='LOT_CORRECTION'
-            """, new { lotId }).ShouldBe(0L);
-        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_correction WHERE lot_id=@lotId",
-            new { lotId }).ShouldBe(3L);
-        LotSourceReconciliation.CheckLot(connection, null, lotId).ShouldBeNull();
-        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity='product_lot' AND entity_id=@lotId AND action='CORRECT'",
-            new { lotId }).ShouldBe(1L);
-        DomainException stale = await Should.ThrowAsync<DomainException>(() => fixture.Inventory.CorrectLotAsync(
-            new(original, "STALE", null, new Money(20), new Money(30), new Money(35),
-                Quantity.Zero, fixture.Date, "Stale edit"), OperationGuard.NewId(), TestContext.Current.CancellationToken));
-        stale.Code.ShouldBe(ErrorCode.Validation);
-    }
-
-    [Fact]
     public async Task Fefo_NeverAllocatesAnExpiredLotOrNegativeStock()
     {
         using var fixture = new StockInFixture();
@@ -875,7 +805,7 @@ public sealed class StockInTests
             var numbers = new DocNumberService(Settings);
             Periods = new PeriodGuard(Settings, new FixedClock(new DateOnly(2026, 9, 26)));
             PeriodGuard periods = Periods;
-            Ledger = new StockLedger(Settings);
+            Ledger = new LotQuantities(Settings);
             Inventory = new InventoryService(Database, Ledger, numbers, periods, new AuditLog());
             Purchasing = new PurchasingService(Database, Ledger, numbers, periods, Settings, new AuditLog());
             Date = new DateOnly(2026, 9, 26);
@@ -897,13 +827,23 @@ public sealed class StockInTests
         public SqliteConnectionFactory Factory { get; }
         public DbExecutor Database { get; }
         public SettingsService Settings { get; }
-        public StockLedger Ledger { get; }
+        public LotQuantities Ledger { get; }
         public InventoryService Inventory { get; }
         public PurchasingService Purchasing { get; }
         public DateOnly Date { get; }
         public PeriodGuard Periods { get; }
         public long ProductId { get; }
         public long VendorId { get; }
+
+        // A reviewed physical count of one lot; a deficit becomes a categorized damage document.
+        public Task<long> CountAsync(long lotId, Quantity counted, string reason, CancellationToken ct) =>
+            Database.WriteAsync(tx =>
+            {
+                (long onHand, long version) = tx.Connection.QuerySingle<(long, long)>(
+                    "SELECT qty_on_hand,quantity_version FROM product_lot WHERE id=@lotId", new { lotId }, tx.Transaction);
+                return new DirectStockEngine().ReviewCount(tx, lotId, version, onHand, counted.Scaled, Date,
+                    reason, OperationGuard.NewId());
+            }, ct);
 
         public PurchaseDraftInput Purchase(string invoice = "INV-1") => new(
             VendorId, invoice, Date, Date, new Money(2725), new Money(100), null,

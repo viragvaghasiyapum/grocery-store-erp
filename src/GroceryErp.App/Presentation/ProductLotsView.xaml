@@ -10,13 +10,19 @@
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
-    <WrapPanel Margin="0,0,0,6">
-      <Button x:Name="AddLotButton" Style="{StaticResource ToolbarButton}" Click="AddDirectLot_OnClick" Content="{l:Tr Stock_AddDirectLot}"/>
-      <Button x:Name="EditLotButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="EditLot_OnClick" Content="{l:Tr Stock_EditDetails}"/>
-      <Button x:Name="DamageLotButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="DamageLot_OnClick" Content="{l:Tr MoneyOut_RecordDamage}"/>
-      <Button x:Name="ConsumeButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Visibility="Collapsed" Click="Consume_OnClick" Content="{l:Tr Stock_ConsumeInternal}"/>
-      <Button x:Name="LabelButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="Label_OnClick" Content="{l:Tr Catalog_PrintLabels}"/>
-    </WrapPanel>
+    <!-- The product panel moves this row onto its tab row; buttons that do not fit fold into More. -->
+    <Grid x:Name="ActionBar" Margin="0,0,0,6">
+      <StackPanel x:Name="ActionButtons" Orientation="Horizontal">
+        <Button x:Name="AddLotButton" Style="{StaticResource ToolbarButton}" Click="AddDirectLot_OnClick" Content="{l:Tr Stock_AddDirectLot}"/>
+        <Button x:Name="EditLotButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="EditLot_OnClick" Content="{l:Tr Stock_EditDetails}"/>
+        <Button x:Name="DamageLotButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="DamageLot_OnClick" Content="{l:Tr MoneyOut_RecordDamage}"/>
+        <Button x:Name="ConsumeButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Visibility="Collapsed" Click="Consume_OnClick" Content="{l:Tr Stock_ConsumeInternal}"/>
+        <Button x:Name="LabelButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="Label_OnClick" Content="{l:Tr Catalog_PrintLabels}"/>
+        <Menu x:Name="MoreActionsMenu" VerticalAlignment="Center" Background="Transparent" Visibility="Collapsed">
+          <MenuItem x:Name="MoreActions" Header="{l:Tr Common_MoreActions}"/>
+        </Menu>
+      </StackPanel>
+    </Grid>
     <WrapPanel x:Name="FilterBar" Grid.Row="1" Margin="0,0,0,4">
       <ui:TextBox x:Name="SearchBox" Width="170" Margin="0,0,6,4" PlaceholderText="{l:Tr Stock_LotFilterSearch}"
                   AutomationProperties.Name="{l:Tr Stock_LotFilterSearch}" TextChanged="Search_OnTextChanged"/>

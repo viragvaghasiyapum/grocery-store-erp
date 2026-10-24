@@ -47,7 +47,7 @@ release run and evidence before sign-off.
 - [ ] Receipt printer passes English/Gujarati, cutter and cash-drawer tests
 - [ ] Interrupt printing before and after spooler acceptance; after restart, review each saved receipt/day-end/label job, confirm Ctrl+P retry and receipt DUPLICATE mark, and check that drawer pulses do not replay
 - [ ] Label printer is calibrated and its labels scan from 30 cm
-- [ ] Power-pull during a draft bill recovers the draft and preserves ledger integrity
+- [ ] Power-pull during a draft bill recovers the draft and every lot still reconciles to its source documents
 - [ ] Backup exported to USB and restored on a second PC
 
 ## Business data and pilot

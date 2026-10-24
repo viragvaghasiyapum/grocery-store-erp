@@ -171,7 +171,7 @@ public partial class ReportsPage : Page
             if (!int.TryParse(SlowDaysFilter.Text, NumberStyles.None, CultureInfo.InvariantCulture, out int slowDays) || slowDays is < 1 or > 3650)
                 throw new ArgumentException(TranslationSource.Instance["Reports_InvalidFilter"]);
             TabularReport report2 = await _reports.GetReportAsync(kind, new(From: from, To: to,
-                ProductId: ParseId(ProductFilter.Text), LotId: ParseId(LotFilter.Text), VendorId: ParseId(VendorFilter.Text),
+                ProductId: ParseId(ProductFilter.Text), VendorId: ParseId(VendorFilter.Text),
                 AssetId: ParseId(AssetFilter.Text), Status: status, PaymentMode: payment,
                 Entity: Clean(EntityFilter.Text), Action: Clean(ActionFilter.Text), SlowMoverDays: slowDays,
                 Limit: 500, IncludeExpired: IncludeExpiredCheck.IsChecked == true,
@@ -465,8 +465,7 @@ public partial class ReportsPage : Page
         {
             (StatusFilterPanel, sales || expiry),
             (PaymentFilterPanel, sales),
-            (ProductFilterPanel, kind is ReportKind.StockLedger or ReportKind.ItemSales or ReportKind.StockReconciliation),
-            (LotFilterPanel, kind == ReportKind.StockLedger),
+            (ProductFilterPanel, kind is ReportKind.ItemSales or ReportKind.StockReconciliation),
             (VendorFilterPanel, kind is ReportKind.VendorPayables or ReportKind.PurchaseRegister),
             (AssetFilterPanel, kind == ReportKind.AssetSchedule),
             (SlowDaysFilterPanel, kind == ReportKind.SlowMovers),
@@ -478,8 +477,7 @@ public partial class ReportsPage : Page
             ? Visibility.Visible : Visibility.Collapsed;
         StatusPicker.IsEnabled = sales || expiry;
         PaymentPicker.IsEnabled = sales;
-        ProductFilter.IsEnabled = kind is ReportKind.StockLedger or ReportKind.ItemSales or ReportKind.StockReconciliation;
-        LotFilter.IsEnabled = kind == ReportKind.StockLedger;
+        ProductFilter.IsEnabled = kind is ReportKind.ItemSales or ReportKind.StockReconciliation;
         VendorFilter.IsEnabled = kind is ReportKind.VendorPayables or ReportKind.PurchaseRegister;
         AssetFilter.IsEnabled = kind == ReportKind.AssetSchedule;
         SlowDaysFilter.IsEnabled = kind == ReportKind.SlowMovers;
@@ -525,11 +523,10 @@ public partial class ReportsPage : Page
         new("SOON", "Reports_StatusSoon"),
     ];
 
-    // Lot quantities no longer come from movements, so the ledger report is not offered.
     private static List<ReportChoice> ReportChoices() =>
     [
         new(null, "Reports_Kind_ProfitAndLoss"),
-        .. Enum.GetValues<ReportKind>().Where(static kind => kind != ReportKind.StockLedger)
+        .. Enum.GetValues<ReportKind>()
             .Select(static kind => new ReportChoice(kind, $"Reports_Kind_{kind}")),
     ];
 
@@ -684,7 +681,7 @@ public partial class ReportsPage : Page
             if (!int.TryParse(SlowDaysFilter.Text, NumberStyles.None, CultureInfo.InvariantCulture,
                 out int slowDays)) throw new ArgumentException(TranslationSource.Instance["Reports_InvalidFilter"]);
             var filter = new ReportFilter(From: from, To: to,
-                ProductId: ParseId(ProductFilter.Text), LotId: ParseId(LotFilter.Text),
+                ProductId: ParseId(ProductFilter.Text),
                 VendorId: ParseId(VendorFilter.Text), AssetId: ParseId(AssetFilter.Text),
                 Status: ((FilterChoice?)StatusPicker.SelectedItem)?.Code,
                 PaymentMode: ((FilterChoice?)PaymentPicker.SelectedItem)?.Code,

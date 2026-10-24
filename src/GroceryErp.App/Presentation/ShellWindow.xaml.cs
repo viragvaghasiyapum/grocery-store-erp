@@ -47,7 +47,6 @@ public partial class ShellWindow : FluentWindow
         ISettings? settings = null,
         IClock? clock = null,
         MoneyOutService? moneyOut = null,
-        SettingsService? settingsService = null,
         UsbUpdateService? updates = null,
         BackupService? backups = null,
         IReadOnlyList<IModule>? modules = null,
@@ -97,24 +96,7 @@ public partial class ShellWindow : FluentWindow
             RootNavigation.Navigate(typeof(DashboardPage));
             await RefreshPrinterStatusAsync();
             _deviceTimer.Start();
-            if (moneyOut is not null)
-            {
-                int count = await moneyOut.GetActionableExpiryCountAsync();
-                SetExpiryBadge(count);
-                string today = clock?.BusinessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "";
-                string lastPopup = settings?.Current.Values.GetValueOrDefault("expiry.last_popup_date", "") ?? "";
-                if (count > 0 && settings?.Current.ExpiryPopupOnLogin == true && settingsService is not null && lastPopup != today)
-                {
-                    var alert = new ExpiryAlertWindow(count) { Owner = this };
-                    alert.ShowDialog();
-                    await settingsService.SaveAsync(new Dictionary<string, string> { ["expiry.last_popup_date"] = today });
-                    if (alert.ViewRequested)
-                    {
-                        ProductsPage.RequestExpiredStock(PageStateStore.Current);
-                        RootNavigation.Navigate(typeof(ProductsPage));
-                    }
-                }
-            }
+            if (moneyOut is not null) SetExpiryBadge(await moneyOut.GetActionableExpiryCountAsync());
         };
         Closed += (_, _) =>
         {
@@ -252,6 +234,7 @@ public partial class ShellWindow : FluentWindow
         _expiryInfoBadge.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
     internal void OpenReports() => RootNavigation.Navigate(typeof(ReportsPage));
+    internal void OpenProducts() => RootNavigation.Navigate(typeof(ProductsPage));
     internal void OpenSettings() => RootNavigation.Navigate(typeof(SettingsPage));
     internal void ShowMaintenanceWarning() => MaintenanceWarning.Visibility = Visibility.Visible;
 

@@ -31,7 +31,6 @@ public sealed class MoneyOutTests
             new(Quantity.One, Money.Zero, "BROKEN", null), "Recount", OperationGuard.NewId(), ct);
         using (var db = fixture.Factory.Open())
         {
-            db.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement").ShouldBe(0L);
             db.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id",
                 new { id = fixture.LotId }).ShouldBe(9000L);
             db.ExecuteScalar<long>("SELECT COUNT(*) FROM damage WHERE id=@damageId",
@@ -41,12 +40,6 @@ public sealed class MoneyOutTests
         }
         await fixture.Database.WriteAsync(tx => new DirectStockEngine().CheckAll(tx)
             .ToArray().ShouldBeEmpty(), ct);
-        var paths = new AppPaths(new SettingsBootstrap(fixture.Root));
-        var clock = new FixedClock(fixture.Today);
-        var backups = new BackupService(paths, fixture.Factory, clock, fixture.Settings);
-        StartupHealth health = await new MaintenanceService(paths, fixture.Factory,
-            fixture.Database, backups, clock, new AuditLog()).CheckBeforeShellAsync(ct);
-        health.LotCacheHealthy.ShouldBeTrue();
     }
 
     [Fact]
@@ -261,17 +254,15 @@ public sealed class MoneyOutTests
     }
 
     [Fact]
-    public async Task ExpiryArea_IncludesLocalNameAndExcludesBlockedLots()
+    public void ExpiryAlertView_IncludesLocalNameAndExcludesBlockedLots()
     {
         using var fixture = new Fixture(expiry: new DateOnly(2026, 8, 1));
-
-        IReadOnlyList<ExpiryLot> visible = await fixture.MoneyOut.GetExpiryAsync("EXPIRED", TestContext.Current.CancellationToken);
-        visible.Single().ProductNameLocal.ShouldBe("પરીક્ષણ ઉત્પાદન");
-
-        using (var connection = fixture.Factory.Open())
-            connection.Execute("UPDATE product_lot SET is_active=0 WHERE id=@id", new { id = fixture.LotId });
-
-        (await fixture.MoneyOut.GetExpiryAsync("EXPIRED", TestContext.Current.CancellationToken)).ShouldBeEmpty();
+        using var connection = fixture.Factory.Open();
+        // The Expiry report and the Products badge read this view.
+        connection.ExecuteScalar<string>("SELECT name_local FROM v_expiry_alert WHERE bucket='EXPIRED'")
+            .ShouldBe("પરીક્ષણ ઉત્પાદન");
+        connection.Execute("UPDATE product_lot SET is_active=0 WHERE id=@id", new { id = fixture.LotId });
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM v_expiry_alert WHERE bucket='EXPIRED'").ShouldBe(0L);
     }
 
     [Fact]
@@ -580,7 +571,7 @@ public sealed class MoneyOutTests
             Today = new DateOnly(2026, 9, 27);
             Clock = new MutableClock(Today);
             Periods = new PeriodGuard(Settings, Clock);
-            var ledger = new StockLedger(Settings);
+            var ledger = new LotQuantities(Settings);
             MoneyOut = new MoneyOutService(Database, ledger, new DocNumberService(Settings), Periods, new AuditLog());
             Assets = new AssetService(Database, Settings, Periods, new AuditLog(), Clock);
 
@@ -597,8 +588,8 @@ public sealed class MoneyOutTests
                 VALUES (@product,'L-MONEY','2026-04-01',@expiry,50000,150000,10000) RETURNING id
                 """, new { product, expiry = (expiry ?? new DateOnly(2027, 9, 1)).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) });
             using var transaction = connection.BeginTransaction();
-            ledger.Post(new(connection, transaction), new(new DateOnly(2026, 4, 1), product, LotId,
-                "OPENING", new Quantity(10), new Money(50), "opening_import", LotId));
+            ledger.Change(new(connection, transaction), new(new DateOnly(2026, 4, 1), product, LotId,
+                LotChangeKind.Opening, new Quantity(10)));
             transaction.Commit();
         }
 

@@ -44,7 +44,6 @@ public static class PnlSource
               SELECT (SELECT MIN(day) FROM pnl_day) AS day
               UNION ALL SELECT (SELECT MIN(damage_date) FROM damage)
               UNION ALL SELECT (SELECT MIN(effective_date) FROM damage_correction)
-              UNION ALL SELECT (SELECT MIN(move_date) FROM stock_movement WHERE type_code='ADJUSTMENT')
               UNION ALL SELECT (SELECT MIN(correction_date) FROM stock_correction)
               UNION ALL SELECT (SELECT MIN(expense_date) FROM expense)
               UNION ALL SELECT (SELECT MIN(reversal_date) FROM purchase_expense_reversal)

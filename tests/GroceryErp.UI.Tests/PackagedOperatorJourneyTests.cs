@@ -42,12 +42,13 @@ public sealed class PackagedOperatorJourneyTests
             app = PackagedApplication.Launch(start);
             using var automation = new UIA3Automation();
             Window setup = await WaitWindowAsync(app, automation, "NextButton");
-            Click(setup, "NextButton");
+            // A mouse click can land before the new window takes input; invoking the button cannot.
+            Invoke(setup, "NextButton");
             Enter(setup, "StoreName", "Packaged UI Test Store");
-            Click(setup, "NextButton");
+            Invoke(setup, "NextButton");
             Enter(setup, "Password", "test-owner-2026");
             Enter(setup, "ConfirmPassword", "test-owner-2026");
-            for (int step = 2; step < 8; step++) Click(setup, "NextButton");
+            for (int step = 2; step < 8; step++) Invoke(setup, "NextButton");
 
             Window login = await WaitWindowAsync(app, automation, "PasswordBox");
             SeedCategory(store);
@@ -70,8 +71,10 @@ public sealed class PackagedOperatorJourneyTests
             Window product = await WaitWindowAsync(app, automation, "BarcodesBox");
             Enter(product, "NameBox", "Packaged Test Rice");
             Find(product, "HsnBox").AsTextBox().Text = "1006";
-            Enter(product, "PriceBox", "30");
-            Enter(product, "MrpBox", "35");
+            // The price fields are below the fold of the form, where a click-and-type misses them.
+            Find(product, "PriceBox").AsTextBox().Text = "30";
+            Find(product, "MrpBox").AsTextBox().Text = "35";
+            Find(product, "PriceBox").AsTextBox().Text.ShouldBe("30");
             Find(product, "BarcodesBox").AsTextBox().Text = barcode;
             Find(product, "BarcodesBox").AsTextBox().Text.ShouldBe(barcode);
             await WaitUntilAsync(() => Find(product, "SaveButton").IsEnabled, TimeSpan.FromSeconds(10));
@@ -90,14 +93,13 @@ public sealed class PackagedOperatorJourneyTests
             if (!ProductExists(store, barcode))
                 throw new InvalidOperationException($"Product editor rejected the entry: {Find(product, "ErrorText").Name}");
 
-            ClickNamed(shell, "Purchases");
-            await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("OpenDraftButton")) is not null,
-                TimeSpan.FromSeconds(10));
+            await NavigateAsync(shell, "Vendors", "VendorsGrid");
             ClickNamed(shell, "New vendor");
             Window vendor = await WaitWindowAsync(app, automation, "ContactBox");
             Enter(vendor, "NameBox", "Packaged Test Supplier");
-            ClickNamed(vendor, "Save");
+            Click(vendor, "SaveButton");
             await WaitUntilAsync(() => VendorExists(store), TimeSpan.FromSeconds(10));
+            await NavigateAsync(shell, "Purchases", "PurchasesGrid");
             ClickNamed(shell, "New purchase");
             Window purchase = await WaitWindowAsync(app, automation, "ProductSearchBox");
             purchase.FindFirstDescendant(cf => cf.ByAutomationId("VendorBox"))!.AsComboBox()
@@ -112,18 +114,20 @@ public sealed class PackagedOperatorJourneyTests
                     $"search={Find(purchase, "ProductSearchBox").AsTextBox().Text}, " +
                     $"error={Find(purchase, "ErrorText").Name}");
             }
-            EditPurchaseCell(purchase, 1, "PKG-BATCH");
-            EditPurchaseCell(purchase, 3, DateTime.Today.AddYears(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
-            EditPurchaseCell(purchase, 6, "20");
+            // Columns: line type, product, expense category, batch, mfg date, expiry, quantity, free, rate.
+            EditPurchaseCell(purchase, 3, "PKG-BATCH");
+            EditPurchaseCell(purchase, 5, DateTime.Today.AddYears(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            EditPurchaseCell(purchase, 8, "20");
             Click(purchase, "PostButton");
             await WaitUntilAsync(() => PurchaseExists(store), TimeSpan.FromSeconds(10));
             foreach (Window prompt in app.GetAllTopLevelWindows(automation).Where(window =>
                          window.FindFirstDescendant(cf => cf.ByName("No")) is not null))
                 prompt.FindFirstDescendant(cf => cf.ByName("No"))?.Click();
 
-            await NavigateAsync(shell, "Stock", "StockTabs");
+            // The Stock page and its ledger screens are gone; their work lives in Products.
+            shell.FindFirstDescendant(cf => cf.ByName("Stock")).ShouldBeNull();
             await NavigateAsync(shell, "Money out", "MoneyOutTabs");
-            await NavigateAsync(shell, "Assets", "AssetName");
+            await NavigateAsync(shell, "Assets", "AssetGrid");
             await NavigateAsync(shell, "Reports", "ReportPicker");
             await NavigateAsync(shell, "Sales history", "HistoryGrid");
             ClickNamed(shell, "Billing (POS)");
@@ -135,7 +139,14 @@ public sealed class PackagedOperatorJourneyTests
             ClickNamed(shell, "F9 Cash");
             Window payment = await WaitWindowAsync(app, automation, "CashBox");
             ClickNamed(payment, "Complete bill");
-            await WaitUntilAsync(() => CountSalesRows(store, "sale") == 1, TimeSpan.FromSeconds(10));
+            try { await WaitUntilAsync(() => CountSalesRows(store, "sale") == 1, TimeSpan.FromSeconds(10)); }
+            catch (TimeoutException)
+            {
+                throw new TimeoutException("The bill did not complete. Sales: " + SaleStates(store) + " Windows: " + string.Join(" || ",
+                    app.GetAllTopLevelWindows(automation).Select(window => window.Name + ": " + string.Join(" | ",
+                        window.FindAllDescendants().Select(element => element.Name)
+                            .Where(static name => !string.IsNullOrWhiteSpace(name)).Skip(55).Take(120)))));
+            }
             ClickNamed(shell, "Dashboard");
             await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("TodaySales")) is not null,
                 TimeSpan.FromSeconds(10));
@@ -179,11 +190,22 @@ public sealed class PackagedOperatorJourneyTests
         return found!;
     }
 
-    private static AutomationElement Find(Window window, string automationId) =>
-        window.FindFirstDescendant(cf => cf.ByAutomationId(automationId))
-        ?? throw new InvalidOperationException($"The {automationId} control is missing.");
+    // A control on a page that is still being shown can take a moment to appear.
+    private static AutomationElement Find(Window window, string automationId)
+    {
+        var watch = Stopwatch.StartNew();
+        while (true)
+        {
+            if (window.FindFirstDescendant(cf => cf.ByAutomationId(automationId)) is { } found) return found;
+            if (watch.Elapsed >= TimeSpan.FromSeconds(5))
+                throw new InvalidOperationException($"The {automationId} control is missing.");
+            Thread.Sleep(100);
+        }
+    }
 
     private static void Click(Window window, string automationId) => Find(window, automationId).Click();
+
+    private static void Invoke(Window window, string automationId) => Find(window, automationId).AsButton().Invoke();
 
     private static void ClickNamed(Window window, string name) =>
         (window.FindFirstDescendant(cf => cf.ByName(name))
@@ -245,6 +267,14 @@ public sealed class PackagedOperatorJourneyTests
             "sale" => connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sale WHERE status = 'COMPLETED'"),
             _ => throw new ArgumentOutOfRangeException(nameof(table)),
         };
+    }
+
+    private static string SaleStates(string root)
+    {
+        using var connection = new SqliteConnectionFactory(new AppPaths(new SettingsBootstrap(root))).Open();
+        return string.Join(", ", connection.Query<(string Status, long Count, long Total)>(
+            "SELECT status AS Status,COUNT(*) AS Count,SUM(grand_total) AS Total FROM sale GROUP BY status")
+            .Select(static row => $"{row.Status}={row.Count}/{row.Total}"));
     }
 
     private static void Enter(Window window, string automationId, string value)

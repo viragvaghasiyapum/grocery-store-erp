@@ -314,15 +314,18 @@ public sealed class PhaseZeroSmokeTests
                 settingsHost.Close();
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
 
-                var expiryAlert = new ExpiryAlertWindow(3);
-                expiryAlert.Show();
-                Capture(expiryAlert, "expiry-alert.en.png");
-                expiryAlert.Close();
+                var compaction = new CompactionWindow(
+                    new BackupService(paths, factory, new SystemClock(settings), settings), runOnLoad: false);
+                compaction.Show();
+                compaction.ShowProgress(new CompactionProgress(CompactionStage.Copying, 0.42));
+                ((TextBlock)compaction.FindName("StageText")).Text.ShouldBe(translations["Settings_CompactStageCopying"]);
+                ((TextBlock)compaction.FindName("DetailText")).Text.ShouldContain("42");
+                Capture(compaction, "compaction.en.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
-                expiryAlert = new ExpiryAlertWindow(3);
-                expiryAlert.Show();
-                Capture(expiryAlert, "expiry-alert.gu.png");
-                expiryAlert.Close();
+                compaction.ShowProgress(new CompactionProgress(CompactionStage.Verifying, null));
+                ((TextBlock)compaction.FindName("StageText")).Text.ShouldBe(translations["Settings_CompactStageVerifying"]);
+                Capture(compaction, "compaction.gu.png");
+                compaction.Close();
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
 
                 var catalog = new CatalogService(database, new AuditLog(), settings);
@@ -429,7 +432,7 @@ public sealed class PhaseZeroSmokeTests
                 restoredGrid.Columns[2].DisplayIndex.ShouldBe(1);
                 restoredHost.Close();
 
-                var inventory = new InventoryService(database, new StockLedger(settings),
+                var inventory = new InventoryService(database, new LotQuantities(settings),
                     new DocNumberService(settings), new PeriodGuard(settings, new SystemClock(settings)), new AuditLog());
                 var selectedLot = new LotItem(1, 1, "Tata Salt 1 kg", "L000001", "B2401",
                     new DateOnly(2026, 9, 1), new DateOnly(2026, 10, 9),
@@ -442,16 +445,6 @@ public sealed class PhaseZeroSmokeTests
                 ((FrameworkElement)lotsView.FindName("ConsumeButton")).Visibility.ShouldBe(Visibility.Collapsed);
                 Capture(lotsHost, "product-lots.en.png");
                 lotsHost.Close();
-                var ledgerView = new ProductLedgerView(inventory, 1, loadOnShow: false);
-                ((DataGrid)ledgerView.FindName("LedgerGrid")).ItemsSource = new[]
-                {
-                    new LedgerItem(1, new DateTime(2026, 9, 1), new DateOnly(2026, 9, 1), "OPENING",
-                        new Quantity(10), new Money(20), "opening_import", null, "L000001", new Quantity(10), "Opening stock"),
-                };
-                var ledgerHost = new Window { Content = ledgerView, Width = 760, Height = 520 };
-                ledgerHost.Show();
-                Capture(ledgerHost, "product-ledger.en.png");
-                ledgerHost.Close();
 
                 var priceChange = new LotPriceWindow(inventory, selectedLot);
                 priceChange.Show();
@@ -623,7 +616,7 @@ public sealed class PhaseZeroSmokeTests
                 Capture(label, "product-label.en.png");
                 label.Close();
 
-                var purchasing = new PurchasingService(database, new StockLedger(settings),
+                var purchasing = new PurchasingService(database, new LotQuantities(settings),
                     new DocNumberService(settings), new PeriodGuard(settings, new SystemClock(settings)), settings, new AuditLog());
                 var vendorEditor = new VendorEditorWindow(purchasing);
                 vendorEditor.Show();
@@ -815,15 +808,8 @@ public sealed class PhaseZeroSmokeTests
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 vendorsHost.Close();
 
-                var source = new StockSourceWindow(new StockSourceDocument("Purchase", "P2627-000051",
-                    new DateOnly(2026, 9, 28), "Shree Wholesale Traders", "POSTED", "SW-1042",
-                    [new("Tata Salt 1 kg", "L2627-000014", new Quantity(11), new Money(2600))]));
-                source.Show();
-                Capture(source, "stock-source.en.png");
-                source.Close();
-
                 IClock phase5Clock = new SystemClock(settings);
-                var moneyOutService = new MoneyOutService(database, new StockLedger(settings),
+                var moneyOutService = new MoneyOutService(database, new LotQuantities(settings),
                     new DocNumberService(settings), new PeriodGuard(settings, new SystemClock(settings)), new AuditLog());
                 var moneyOutPage = new MoneyOutPage(moneyOutService, inventory, phase5Clock, loadOnShow: false);
                 var moneyOutHost = new Window { Content = moneyOutPage, Width = 1120, Height = 700 };
@@ -909,7 +895,7 @@ public sealed class PhaseZeroSmokeTests
                 reopenedAssetsHost.Close();
 
                 IClock posClock = new SystemClock(settings);
-                var sales = new SalesService(database, new StockLedger(settings), new DocNumberService(settings),
+                var sales = new SalesService(database, new LotQuantities(settings), new DocNumberService(settings),
                     new PeriodGuard(settings, new SystemClock(settings)), settings, new AuditLog(), posClock);
                 var printer = new ReceiptPrinter(settings);
                 SaleLine[] lines =
@@ -1281,7 +1267,7 @@ public sealed class PhaseZeroSmokeTests
             Run(() => settings.LoadAsync());
             var clock = new MutableClock(new DateOnly(2026, 2, 20));
             var periods = new PeriodGuard(settings, clock);
-            var ledger = new StockLedger(settings);
+            var ledger = new LotQuantities(settings);
             var numbers = new DocNumberService(settings);
             var moneyOut = new MoneyOutService(database, ledger, numbers, periods, new AuditLog());
             var inventory = new InventoryService(database, ledger, numbers, periods, new AuditLog());
@@ -1470,7 +1456,7 @@ public sealed class PhaseZeroSmokeTests
             Run(() => settings.LoadAsync());
             var clock = new MutableClock(new DateOnly(2026, 10, 23));
             var periods = new PeriodGuard(settings, clock);
-            var ledger = new StockLedger(settings);
+            var ledger = new LotQuantities(settings);
             var numbers = new DocNumberService(settings);
             var catalog = new CatalogService(database, new AuditLog(), settings);
             var inventory = new InventoryService(database, ledger, numbers, periods, new AuditLog());
@@ -1624,7 +1610,9 @@ public sealed class PhaseZeroSmokeTests
             details.Visibility.ShouldBe(Visibility.Visible);
             details.ProductId.ShouldBe(salt);
             ((ContentControl)details.FindName("LotsHost")).Content.ShouldBeNull();
-            ((ContentControl)details.FindName("HistoryHost")).Content.ShouldBeNull();
+            // The panel has Basics and Lots only; the pre-upgrade ledger History tab is gone.
+            ((TabControl)details.FindName("Tabs")).Items.Count.ShouldBe(2);
+            details.FindName("HistoryHost").ShouldBeNull();
             var form = (ProductForm)details.FindName("Form");
             ((TextBox)form.FindName("NameBox")).Text.ShouldBe("Tata Salt 1 kg");
             ((FrameworkElement)form.FindName("FirstLotSection")).Visibility.ShouldBe(Visibility.Collapsed);
@@ -1639,7 +1627,23 @@ public sealed class PhaseZeroSmokeTests
             var lotsGrid = (DataGrid)lots.FindName("LotsGrid");
             // The opening lot and the posted purchase lot.
             PumpUntil(() => lotsGrid.Items.Count == 2);
-            ((ContentControl)details.FindName("HistoryHost")).Content.ShouldBeNull();
+            // The lot actions share the tab row, level with the headers, so the table gains that row.
+            var tabActions = (ContentControl)details.FindName("TabActionsHost");
+            var lotActions = (FrameworkElement)lots.FindName("ActionBar");
+            var lotsTab = (TabItem)details.FindName("LotsTab");
+            tabActions.Content.ShouldBeSameAs(lotActions);
+            tabActions.Visibility.ShouldBe(Visibility.Visible);
+            productsHost.UpdateLayout();
+            Math.Abs(lotActions.TranslatePoint(new Point(0, 0), details).Y - lotsTab.TranslatePoint(new Point(0, 0), details).Y)
+                .ShouldBeLessThan(1);
+            lotActions.TranslatePoint(new Point(0, 0), details).X
+                .ShouldBeGreaterThan(lotsTab.TranslatePoint(new Point(lotsTab.ActualWidth, 0), details).X);
+            void ShouldFitTabRow()
+            {
+                lotActions.ActualHeight.ShouldBeLessThanOrEqualTo(lotsTab.ActualHeight + 0.5);
+                ((FrameworkElement)lots.FindName("ActionButtons")).ActualWidth.ShouldBeLessThanOrEqualTo(lotActions.ActualWidth + 0.5);
+            }
+            ShouldFitTabRow();
             CaptureRevision(productsHost, "product-lots.en.png");
             var stockText = (TextBlock)details.FindName("StockText");
             string englishStock = stockText.Text;
@@ -1649,6 +1653,16 @@ public sealed class PhaseZeroSmokeTests
             ((string)((ToggleButton)products.FindName("MoreFiltersToggle")).Content).ShouldStartWith(translations["Common_MoreFilters"]);
             PumpUntil(() => stockText.Text != englishStock &&
                 ((PagerBar)products.FindName("Pager")).Status == translations.Format("Catalog_Count", grid.Items.Count));
+            // Longer Gujarati labels fold the last actions behind More; each item still runs its button.
+            productsHost.UpdateLayout();
+            PumpUntil(() => ((FrameworkElement)lots.FindName("MoreActionsMenu")).Visibility == Visibility.Visible);
+            productsHost.UpdateLayout();
+            ShouldFitTabRow();
+            var moreActions = (MenuItem)lots.FindName("MoreActions");
+            moreActions.Items.Count.ShouldBeGreaterThan(0);
+            var labelButton = (Button)lots.FindName("LabelButton");
+            ((MenuItem)moreActions.Items[^1]).Header.ShouldBe(labelButton.Content);
+            ((MenuItem)moreActions.Items[^1]).IsEnabled.ShouldBe(labelButton.IsEnabled);
             CaptureRevision(productsHost, "product-lots.gu.png");
             translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
             details.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(details)!, 0, Key.Escape)
@@ -1987,7 +2001,7 @@ public sealed class PhaseZeroSmokeTests
     {
         string? phase7Directory = Environment.GetEnvironmentVariable("GROCERY_PHASE7_SCREENSHOT_DIR");
         if (phase7Directory is not null && fileName is not ("settings-top.en.png" or "settings-bottom.en.png" or
-            "settings-top.gu.png" or "restore.en.png" or "restore.gu.png")) return;
+            "settings-top.gu.png" or "restore.en.png" or "restore.gu.png" or "compaction.en.png" or "compaction.gu.png")) return;
         string? phase6Directory = Environment.GetEnvironmentVariable("GROCERY_PHASE6_SCREENSHOT_DIR");
         if (phase7Directory is null && phase6Directory is not null && fileName is not ("dashboard.en.png" or "dashboard.gu.png" or
             "dashboard.narrow.en.png" or "dashboard.narrow.gu.png" or "reports-pnl.en.png" or "reports-pnl.narrow.en.png" or

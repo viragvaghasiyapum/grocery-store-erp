@@ -47,10 +47,10 @@ if (mode == "data-move")
     return;
 }
 var paths = new AppPaths(new SettingsBootstrap(root));
-if (mode is not ("restore-recover" or "restore-crash") && !File.Exists(paths.DatabaseFile))
+if (mode is not ("restore-recover" or "restore-crash" or "phase8-restore") && !File.Exists(paths.DatabaseFile))
     throw new FileNotFoundException("Benchmark database is missing.", paths.DatabaseFile);
 DapperSetup.Register();
-if (mode == "restore-crash" && !File.Exists(paths.DatabaseFile))
+if (mode is "restore-crash" or "phase8-restore" && !File.Exists(paths.DatabaseFile))
     new MigrationRunner(new SqliteConnectionFactory(paths), NullMigrationBackup.Instance).Run();
 var metricSamples = new System.Collections.Concurrent.ConcurrentBag<MetricSample>();
 using var meterListener = new MeterListener();
@@ -105,7 +105,7 @@ if (mode != "restore-recover") await settings.LoadAsync();
 var clock = new AuditClock(new DateTime(2026, 9, 26, 12, 0, 0));
 var numbers = new DocNumberService(settings);
 var periods = new PeriodGuard(settings, clock);
-var ledger = new StockLedger(settings);
+var ledger = new LotQuantities(settings);
 var catalog = new CatalogService(database, audit, settings);
 var inventory = new InventoryService(database, ledger, numbers, periods, audit);
 var purchasing = new PurchasingService(database, ledger, numbers, periods, settings, audit);
@@ -130,7 +130,7 @@ if (mode == "restore-crash")
         "UPDATE setting SET value = 'phase2-original' WHERE key = 'store.name'", transaction: tx.Transaction));
     using (var before = factory.Open())
     {
-        string[] tables = ["sale", "sale_line", "sale_payment", "stock_movement", "operation", "print_job"];
+        string[] tables = ["sale", "sale_line", "sale_payment", "stock_correction", "operation", "print_job"];
         File.WriteAllText(Path.Combine(paths.TempDir, "restore-crash-expected.json"),
             JsonSerializer.Serialize(tables.ToDictionary(table => table,
                 table => before.ExecuteScalar<long>($"SELECT COUNT(*) FROM {table}"))));
@@ -192,7 +192,10 @@ Dictionary<string, long>? phaseTwoChecks = null;
 
 using (var connection = factory.Open())
 {
-    foreach (string table in new[] { "product", "product_lot", "purchase", "sale", "sale_line", "sale_payment", "stock_movement", "vendor", "audit_log" })
+    bool ledgerPresent = connection.ExecuteScalar<long>(
+        "SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name='stock_movement'") != 0;
+    string[] countedTables = ["product", "product_lot", "purchase", "sale", "sale_line", "sale_payment", "stock_movement", "vendor", "audit_log"];
+    foreach (string table in countedTables.Where(table => ledgerPresent || table != "stock_movement"))
     {
         long count = connection.ExecuteScalar<long>($"SELECT COUNT(*) FROM {table}");
         rowCounts.Add(table, count);
@@ -263,14 +266,13 @@ switch (mode)
               grand_total,cost_total)
             VALUES ('PH5-CRASH-ROLLBACK','2026-10-18',1,2000,2000,2000,1000) RETURNING id
             """, transaction: transaction);
-        long line = connection.ExecuteScalar<long>("""
+        connection.Execute("""
             INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,
               qty,unit_price,taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
             VALUES (@sale,1,@product,@lotId,'Phase 5 crash product',1000,2000,2000,0,2000,1000,1000)
-            RETURNING id
             """, new { sale, product, lotId }, transaction);
-        ledger.Post(new(connection, transaction), new(new DateOnly(2026, 10, 18), product, lotId, "SALE",
-            Quantity.FromScaled(-1000), new Money(1), "sale_line", line));
+        ledger.Change(new(connection, transaction), new(new DateOnly(2026, 10, 18), product, lotId,
+            GroceryErp.Inventory.Contracts.LotChangeKind.Sale, Quantity.FromScaled(-1000)));
         connection.Execute("UPDATE sale SET status='COMPLETED' WHERE id=@sale", new { sale }, transaction);
         Console.WriteLine($"INTENTIONAL_CRASH_BEFORE_COMMIT lot={lotId} sale={sale}");
         Console.Out.Flush();
@@ -324,13 +326,9 @@ switch (mode)
     {
         if (!Path.GetFileName(root).Contains("rehearsal", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Cashier rehearsal needs a disposable rehearsal root.");
-        long movementsBefore;
         using (var check = factory.Open())
-        {
             if (check.ExecuteScalar<long>("PRAGMA user_version") != MigrationRunner.LatestVersion)
                 throw new InvalidDataException("Migrate the rehearsal copy first.");
-            movementsBefore = check.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement");
-        }
         var cashierClock = new AuditClock(new DateTime(2026, 10, 18, 12, 0, 0));
         var cashierSales = new SalesService(database, ledger, numbers, periods, settings, audit, cashierClock);
         string suffix = Guid.NewGuid().ToString("N");
@@ -351,8 +349,8 @@ switch (mode)
                     RETURNING id
                     """, new { id, code = "PH5-C-L-" + suffix + "-" + index.ToString("D3", System.Globalization.CultureInfo.InvariantCulture) },
                     tx.Transaction);
-                ledger.Post(tx, new(cashierClock.BusinessDate, id, lotId, "DIRECT_ENTRY",
-                    Quantity.One, new Money(1), "direct_stock_origin", lotId));
+                ledger.Change(tx, new(cashierClock.BusinessDate, id, lotId,
+                    GroceryErp.Inventory.Contracts.LotChangeKind.DirectEntry, Quantity.One));
             }
             return id;
         });
@@ -405,11 +403,12 @@ switch (mode)
                     "SELECT COUNT(*) FROM sale_line WHERE product_id=@product", new { product }),
                 ["cashierRemaining"] = check.ExecuteScalar<long>(
                     "SELECT quantity FROM product_stock_total WHERE product_id=@product", new { product }),
-                ["newMovements"] = check.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement") - movementsBefore,
+                ["sourceMismatches"] = check.Query<long>("SELECT id FROM product_lot WHERE product_id=@product",
+                    new { product }).Count(lot => LotSourceReconciliation.CheckLot(check, null, lot) is not null),
             };
         if (phaseTwoChecks["cashierSales"] != 100 || phaseTwoChecks["cashierRemaining"] != 28000 ||
-            phaseTwoChecks["newMovements"] != 0)
-            throw new InvalidDataException("Cashier-path stock or movement parity failed.");
+            phaseTwoChecks["sourceMismatches"] != 0)
+            throw new InvalidDataException("Cashier-path stock or source parity failed.");
         break;
     }
     // The full-size schema-31 fixture was built with drafts of 025 and 031. Give a
@@ -558,72 +557,6 @@ switch (mode)
         CapturePlan("phase1-return-by-line", "SELECT id FROM sale_return_line WHERE sale_line_id=@lineId LIMIT 8",
             new { lineId = 1 });
         break;
-    case "phase6-ledger-trial":
-    {
-        const string page = """
-            WITH page AS MATERIALIZED (
-                SELECT m.id,m.lot_id FROM stock_movement m
-                WHERE m.product_id=@productId AND m.move_date BETWEEN @from AND @to
-                  AND (@beforeId IS NULL OR m.id<@beforeId)
-                  AND (@type IS NULL OR m.type_code=@type)
-                ORDER BY m.id DESC LIMIT 101
-            )
-            """;
-        var variants = new (string Name, string Sql)[]
-        {
-            ("correlated", page + """
-                SELECT m.id,l.qty_on_hand-COALESCE((SELECT SUM(b.qty) FROM stock_movement b
-                    WHERE b.lot_id=m.lot_id AND b.id>m.id),0) AS balance
-                FROM page m JOIN product_lot l ON l.id=m.lot_id ORDER BY m.id DESC
-                """),
-            ("lot-boundary", page + """
-                , bounds AS MATERIALIZED (SELECT lot_id,MAX(id) AS max_id FROM page GROUP BY lot_id),
-                  after_page AS MATERIALIZED (
-                    SELECT x.lot_id,COALESCE((SELECT SUM(b.qty) FROM stock_movement b
-                        WHERE b.lot_id=x.lot_id AND b.id>x.max_id),0) AS later_qty FROM bounds x
-                  )
-                SELECT m.id,l.qty_on_hand-a.later_qty-COALESCE((SELECT SUM(b.qty)
-                    FROM stock_movement b WHERE b.lot_id=m.lot_id AND b.id>m.id AND b.id<=x.max_id),0) AS balance
-                FROM page m JOIN product_lot l ON l.id=m.lot_id
-                JOIN bounds x ON x.lot_id=m.lot_id JOIN after_page a ON a.lot_id=m.lot_id
-                ORDER BY m.id DESC
-                """),
-        };
-        variants = [..variants, ("correlated-id-index",
-            variants[0].Sql.Replace("FROM stock_movement m",
-                "FROM stock_movement m INDEXED BY ix_move_product_id", StringComparison.Ordinal)),
-            ("lot-boundary-id-index",
-            variants[1].Sql.Replace("FROM stock_movement m",
-                "FROM stock_movement m INDEXED BY ix_move_product_id", StringComparison.Ordinal))];
-        using var connection = factory.Open();
-        foreach (var period in new[]
-                 {
-                     ("all", "0001-01-01", "9999-12-31", (long?)null, (string?)null),
-                     ("old", "2023-01-01", "2023-12-31", (long?)null, (string?)null),
-                     ("type", "0001-01-01", "9999-12-31", (long?)null, (string?)"SALE"),
-                 })
-        {
-            List<(long id,long balance)>? expected = null;
-            foreach (var variant in variants)
-            {
-                for (int i = 0; i < 3; i++)
-                {
-                    long started = Stopwatch.GetTimestamp();
-                    var rows = connection.Query<(long id,long balance)>(variant.Sql,
-                        new { productId = 1, from = period.Item2, to = period.Item3,
-                            beforeId = period.Item4, type = period.Item5 }).ToList();
-                    if (expected is null) expected = rows;
-                    else if (!expected.SequenceEqual(rows))
-                        throw new InvalidDataException($"{variant.Name} changed {period.Item1} ledger balances.");
-                    Console.WriteLine($"LEDGER {period.Item1} {variant.Name} {i}: {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0} ms, rows={rows.Count}");
-                }
-                CapturePlan("ledger-" + period.Item1 + "-" + variant.Name, variant.Sql,
-                    new { productId = 1, from = period.Item2, to = period.Item3,
-                        beforeId = period.Item4, type = period.Item5 });
-            }
-        }
-        break;
-    }
     case "phase6-low-stock-day-verify":
     {
         using var connection = factory.Open();
@@ -1043,7 +976,7 @@ switch (mode)
                 ("sales", "SELECT COUNT(*) AS Rows,SUM(taxable_total) AS Amount FROM sale WHERE status='COMPLETED' AND sale_date BETWEEN @from AND @to"),
                 ("returns", "SELECT COUNT(*) AS Rows,SUM(taxable_total) AS Amount FROM sale_return WHERE return_date BETWEEN @from AND @to"),
                 ("damage", "SELECT COUNT(*) AS Rows,SUM(cost_value-recovered_amount) AS Amount FROM damage WHERE damage_date BETWEEN @from AND @to"),
-                ("adjustment", "SELECT COUNT(*) AS Rows,SUM(qty*unit_cost) AS Amount FROM stock_movement WHERE type_code='ADJUSTMENT' AND move_date BETWEEN @from AND @to"),
+                ("adjustment", "SELECT COUNT(*) AS Rows,SUM(quantity_delta*unit_cost) AS Amount FROM stock_correction WHERE correction_date BETWEEN @from AND @to"),
                 ("expenses", "SELECT COUNT(*) AS Rows,SUM(amount) AS Amount FROM expense WHERE expense_date BETWEEN @from AND @to"),
                 ("salary", "SELECT COUNT(*) AS Rows,SUM(amount) AS Amount FROM salary_payment WHERE period_month BETWEEN substr(@from,1,7) AND @lastCompleteMonth"),
                 ("depreciation", "SELECT COUNT(*) AS Rows,SUM(amount) AS Amount FROM asset_depreciation WHERE period_month BETWEEN substr(@from,1,7) AND @lastCompleteMonth"),
@@ -1068,18 +1001,6 @@ switch (mode)
     {
         CapturePlan("startup-last-sale-actual",
             "SELECT MAX(sale_date) FROM sale WHERE status = 'COMPLETED'");
-        CapturePlan("startup-recent-lot-cache-actual", """
-            WITH recent_lots AS MATERIALIZED (
-                SELECT DISTINCT lot_id FROM (
-                    SELECT lot_id FROM stock_movement ORDER BY id DESC LIMIT 512
-                )
-            )
-            SELECT NOT EXISTS (
-                SELECT 1 FROM recent_lots r JOIN product_lot l ON l.id=r.lot_id
-                WHERE l.qty_on_hand <> COALESCE(
-                    (SELECT SUM(m.qty) FROM stock_movement m WHERE m.lot_id=r.lot_id),0)
-            )
-            """);
         CapturePlan("expiry-badge-actual",
             "SELECT COUNT(*) FROM v_expiry_alert WHERE bucket IN ('EXPIRED','CRITICAL')");
         CapturePlan("dashboard-core-actual", """
@@ -1173,7 +1094,6 @@ switch (mode)
             ("catalog-first-page", async () => (await catalog.SearchPageAsync(new ProductSearchFilter(Limit: 100))).Items.Count),
             ("catalog-fts", async () => (await catalog.SearchPageAsync(new ProductSearchFilter("grocery item", Limit: 100))).Items.Count),
             ("catalog-fts-ui8", async () => (await catalog.SearchPageAsync(new ProductSearchFilter("grocery item", Limit: 8))).Items.Count),
-            ("ledger-first-page", async () => (await inventory.GetLedgerPageAsync(1, DateOnly.MinValue, DateOnly.MaxValue)).Items.Count),
             ("history-recent", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(From: monthStart, To: end))).Count),
             ("expiry-badge", () => moneyOut.GetActionableExpiryCountAsync()),
             ("pnl-month", async () => (await reports.GetPnlAsync(monthStart, end)).Income.Count),
@@ -1433,7 +1353,6 @@ switch (mode)
             ("catalog-fts", async () => (await catalog.SearchPageAsync(new ProductSearchFilter("grocery item", Limit: 100))).Items.Count),
             ("catalog-fts-ui8", async () => (await catalog.SearchPageAsync(new ProductSearchFilter("grocery item", Limit: 8))).Items.Count),
             ("catalog-low-stock", async () => (await catalog.SearchPageAsync(new ProductSearchFilter(LowStockOnly: true, Limit: 100))).Items.Count),
-            ("ledger-hot", async () => (await inventory.GetLedgerPageAsync(productId, DateOnly.MinValue, DateOnly.MaxValue)).Items.Count),
             ("history-recent", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(From: monthStart, To: end))).Count),
             ("expiry-badge", () => moneyOut.GetActionableExpiryCountAsync()),
             ("pnl-month", async () => (await reports.GetPnlAsync(monthStart, end)).Income.Count),
@@ -1539,7 +1458,6 @@ switch (mode)
             WHERE p.is_active=1 AND product_fts MATCH @match
             ORDER BY p.name COLLATE NOCASE,p.id LIMIT 100
             """, new { match = "\"grocery\" \"item\"" });
-        CapturePlan("ledger-hot", "SELECT id FROM stock_movement WHERE product_id=@productId ORDER BY id DESC LIMIT 100", new { productId });
         CapturePlan("history-recent", "SELECT id FROM sale WHERE sale_date BETWEEN @from AND @to ORDER BY sale_date DESC,id DESC LIMIT 50", new { from = "2026-09-01", to = "2026-09-26" });
         CapturePlan("pnl-day-range", "SELECT SUM(bills),SUM(taxable),SUM(rounding),SUM(cost),SUM(returns),SUM(return_taxable),SUM(return_cost) FROM pnl_day WHERE day BETWEEN @from AND @to", new { from = "2026-09-01", to = "2026-09-26" });
         CapturePlan("expiry-first-page", "SELECT lot_id FROM v_expiry_alert WHERE bucket='EXPIRED' ORDER BY expiry_date,lot_id LIMIT 100");
@@ -1594,19 +1512,11 @@ switch (mode)
             ("purchase-filtered", async () => (await purchasing.GetPurchasesPageAsync(from: monthStart, to: end, vendorId: 1)).Items.Count),
             ("purchase-cursor", async () => { PurchasePage first = await purchasing.GetPurchasesPageAsync(limit: 20); return first.NextDate is null ? 0 : (await purchasing.GetPurchasesPageAsync(beforeDate: first.NextDate, beforeId: first.NextId, limit: 20)).Items.Count; }),
             ("purchase-legacy-cap", async () => (await purchasing.GetPurchasesAsync(5000)).Count),
-            ("overview-page", async () => (await inventory.GetOverviewPageAsync()).Items.Count),
-            ("overview-search", async () => (await inventory.GetOverviewPageAsync("grocery")).Items.Count),
-            ("overview-cursor", async () => { StockOverviewPage first = await inventory.GetOverviewPageAsync(limit: 20); return first.NextName is null ? 0 : (await inventory.GetOverviewPageAsync(afterName: first.NextName, afterId: first.NextId, limit: 20)).Items.Count; }),
             ("lot-page", async () => (await inventory.GetLotPageAsync()).Items.Count),
             ("lot-product", async () => (await inventory.GetLotPageAsync(productId: productId)).Items.Count),
             ("lot-available", async () => (await inventory.GetLotPageAsync(availableOnly: true)).Items.Count),
             ("lot-search", async () => (await inventory.GetLotPageAsync(query: "grocery")).Items.Count),
             ("lot-cursor", async () => { LotPage first = await inventory.GetLotPageAsync(limit: 20); return first.NextId is null ? 0 : (await inventory.GetLotPageAsync(beforeId: first.NextId, limit: 20)).Items.Count; }),
-            ("inventory-valuation", async () => (await inventory.GetValuationAsync()).Count),
-            ("ledger-hot", async () => (await inventory.GetLedgerPageAsync(productId, DateOnly.MinValue, DateOnly.MaxValue)).Items.Count),
-            ("ledger-current", async () => (await inventory.GetLedgerPageAsync(productId, monthStart, end)).Items.Count),
-            ("ledger-type", async () => (await inventory.GetLedgerPageAsync(productId, DateOnly.MinValue, DateOnly.MaxValue, type: "SALE")).Items.Count),
-            ("ledger-cursor", async () => { LedgerPage first = await inventory.GetLedgerPageAsync(productId, DateOnly.MinValue, DateOnly.MaxValue, limit: 20); return first.NextId is null ? 0 : (await inventory.GetLedgerPageAsync(productId, DateOnly.MinValue, DateOnly.MaxValue, beforeId: first.NextId, limit: 20)).Items.Count; }),
             ("history-recent", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(From: monthStart, To: end))).Count),
             ("history-invoice", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(InvoiceNumber: "2026"))).Count),
             ("history-amount", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(MinimumAmount: new Money(100), MaximumAmount: new Money(500)))).Count),
@@ -1619,10 +1529,6 @@ switch (mode)
             ("held-bills", async () => (await sales.GetHeldAsync()).Count),
             ("held-recent", async () => (await sales.GetRecentHeldAsync()).Count),
             ("draft-bills", async () => (await sales.GetDraftsAsync()).Count),
-            ("expiry-page", async () => (await moneyOut.GetExpiryPageAsync("EXPIRED")).Items.Count),
-            ("expiry-critical", async () => (await moneyOut.GetExpiryPageAsync("CRITICAL")).Items.Count),
-            ("expiry-soon", async () => (await moneyOut.GetExpiryPageAsync("SOON")).Items.Count),
-            ("expiry-cursor", async () => { ExpiryPage first = await moneyOut.GetExpiryPageAsync("EXPIRED", limit: 20); return first.NextDate is null ? 0 : (await moneyOut.GetExpiryPageAsync("EXPIRED", afterDate: first.NextDate, afterId: first.NextId, limit: 20)).Items.Count; }),
             ("expiry-badge", () => moneyOut.GetActionableExpiryCountAsync()),
             ("damage-page", async () => (await moneyOut.GetDamagePageAsync(monthStart, end)).Items.Count),
             ("expense-page", async () => (await moneyOut.GetExpensePageAsync(monthStart, end)).Items.Count),
@@ -1640,7 +1546,6 @@ switch (mode)
             ("dashboard", async () => { await reports.GetDashboardAsync(); return 1; }),
             ("report-sales", async () => (await reports.GetReportAsync(ReportKind.SalesRegister, new ReportFilter(From: monthStart, To: end, Limit: 100))).Rows.Count),
             ("report-item", async () => (await reports.GetReportAsync(ReportKind.ItemSales, new ReportFilter(From: monthStart, To: end, ProductId: productId, Limit: 100))).Rows.Count),
-            ("report-stock-ledger", async () => (await reports.GetReportAsync(ReportKind.StockLedger, new ReportFilter(From: monthStart, To: end, ProductId: productId, Limit: 100))).Rows.Count),
             ("report-gst", async () => (await reports.GetReportAsync(ReportKind.GstSummary, new ReportFilter(From: monthStart, To: end, Limit: 100))).Rows.Count),
         };
         async Task Reader(int reader)
@@ -1718,28 +1623,6 @@ switch (mode)
                 beforeId = (long?)null,
                 limit = 100,
             });
-        const string ledgerSql = """
-            WITH page AS MATERIALIZED (
-                SELECT m.id,m.moved_at,m.move_date,m.type_code,m.qty,m.unit_cost,
-                       m.ref_type,m.ref_id,m.note,m.lot_id
-                FROM stock_movement m
-                WHERE m.product_id=@productId AND m.move_date BETWEEN @from AND @to
-                  AND (@beforeId IS NULL OR m.id<@beforeId)
-                  AND (@type IS NULL OR m.type_code=@type)
-                ORDER BY m.id DESC LIMIT @take
-            )
-            SELECT m.id AS Id,m.moved_at AS MovedAt,m.move_date AS MoveDate,
-                   m.type_code AS TypeCode,m.qty AS Qty,m.unit_cost AS UnitCost,
-                   m.ref_type AS RefType,m.ref_id AS RefId,m.note AS Note,
-                   l.lot_code AS LotCode,
-                   COALESCE((SELECT SUM(b.qty) FROM stock_movement b
-                             WHERE b.lot_id=m.lot_id AND b.id<=m.id),0) AS LotBalance
-            FROM page m JOIN product_lot l ON l.id=m.lot_id ORDER BY m.id DESC
-            """;
-        CapturePlan("ledger-actual-all-dates", ledgerSql,
-            new { productId, from = "0001-01-01", to = "9999-12-31", beforeId = (long?)null, type = (string?)null, take = 101 });
-        CapturePlan("ledger-actual-current", ledgerSql,
-            new { productId, from = "2026-09-01", to = "2026-09-26", beforeId = (long?)null, type = (string?)null, take = 101 });
         const string customerSql = """
             SELECT id AS Id,name AS Name,phone AS Phone,gstin AS Gstin FROM customer
             WHERE is_active=1 AND (@search='' OR name LIKE @pattern OR phone LIKE @pattern)
@@ -1928,8 +1811,7 @@ switch (mode)
                     var filter = new ReportFilter(
                         From: selective ? fiscalStart : monthStart,
                         To: end,
-                        ProductId: selective ? productId : kind == ReportKind.StockLedger ? productId : null,
-                        LotId: selective ? 1 : null,
+                        ProductId: selective ? productId : null,
                         VendorId: selective ? 1 : null,
                         AssetId: kind == ReportKind.AssetSchedule ? 1 : null,
                         Status: selective ? "COMPLETED" : null,
@@ -2000,7 +1882,6 @@ switch (mode)
         foreach ((string name, string sql) in new[]
         {
             ("saved-bills", "CREATE INDEX IF NOT EXISTS ix_sale_saved ON sale(created_at DESC,id DESC) WHERE status IN ('HELD','DRAFT')"),
-            ("movement-product-id", "CREATE INDEX IF NOT EXISTS ix_move_product_id ON stock_movement(product_id,id DESC)"),
             ("sale-date-id", "CREATE INDEX IF NOT EXISTS ix_sale_date_id ON sale(sale_date DESC,id DESC)"),
             ("return-line-return", "CREATE INDEX IF NOT EXISTS ix_return_line_return ON sale_return_line(sale_return_id)"),
             ("lot-vendor-date", "CREATE INDEX IF NOT EXISTS ix_lot_vendor_date ON product_lot(vendor_id,received_date DESC,id DESC)"),
@@ -2014,39 +1895,8 @@ switch (mode)
             }), static x => x);
         using (var connection = factory.Open()) connection.Execute("PRAGMA optimize");
         break;
-    case "phase4-movement-date-index":
-    {
-        async Task<TabularReport> LedgerReport() => await reports.GetReportAsync(
-            ReportKind.StockLedger, new ReportFilter(From: monthStart, To: end, Limit: 100));
-        for (int run = 0; run < 5; run++)
-            await Measure("movement-report-before", LedgerReport, static result => result.Rows.Count);
-        CapturePlan("movement-report-before", """
-            SELECT m.id FROM stock_movement m WHERE m.move_date BETWEEN '2026-09-01' AND '2026-09-26'
-            ORDER BY m.move_date,m.id LIMIT 101
-            """);
-        long beforeBytes = new FileInfo(paths.DatabaseFile).Length;
-        await Measure("create-movement-date-index", () => Task.Run(() =>
-        {
-            using var connection = factory.Open();
-            connection.Execute("CREATE INDEX IF NOT EXISTS ix_move_date_id ON stock_movement(move_date,id)");
-            connection.Execute("PRAGMA optimize");
-            return 1;
-        }), static x => x);
-        long afterBytes = new FileInfo(paths.DatabaseFile).Length;
-        Console.WriteLine($"INDEX_GROWTH_BYTES {afterBytes - beforeBytes}");
-        for (int run = 0; run < 5; run++)
-            await Measure("movement-report-after", LedgerReport, static result => result.Rows.Count);
-        CapturePlan("movement-report-after", """
-            SELECT m.id FROM stock_movement m WHERE m.move_date BETWEEN '2026-09-01' AND '2026-09-26'
-            ORDER BY m.move_date,m.id LIMIT 101
-            """);
-        break;
-    }
     case "phase4-valuation":
     {
-        for (int run = 0; run < 5; run++)
-            await Measure("category-valuation-projected", () => inventory.GetValuationAsync(),
-                static rows => rows.Count);
         for (int run = 0; run < 5; run++)
             await Measure("stock-value-report-projected", () => reports.GetReportAsync(
                 ReportKind.StockValue, new ReportFilter(Limit: 100)), static report => report.Rows.Count);
@@ -2220,16 +2070,10 @@ switch (mode)
         await Measure("catalog-fts-page", () =>
             catalog.SearchPageAsync(new ProductSearchFilter("grocery item", Limit: 100)),
             static x => x.Items.Count);
-        await Measure("stock-visible-page", async () =>
+        await Measure("lot-visible-page", async () =>
         {
-            StockOverviewPage page = await inventory.GetOverviewPageAsync(limit: 100);
-            if (page.Items.Count > 100) throw new InvalidDataException("Stock page exceeded its bound.");
-            return page.Items.Count;
-        }, static x => x);
-        await Measure("expiry-visible-page", async () =>
-        {
-            ExpiryPage page = await moneyOut.GetExpiryPageAsync("EXPIRED", limit: 100);
-            if (page.Items.Count > 100) throw new InvalidDataException("Expiry page exceeded its bound.");
+            LotPage page = await inventory.GetLotPageAsync(limit: 100);
+            if (page.Items.Count > 100) throw new InvalidDataException("Lot page exceeded its bound.");
             return page.Items.Count;
         }, static x => x);
         await Measure("vendor-ledger-page", async () =>
@@ -2671,8 +2515,8 @@ switch (mode)
                 INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,unit_cost,selling_price,qty_received)
                 VALUES (@id,@code,'CASHIER','2026-09-01','2027-09-01',1000,2000,1000000) RETURNING id
                 """, new { id, code = "PH7-C-L-" + suffix }, tx.Transaction);
-            ledger.Post(tx, new(clock.BusinessDate, id, lotId, "DIRECT_ENTRY", new Quantity(1000), new Money(1),
-                "direct_stock_origin", lotId));
+            ledger.Change(tx, new(clock.BusinessDate, id, lotId,
+                GroceryErp.Inventory.Contracts.LotChangeKind.DirectEntry, new Quantity(1000)));
             return id;
         });
         async Task Bills(string name, int count)
@@ -2723,7 +2567,6 @@ switch (mode)
         var returnClock = new AuditClock(new DateTime(2026, 10, 18, 12, 0, 0));
         var returnSales = new SalesService(database, ledger, numbers, periods, settings, audit, returnClock);
         long twoLotProduct;
-        long historicalMovements;
         long otherCategory;
         using (var connection = factory.Open())
         {
@@ -2735,7 +2578,6 @@ switch (mode)
                 SELECT id FROM category WHERE id<>(SELECT category_id FROM product WHERE id=@twoLotProduct)
                 ORDER BY id LIMIT 1
                 """, new { twoLotProduct });
-            historicalMovements = connection.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement");
         }
         long partialSale = await returnSales.AddProductAsync(null, twoLotProduct, new Quantity(3));
         await returnSales.CompleteAsync(new(partialSale,
@@ -2777,8 +2619,8 @@ switch (mode)
                   selling_price,qty_received)
                 VALUES (@product,@code,'2026-09-01',1000,2000,1000) RETURNING id
                 """, new { product, code = "PH5-R-L-" + suffix }, tx.Transaction);
-            ledger.Post(tx, new(returnClock.BusinessDate, product, lot, "DIRECT_ENTRY",
-                Quantity.One, new Money(1), "direct_stock_origin", lot));
+            ledger.Change(tx, new(returnClock.BusinessDate, product, lot,
+                GroceryErp.Inventory.Contracts.LotChangeKind.DirectEntry, Quantity.One));
             return (product, lot);
         });
         long deletedSale = await returnSales.AddProductAsync(null, deleted.Product, Quantity.One);
@@ -2804,7 +2646,9 @@ switch (mode)
                 WHERE rl.sale_return_id=@id AND rl.restock_product_id_snapshot<>@oldProduct
                 """, new { id = recreated.ReturnId, oldProduct = deleted.Product });
             if (restored != Quantity.One.Scaled ||
-                connection.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement") != historicalMovements)
+                LotSourceReconciliation.CheckLot(connection, null, connection.ExecuteScalar<long>("""
+                    SELECT restock_lot_id FROM sale_return_line WHERE sale_return_id=@id
+                    """, new { id = recreated.ReturnId })) is not null)
                 throw new InvalidDataException("Deleted-master return did not recreate direct stock cleanly.");
         }
         phaseTwoChecks = new Dictionary<string, long>
@@ -3004,10 +2848,7 @@ switch (mode)
         await Measure("startup-health", () => maintenance.CheckBeforeShellAsync(), static _ => 1);
         await Measure("catalog-first-page", () => catalog.SearchPageAsync(new ProductSearchFilter(Limit: 100)), static x => x.Items.Count);
         await Measure("catalog-low-stock-page", () => catalog.SearchPageAsync(new ProductSearchFilter(LowStockOnly: true, Limit: 100)), static x => x.Items.Count);
-        await Measure("overview-first-page", () => inventory.GetOverviewPageAsync(), static x => x.Items.Count);
         await Measure("lots-first-page", () => inventory.GetLotPageAsync(), static x => x.Items.Count);
-        await Measure("ledger-hot-first-page", () => inventory.GetLedgerPageAsync(1, DateOnly.MinValue, DateOnly.MaxValue), static x => x.Items.Count);
-        await Measure("expiry-expired-first-page", () => moneyOut.GetExpiryPageAsync("EXPIRED"), static x => x.Items.Count);
         await Measure("expiry-badge-count", () => moneyOut.GetActionableExpiryCountAsync(), static x => x);
         await Measure("purchases-first-page", () => purchasing.GetPurchasesPageAsync(), static x => x.Items.Count);
         await Measure("saved-bills-first-page", () => sales.GetSavedBillPageAsync(includeDrafts: true), static x => x.Items.Count);
@@ -3030,7 +2871,6 @@ switch (mode)
             return (int)mismatches;
         }), static x => x);
         CapturePlan("saved-bills", "SELECT id FROM sale WHERE status IN ('HELD','DRAFT') AND (status='HELD' OR (status='DRAFT' AND line_count>0)) ORDER BY created_at DESC,id DESC LIMIT 50");
-        CapturePlan("ledger-page", "SELECT id FROM stock_movement WHERE product_id=1 ORDER BY id DESC LIMIT 100");
         CapturePlan("purchase-page", "SELECT id FROM purchase ORDER BY received_date DESC,id DESC LIMIT 100");
         CapturePlan("expiry-page", "SELECT lot_id FROM v_expiry_alert WHERE bucket='EXPIRED' ORDER BY expiry_date,lot_id LIMIT 100");
         break;
@@ -3412,7 +3252,6 @@ switch (mode)
         await Measure("vendors-all", () => purchasing.GetVendorsAsync(includeInactive: true), static x => x.Count);
         await Measure("vendor-purchase-choices", () => purchasing.GetVendorPurchaseChoicesAsync(1), static x => x.Count);
         await Measure("purchases-5000", () => purchasing.GetPurchasesAsync(5000), static x => x.Count);
-        await Measure("inventory-valuation", () => inventory.GetValuationAsync(), static x => x.Count);
         await Measure("customer-empty", () => sales.SearchCustomersAsync(), static x => x.Count);
         await Measure("customer-contains-miss", () => sales.SearchCustomersAsync("son"), static x => x.Count);
         await Measure("customer-contains-match", () => sales.SearchCustomersAsync("Scale Customer 4"), static x => x.Count);
@@ -3429,7 +3268,6 @@ switch (mode)
         await Measure("history-invoice", () => sales.GetHistoryAsync(new SaleHistoryFilter(InvoiceNumber: "2026")), static x => x.Count);
         await Measure("history-combined", () => sales.GetHistoryAsync(new SaleHistoryFilter(From: fiscalStart, To: end, Status: SaleStatus.Completed, PaymentMode: PaymentMode.Cash, MinimumAmount: new Money(100), Limit: 100)), static x => x.Count);
 
-        await Measure("expiry-expired", () => moneyOut.GetExpiryAsync("EXPIRED"), static x => x.Count);
         await Measure("damages-year", () => moneyOut.GetDamagesAsync(end.AddYears(-1), end), static x => x.Count);
         await Measure("expenses-year", () => moneyOut.GetExpensesAsync(end.AddYears(-1), end), static x => x.Count);
         await Measure("employees-all", () => moneyOut.GetEmployeesAsync(includeInactive: true), static x => x.Count);
@@ -3441,7 +3279,6 @@ switch (mode)
 
         await Measure("report-sales-status-payment", () => reports.GetReportAsync(ReportKind.SalesRegister, new ReportFilter(From: fiscalStart, To: end, Status: "COMPLETED", PaymentMode: "UPI", Limit: 100)), static x => x.Rows.Count);
         await Measure("report-item-product", () => reports.GetReportAsync(ReportKind.ItemSales, new ReportFilter(From: fiscalStart, To: end, ProductId: 1, Limit: 100)), static x => x.Rows.Count);
-        await Measure("report-ledger-lot", () => reports.GetReportAsync(ReportKind.StockLedger, new ReportFilter(From: fiscalStart, To: end, ProductId: 1, LotId: 1, Limit: 100)), static x => x.Rows.Count);
         await Measure("report-expiry-bucket", () => reports.GetReportAsync(ReportKind.Expiry, new ReportFilter(Status: "EXPIRED", Limit: 100)), static x => x.Rows.Count);
         await Measure("report-payables-vendor", () => reports.GetReportAsync(ReportKind.VendorPayables, new ReportFilter(VendorId: 1, Limit: 100)), static x => x.Rows.Count);
         await Measure("report-purchases-vendor", () => reports.GetReportAsync(ReportKind.PurchaseRegister, new ReportFilter(From: fiscalStart, To: end, VendorId: 1, Limit: 100)), static x => x.Rows.Count);
@@ -3467,7 +3304,6 @@ switch (mode)
         CapturePlan("purchase-history", "SELECT id FROM purchase ORDER BY received_date DESC,id DESC LIMIT 5000");
         CapturePlan("history-invoice", "SELECT id FROM sale WHERE invoice_no LIKE @invoice || '%' ORDER BY sale_date DESC,id DESC LIMIT 100", new { invoice = "2026" });
         CapturePlan("salary-register", "SELECT id FROM salary_payment WHERE period_month BETWEEN @from AND @to ORDER BY period_month DESC LIMIT 100", new { from = "2025-10", to = "2026-09" });
-        CapturePlan("draft-count-summary", "SELECT sc.id,COUNT(scl.id) FROM stock_count sc JOIN stock_count_line scl ON scl.stock_count_id=sc.id WHERE sc.status='DRAFT' GROUP BY sc.id ORDER BY sc.id DESC");
         break;
     }
     case "catalog":
@@ -3598,6 +3434,117 @@ switch (mode)
             return 1;
         }), static rows => rows);
         break;
+    case "phase8-upgrade":
+    case "phase8-compact":
+    {
+        if (!Path.GetFileName(root).Contains("rehearsal", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Phase 8 rehearsals need a disposable rehearsal root.");
+        string volume = Path.GetPathRoot(paths.DatabaseFile)!;
+        static long FolderBytes(string directory, string pattern) => !Directory.Exists(directory) ? 0 :
+            Directory.EnumerateFiles(directory, pattern, SearchOption.AllDirectories).Sum(static file =>
+            {
+                try { return new FileInfo(file).Length; }
+                catch (IOException) { return 0L; }
+            });
+        long PageBytes(string pragma)
+        {
+            using var connection = factory.Open();
+            return connection.ExecuteScalar<long>("PRAGMA page_size") * connection.ExecuteScalar<long>("PRAGMA " + pragma);
+        }
+        long freeBefore = new DriveInfo(volume).AvailableFreeSpace;
+        long freelistBefore = PageBytes("freelist_count");
+        using var sampling = new CancellationTokenSource();
+        Task sampler = Task.Run(async () =>
+        {
+            while (!sampling.IsCancellationRequested)
+            {
+                process.Refresh();
+                phase3ResourceSamples.Enqueue(new(auditElapsed.Elapsed.TotalSeconds,
+                    File.Exists(paths.DatabaseFile + "-wal") ? new FileInfo(paths.DatabaseFile + "-wal").Length : 0,
+                    process.WorkingSet64, 0, FolderBytes(paths.TempDir, "*"),
+                    FolderBytes(backups.BackupDirectory, "*.partial"), new DriveInfo(volume).AvailableFreeSpace));
+                try { await Task.Delay(250, sampling.Token); }
+                catch (OperationCanceledException) { }
+            }
+        });
+        var stageStarts = new System.Collections.Concurrent.ConcurrentDictionary<CompactionStage, double>();
+        try
+        {
+            if (mode == "phase8-upgrade")
+                await Measure("phase8-upgrade-with-archive-backup", () => Task.Run(() =>
+                {
+                    new MigrationRunner(factory, backups).Run();
+                    using var connection = factory.Open();
+                    return connection.ExecuteScalar<int>("PRAGMA user_version");
+                }), static version => version);
+            else
+            {
+                CompactionEstimate estimate = backups.EstimateCompaction();
+                Console.WriteLine($"COMPACT_ESTIMATE database={estimate.DatabaseBytes} reclaimable={estimate.ReclaimableBytes} " +
+                    $"compact={estimate.CompactBytes} required={estimate.RequiredFreeBytes} available={estimate.AvailableFreeBytes}");
+                backups.RequestCompaction();
+                var stages = new InlineProgress<CompactionProgress>(step =>
+                {
+                    if (stageStarts.TryAdd(step.Stage, auditElapsed.Elapsed.TotalSeconds))
+                        Console.WriteLine($"STAGE {step.Stage} at {auditElapsed.Elapsed.TotalSeconds:0.0} s");
+                });
+                await Measure("phase8-compact", () => Task.Run(() =>
+                {
+                    CompactionResult result = backups.Compact(stages, CancellationToken.None);
+                    Console.WriteLine($"COMPACTED before={result.BytesBefore} after={result.BytesAfter} backup={result.BackupPath}");
+                    return result;
+                }), static _ => 1);
+            }
+        }
+        finally
+        {
+            sampling.Cancel();
+            await sampler;
+        }
+        Phase3ResourceSample[] samples = phase3ResourceSamples.ToArray();
+        phaseOneChecks = new Dictionary<string, long>
+        {
+            ["freeBeforeBytes"] = freeBefore,
+            ["minimumFreeBytes"] = samples.Length == 0 ? freeBefore : samples.Min(static sample => sample.AvailableFreeBytes),
+            ["freeAfterBytes"] = new DriveInfo(volume).AvailableFreeSpace,
+            ["peakTemporaryBytes"] = samples.Length == 0 ? 0 : samples.Max(static sample => sample.TemporarySnapshotBytes),
+            ["peakPartialArchiveBytes"] = samples.Length == 0 ? 0 : samples.Max(static sample => sample.PartialArchiveBytes),
+            ["peakWalBytes"] = samples.Length == 0 ? 0 : samples.Max(static sample => sample.WalBytes),
+            ["freelistBeforeBytes"] = freelistBefore,
+            ["freelistAfterBytes"] = PageBytes("freelist_count"),
+            ["backupFolderBytes"] = FolderBytes(backups.BackupDirectory, "*.zip"),
+            // The original store waits in a replaced-* folder until the compact store opens again.
+            ["keptOriginalBytes"] = Directory.EnumerateDirectories(paths.DbDir, "replaced-*")
+                .Sum(static directory => FolderBytes(directory, "*")),
+        };
+        foreach ((CompactionStage stage, double seconds) in stageStarts.OrderBy(static pair => pair.Value))
+            phaseOneChecks["stage" + stage + "StartMs"] = (long)(seconds * 1000);
+        break;
+    }
+    // A verified backup restored on a fresh install, as on a second PC; run verify afterwards.
+    case "phase8-restore":
+    {
+        if (args.Length < 4) throw new ArgumentException("Pass the verified backup zip as the fourth argument.");
+        if (rowCounts["product"] != 0) throw new InvalidOperationException("Restore onto a fresh, empty data root.");
+        RestoreCandidate candidate = backups.InspectRestore(Path.GetFullPath(args[3]));
+        if (candidate.Manifest.SchemaVersion != MigrationRunner.LatestVersion)
+            throw new InvalidDataException("The archive must hold the latest schema.");
+        await Measure("phase8-restore-fresh-install", () => Task.Run(() =>
+        {
+            backups.ApplyRestore(candidate);
+            backups.FinishPendingRestore();
+            using var check = factory.Open();
+            if (check.ExecuteScalar<long>("PRAGMA user_version") != MigrationRunner.LatestVersion ||
+                check.ExecuteScalar<string>("PRAGMA quick_check") != "ok" ||
+                check.QueryFirstOrDefault("PRAGMA foreign_key_check") is not null ||
+                backups.InspectCurrent().Summary != candidate.Manifest.Summary)
+                throw new InvalidDataException("The restored store failed validation.");
+            foreach (string table in rowCounts.Keys)
+                Console.WriteLine($"RESTORED_ROWS {table} {check.ExecuteScalar<long>($"SELECT COUNT(*) FROM {table}")}");
+            return 1;
+        }), static rows => rows);
+        break;
+    }
     case "migrate":
         await Measure("migration-to-latest", () => Task.Run(() =>
         {
@@ -3616,10 +3563,6 @@ switch (mode)
         await Measure("catalog-broad-30", () => catalog.SearchAsync(new ProductSearchFilter(Limit: 30)), static x => x.Count);
         await Measure("catalog-broad-20000", () => catalog.SearchAsync(new ProductSearchFilter(Limit: 20_000)), static x => x.Count);
         await Measure("catalog-low-stock", () => catalog.SearchAsync(new ProductSearchFilter(LowStockOnly: true, Limit: 20_000)), static x => x.Count);
-        await Measure("inventory-overview", () => inventory.GetOverviewAsync(), static x => x.Count);
-        await Measure("inventory-lots-all", () => inventory.GetLotsAsync(), static x => x.Count);
-        await Measure("inventory-ledger-hot", () => inventory.GetLedgerAsync(1, DateOnly.MinValue, DateOnly.MaxValue), static x => x.Count);
-        await Measure("expiry-all", () => moneyOut.GetExpiryAsync(), static x => x.Count);
         await Measure("purchases-first", () => purchasing.GetPurchasesAsync(), static x => x.Count);
         await Measure("vendor-ledger", () => purchasing.GetVendorLedgerAsync(1), static x => x.Count);
         await Measure("vendor-lots", () => purchasing.GetVendorLotsAsync(1), static x => x.Count);
@@ -3632,7 +3575,7 @@ switch (mode)
         await Measure("dashboard", () => reports.GetDashboardAsync(), static _ => 1);
         foreach (ReportKind kind in Enum.GetValues<ReportKind>())
         {
-            var filter = new ReportFilter(From: monthStart, To: end, ProductId: kind == ReportKind.StockLedger ? 1 : null,
+            var filter = new ReportFilter(From: monthStart, To: end,
                 AssetId: kind == ReportKind.AssetSchedule ? 1 : null, Limit: 100);
             await Measure("report-" + kind, () => reports.GetReportAsync(kind, filter), static x => x.Rows.Count);
         }
@@ -3729,11 +3672,15 @@ switch (mode)
         long adjustmentLot = 0;
         using (var connection = factory.Open())
             adjustmentLot = connection.ExecuteScalar<long>("SELECT id FROM product_lot WHERE qty_on_hand>10000 ORDER BY id DESC LIMIT 1");
-        await Measure("stock-adjustment", async () =>
+        await Measure("stock-count-review", () => database.WriteAsync(tx =>
         {
-            await inventory.AdjustAsync(adjustmentLot, end, Quantity.One, "Scale audit adjustment", OperationGuard.NewId());
+            (long onHand, long version) = tx.Connection.QuerySingle<(long, long)>(
+                "SELECT qty_on_hand,quantity_version FROM product_lot WHERE id=@adjustmentLot",
+                new { adjustmentLot }, tx.Transaction);
+            new DirectStockEngine().ReviewCount(tx, adjustmentLot, version, onHand, onHand - 1000, end,
+                "Scale audit count", OperationGuard.NewId());
             return 1;
-        }, static x => x);
+        }), static x => x);
 
 
         await Measure("expense-record", () => moneyOut.RecordExpenseAsync(
@@ -4058,8 +4005,9 @@ switch (mode)
             if (connection.ExecuteScalar<long>("SELECT COUNT(*) FROM app_user") == 0)
                 connection.Execute("INSERT INTO app_user(id,username,password_hash) VALUES (1,'owner',@hash)",
                     new { hash = new PasswordHasher().Hash("scale-audit-2026") });
+            // The one-time compaction offer would otherwise stop the journey after sign-in.
             connection.Execute("""
-                INSERT INTO setting(key,value) VALUES ('expiry.popup_on_login','false')
+                INSERT INTO setting(key,value) VALUES ('maintenance.compact_offered','1')
                 ON CONFLICT(key) DO UPDATE SET value=excluded.value
                 """);
             if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_ACCEPTANCE") == "1")
@@ -4423,6 +4371,10 @@ internal sealed record SustainedSalesCheck(long Before, long Successful, long Fa
 internal sealed record ProfileSummary(string Name, int Samples, double P50Milliseconds, double P95Milliseconds,
     double P99Milliseconds, int Errors, int MaximumRows);
 internal sealed record MetricSample(string Name, double Value);
+internal sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
+{
+    public void Report(T value) => report(value);
+}
 internal sealed record MetricSummary(string Name, int Samples, double P50, double P95, double P99);
 internal sealed class RealismSale
 {

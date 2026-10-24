@@ -12,7 +12,7 @@ namespace GroceryErp.Expenses;
 
 public sealed partial class MoneyOutService(
     DbExecutor database,
-    IStockLedger stock,
+    ILotQuantities stock,
     DocNumberService numbers,
     PeriodGuard periods,
     IAuditLog audit)
@@ -40,49 +40,6 @@ public sealed partial class MoneyOutService(
                      CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30
                  )||' days'))
             """), cancellationToken);
-
-    public Task<IReadOnlyList<ExpiryLot>> GetExpiryAsync(string? bucket = null, CancellationToken cancellationToken = default)
-    {
-        if (bucket is not null && bucket is not ("EXPIRED" or "CRITICAL" or "SOON"))
-            throw new DomainException(ErrorCode.Validation, nameof(bucket));
-        return database.ReadAsync(connection => (IReadOnlyList<ExpiryLot>)connection.Query<ExpiryRow>("""
-            SELECT e.lot_id AS LotId,e.product_id AS ProductId,e.sku AS Sku,e.name AS ProductName,
-                   e.name_local AS ProductNameLocal,
-                   e.lot_code AS LotCode,e.batch_no AS BatchNumber,e.expiry_date AS ExpiryDate,
-                   e.days_left AS DaysLeft,e.qty_on_hand AS Quantity,e.value_at_cost AS CostValue,
-                   e.bucket AS Bucket,e.vendor_id AS VendorId,v.name AS VendorName
-            FROM v_expiry_alert e LEFT JOIN vendor v ON v.id=e.vendor_id
-            WHERE @bucket IS NULL OR e.bucket=@bucket
-            ORDER BY e.expiry_date,e.name COLLATE NOCASE,e.lot_id
-            """, new { bucket }).Select(static row => row.ToModel()).ToList(), cancellationToken);
-    }
-
-    public Task<ExpiryPage> GetExpiryPageAsync(string bucket, DateOnly? afterDate = null,
-        long? afterId = null, int limit = 100, CancellationToken cancellationToken = default)
-    {
-        if (bucket is not ("EXPIRED" or "CRITICAL" or "SOON") ||
-            afterDate is null != (afterId is null) || limit is < 1 or > 200)
-            throw new DomainException(ErrorCode.Validation, "Invalid expiry page filter.");
-        return database.ReadAsync(connection =>
-        {
-            List<ExpiryLot> rows = connection.Query<ExpiryRow>("""
-                SELECT e.lot_id AS LotId,e.product_id AS ProductId,e.sku AS Sku,e.name AS ProductName,
-                       e.name_local AS ProductNameLocal,e.lot_code AS LotCode,e.batch_no AS BatchNumber,
-                       e.expiry_date AS ExpiryDate,e.days_left AS DaysLeft,e.qty_on_hand AS Quantity,
-                       e.value_at_cost AS CostValue,e.bucket AS Bucket,e.vendor_id AS VendorId,
-                       v.name AS VendorName
-                FROM v_expiry_alert e LEFT JOIN vendor v ON v.id=e.vendor_id
-                WHERE e.bucket=@bucket AND (@afterDate IS NULL OR e.expiry_date>@afterDate
-                      OR (e.expiry_date=@afterDate AND e.lot_id>@afterId))
-                ORDER BY e.expiry_date,e.lot_id LIMIT @take
-                """, new { bucket, afterDate, afterId, take = limit + 1 })
-                .Select(static row => row.ToModel()).ToList();
-            bool hasMore = rows.Count > limit;
-            if (hasMore) rows.RemoveAt(limit);
-            ExpiryLot? last = rows.LastOrDefault();
-            return new ExpiryPage(rows, hasMore, last?.ExpiryDate, last?.LotId);
-        }, cancellationToken);
-    }
 
     public Task<IReadOnlyList<DamageItem>> GetDamagesAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
     {
@@ -148,8 +105,8 @@ public sealed partial class MoneyOutService(
                 reason = input.Reason,
                 notes = Optional(input.Notes, 500),
             }, transaction.Transaction);
-            stock.Post(transaction, new(input.Date, productId, input.LotId, "DAMAGE", new Quantity(-input.Quantity.Value),
-                unitCost, "damage", id, input.Reason));
+            stock.Change(transaction, new(input.Date, productId, input.LotId, LotChangeKind.Damage,
+                new Quantity(-input.Quantity.Value)));
             audit.Write(transaction, "damage", id, "CREATE", new { document, quantity = input.Quantity.Scaled, cost = cost.Scaled });
             OperationGuard.Complete(transaction, operationId, "damage", id);
             return id;
@@ -508,7 +465,6 @@ public sealed partial class MoneyOutService(
 
     private static string Format(DateOnly date) => date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
-    private sealed class ExpiryRow { public long LotId { get; init; } public long ProductId { get; init; } public string Sku { get; init; } = ""; public string ProductName { get; init; } = ""; public string? ProductNameLocal { get; init; } public string LotCode { get; init; } = ""; public string? BatchNumber { get; init; } public DateOnly ExpiryDate { get; init; } public int DaysLeft { get; init; } public long Quantity { get; init; } public long CostValue { get; init; } public string Bucket { get; init; } = ""; public long? VendorId { get; init; } public string? VendorName { get; init; } public ExpiryLot ToModel() => new(LotId, ProductId, Sku, ProductName, ProductNameLocal, LotCode, BatchNumber, ExpiryDate, DaysLeft, GroceryErp.Core.Numerics.Quantity.FromScaled(Quantity), Money.FromScaled(CostValue), Bucket, VendorId, VendorName); }
     private sealed class LotRow { public long ProductId { get; init; } public long OnHand { get; init; } public long UnitCost { get; init; } }
     private sealed class BulkLotRow { public long LotId { get; init; } public long ProductId { get; init; } public long OnHand { get; init; } public long UnitCost { get; init; } public DateOnly? ExpiryDate { get; init; } }
     private sealed class DamageRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public DateOnly Date { get; init; } public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public long Quantity { get; init; } public long UnitCost { get; init; } public long CostValue { get; init; } public long RecoveredAmount { get; init; } public string Reason { get; init; } = ""; public string? Notes { get; init; } public string Status { get; init; } = "ACTIVE"; public DamageItem ToModel() => new(Id, DocumentNumber, Date, ProductName, LotCode, GroceryErp.Core.Numerics.Quantity.FromScaled(Quantity), Money.FromScaled(UnitCost), Money.FromScaled(CostValue), Money.FromScaled(RecoveredAmount), Reason, Notes, Status); }

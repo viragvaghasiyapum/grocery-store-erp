@@ -154,7 +154,10 @@ public partial class App : Application
             SettingsService settings = _host.Services.GetRequiredService<SettingsService>();
             BackupService backups = _host.Services.GetRequiredService<BackupService>();
             backups.RecoverInterruptedRestoreBeforeStartup();
+            backups.FinishPendingCompaction();
             StartupState startup = await _host.Services.GetRequiredService<StartupPipeline>().RunAsync();
+            // The compact store has opened again, so the original it replaced can go.
+            backups.PurgeCompactedOriginals();
             RecordStartup("database-ready");
             TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo(startup.Settings.UiLanguage);
             _databaseReady = true;
@@ -204,6 +207,9 @@ public partial class App : Application
                     return;
                 }
             }
+            // Nothing else uses the store between sign-in and the shell, so compaction runs here.
+            else if (await CompactIfRequestedAsync(backups, settings))
+                signInAccepted = Stopwatch.GetTimestamp();
 
             MaintenanceService maintenance = _host.Services.GetRequiredService<MaintenanceService>();
             StartupHealth health = startup.Health;
@@ -211,14 +217,6 @@ public partial class App : Application
             {
                 Log.Warning("Available disk space is below 1 GB");
                 MessageBox.Show(TranslationSource.Instance["Startup_LowDisk"], TranslationSource.Instance["App_Title"], MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-            if (!health.LotCacheHealthy)
-            {
-                // Lot quantities commit with their documents, so there is nothing to
-                // rebuild. A stock movement after the upgrade means a foreign writer.
-                Log.Error("A stock movement was written after the direct-stock upgrade");
-                MessageBox.Show(TranslationSource.Instance["Startup_LotCache"], TranslationSource.Instance["App_Title"],
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             if (health.LastSaleDate is not null &&
                 DateOnly.TryParseExact(health.LastSaleDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly lastSale) &&
@@ -441,5 +439,30 @@ public partial class App : Application
     }
 
     internal void SkipCloseBackup() => _skipCloseBackup = true;
+
+    // Settings key recording that the one-time compaction offer was shown for this store.
+    private const string CompactionOfferedKey = "maintenance.compact_offered";
+
+    /// <summary>
+    /// Runs a compaction requested from Settings, or offers one once when the store has
+    /// much unused space (as after the stock ledger was removed). Returns whether one ran.
+    /// </summary>
+    private static async Task<bool> CompactIfRequestedAsync(BackupService backups, SettingsService settings)
+    {
+        if (!backups.HasCompactionRequest)
+        {
+            if (settings.Current.Values.GetValueOrDefault(CompactionOfferedKey) == "1") return false;
+            CompactionEstimate estimate = await Task.Run(backups.EstimateCompaction);
+            if (!estimate.IsWorthwhile || !estimate.HasSpace) return false;
+            await settings.SaveAsync(new Dictionary<string, string> { [CompactionOfferedKey] = "1" });
+            if (MessageBox.Show(TranslationSource.Instance.Format("Startup_CompactOffer",
+                        CompactionWindow.FormatBytes(estimate.ReclaimableBytes),
+                        CompactionWindow.FormatBytes(estimate.DatabaseBytes)),
+                    TranslationSource.Instance["App_Title"], MessageBoxButton.YesNo, MessageBoxImage.Question)
+                != MessageBoxResult.Yes) return false;
+        }
+        new CompactionWindow(backups).ShowDialog();
+        return true;
+    }
 }
 #pragma warning restore CA1001

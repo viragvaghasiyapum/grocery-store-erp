@@ -229,7 +229,7 @@ public sealed class ListFilterTests
             var clock = new FixedClock(Today);
             var numbers = new DocNumberService(Settings);
             var periods = new PeriodGuard(Settings, clock);
-            var ledger = new StockLedger(Settings);
+            var ledger = new LotQuantities(Settings);
             Catalog = new CatalogService(Database, new AuditLog(), Settings);
             Inventory = new InventoryService(Database, ledger, numbers, periods, new AuditLog());
             Purchasing = new PurchasingService(Database, ledger, numbers, periods, Settings, new AuditLog());

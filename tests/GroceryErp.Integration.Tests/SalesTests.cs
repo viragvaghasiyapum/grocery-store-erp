@@ -279,7 +279,7 @@ public sealed class SalesTests
             .GrandTotal.ShouldBe(completed.Totals.GrandTotal);
         SaleHistoryActivity activity = await fixture.Sales.GetHistoryActivityAsync(saleId, ct);
         activity.Returns.Count.ShouldBe(2);
-        activity.Movements.Select(static item => item.Type)
+        activity.Events.Select(static item => item.Type)
             .ShouldBe(["COMPLETED", "PARTIAL_RETURN", "REFUNDED"]);
     }
 
@@ -354,7 +354,6 @@ public sealed class SalesTests
             [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
         await fixture.Sales.VoidAsync(secondSale, "Mistake", OperationGuard.NewId(), ct);
         using var after = fixture.Factory.Open();
-        after.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement").ShouldBe(0L);
         after.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id",
             new { id = fixture.LotId }).ShouldBe(9000L);
         after.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot WHERE origin_kind='CUSTOMER_RETURN'")
@@ -568,7 +567,7 @@ public sealed class SalesTests
     }
 
     [Fact]
-    public async Task SaleReturnVoidAndAdjustment_WriteDocumentsButNoMovements()
+    public async Task SaleReturnAndVoid_WriteOnlyTheirDocuments()
     {
         using var fixture = new SalesFixture();
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -586,16 +585,23 @@ public sealed class SalesTests
         await fixture.Sales.CompleteAsync(new(second,
             [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
         await fixture.Sales.VoidAsync(second, "Entry mistake", OperationGuard.NewId(), ct);
-        await fixture.Inventory.AdjustAsync(fixture.LotId, fixture.Clock.BusinessDate,
-            Quantity.One, "Reviewed correction", OperationGuard.NewId(), ct);
         using (var db = fixture.Factory.Open())
         {
-            db.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement").ShouldBe(0L);
             db.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id",
-                new { id = fixture.LotId }).ShouldBe(11000L);
-            db.QuerySingle<(string Kind, long Delta, string Reason)>("""
-                SELECT source_kind AS Kind,quantity_delta AS Delta,reason AS Reason FROM stock_correction
-                """).ShouldBe(("MANUAL", 1000L, "Reviewed correction"));
+                new { id = fixture.LotId }).ShouldBe(10000L);
+            db.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_correction").ShouldBe(0L);
+            // A manual correction saved before manual adjustments were removed still counts in P&L.
+            db.Execute("""
+                INSERT INTO stock_correction(correction_date,product_id,lot_id,quantity_delta,unit_cost,
+                    source_kind,reason)
+                VALUES (@date,@product,@lot,1000,70000,'MANUAL','Reviewed correction');
+                UPDATE product_lot SET qty_on_hand=qty_on_hand+1000 WHERE id=@lot;
+                """, new
+            {
+                date = fixture.Clock.BusinessDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                product = fixture.ProductId,
+                lot = fixture.LotId,
+            });
             db.ExecuteScalar<long>("""
                 SELECT amount FROM v_pnl_entry WHERE head_code='STOCK_ADJUSTMENT'
                 """).ShouldBe(-70000L);
@@ -864,10 +870,10 @@ public sealed class SalesTests
         CancellationToken ct = TestContext.Current.CancellationToken;
         long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
         await fixture.Sales.HoldAsync(saleId, "Waiting", ct);
-        await fixture.Inventory.ChangeLotPriceAsync(fixture.LotId, new Money(115), new Money(120), ct);
+        await fixture.EditLotPriceAsync(fixture.LotId, new Money(115), ct);
         HeldBillReview review = await fixture.Sales.GetHeldBillReviewAsync(saleId, ct);
         review.Lines.Single().PriceChanged.ShouldBeTrue();
-        await fixture.Inventory.ChangeLotPriceAsync(fixture.LotId, new Money(110), new Money(120), ct);
+        await fixture.EditLotPriceAsync(fixture.LotId, new Money(110), ct);
         await Should.ThrowAsync<DomainException>(() => fixture.Sales.ResumeReviewedAsync(review, ct));
         (await fixture.Sales.GetAsync(saleId, ct)).Status.ShouldBe(SaleStatus.Held);
 
@@ -884,10 +890,7 @@ public sealed class SalesTests
         await fixture.Sales.CompleteAsync(new(completedId, [new(PaymentMode.Cash, new Money(118))],
             OperationGuard.NewId()), ct);
         Money billedPrice = (await fixture.Sales.GetAsync(completedId, ct)).Lines.Single().UnitPrice;
-        LotItem original = (await fixture.Inventory.GetLotsByIdsAsync([fixture.LotId], ct)).Single();
-        await fixture.Inventory.CorrectLotAsync(new(original, original.BatchNumber, original.ExpiryDate,
-            original.UnitCost, new Money(110), original.Mrp, Quantity.Zero,
-            fixture.Clock.BusinessDate, "Price correction"), OperationGuard.NewId(), ct);
+        await fixture.EditLotPriceAsync(fixture.LotId, new Money(110), ct);
         long futureId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
         (await fixture.Sales.GetAsync(completedId, ct)).Lines.Single().UnitPrice.ShouldBe(billedPrice);
         (await fixture.Sales.GetAsync(futureId, ct)).Lines.Single().UnitPrice.ShouldBe(new Money(110));
@@ -955,7 +958,7 @@ public sealed class SalesTests
     private sealed class SalesFixture : IDisposable
     {
         private readonly string _root;
-        private readonly StockLedger _ledger;
+        private readonly LotQuantities _ledger;
 
         public SalesFixture()
         {
@@ -968,7 +971,7 @@ public sealed class SalesTests
             Settings.LoadAsync().GetAwaiter().GetResult();
             SettingsService settings = Settings;
             Clock = new FixedClock(new DateTime(2026, 9, 27, 10, 30, 0));
-            var ledger = new StockLedger(settings);
+            var ledger = new LotQuantities(settings);
             _ledger = ledger;
             Catalog = new CatalogService(Database, new AuditLog(), settings);
             Inventory = new InventoryService(Database, ledger, new DocNumberService(settings), new PeriodGuard(settings, Clock), new AuditLog());
@@ -993,17 +996,26 @@ public sealed class SalesTests
                 VALUES ('L-SALE-ALT',@productId,'2026-09-02',80000,125000,130000,5000) RETURNING id
                 """, new { productId = ProductId });
             using var transaction = connection.BeginTransaction();
-            ledger.Post(new(connection, transaction), new(Clock.BusinessDate, ProductId, LotId, "OPENING",
-                new Quantity(10), new Money(70), "test", 1));
-            ledger.Post(new(connection, transaction), new(Clock.BusinessDate, ProductId, AlternateLotId, "OPENING",
-                new Quantity(5), new Money(80), "test", 2));
+            ledger.Change(new(connection, transaction), new(Clock.BusinessDate, ProductId, LotId,
+                LotChangeKind.Opening, new Quantity(10)));
+            ledger.Change(new(connection, transaction), new(Clock.BusinessDate, ProductId, AlternateLotId,
+                LotChangeKind.Opening, new Quantity(5)));
             transaction.Commit();
         }
 
         // A lot inserted with qty_received becomes saleable through its direct origin.
         public Task ReceiveDirectAsync(long productId, long lotId, Quantity quantity, CancellationToken ct) =>
-            Database.WriteAsync(tx => _ledger.Post(tx, new(Clock.BusinessDate, productId, lotId,
-                "DIRECT_ENTRY", quantity, new Money(70), "direct_stock_origin", lotId)), ct);
+            Database.WriteAsync(tx => _ledger.Change(tx, new(Clock.BusinessDate, productId, lotId,
+                LotChangeKind.DirectEntry, quantity)), ct);
+
+        // Edits a lot's selling price through the versioned lot workflow, keeping its MRP. The
+        // fixture's lots have no expiry, which the edit requires for an expiry-tracked product.
+        public async Task EditLotPriceAsync(long lotId, Money price, CancellationToken ct)
+        {
+            LotItem lot = (await Inventory.GetLotsByIdsAsync([lotId], ct)).Single();
+            await Inventory.EditLotDetailsAsync(new(lotId, lot.DetailVersion, price, lot.Mrp,
+                lot.ExpiryDate ?? Clock.BusinessDate.AddYears(1)), ct);
+        }
 
         // A product with one-unit lots received on consecutive days, in FEFO order.
         public async Task<(long ProductId, long[] Lots)> AddProductWithLotsAsync(string sku, int lots,

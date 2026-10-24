@@ -1,0 +1,20 @@
+<Window x:Class="GroceryErp.App.Presentation.CompactionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+        Title="{l:Tr Settings_CompactTitle}" Width="560" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen" FontFamily="{StaticResource AppFont}"
+        NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+  <StackPanel Margin="24,20">
+    <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr Settings_CompactTitle}"/>
+    <TextBlock Style="{StaticResource FormContext}" Margin="0,6,0,18" TextWrapping="Wrap" Text="{l:Tr Settings_CompactContext}"/>
+    <TextBlock x:Name="StageText" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+    <ProgressBar x:Name="Progress" Height="8" Margin="0,10,0,6" Maximum="100" IsIndeterminate="True"
+                 AutomationProperties.Name="{l:Tr Settings_CompactTitle}"/>
+    <TextBlock x:Name="DetailText" Style="{StaticResource StatusText}" TextWrapping="Wrap" MinHeight="20"/>
+    <StackPanel Style="{StaticResource FormFooter}" Margin="0,18,0,0">
+      <Button x:Name="CancelButton" Click="Cancel_OnClick" Content="{l:Tr Common_Cancel}"/>
+      <Button x:Name="ContinueButton" Visibility="Collapsed" IsDefault="True" Click="Continue_OnClick"
+              Content="{l:Tr Common_Continue}"/>
+    </StackPanel>
+  </StackPanel>
+</Window>

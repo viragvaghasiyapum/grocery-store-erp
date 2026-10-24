@@ -20,7 +20,7 @@ public interface IDirectStockEngine
 }
 
 // Reviewed physical counts and source reconciliation. Every other quantity change is
-// written by its own document through StockLedger.
+// written by its own document through LotQuantities.
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822", Justification = "Instance methods implement the stock engine contract.")]
 public sealed class DirectStockEngine : IDirectStockEngine
 {

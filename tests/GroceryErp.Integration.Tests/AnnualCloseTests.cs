@@ -296,7 +296,7 @@ public sealed class AnnualCloseTests
             Settings.LoadAsync().GetAwaiter().GetResult();
             Clock = new MutableClock(today);
             Periods = new PeriodGuard(Settings, Clock);
-            MoneyOut = new MoneyOutService(Database, new StockLedger(Settings), new DocNumberService(Settings), Periods,
+            MoneyOut = new MoneyOutService(Database, new LotQuantities(Settings), new DocNumberService(Settings), Periods,
                 new AuditLog());
             Reports = new ReportService(Database, Settings, Clock);
             Closes = new AnnualCloseService(Database, Periods, Clock);

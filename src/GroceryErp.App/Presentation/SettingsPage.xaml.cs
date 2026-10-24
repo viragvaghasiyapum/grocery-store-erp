@@ -68,6 +68,49 @@ public partial class SettingsPage : Page
             ? text["Settings_NoUsbExport"]
             : text.Format("Settings_LastUsbExport", health.LastUsbExport.Value.ToString("dd MMM yyyy HH:mm", TranslationSource.FormatCulture));
         if (Window.GetWindow(this) is ShellWindow shell) shell.RefreshBackupStatus();
+        _ = RefreshCompactionStatusAsync();
+    }
+
+    private async Task RefreshCompactionStatusAsync()
+    {
+        try
+        {
+            CompactionEstimate estimate = await Task.Run(_backups.EstimateCompaction);
+            CompactStatus.Text = TranslationSource.Instance.Format(
+                estimate.IsWorthwhile ? "Settings_CompactStatus" : "Settings_CompactNotNeeded",
+                CompactionWindow.FormatBytes(estimate.ReclaimableBytes), CompactionWindow.FormatBytes(estimate.DatabaseBytes));
+        }
+        catch (Exception exception) { CompactStatus.Text = UserError.Message(exception); }
+    }
+
+    private async void Compact_OnClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            CompactButton.IsEnabled = false;
+            var app = (App)Application.Current;
+            await app.WaitForStartupMaintenanceAsync();
+            CompactionEstimate estimate = await Task.Run(_backups.EstimateCompaction);
+            TranslationSource text = TranslationSource.Instance;
+            if (!estimate.HasSpace)
+            {
+                StatusText.Foreground = Brushes.Crimson;
+                StatusText.Text = text.Format("Settings_CompactNoSpace",
+                    CompactionWindow.FormatBytes(estimate.RequiredFreeBytes), CompactionWindow.FormatBytes(estimate.AvailableFreeBytes));
+                return;
+            }
+            if (MessageBox.Show(text.Format("Settings_CompactConfirm", CompactionWindow.FormatBytes(estimate.ReclaimableBytes),
+                        CompactionWindow.FormatBytes(estimate.RequiredFreeBytes)),
+                    text["Settings_CompactAction"], MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                return;
+            await Task.Run(_backups.RequestCompaction);
+            // The compaction itself saves a verified backup before it swaps the copy in.
+            app.SkipCloseBackup();
+            MessageBox.Show(text["Settings_CompactRestart"], text["App_Title"], MessageBoxButton.OK, MessageBoxImage.Information);
+            await app.RequestShutdownAsync();
+        }
+        catch (Exception exception) { ShowError(exception); }
+        finally { CompactButton.IsEnabled = true; }
     }
 
     private void RefreshDrives()

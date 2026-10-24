@@ -22,7 +22,7 @@ public sealed record RestoreCandidate(string SourceZip, string StagedDatabase, B
 public sealed record CurrentDatabaseInfo(long SchemaVersion, BackupSummary Summary);
 public sealed record BackupHealth(DateTime? LastBackup, DateTime? LastUsbExport, bool BackedUpToday, int UsbAgeDays);
 
-public sealed class BackupService(
+public sealed partial class BackupService(
     AppPaths paths,
     SqliteConnectionFactory factory,
     IClock clock,
@@ -166,7 +166,6 @@ public sealed class BackupService(
         string backupDirectory = settings.Current.BackupDirectory;
         Directory.CreateDirectory(workingDirectory);
         Directory.CreateDirectory(backupDirectory);
-        string? partial = null;
         try
         {
             long stageStarted = Stopwatch.GetTimestamp();
@@ -196,15 +195,33 @@ public sealed class BackupService(
             if (!string.Equals(quickCheck, "ok", StringComparison.Ordinal))
                 throw new DomainException(ErrorCode.BackupInvalid, quickCheck);
             RecordStage("inspect");
+            BackupInfo backup = ArchiveSnapshot(snapshot, safeReason, stamp, backupDirectory,
+                quickCheck, schemaVersion, summary, RecordStage, cancellationToken);
+            if (safeReason is "daily" or "close") _lastVerifiedScheduledBackup = clock.Now;
+            return backup;
+        }
+        finally
+        {
+            TryDeleteDirectory(workingDirectory);
+        }
+    }
 
-            var manifest = new BackupManifest(
-                1, "GroceryErp", typeof(BackupService).Assembly.GetName().Version?.ToString(3) ?? "1.0.0",
-                schemaVersion, clock.Now.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture), safeReason,
-                Environment.MachineName,
-                new("grocery.db", new FileInfo(snapshot).Length, Sha256Hex(snapshot, cancellationToken), quickCheck), summary);
-            RecordStage("hash-snapshot");
-            string final = UniqueBackupPath(backupDirectory, stamp, safeReason);
-            partial = final + ".partial";
+    // Zips a checked snapshot with its manifest, verifies the archive and only then gives it
+    // its final name. The snapshot itself is left in place for the caller.
+    private BackupInfo ArchiveSnapshot(string snapshot, string safeReason, string stamp, string backupDirectory,
+        string quickCheck, long schemaVersion, BackupSummary summary, Action<string> recordStage,
+        CancellationToken cancellationToken)
+    {
+        var manifest = new BackupManifest(
+            1, "GroceryErp", typeof(BackupService).Assembly.GetName().Version?.ToString(3) ?? "1.0.0",
+            schemaVersion, clock.Now.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture), safeReason,
+            Environment.MachineName,
+            new("grocery.db", new FileInfo(snapshot).Length, Sha256Hex(snapshot, cancellationToken), quickCheck), summary);
+        recordStage("hash-snapshot");
+        string final = UniqueBackupPath(backupDirectory, stamp, safeReason);
+        string partial = final + ".partial";
+        try
+        {
             using (ZipArchive archive = ZipFile.Open(partial, ZipArchiveMode.Create))
             {
                 using (FileStream source = File.OpenRead(snapshot))
@@ -213,24 +230,21 @@ public sealed class BackupService(
                 using Stream json = archive.CreateEntry("manifest.json", CompressionLevel.Fastest).Open();
                 JsonSerializer.Serialize(json, manifest, JsonOptions);
             }
-            RecordStage("zip");
+            recordStage("zip");
             // A failed verification must never leave a final-looking backup behind.
             Verify(partial, cancellationToken);
-            RecordStage("verify-zip");
+            recordStage("verify-zip");
             cancellationToken.ThrowIfCancellationRequested();
             File.Move(partial, final);
-            if (safeReason is "daily" or "close") _lastVerifiedScheduledBackup = clock.Now;
             Rotate(backupDirectory, settings.Current.BackupKeep, clock.Now.ToUniversalTime());
-            RecordStage("finalize");
+            recordStage("finalize");
             return new(final, new FileInfo(final).Length, manifest);
         }
         finally
         {
-            if (partial is not null)
-                try { if (File.Exists(partial)) File.Delete(partial); }
-                catch (IOException) { }
-                catch (UnauthorizedAccessException) { }
-            TryDeleteDirectory(workingDirectory);
+            try { if (File.Exists(partial)) File.Delete(partial); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
     }
 
@@ -688,8 +702,11 @@ public sealed class BackupService(
         foreach (FileInfo file in regular.Where(file => !protectedPaths.Contains(file.FullName)))
             file.Delete();
 
+        // The backup taken before the stock ledger was removed is its only copy, so it stays.
         foreach (FileInfo file in new DirectoryInfo(directory).EnumerateFiles("GroceryErp_*_pre-*.zip"))
-            if (file.LastWriteTimeUtc < now.AddDays(-90)) file.Delete();
+            if (file.LastWriteTimeUtc < now.AddDays(-90) &&
+                !file.Name.Contains("_" + MigrationRunner.LedgerArchiveReason + "-", StringComparison.OrdinalIgnoreCase))
+                file.Delete();
     }
 
     private static void TryDeleteDirectory(string directory)
@@ -728,6 +745,7 @@ public sealed class BackupService(
             if (File.Exists(database + suffix)) File.Delete(database + suffix);
     }
 
+    // Purpose is null for a restore and "compact" for a compaction swap.
     private sealed record RestoreMarker(string SourceZip, string ReplacedDirectory, BackupManifest Manifest,
-        string? Stage = null, string? FailedDirectory = null);
+        string? Stage = null, string? FailedDirectory = null, string? Purpose = null);
 }

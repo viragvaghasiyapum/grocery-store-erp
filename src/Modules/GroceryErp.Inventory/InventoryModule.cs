@@ -18,8 +18,8 @@ public sealed class InventoryModule : IModule
 
     public void Register(IServiceCollection services)
     {
-        services.AddSingleton<StockLedger>();
-        services.AddSingleton<IStockLedger>(static provider => provider.GetRequiredService<StockLedger>());
+        services.AddSingleton<LotQuantities>();
+        services.AddSingleton<ILotQuantities>(static provider => provider.GetRequiredService<LotQuantities>());
         services.AddSingleton<InventoryService>();
         services.AddSingleton(static provider => new DirectStockCountService(
             provider.GetRequiredService<DbExecutor>(), new DirectStockEngine(),

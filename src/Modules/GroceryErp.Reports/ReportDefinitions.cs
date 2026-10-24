@@ -115,23 +115,6 @@ internal static class ReportDefinitions
         GROUP BY c.id,m.product_id ORDER BY c.name,Revenue DESC LIMIT @Limit
         """;
 
-    public const string StockLedgerForLot = """
-        SELECT m.move_date AS Date,p.sku AS Sku,p.name AS Product,l.lot_code AS Lot,m.type_code AS Type,
-               m.qty AS Quantity,m.unit_cost AS UnitCost,m.ref_type AS ReferenceType,m.ref_id AS ReferenceId,m.note AS Note
-        FROM stock_movement m JOIN product p ON p.id=m.product_id JOIN product_lot l ON l.id=m.lot_id
-        WHERE m.lot_id=@LotId AND m.move_date BETWEEN @from AND @to
-          AND (@ProductId IS NULL OR m.product_id=@ProductId)
-        ORDER BY m.move_date,m.id LIMIT @Limit
-        """;
-
-    public const string StockLedgerForProduct = """
-        SELECT m.move_date AS Date,p.sku AS Sku,p.name AS Product,l.lot_code AS Lot,m.type_code AS Type,
-               m.qty AS Quantity,m.unit_cost AS UnitCost,m.ref_type AS ReferenceType,m.ref_id AS ReferenceId,m.note AS Note
-        FROM stock_movement m JOIN product p ON p.id=m.product_id JOIN product_lot l ON l.id=m.lot_id
-        WHERE m.product_id=@ProductId AND m.move_date BETWEEN @from AND @to
-        ORDER BY m.move_date,m.id LIMIT @Limit
-        """;
-
     // The dashboard's exact rolling window can answer an overlapping item report.
     // Only the at-most-seven-day edge is read from sale/return lines.
     public const string ItemSalesFromTopWindow = """
@@ -314,14 +297,6 @@ internal static class ReportDefinitions
                  Q("ReceivedQty", "Received qty"), Q("Sold", "Sold"), Q("Returned", "Returned to stock"), Q("Damaged", "Damaged"),
                  Q("InternalUse", "Internal use"), Q("VendorReturned", "Returned to vendor"), Q("Corrections", "Corrections"),
                  Q("Expected", "Expected"), Q("Available", "Available"), Q("Difference", "Difference")]),
-
-            [ReportKind.StockLedger] = new("Stock ledger", true, """
-                SELECT m.move_date AS Date,p.sku AS Sku,p.name AS Product,l.lot_code AS Lot,m.type_code AS Type,
-                       m.qty AS Quantity,m.unit_cost AS UnitCost,m.ref_type AS ReferenceType,m.ref_id AS ReferenceId,m.note AS Note
-                FROM stock_movement m JOIN product p ON p.id=m.product_id JOIN product_lot l ON l.id=m.lot_id
-                WHERE m.move_date BETWEEN @from AND @to AND (@ProductId IS NULL OR m.product_id=@ProductId) AND (@LotId IS NULL OR m.lot_id=@LotId)
-                ORDER BY m.move_date,m.id LIMIT @Limit
-                """, [D("Date", "Date"), T("Sku", "SKU"), T("Product", "Product"), T("Lot", "Lot"), T("Type", "Type"), Q("Quantity", "Quantity"), M("UnitCost", "Unit cost"), T("ReferenceType", "Reference type"), I("ReferenceId", "Reference"), T("Note", "Note")]),
 
             [ReportKind.LowStock] = new("Low stock and reorder", false, """
                 WITH page AS MATERIALIZED (

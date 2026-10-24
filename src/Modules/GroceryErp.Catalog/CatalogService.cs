@@ -236,7 +236,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
     }
 
     public async Task<long> CreateWithDirectLotAsync(ProductInput input, NewProductLotInput lot,
-        IStockLedger ledger, DocNumberService numbers, PeriodGuard periods, string operationId,
+        ILotQuantities stock, DocNumberService numbers, PeriodGuard periods, string operationId,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(lot);
@@ -282,8 +282,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
             }, transaction.Transaction);
             long originId = transaction.Connection.ExecuteScalar<long>(
                 "SELECT id FROM direct_stock_origin WHERE lot_id=@lotId", new { lotId }, transaction.Transaction);
-            ledger.Post(transaction, new(lot.ReceivedDate, productId, lotId, "DIRECT_ENTRY",
-                lot.Quantity, lot.UnitCost, "direct_stock_origin", originId, lot.Reason));
+            stock.Change(transaction, new(lot.ReceivedDate, productId, lotId, LotChangeKind.DirectEntry, lot.Quantity));
             audit.Write(transaction, "direct_stock_origin", originId, "CREATE", new { lotId });
             OperationGuard.Complete(transaction, operationId, "product", productId);
             return productId;

@@ -135,11 +135,11 @@ public sealed record SaleReturnHistoryItem(string ReturnNumber, DateOnly Date, s
     public string DispositionCode { get; init; } = "RETURN_ORIGINAL";
 }
 
-public sealed record SaleMovementHistoryItem(DateOnly Date, string ProductName, string LotCode,
+public sealed record SaleActivityItem(DateOnly Date, string ProductName, string LotCode,
     string Type, Quantity Quantity);
 
 public sealed record SaleHistoryActivity(IReadOnlyList<SaleReturnHistoryItem> Returns,
-    IReadOnlyList<SaleMovementHistoryItem> Movements);
+    IReadOnlyList<SaleActivityItem> Events);
 
 public sealed record ReturnLineInput(long SaleLineId, Quantity Quantity, bool Resellable,
     ReturnRecreationInput? Recreation = null);

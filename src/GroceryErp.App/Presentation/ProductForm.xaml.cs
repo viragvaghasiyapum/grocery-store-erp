@@ -184,7 +184,7 @@ public partial class ProductForm : UserControl
             {
                 IServiceProvider services = ((App)Application.Current).Services;
                 created = await _catalog.CreateWithDirectLotAsync(input, firstLot,
-                    services.GetRequiredService<IStockLedger>(), services.GetRequiredService<DocNumberService>(),
+                    services.GetRequiredService<ILotQuantities>(), services.GetRequiredService<DocNumberService>(),
                     services.GetRequiredService<PeriodGuard>(), OperationGuard.NewId(), cancellationToken);
             }
             else created = await _catalog.CreateAsync(input, cancellationToken);

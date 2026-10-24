@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using GroceryErp.Data.Backup;
+using GroceryErp.Data.Infrastructure;
 using GroceryErp.Localization;
 using Wpf.Ui.Controls;
 
@@ -62,6 +63,9 @@ public partial class RestoreWindow : FluentWindow
         "pre-data-move" => source["Settings_BackupReason_PreDataMove"],
         _ when reason.StartsWith("pre-migration-v", StringComparison.Ordinal) =>
             source.Format("Settings_BackupReason_PreMigration", reason[15..]),
+        _ when reason.StartsWith(MigrationRunner.LedgerArchiveReason + "-v", StringComparison.Ordinal) =>
+            source.Format("Settings_BackupReason_LedgerArchive", reason[(MigrationRunner.LedgerArchiveReason.Length + 2)..]),
+        "pre-compact" => source["Settings_BackupReason_PreCompact"],
         _ => reason,
     };
 

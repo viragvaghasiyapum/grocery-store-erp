@@ -112,13 +112,13 @@
        </DataGrid.Columns>
       </DataGrid>
      </TabItem>
-     <TabItem Header="{l:Tr Sales_MovementsTab}">
-      <DataGrid x:Name="MovementsGrid" Style="{StaticResource CompactTableGrid}" RowHeight="34">
+     <TabItem Header="{l:Tr Sales_ActivityTab}">
+      <DataGrid x:Name="ActivityGrid" Style="{StaticResource CompactTableGrid}" RowHeight="34">
        <DataGrid.Columns>
         <DataGridTextColumn Width="110" Header="{l:Tr Sales_Date}" Binding="{Binding Date}"/>
         <DataGridTextColumn Width="*" MinWidth="160" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
         <DataGridTextColumn Width="110" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
-        <DataGridTextColumn Width="140" Header="{l:Tr Stock_MovementType}" Binding="{Binding Type,Converter={StaticResource SaleActivityConverter}}"/>
+        <DataGridTextColumn Width="140" Header="{l:Tr Sales_ActivityEvent}" Binding="{Binding Type,Converter={StaticResource SaleActivityConverter}}"/>
         <DataGridTextColumn Width="100" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
        </DataGrid.Columns>
       </DataGrid>

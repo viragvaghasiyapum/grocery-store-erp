@@ -19,7 +19,7 @@ public sealed class DirectStockEngineTests
     private static readonly DirectStockEngine Engine = new();
 
     [Fact]
-    public void LedgerUpgrade_CarriesHistoryForward_AndReconcilesEveryLot()
+    public void LedgerUpgrade_CarriesHistoryForward_ThenRemovesTheLedger()
     {
         using var legacy = new LegacyStore();
         using (SqliteConnection db = legacy.Factory.Open())
@@ -36,6 +36,7 @@ public sealed class DirectStockEngineTests
                 INSERT INTO stock_movement(move_date,product_id,lot_id,type_code,qty,unit_cost,ref_type,note)
                 VALUES ('2026-09-01',1,1,'OPENING',5000,1000,'opening_import','Opening'),
                        ('2026-09-02',1,1,'ADJUSTMENT',-1000,1000,'manual_adjustment','Shelf loss'),
+                       ('2026-09-02',1,1,'ADJUSTMENT',500,1000,'damage_correction','Damage reduced'),
                        ('2026-09-01',1,2,'OPENING',3000,1000,'opening_import','Opening'),
                        ('2026-09-01',1,3,'OPENING',2000,1000,'opening_import','Opening'),
                        ('2026-09-03',1,3,'SALE',-500,1000,NULL,'Movement without a sale document');
@@ -48,20 +49,33 @@ public sealed class DirectStockEngineTests
 
         using SqliteConnection upgraded = legacy.Factory.Open();
         upgraded.ExecuteScalar<long>("PRAGMA user_version").ShouldBe(MigrationRunner.LatestVersion);
-        upgraded.Query<long>("SELECT qty_on_hand FROM product_lot ORDER BY id").ShouldBe([4000L, 3000L, 1500L]);
-        upgraded.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement").ShouldBe(5L);
-        upgraded.ExecuteScalar<long>("SELECT movement_high_water FROM direct_stock_live").ShouldBe(5L);
-        upgraded.ExecuteScalar<string>("SELECT status FROM stock_count WHERE id=1").ShouldBe("CANCELLED");
+        upgraded.Query<long>("SELECT qty_on_hand FROM product_lot ORDER BY id").ShouldBe([4500L, 3000L, 1500L]);
+        // Schema 36 removed the ledger, its count sheets and the movement high-water mark.
+        upgraded.ExecuteScalar<long>("""
+            SELECT COUNT(*) FROM sqlite_schema WHERE name IN ('stock_movement','stock_movement_type',
+              'direct_stock_live','stock_count','stock_count_line','stock_count_scope','v_product_stock')
+            """).ShouldBe(0L);
         upgraded.Query<(string Kind, long Lot, long Delta)>("""
             SELECT source_kind AS Kind,lot_id AS Lot,quantity_delta AS Delta
             FROM stock_correction ORDER BY id
-            """).ShouldBe([("LEGACY_MOVEMENT", 1L, -1000L), ("CUTOVER_BALANCE", 3L, -500L)]);
-        upgraded.ExecuteScalar<long>("""
-            SELECT COUNT(*) FROM v_pnl_entry WHERE head_code='STOCK_ADJUSTMENT'
-            """).ShouldBe(1L);
+            """).ShouldBe([("LEGACY_MOVEMENT", 1L, -1000L), ("LEGACY_MOVEMENT", 1L, 500L),
+                           ("CUTOVER_BALANCE", 3L, -500L)]);
+        upgraded.Query<string>("""
+            SELECT s.ref_type FROM legacy_adjustment_source s JOIN stock_correction c ON c.id=s.correction_id
+            ORDER BY c.id
+            """).ShouldBe(["manual_adjustment", "damage_correction"]);
+        // Only the manual adjustment is a P&L stock adjustment; a damage correction counts under Damages.
+        upgraded.QuerySingle<(long Rows, long Amount)>("""
+            SELECT COUNT(*) AS Rows,SUM(amount) AS Amount FROM v_pnl_entry WHERE head_code='STOCK_ADJUSTMENT'
+            """).ShouldBe((1L, 1000L));
         upgraded.ExecuteScalar<string>("""
             SELECT changes FROM audit_log WHERE entity='direct_stock' AND action='CUTOVER'
             """)!.ShouldContain("\"ledgerCacheRepairs\":1");
+        upgraded.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM audit_log WHERE entity='direct_stock' AND action='LEDGER_REMOVED'").ShouldBe(1L);
+        upgraded.ExecuteScalar<long>("""
+            SELECT COUNT(*) FROM setting WHERE key IN ('stock.allow_negative','expiry.popup_on_login')
+            """).ShouldBe(0L);
         LotSourceReconciliation.CheckAll(upgraded, null,
             cancellationToken: TestContext.Current.CancellationToken).ShouldBeEmpty();
         Should.Throw<SqliteException>(() => upgraded.Execute("""
@@ -82,7 +96,7 @@ public sealed class DirectStockEngineTests
         var clock = new FixedClock(new DateTime(2026, 10, 18, 12, 0, 0));
         var periods = new PeriodGuard(settings, clock);
         var countService = new DirectStockCountService(fixture.Database, Engine, periods);
-        var sales = new SalesService(fixture.Database, new StockLedger(settings),
+        var sales = new SalesService(fixture.Database, new LotQuantities(settings),
             new DocNumberService(settings), periods, settings, new AuditLog(), clock);
         long saleId = await sales.AddProductAsync(null, fixture.Product, Quantity.One,
             cancellationToken: ct);
@@ -102,7 +116,6 @@ public sealed class DirectStockEngineTests
             new { lot = fixture.Lot }).ShouldBe("Direct stock");
         db.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@lot",
             new { lot = fixture.Lot }).ShouldBe(8000);
-        db.ExecuteScalar<long>("SELECT COUNT(*) FROM stock_movement").ShouldBe(0);
         await fixture.Database.WriteAsync(tx => Engine.CheckAll(tx).ShouldBeEmpty(), ct);
     }
 
@@ -219,7 +232,7 @@ public sealed class DirectStockEngineTests
         CancellationToken ct = TestContext.Current.CancellationToken;
         using var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
         await settings.LoadAsync(ct);
-        var ledger = new StockLedger(settings);
+        var ledger = new LotQuantities(settings);
         using (var connection = fixture.Factory.Open())
         {
             long pages = connection.ExecuteScalar<long>("PRAGMA page_count");
@@ -231,14 +244,13 @@ public sealed class DirectStockEngineTests
                 long sale = tx.Connection.ExecuteScalar<long>("""
                     INSERT INTO sale(invoice_no,sale_date) VALUES ('FULL-DIRECT','2026-10-18') RETURNING id
                     """, transaction: tx.Transaction);
-                long line = tx.Connection.ExecuteScalar<long>("""
+                tx.Connection.Execute("""
                     INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,
                       unit_price,taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
                     VALUES (@sale,1,@product,@lot,'Direct stock',2000,2000,4000,0,4000,1000,2000)
-                    RETURNING id
                     """, new { sale, product = fixture.Product, lot = fixture.Lot }, tx.Transaction);
-                ledger.Post(tx, new(new DateOnly(2026, 10, 18), fixture.Product, fixture.Lot, "SALE",
-                    Quantity.FromScaled(-2000), new Money(1), "sale_line", line));
+                ledger.Change(tx, new(new DateOnly(2026, 10, 18), fixture.Product, fixture.Lot, LotChangeKind.Sale,
+                    Quantity.FromScaled(-2000)));
                 tx.Connection.Execute("""
                     INSERT INTO audit_log(entity,entity_id,action,changes)
                     VALUES ('fault',0,'FULL',@changes)
@@ -258,7 +270,7 @@ public sealed class DirectStockEngineTests
     private sealed class Fixture : IDisposable
     {
         private readonly string _root = Path.Combine(Path.GetTempPath(), "direct-stock-" + Guid.NewGuid().ToString("N"));
-        private readonly StockLedger _ledger;
+        private readonly LotQuantities _ledger;
         public SqliteConnectionFactory Factory { get; }
         public DbExecutor Database { get; }
         public AppPaths Paths { get; }
@@ -271,7 +283,7 @@ public sealed class DirectStockEngineTests
             Factory = new SqliteConnectionFactory(Paths);
             new MigrationRunner(Factory, NullMigrationBackup.Instance).Run();
             Database = new DbExecutor(Factory);
-            _ledger = new StockLedger(new SettingsService(Database, Paths, new AuditLog()));
+            _ledger = new LotQuantities(new SettingsService(Database, Paths, new AuditLog()));
             using var db = Factory.Open();
             long category = db.ExecuteScalar<long>("INSERT INTO category(name) VALUES ('Test') RETURNING id");
             long uom = db.ExecuteScalar<long>("SELECT id FROM uom WHERE code='PCS'");
@@ -291,8 +303,8 @@ public sealed class DirectStockEngineTests
                   unit_cost,selling_price,qty_received)
                 VALUES (@product,@code,'2026-10-18',@expiry,1000,2000,@quantity) RETURNING id
                 """, new { product = Product, code, expiry, quantity }, tx.Transaction);
-            _ledger.Post(tx, new StockMovementInput(new DateOnly(2026, 10, 18), Product, lot, "DIRECT_ENTRY",
-                Quantity.FromScaled(quantity), new Money(1), "direct_stock_origin", lot));
+            _ledger.Change(tx, new LotChange(new DateOnly(2026, 10, 18), Product, lot, LotChangeKind.DirectEntry,
+                Quantity.FromScaled(quantity)));
             return lot;
         }
 

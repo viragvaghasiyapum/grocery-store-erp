@@ -153,17 +153,23 @@ public partial class DashboardPage : Page
     private void Tile_OnClick(object sender, RoutedEventArgs e)
     {
         if (_summary is null || sender is not Button { Tag: string tag }) return;
-        DateOnly today = _summary.AsOf;
-        (ReportKind kind, DateOnly from, string? status) = tag switch
+        // Expiry tiles open Products, where the lots can be written off or marked down.
+        if (tag is "EXPIRED" or "CRITICAL" or "SOON")
         {
-            "Stock" => (ReportKind.StockValue, today, null),
-            "Payables" => (ReportKind.VendorPayables, today, null),
-            "Month" => (ReportKind.SalesRegister, new DateOnly(today.Year, today.Month, 1), null),
-            "EXPIRED" or "CRITICAL" or "SOON" => (ReportKind.Expiry, today, tag),
-            "LowStock" => (ReportKind.LowStock, today, null),
-            _ => (ReportKind.SalesRegister, today, null),
+            ProductsPage.RequestExpiryFilter(PageStateStore.Current, expired: tag == "EXPIRED");
+            if (Window.GetWindow(this) is ShellWindow shell) shell.OpenProducts();
+            return;
+        }
+        DateOnly today = _summary.AsOf;
+        (ReportKind kind, DateOnly from) = tag switch
+        {
+            "Stock" => (ReportKind.StockValue, today),
+            "Payables" => (ReportKind.VendorPayables, today),
+            "Month" => (ReportKind.SalesRegister, new DateOnly(today.Year, today.Month, 1)),
+            "LowStock" => (ReportKind.LowStock, today),
+            _ => (ReportKind.SalesRegister, today),
         };
-        OpenReport(kind, from, today, status);
+        OpenReport(kind, from, today);
     }
 
     private void Trend_OnClick(object sender, MouseButtonEventArgs e)

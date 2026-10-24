@@ -274,7 +274,7 @@ public partial class SalesHistoryPage : Page
         _selectedActivity = null;
         DetailGrid.ItemsSource = null;
         ReturnsGrid.ItemsSource = null;
-        MovementsGrid.ItemsSource = null;
+        ActivityGrid.ItemsSource = null;
         DetailHeading.Text = TranslationSource.Instance["Sales_SelectHistory"];
     }
 
@@ -307,7 +307,7 @@ public partial class SalesHistoryPage : Page
     {
         0 => _selectedDetails?.Lines.Count ?? 0,
         1 => _selectedActivity?.Returns.Count ?? 0,
-        2 => _selectedActivity?.Movements.Count ?? 0,
+        2 => _selectedActivity?.Events.Count ?? 0,
         _ => 0,
     };
 
@@ -323,7 +323,7 @@ public partial class SalesHistoryPage : Page
         {
             case 0: DetailGrid.ItemsSource = _selectedDetails?.Lines.Skip(start).Take(DetailPageSize).ToArray(); break;
             case 1: ReturnsGrid.ItemsSource = _selectedActivity?.Returns.Skip(start).Take(DetailPageSize).ToArray(); break;
-            case 2: MovementsGrid.ItemsSource = _selectedActivity?.Movements.Skip(start).Take(DetailPageSize).ToArray(); break;
+            case 2: ActivityGrid.ItemsSource = _selectedActivity?.Events.Skip(start).Take(DetailPageSize).ToArray(); break;
         }
         DetailPageText.Text = count == 0 ? "0" : $"{start + 1}–{Math.Min(start + DetailPageSize, count)} / {count}";
         PreviousDetailButton.IsEnabled = start > 0;

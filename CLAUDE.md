@@ -18,7 +18,7 @@ An offline, single-user, single-PC grocery ERP for one shop: WPF on .NET 10, SQL
 
 `optimization*.md`, `audit.md`, `revised plan.md` and `luna/` are history. Don't treat them as current requirements.
 
-**Status (23 Oct 2026):** the old plan is fully implemented. The revised plan is implemented through **Phase 7** on **schema 35**: the direct-stock cutover (Phase 5), P/L heads with independent annual locks and snapshots (Phase 6), and the simplified UI with SQL-side filters and reviewed bulk batches (Phase 7). Phase 8 is next (remove `stock_movement`, the ledger screens and dead code, then compact the database), then Phase 9 (scale and release). Hardware, target-PC, native-Gujarati and operator sign-offs are human gates. Never claim them as passed.
+**Status (24 Oct 2026):** the old plan is fully implemented. The revised plan is implemented through **Phase 8** on **schema 36**: the direct-stock cutover (Phase 5), P/L heads with independent annual locks and snapshots (Phase 6), the simplified UI with SQL-side filters and reviewed bulk batches (Phase 7), and the removal of the stock ledger, its screens and dead code, with verified compaction (Phase 8). Phase 9 (scale and release) is next. Hardware, target-PC, native-Gujarati and operator sign-offs are human gates. Never claim them as passed.
 
 ## Commands
 
@@ -28,7 +28,7 @@ The SDK is pinned to 10.0.401 by `global.json`. A repo-local SDK in `.tools/dotn
 dotnet restore GroceryErp.slnx
 dotnet format GroceryErp.slnx --verify-no-changes --no-restore   # CI gate
 dotnet build GroceryErp.slnx -c Release --no-restore            # warnings are errors
-dotnet test GroceryErp.slnx -c Release --no-build               # ~230 tests; 2 opt-in UI journeys skip
+dotnet test GroceryErp.slnx -c Release --no-build               # ~245 tests; 2 opt-in UI journeys skip
 ```
 
 The test runner is **Microsoft.Testing.Platform** with xUnit v3 (set in `global.json`). Use `--project` and the xUnit v3 filters. Older docs use VSTest-style `--filter "FullyQualifiedName~..."`; use the forms below instead:
@@ -84,14 +84,14 @@ A finalizing write follows this shape (see `SalesService.CompleteAsync`):
 5. Call `OperationGuard.Complete(tx, …)`.
 6. After commit, and only if it wasn't a replay, send the `WeakReferenceMessenger` messages and do any printing.
 
-### Stock after the Phase 5 cutover (easy to get wrong)
+### Stock without a ledger (easy to get wrong)
 
 - A lot's `product_lot.qty_on_hand` is authoritative. Each source document (sale line, purchase line, return, damage, internal use, vendor return, direct origin) is its own stock record.
-- `IStockLedger.Post` in `Inventory/StockLedger.cs` keeps its old name but is now the **single writer of lot quantity**. It does a conditional `UPDATE` (no negative stock, active and not-expired for sales) inside the caller's transaction. It writes **no** `stock_movement` rows; the trigger `trg_direct_no_movement` rejects them. Only `ADJUSTMENT` saves a row, an immutable `stock_correction`.
-- PLANS.md §12 bullets about appending movements describe schema 28 and are obsolete.
-- `stock_movement` stays read-only history until Phase 8 drops it.
+- `ILotQuantities` in `Inventory/LotQuantities.cs` is the **single writer of lot quantity**. `Change(tx, LotChange)` takes the document's `LotChangeKind`, which fixes the direction, and does one conditional `UPDATE` (no negative stock, active and not-expired for sales) inside the caller's transaction. Only `CorrectDamage` also saves a row, an immutable `stock_correction`.
+- Schema 36 dropped `stock_movement`, its type table, the old count sheets (`stock_count*`) and `direct_stock_live`. Older migrations and their C# hooks still name them; nothing else may. Legacy adjustments live on as `LEGACY_MOVEMENT` corrections, with their original reference in `legacy_adjustment_source`.
 - `DirectStockEngine` handles reviewed physical counts (a deficit becomes categorized damage, a surplus becomes a new direct-origin lot) and source-document reconciliation (`CheckLot`, `CheckAll`, `Data/Infrastructure/LotSourceReconciliation.cs`).
-- FEFO allocation is `IStockLedger.AllocateFefo`.
+- FEFO allocation is `ILotQuantities.AllocateFefo`.
+- Compaction (`Data/Backup/BackupService.Compaction.cs`) runs between sign-in and the shell: `VACUUM INTO` a copy, verify it, save it as a verified backup, swap it in with the restore markers. Never `VACUUM` the live store.
 
 ### Projections and immutability live in SQL triggers
 
@@ -101,14 +101,14 @@ Triggers also enforce immutability: completed sale financials, posted purchase a
 
 ### Migrations
 
-- The scripts sit at the **repo root**, not in a `db/` folder, though PLANS.md says `db/*.sql`. `grocery_erp_schema.sql` is 001, followed by `002_…sql` through `035_list_filter_indexes.sql`.
+- The scripts sit at the **repo root**, not in a `db/` folder, though PLANS.md says `db/*.sql`. `grocery_erp_schema.sql` is 001, followed by `002_…sql` through `036_remove_stock_ledger.sql`.
 - Each script is embedded through an explicit `<EmbeddedResource … Link="db/NNN_name.sql">` in `src/GroceryErp.Data/GroceryErp.Data.csproj`.
 - To add a migration:
-  1. Create root `036_name.sql`.
+  1. Create root `037_name.sql`.
   2. Add its `EmbeddedResource` line.
   3. Bump `MigrationRunner.LatestVersion`. The runner requires a contiguous 001..Latest sequence.
 - The runner strips `PRAGMA user_version` lines from scripts and sets the version itself. It takes a pre-migration backup automatically.
-- Some versions have C# hooks around the SQL: 29 (`PhaseOneMigration`) and 33 (`DirectStockCutover`).
+- Some versions have C# hooks around the SQL: 29 (`PhaseOneMigration`), 33 (`DirectStockCutover`) and 36 (`LedgerRemoval`, which refuses the drop unless the ledger holds nothing the documents lack and proves every P&L total is unchanged). The backup before 36 is named `pre-ledger-removal-v{N}` and rotation never deletes it. Tests and ScaleAudit can stop at an older version with the internal `MigrationRunner.RunTo`.
 - Never edit a shipped migration.
 
 ## Tests
