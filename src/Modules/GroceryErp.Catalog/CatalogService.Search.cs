@@ -142,7 +142,7 @@ public sealed partial class CatalogService
         return CatalogText.Optional(filter.Query, 120) ?? string.Empty;
     }
 
-    private static void AddFilterParameters(DynamicParameters parameters, ProductSearchFilter filter)
+    private void AddFilterParameters(DynamicParameters parameters, ProductSearchFilter filter)
     {
         parameters.Add("CategoryId", filter.CategoryId);
         parameters.Add("BrandId", filter.BrandId);
@@ -159,9 +159,10 @@ public sealed partial class CatalogService
         parameters.Add("expirySoon", ExpiryAsOf(filter).AddDays(30).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
     }
 
-    private static DateOnly ExpiryAsOf(ProductSearchFilter filter) => filter.ExpiryAsOf ?? DateOnly.FromDateTime(DateTime.Today);
+    // Expiry marks and filters follow the business date, as the lot filters and badges do.
+    private DateOnly ExpiryAsOf(ProductSearchFilter filter) => filter.ExpiryAsOf ?? clock.BusinessDate;
 
-    private static string ExpiryToday(ProductSearchFilter filter) =>
+    private string ExpiryToday(ProductSearchFilter filter) =>
         ExpiryAsOf(filter).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     // Shared by the page, count and ID resolution so a bulk action always means exactly the rows listed.
@@ -195,7 +196,7 @@ public sealed partial class CatalogService
         return $"{string.Join(" AND ", conditions)} {expiry} {vendor} {stock}";
     }
 
-    private static (string Sql, DynamicParameters Parameters) MatchingSql(ProductSearchFilter filter, string query,
+    private (string Sql, DynamicParameters Parameters) MatchingSql(ProductSearchFilter filter, string query,
         string select, string tail)
     {
         var parameters = new DynamicParameters();
@@ -217,7 +218,7 @@ public sealed partial class CatalogService
         return ($"SELECT {select} FROM product p {join} WHERE {FilterConditions(filter)} {search} {tail}", parameters);
     }
 
-    private static long[] ExactMatches(System.Data.IDbConnection connection, string query, ProductSearchFilter filter)
+    private long[] ExactMatches(System.Data.IDbConnection connection, string query, ProductSearchFilter filter)
     {
         var parameters = new DynamicParameters();
         AddFilterParameters(parameters, filter);

@@ -21,30 +21,21 @@
     NumberSubstitution.Substitution="European"
     mc:Ignorable="d">
   <DockPanel>
-    <ui:TitleBar DockPanel.Dock="Top" Title="{l:Tr App_Title}"/>
-  <Grid>
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-    </Grid.RowDefinitions>
-
-    <!-- One compact row keeps the brand, business date and device status above every page. -->
-    <Border Padding="14,4" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
-      <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-          <Image Width="32" Height="32" Margin="0,0,8,0"
+    <!-- One row above every page: the brand and business date, the device and backup status, then
+         the window buttons. Both content areas stay clickable; the rest of the bar drags the window. -->
+    <ui:TitleBar x:Name="ShellTitleBar" DockPanel.Dock="Top" Title="{l:Tr App_Title}" Height="44">
+      <ui:TitleBar.Header>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+          <Image Width="28" Height="28" Margin="0,0,8,0"
                  Source="/GroceryErp.App;component/Assets/logo.jpeg" Stretch="Uniform"/>
-          <TextBlock x:Name="StoreHeading" FontSize="16" FontWeight="SemiBold" Text="Hare Krushna"
+          <TextBlock x:Name="StoreHeading" FontSize="15" FontWeight="SemiBold" Text="Hare Krushna"
                      TextTrimming="CharacterEllipsis" VerticalAlignment="Center" MaxWidth="220"/>
-          <TextBlock Margin="8,0,0,0" FontSize="12" Opacity="0.72" Text="Dairy &amp; Grocery Store" VerticalAlignment="Center"/>
+          <TextBlock x:Name="StoreTagline" Margin="8,0,0,0" FontSize="12" Opacity="0.72" Text="Dairy &amp; Grocery Store" VerticalAlignment="Center"/>
           <TextBlock x:Name="BusinessDate" Margin="10,0,0,0" FontSize="12" Opacity="0.72" VerticalAlignment="Center"/>
         </StackPanel>
-        <WrapPanel Grid.Column="1" Margin="16,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Center">
+      </ui:TitleBar.Header>
+      <ui:TitleBar.TrailingContent>
+        <StackPanel x:Name="StatusBar" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,8,0">
           <Border x:Name="PrinterStatusBadge" MaxWidth="150" Margin="0,0,6,0" Padding="8,3" CornerRadius="5"
                   Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                   BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
@@ -64,15 +55,20 @@
                   ToolTip="{l:Tr Settings_Update_CheckFolder}" AutomationProperties.Name="{l:Tr Settings_Update_CheckFolder}" />
           <Button x:Name="LockButton" Style="{StaticResource ToolbarButton}" Click="Lock_OnClick" Content="{l:Tr Lock_Command}"
                   ToolTip="Ctrl+Shift+L" />
-          <Button Style="{StaticResource ToolbarButton}" Width="40" Command="{Binding UseEnglishCommand}" Content="EN"
+          <Button Style="{StaticResource ToolbarButton}" MinWidth="40" Padding="8,4" Command="{Binding UseEnglishCommand}" Content="EN"
                   ToolTip="{l:Tr Shell_English}" AutomationProperties.Name="{l:Tr Shell_English}" />
-          <Button Style="{StaticResource ToolbarButton}" Width="40" Margin="0" Command="{Binding UseGujaratiCommand}" Content="ગુ"
+          <Button Style="{StaticResource ToolbarButton}" MinWidth="40" Padding="8,4" Margin="0" Command="{Binding UseGujaratiCommand}" Content="ગુ"
                   ToolTip="{l:Tr Shell_Gujarati}" AutomationProperties.Name="{l:Tr Shell_Gujarati}" />
-        </WrapPanel>
-      </Grid>
-    </Border>
+        </StackPanel>
+      </ui:TitleBar.TrailingContent>
+    </ui:TitleBar>
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
 
-    <Border x:Name="MaintenanceWarning" Grid.Row="1" Visibility="Collapsed"
+    <Border x:Name="MaintenanceWarning" Grid.Row="0" Visibility="Collapsed"
             Padding="16,10" Background="{x:Static SystemColors.InfoBrush}"
             BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
       <DockPanel LastChildFill="True">
@@ -83,9 +79,9 @@
       </DockPanel>
     </Border>
 
-    <ui:NavigationView
+    <local:ShellNavigationView
         x:Name="RootNavigation"
-        Grid.Row="2"
+        Grid.Row="1"
         IsBackButtonVisible="Collapsed"
         IsPaneOpen="True"
         OpenPaneLength="220"
@@ -97,9 +93,9 @@
             Icon="{ui:SymbolIcon Home24}"
             TargetPageType="{x:Type local:DashboardPage}" />
       </ui:NavigationView.MenuItems>
-    </ui:NavigationView>
+    </local:ShellNavigationView>
 
-    <Border x:Name="LockOverlay" Grid.RowSpan="3" Panel.ZIndex="20" Background="White" Visibility="Collapsed">
+    <Border x:Name="LockOverlay" Grid.RowSpan="2" Panel.ZIndex="20" Background="White" Visibility="Collapsed">
       <Grid MaxWidth="1000" Margin="48,32" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" MinWidth="280"/>

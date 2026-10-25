@@ -1,0 +1,41 @@
+<Window x:Class="GroceryErp.App.Presentation.UpgradeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+        Title="{l:Tr Upgrade_Title}" Width="600" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen" FontFamily="{StaticResource AppFont}"
+        NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+  <!-- Confirms an upgrade with its estimate before the store changes, then shows its progress or
+       how to recover. -->
+  <StackPanel Margin="24,20">
+    <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr Upgrade_Title}"/>
+    <TextBlock x:Name="ContextText" Style="{StaticResource FormContext}" Margin="0,6,0,14"/>
+    <StackPanel x:Name="FactsPanel">
+      <TextBlock x:Name="EstimateText" Margin="0,0,0,6" TextWrapping="Wrap"/>
+      <TextBlock x:Name="SpaceText" Margin="0,0,0,6" TextWrapping="Wrap"/>
+      <TextBlock x:Name="BackupText" Margin="0,0,0,6" TextWrapping="Wrap"/>
+      <TextBlock x:Name="ArchiveText" Margin="0,0,0,6" TextWrapping="Wrap" Visibility="Collapsed"/>
+    </StackPanel>
+    <Border x:Name="SpaceWarning" Margin="0,8,0,0" Padding="12,8" CornerRadius="6" Visibility="Collapsed"
+            Background="{StaticResource ErrorSurfaceBrush}" BorderBrush="{StaticResource ErrorStrokeBrush}" BorderThickness="1">
+      <TextBlock x:Name="SpaceWarningText" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"/>
+    </Border>
+    <StackPanel x:Name="ProgressPanel" Margin="0,10,0,0" Visibility="Collapsed">
+      <TextBlock x:Name="StageText" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+      <ProgressBar x:Name="Progress" Height="8" Margin="0,10,0,6" Maximum="100" IsIndeterminate="True"
+                   AutomationProperties.Name="{l:Tr Upgrade_Title}"/>
+    </StackPanel>
+    <Border x:Name="FailurePanel" Margin="0,10,0,0" Padding="12,8" CornerRadius="6" Visibility="Collapsed"
+            Background="{StaticResource ErrorSurfaceBrush}" BorderBrush="{StaticResource ErrorStrokeBrush}" BorderThickness="1">
+      <StackPanel>
+        <TextBlock FontWeight="SemiBold" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Text="{l:Tr Upgrade_Failed}"/>
+        <TextBlock x:Name="ErrorText" Margin="0,4,0,0" TextWrapping="Wrap"/>
+        <TextBlock x:Name="RecoveryText" Margin="0,6,0,0" TextWrapping="Wrap"/>
+      </StackPanel>
+    </Border>
+    <StackPanel Style="{StaticResource FormFooter}" Margin="0,18,0,0">
+      <Button x:Name="BackupsButton" Margin="0,0,8,0" Visibility="Collapsed" Click="Backups_OnClick" Content="{l:Tr Upgrade_OpenBackups}"/>
+      <Button x:Name="ExitButton" Margin="0,0,8,0" IsCancel="True" Click="Exit_OnClick" Content="{l:Tr Upgrade_Exit}"/>
+      <Button x:Name="UpgradeButton" IsDefault="True" Click="Upgrade_OnClick" Content="{l:Tr Upgrade_Start}"/>
+    </StackPanel>
+  </StackPanel>
+</Window>

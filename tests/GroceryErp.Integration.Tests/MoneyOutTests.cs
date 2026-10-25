@@ -269,13 +269,13 @@ public sealed class MoneyOutTests
     public async Task ActionableExpiryCount_MatchesAlertViewAcrossThresholdChanges()
     {
         using var fixture = new Fixture();
-        string soon = DateOnly.FromDateTime(DateTime.Now).AddDays(3)
-            .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        string soon = Iso(fixture.Today.AddDays(3));
         using var connection = fixture.Factory.Open();
         connection.Execute("UPDATE product_lot SET expiry_date=@soon WHERE id=@id", new { soon, id = fixture.LotId });
         long productId = connection.ExecuteScalar<long>("SELECT product_id FROM product_lot WHERE id=@id", new { id = fixture.LotId });
         async Task CheckAsync() => (await fixture.MoneyOut.GetActionableExpiryCountAsync(TestContext.Current.CancellationToken))
-            .ShouldBe(connection.ExecuteScalar<int>("SELECT COUNT(*) FROM v_expiry_alert WHERE bucket IN ('EXPIRED','CRITICAL')"));
+            .ShouldBe(connection.ExecuteScalar<int>($"SELECT COUNT(*) FROM ({ExpiryAlertAsOfSql}) WHERE bucket IN ('EXPIRED','CRITICAL')",
+                new { asOf = Iso(fixture.Today) }));
         await CheckAsync();
         connection.Execute("UPDATE product SET expiry_alert_days=2 WHERE id=@productId", new { productId });
         await CheckAsync();
@@ -613,6 +613,19 @@ public sealed class MoneyOutTests
     }
 
     private static string Iso(DateOnly date) => date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
+    // The v_expiry_alert rules as of a given business date; the view itself counts from the machine clock.
+    private const string ExpiryAlertAsOfSql = """
+        SELECT *,CASE WHEN days_left<0 THEN 'EXPIRED' WHEN days_left<=7 THEN 'CRITICAL' ELSE 'SOON' END AS bucket
+        FROM (
+          SELECT CAST(julianday(l.expiry_date)-julianday(@asOf) AS INTEGER) AS days_left,
+                 COALESCE(p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
+                          CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30) AS alert_days
+          FROM product_lot l JOIN product p ON p.id=l.product_id
+          JOIN category c ON c.id=p.category_id LEFT JOIN category pc ON pc.id=c.parent_id
+          WHERE l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date IS NOT NULL
+        ) WHERE days_left<=alert_days
+        """;
 
     private sealed class FixedClock(DateOnly date) : IClock
     {

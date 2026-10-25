@@ -30,7 +30,8 @@
     <Setter Property="FontSize" Value="20" />
     <Setter Property="FontWeight" Value="SemiBold" />
   </Style>
-  <!-- Table pages: one title/action row, one filter row, the table, one footer row. -->
+  <!-- Table pages: one title row (title, status and pager, actions), one filter row, then the table
+       down to the bottom edge. -->
   <Style x:Key="PageTitle" TargetType="TextBlock">
     <Setter Property="FontSize" Value="20" />
     <Setter Property="FontWeight" Value="SemiBold" />
@@ -42,6 +43,13 @@
     <Setter Property="MinWidth" Value="0" />
     <Setter Property="Padding" Value="12,4" />
     <Setter Property="Margin" Value="0,0,6,0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <!-- The previous/next page arrows beside a title row's status line. -->
+  <Style x:Key="PagerButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+    <Setter Property="MinHeight" Value="32" />
+    <Setter Property="MinWidth" Value="32" />
+    <Setter Property="Padding" Value="6,2" />
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
   <Style x:Key="FilterLabel" TargetType="TextBlock">

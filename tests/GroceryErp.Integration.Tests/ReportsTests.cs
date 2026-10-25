@@ -712,7 +712,7 @@ public sealed class ReportsTests
                 INSERT INTO product(sku,name,category_id,uom_id,is_active,reorder_level,expiry_alert_days)
                 VALUES ('D-I','Inactive',@category,@uom,0,5000,30) RETURNING id
                 """, new { category, uom });
-            DateOnly localToday = DateOnly.FromDateTime(DateTime.Now);
+            DateOnly localToday = businessDate;
             connection.Execute("""
                 INSERT INTO product_lot(product_id,lot_code,received_date,expiry_date,unit_cost,selling_price,qty_received,qty_on_hand)
                 VALUES (@active,'EXPIRED','2026-09-01',@expired,2000,3000,1000,1000),
@@ -760,12 +760,12 @@ public sealed class ReportsTests
         {
             (long Expired, long Critical, long Soon) expected;
             using (var connection = fixture.Factory.Open())
-                expected = connection.QuerySingle<(long Expired, long Critical, long Soon)>("""
+                expected = connection.QuerySingle<(long Expired, long Critical, long Soon)>($"""
                     SELECT COUNT(*) FILTER (WHERE bucket='EXPIRED'),
                            COUNT(*) FILTER (WHERE bucket='CRITICAL'),
                            COUNT(*) FILTER (WHERE bucket='SOON')
-                    FROM v_expiry_alert
-                    """);
+                    FROM ({ExpiryAlertAsOfSql})
+                    """, new { asOf = "2026-09-27" });
             DashboardSummary actual = await fixture.Reports.GetDashboardAsync(TestContext.Current.CancellationToken);
             actual.ExpiredLots.ShouldBe((int)expected.Expired);
             actual.CriticalLots.ShouldBe((int)expected.Critical);
@@ -797,7 +797,7 @@ public sealed class ReportsTests
                 """, new
             {
                 productId = connection.ExecuteScalar<long>("SELECT id FROM product WHERE sku='D-A'"),
-                expiry = DateOnly.FromDateTime(DateTime.Now).AddDays(45)
+                expiry = businessDate.AddDays(45)
                     .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
             });
         }
@@ -1147,6 +1147,19 @@ public sealed class ReportsTests
             if (Directory.Exists(Root)) Directory.Delete(Root, recursive: true);
         }
     }
+
+    // The v_expiry_alert rules as of a given business date; the view itself counts from the machine clock.
+    private const string ExpiryAlertAsOfSql = """
+        SELECT *,CASE WHEN days_left<0 THEN 'EXPIRED' WHEN days_left<=7 THEN 'CRITICAL' ELSE 'SOON' END AS bucket
+        FROM (
+          SELECT CAST(julianday(l.expiry_date)-julianday(@asOf) AS INTEGER) AS days_left,
+                 COALESCE(p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
+                          CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30) AS alert_days
+          FROM product_lot l JOIN product p ON p.id=l.product_id
+          JOIN category c ON c.id=p.category_id LEFT JOIN category pc ON pc.id=c.parent_id
+          WHERE l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date IS NOT NULL
+        ) WHERE days_left<=alert_days
+        """;
 
     private sealed class FixedClock(DateOnly date) : IClock
     {

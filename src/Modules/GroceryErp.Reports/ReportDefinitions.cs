@@ -2,13 +2,15 @@ namespace GroceryErp.Reports;
 
 internal static class ReportDefinitions
 {
+    // Both stock aggregates read most lots, so they scan the table in order: on the 223,272-lot
+    // rehearsal store an index walk with a row lookup per lot took 1.5-2.0 s, the scan 0.1-0.2 s.
     public const string StockValueWithoutExpired = """
         WITH available AS MATERIALIZED (
           SELECT l.product_id,SUM(l.qty_on_hand) AS quantity,
                  SUM(CAST(ROUND(l.qty_on_hand*l.unit_cost/1000.0) AS INTEGER)) AS cost_value,
                  SUM(CAST(ROUND(l.qty_on_hand*l.selling_price/1000.0) AS INTEGER)) AS selling_value,
                  SUM(CAST(ROUND(l.qty_on_hand*COALESCE(l.mrp,l.selling_price)/1000.0) AS INTEGER)) AS mrp_value
-          FROM product_lot l
+          FROM product_lot l NOT INDEXED
           WHERE l.qty_on_hand>0 AND (l.expiry_date IS NULL OR l.expiry_date>=@stockAsOf)
           GROUP BY l.product_id
         )
@@ -17,7 +19,7 @@ internal static class ReportDefinitions
                t.selling_value AS SellingValue,t.mrp_value AS MrpValue
         FROM available t JOIN product p ON p.id=t.product_id
         JOIN category c ON c.id=p.category_id
-        ORDER BY c.name,p.name LIMIT @Limit
+        ORDER BY c.name,p.name,p.id LIMIT @Limit
         """;
 
     // Unsold stock in lots that expired before the as-of date. The current-stock
@@ -25,7 +27,7 @@ internal static class ReportDefinitions
     public const string ExpiredStockTotals = """
         SELECT COUNT(*) AS Lots,COALESCE(SUM(qty_on_hand),0) AS Quantity,
                COALESCE(SUM(CAST(ROUND(qty_on_hand*unit_cost/1000.0) AS INTEGER)),0) AS CostValue
-        FROM product_lot INDEXED BY ix_lot_expiry
+        FROM product_lot NOT INDEXED
         WHERE qty_on_hand>0 AND expiry_date IS NOT NULL AND expiry_date<@stockAsOf
         """;
 
@@ -223,6 +225,9 @@ internal static class ReportDefinitions
                 ORDER BY s.sale_date,s.id LIMIT @Limit
                 """, [D("Date", "Date"), T("Invoice", "Invoice"), T("Status", "Status"), I("Items", "Items"), M("Taxable", "Taxable"), M("Tax", "Tax"), M("RoundOff", "Round off"), M("Total", "Total"), M("OriginalTotal", "Original bill"), T("PaymentMode", "Payment mode")]),
 
+            // Totals are grouped by product before the product and category joins: joining first made
+            // SQLite index and sort every sale line (1.0 GB and 18.7 s for all dates on the full-size
+            // store); this sorts narrower rows once (10 s and 95 MiB with the sort spilled to disk).
             [ReportKind.ItemSales] = new("Item-wise sales", true, """
                 WITH movements AS (
                   SELECT sl.product_id,sl.product_name,sl.product_name_local,sl.qty,sl.taxable_amount,sl.cost_amount
@@ -232,13 +237,15 @@ internal static class ReportDefinitions
                   SELECT sl.product_id,sl.product_name,sl.product_name_local,-rl.qty,-rl.taxable_amount,-rl.cost_amount
                   FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
                   JOIN sale_line sl ON sl.id=rl.sale_line_id WHERE r.return_date BETWEEN @from AND @to
+                ), totals AS MATERIALIZED (
+                  SELECT product_id,MAX(product_name) AS name,MAX(product_name_local) AS local_name,
+                         SUM(qty) AS quantity,SUM(taxable_amount) AS revenue,SUM(cost_amount) AS cost
+                  FROM movements WHERE (@ProductId IS NULL OR product_id=@ProductId) GROUP BY product_id
                 )
-                SELECT c.name AS Category,p.sku AS Sku,MAX(m.product_name) AS Product,MAX(m.product_name_local) AS LocalName,
-                       SUM(m.qty) AS Quantity,SUM(m.taxable_amount) AS Revenue,SUM(m.cost_amount) AS Cost,
-                       SUM(m.taxable_amount-m.cost_amount) AS Margin
-                FROM movements m JOIN product p ON p.id=m.product_id JOIN category c ON c.id=p.category_id
-                WHERE (@ProductId IS NULL OR m.product_id=@ProductId)
-                GROUP BY c.id,m.product_id ORDER BY c.name,Revenue DESC LIMIT @Limit
+                SELECT c.name AS Category,p.sku AS Sku,t.name AS Product,t.local_name AS LocalName,
+                       t.quantity AS Quantity,t.revenue AS Revenue,t.cost AS Cost,t.revenue-t.cost AS Margin
+                FROM totals t JOIN product p ON p.id=t.product_id JOIN category c ON c.id=p.category_id
+                ORDER BY c.name,Revenue DESC LIMIT @Limit
                 """, [T("Category", "Category"), T("Sku", "SKU"), T("Product", "Product"), T("LocalName", "Local name"), Q("Quantity", "Quantity"), M("Revenue", "Revenue"), M("Cost", "Cost"), M("Margin", "Margin")]),
 
             [ReportKind.CategorySales] = new("Category-wise sales and margin", true, """
@@ -288,7 +295,7 @@ internal static class ReportDefinitions
                 FROM product_stock_total t JOIN product p ON p.id=t.product_id
                 JOIN category c ON c.id=p.category_id
                 WHERE t.quantity<>0 OR t.cost_value<>0 OR t.selling_value<>0 OR t.mrp_value<>0
-                ORDER BY c.name,p.name LIMIT @Limit
+                ORDER BY c.name,p.name,p.id LIMIT @Limit
                 """, [T("Category", "Category"), T("Sku", "SKU"), T("Product", "Product"), T("LocalName", "Local name"), T("Class", "Type"), Q("Quantity", "Quantity"), M("CostValue", "Cost value"), M("SellingValue", "Selling value"), M("MrpValue", "MRP value")]),
 
             // Computed per lot from source documents by ReportService; the columns are fixed here.
@@ -326,11 +333,24 @@ internal static class ReportDefinitions
                 ORDER BY t.cost_value DESC LIMIT @Limit
                 """, [T("Sku", "SKU"), T("Product", "Product"), T("LocalName", "Local name"), Q("Quantity", "Quantity"), M("Value", "Value tied up"), D("LastSold", "Last sold")]),
 
+            // The v_expiry_alert rules as of the business date; the view itself counts from the machine clock.
             [ReportKind.Expiry] = new("Expiry", false, """
                 SELECT e.bucket AS Status,e.sku AS Sku,e.name AS Product,e.name_local AS LocalName,e.lot_code AS Lot,
                        e.batch_no AS Batch,e.expiry_date AS Expiry,e.days_left AS DaysLeft,e.qty_on_hand AS Quantity,
                        e.value_at_cost AS CostValue,v.name AS Vendor
-                FROM v_expiry_alert e LEFT JOIN vendor v ON v.id=e.vendor_id
+                FROM (
+                  SELECT *,CASE WHEN days_left<0 THEN 'EXPIRED' WHEN days_left<=7 THEN 'CRITICAL' ELSE 'SOON' END AS bucket
+                  FROM (
+                    SELECT l.lot_code,l.batch_no,l.vendor_id,p.sku,p.name,p.name_local,l.expiry_date,l.qty_on_hand,
+                           CAST(julianday(l.expiry_date)-julianday(@stockAsOf) AS INTEGER) AS days_left,
+                           COALESCE(p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
+                                    CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30) AS alert_days,
+                           CAST(ROUND(l.qty_on_hand*l.unit_cost/1000.0) AS INTEGER) AS value_at_cost
+                    FROM product_lot l JOIN product p ON p.id=l.product_id
+                    JOIN category c ON c.id=p.category_id LEFT JOIN category pc ON pc.id=c.parent_id
+                    WHERE l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date IS NOT NULL
+                  ) WHERE days_left<=alert_days
+                ) e LEFT JOIN vendor v ON v.id=e.vendor_id
                 WHERE (@Status IS NULL OR e.bucket=@Status)
                 ORDER BY e.days_left,e.name LIMIT @Limit
                 """, [T("Status", "Status"), T("Sku", "SKU"), T("Product", "Product"), T("LocalName", "Local name"), T("Lot", "Lot"), T("Batch", "Batch"), D("Expiry", "Expiry"), I("DaysLeft", "Days left"), Q("Quantity", "Quantity"), M("CostValue", "Cost value"), T("Vendor", "Vendor")]),

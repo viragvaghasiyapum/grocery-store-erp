@@ -64,7 +64,7 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
               SELECT sales,bills,taxable,taxable-cost AS gross_profit
               FROM pnl_day WHERE day=@today
             ), expiry_bounds AS MATERIALIZED (
-              SELECT date('now','localtime') AS day,MAX(alert_days) AS max_days FROM (
+              SELECT @today AS day,MAX(alert_days) AS max_days FROM (
                 SELECT COALESCE(MAX(expiry_alert_days),0) AS alert_days FROM product
                 UNION ALL SELECT COALESCE(MAX(expiry_alert_days),0) FROM category
                 UNION ALL SELECT COALESCE(CAST(value AS INTEGER),30)
@@ -247,6 +247,8 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
         ReportDefinition definition = Definition(kind);
         return database.ReadAsync(connection =>
         {
+            // A long period groups millions of sale lines; their sort must not live in the app's memory.
+            using IDisposable spill = LargeSort.SpillToDisk(connection);
             string sql = SelectReportSql(kind, filter, definition.Sql);
             string deltaFrom = Iso(from);
             string deltaTo = Iso(from);
@@ -338,6 +340,7 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
                 DateOnly previousFrom = previousTo.AddDays(1 - days);
                 exported = await database.ReadAsync(connection =>
                 {
+                    using IDisposable spill = LargeSort.SpillToDisk(connection);
                     using var writer = new StreamWriter(temporary, false, new UTF8Encoding(true), 64 * 1024);
                     writer.WriteLine(CsvContext(kind, filter, period));
                     writer.WriteLine(string.Join(',', definition.Columns.Select(column => CsvText(

@@ -62,7 +62,7 @@ public partial class BulkActionWindow : Window
         {
             _plan = await _action.Plan(_lifetime.Token);
             BulkCandidate[] eligible = _plan.Candidates.Where(static candidate => candidate.Eligible).ToArray();
-            _batches = eligible.Select(static candidate => candidate.Id).Chunk(Math.Clamp(_action.BatchSize, 1, BulkBatch.MaxBatchSize)).ToArray();
+            _batches = _action.Batches(eligible);
             PlanText.Text = TranslationSource.Instance.Format("Bulk_PlanSummary", _plan.Candidates.Count, eligible.Length,
                 _plan.Candidates.Count - eligible.Length);
             string[] reasons = _plan.Candidates.Where(static candidate => !candidate.Eligible)

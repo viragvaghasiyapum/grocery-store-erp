@@ -104,8 +104,7 @@ public partial class ProductsPage : Page
         };
     }
 
-    private static DateOnly BusinessDate =>
-        (Application.Current as App)?.ServicesOrNull?.GetService<IClock>()?.BusinessDate ?? DateOnly.FromDateTime(DateTime.Today);
+    private static DateOnly BusinessDate => App.BusinessDate;
 
     private sealed record State(string Search, int Class, int Status, long CategoryId, int Stock, int Expiry,
         long BrandId, long VendorId, bool NoBarcode, bool MissingLocal, bool Loose, bool MoreFilters);
@@ -460,12 +459,15 @@ public partial class ProductsPage : Page
             RunLabel = TranslationSource.Instance["Catalog_Apply"],
             SelectionSummary = SelectionSummary(),
             Destructive = destructive,
+            // A category change re-files each product's older sale lines, so its batches are cut by line count.
+            WeightBudget = command.Action == CatalogBulkAction.Category ? CatalogService.CategoryBatchSaleLines : null,
             Plan = async token =>
             {
                 CatalogBulkPreview preview = await _catalog.PreviewBulkAsync(
                     await SelectedIdsAsync(CatalogService.MaxBulkProducts, token), command, token);
                 return new BulkPlan(preview.Rows.Select(static row => new BulkCandidate(row.Id,
-                        string.IsNullOrEmpty(row.Sku) ? row.Name : $"{row.Sku} · {row.Name}", row.Eligible, row.ReasonKey)).ToArray(),
+                        string.IsNullOrEmpty(row.Sku) ? row.Name : $"{row.Sku} · {row.Name}", row.Eligible, row.ReasonKey,
+                        row.SaleLines)).ToArray(),
                     TranslationSource.Instance.Format("Catalog_BulkEffect", preview.EligibleIds.Count,
                         preview.AffectedQuantity, preview.AffectedCost));
             },

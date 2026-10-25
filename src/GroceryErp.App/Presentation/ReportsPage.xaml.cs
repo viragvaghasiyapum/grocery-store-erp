@@ -473,8 +473,9 @@ public partial class ReportsPage : Page
         };
         foreach ((FrameworkElement panel, bool applies) in filters)
             panel.Visibility = applies ? Visibility.Visible : Visibility.Collapsed;
-        MoreFiltersExpander.Visibility = !pnl && filters.Any(static filter => filter.Applies)
-            ? Visibility.Visible : Visibility.Collapsed;
+        bool more = !pnl && filters.Any(static filter => filter.Applies);
+        MoreFiltersToggle.Visibility = more ? Visibility.Visible : Visibility.Collapsed;
+        MoreFiltersPanel.Visibility = more && MoreFiltersToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         StatusPicker.IsEnabled = sales || expiry;
         PaymentPicker.IsEnabled = sales;
         ProductFilter.IsEnabled = kind is ReportKind.ItemSales or ReportKind.StockReconciliation;
@@ -706,6 +707,9 @@ public partial class ReportsPage : Page
             ShowExportProgress(false);
         }
     }
+
+    private void MoreFilters_OnClick(object sender, RoutedEventArgs e) =>
+        MoreFiltersPanel.Visibility = MoreFiltersToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
 
     private void ShowExportProgress(bool running)
     {

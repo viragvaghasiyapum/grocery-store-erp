@@ -4,13 +4,14 @@ using GroceryErp.Catalog.Barcodes;
 using GroceryErp.Core.Errors;
 using GroceryErp.Core.Messages;
 using GroceryErp.Core.Numerics;
+using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
 using GroceryErp.Inventory.Contracts;
 
 namespace GroceryErp.Catalog;
 
-public sealed partial class CatalogService(DbExecutor database, IAuditLog audit, ISettings settings)
+public sealed partial class CatalogService(DbExecutor database, IAuditLog audit, ISettings settings, IClock clock)
 {
     // Only the choice of query plan is cached. Row IDs and product fields are
     // always read afresh, so edits in another process cannot return stale rows.

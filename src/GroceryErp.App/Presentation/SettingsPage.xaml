@@ -47,7 +47,7 @@
           <TextBlock x:Name="CompactStatus" TextWrapping="Wrap" Opacity="0.72"/>
           <TextBlock Margin="0,10,0,4" Text="{l:Tr Settings_RemovableDrive}"/>
           <DockPanel><Button DockPanel.Dock="Right" Margin="8,0,0,0" Click="RefreshDrives_OnClick" Content="{l:Tr Stock_Refresh}"/>
-            <ComboBox x:Name="RemovableDrives" MinWidth="260"/>
+            <ComboBox x:Name="RemovableDrives" AutomationProperties.Name="{l:Tr Settings_RemovableDrive}" MinWidth="260"/>
           </DockPanel>
         </StackPanel>
       </Border>
@@ -58,7 +58,7 @@
           <TextBlock Margin="0,8,0,12" Text="{l:Tr Settings_ScannerPortHelp}" TextWrapping="Wrap" Opacity="0.72"/>
           <DockPanel>
             <Button DockPanel.Dock="Right" Margin="8,0,0,0" Click="RefreshScannerPorts_OnClick" Content="{l:Tr Stock_Refresh}"/>
-            <ComboBox x:Name="ScannerPort" MinWidth="220"/>
+            <ComboBox x:Name="ScannerPort" AutomationProperties.Name="{l:Tr Settings_ScannerTitle}" MinWidth="220"/>
           </DockPanel>
           <Button x:Name="SaveScannerPortButton" HorizontalAlignment="Left" Margin="0,12,0,0"
                   Click="SaveScannerPort_OnClick" Content="{l:Tr Settings_SaveScannerPort}"/>
@@ -67,13 +67,21 @@
 
       <Border Margin="0,16,0,0" Padding="20" CornerRadius="8" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
         <StackPanel>
+          <TextBlock FontSize="20" FontWeight="SemiBold" Text="{l:Tr Settings_DisplayTitle}"/>
+          <TextBlock Margin="0,8,0,12" Text="{l:Tr Settings_HardwareRenderingHelp}" TextWrapping="Wrap" Opacity="0.72"/>
+          <CheckBox x:Name="HardwareRendering" Click="HardwareRendering_OnClick" Content="{l:Tr Settings_HardwareRendering}"/>
+        </StackPanel>
+      </Border>
+
+      <Border Margin="0,16,0,0" Padding="20" CornerRadius="8" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+        <StackPanel>
           <TextBlock FontSize="20" FontWeight="SemiBold" Text="{l:Tr Settings_DataTitle}"/>
           <TextBlock Margin="0,12,0,4" Text="{l:Tr Setup_DataFolder}"/>
-          <TextBox x:Name="DataRoot" IsReadOnly="True" ToolTip="{Binding Text, ElementName=DataRoot}"/>
+          <TextBox x:Name="DataRoot" AutomationProperties.Name="{l:Tr Setup_DataFolder}" IsReadOnly="True" ToolTip="{Binding Text, ElementName=DataRoot}"/>
           <Button x:Name="MoveDataButton" HorizontalAlignment="Left" Margin="0,10,0,2" Click="MoveData_OnClick" Content="{l:Tr Settings_MoveData}"/>
           <TextBlock Text="{l:Tr Settings_MoveDataHelp}" TextWrapping="Wrap" Opacity="0.72"/>
           <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_BackupFolder}"/>
-          <TextBox x:Name="BackupFolder" IsReadOnly="True" ToolTip="{Binding Text, ElementName=BackupFolder}"/>
+          <TextBox x:Name="BackupFolder" AutomationProperties.Name="{l:Tr Setup_BackupFolder}" IsReadOnly="True" ToolTip="{Binding Text, ElementName=BackupFolder}"/>
         </StackPanel>
       </Border>
 
@@ -81,11 +89,11 @@
         <StackPanel>
           <TextBlock FontSize="20" FontWeight="SemiBold" Text="{l:Tr Settings_ChangePassword}"/>
           <TextBlock Margin="0,12,0,4" Text="{l:Tr Settings_CurrentPassword}"/>
-          <PasswordBox x:Name="CurrentPassword"/>
+          <PasswordBox x:Name="CurrentPassword" AutomationProperties.Name="{l:Tr Settings_CurrentPassword}"/>
           <TextBlock Margin="0,10,0,4" Text="{l:Tr Settings_NewPassword}"/>
-          <PasswordBox x:Name="NewPassword"/>
+          <PasswordBox x:Name="NewPassword" AutomationProperties.Name="{l:Tr Settings_NewPassword}"/>
           <TextBlock Margin="0,10,0,4" Text="{l:Tr Setup_ConfirmPassword}"/>
-          <PasswordBox x:Name="ConfirmPassword"/>
+          <PasswordBox x:Name="ConfirmPassword" AutomationProperties.Name="{l:Tr Setup_ConfirmPassword}"/>
           <Button x:Name="ChangePasswordButton" Style="{StaticResource SettingsPrimaryAction}" HorizontalAlignment="Left" Margin="0,16,0,0" Click="ChangePassword_OnClick" Content="{l:Tr Settings_SavePassword}"/>
         </StackPanel>
       </Border>

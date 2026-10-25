@@ -8,6 +8,7 @@ using GroceryErp.Data.Services;
 using GroceryErp.Inventory;
 using GroceryErp.Inventory.Contracts;
 using GroceryErp.Purchasing;
+using GroceryErp.Sales;
 using Shouldly;
 using Xunit;
 
@@ -20,7 +21,7 @@ public sealed class StockInTests
     {
         using var fixture = new StockInFixture();
         CancellationToken ct = TestContext.Current.CancellationToken;
-        var catalog = new CatalogService(fixture.Database, new AuditLog(), fixture.Settings);
+        var catalog = new CatalogService(fixture.Database, new AuditLog(), fixture.Settings, new SystemClock(fixture.Settings));
         ProductInput source = (await catalog.GetAsync(fixture.ProductId, ct)).Product;
         long directProduct = await catalog.CreateWithDirectLotAsync(
             source with { Sku = "LIVE-DIRECT", Name = "Direct stock", HsnCode = "1234", Barcodes = [] },
@@ -59,7 +60,7 @@ public sealed class StockInTests
     {
         using var fixture = new StockInFixture();
         CancellationToken ct = TestContext.Current.CancellationToken;
-        var catalog = new CatalogService(fixture.Database, new AuditLog(), fixture.Settings);
+        var catalog = new CatalogService(fixture.Database, new AuditLog(), fixture.Settings, new SystemClock(fixture.Settings));
         ProductInput source = (await catalog.GetAsync(fixture.ProductId, ct)).Product;
         var input = source with { Sku = "PH3-DIRECT", Name = "Direct product", HsnCode = "1234", Barcodes = [] };
         var firstLot = new NewProductLotInput(new Quantity(3), new Money(20), new Money(30),
@@ -279,7 +280,7 @@ public sealed class StockInTests
         using var verify = fixture.Factory.Open();
         verify.ExecuteScalar<long>("SELECT is_low FROM product_stock_total WHERE product_id=@id",
             new { id = fixture.ProductId }).ShouldBe(1);
-        var catalog = new CatalogService(fixture.Database, new AuditLog(), fixture.Settings);
+        var catalog = new CatalogService(fixture.Database, new AuditLog(), fixture.Settings, new SystemClock(fixture.Settings));
         (await catalog.SearchPageAsync(new ProductSearchFilter(LowStockOnly: true),
             cancellationToken: ct)).Items.Select(static item => item.Id).ShouldContain(fixture.ProductId);
     }
@@ -460,6 +461,39 @@ public sealed class StockInTests
         DomainException exception = await Should.ThrowAsync<DomainException>(() => fixture.Purchasing.CancelAsync(
             purchaseId, fixture.Date, OperationGuard.NewId(), TestContext.Current.CancellationToken));
         exception.Code.ShouldBe(ErrorCode.CancelNotAllowed);
+    }
+
+    // "Untouched" means no document ever used a lot, not that its quantity is back to the receipt.
+    [Fact]
+    public async Task Purchase_SoldThenFullyReturned_StaysTouchedAndCannotBeVoided()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long purchaseId = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("INV-TOUCHED"), ct);
+        long lot = (await fixture.Purchasing.PostAsync(purchaseId, OperationGuard.NewId(), ct)).LotIds[0];
+        var sales = new SalesService(fixture.Database, fixture.Ledger, new DocNumberService(fixture.Settings), fixture.Periods,
+            fixture.Settings, new AuditLog(), new FixedClock(fixture.Date));
+        long sale = await sales.CreateDraftAsync(fixture.Date, ct);
+        await sales.AddProductAsync(sale, fixture.ProductId, new Quantity(2), cancellationToken: ct);
+        await sales.CompleteAsync(new(sale, [new(PaymentMode.Cash, (await sales.GetAsync(sale, ct)).Totals.GrandTotal)],
+            OperationGuard.NewId()), ct);
+        long line = (await sales.GetAsync(sale, ct)).Lines.Single().Id;
+        await sales.ReturnAsync(new(sale, fixture.Date, "Customer changed mind", RefundMode.Cash,
+            [new ReturnLineInput(line, new Quantity(2), true)], OperationGuard.NewId()), ct);
+        using (var connection = fixture.Factory.Open())
+            connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@lot", new { lot })
+                .ShouldBe(new Quantity(11).Scaled);
+
+        DomainException exception = await Should.ThrowAsync<DomainException>(() => fixture.Purchasing.CancelAsync(
+            purchaseId, fixture.Date, OperationGuard.NewId(), ct));
+
+        exception.Code.ShouldBe(ErrorCode.CancelNotAllowed);
+        using var after = fixture.Factory.Open();
+        after.ExecuteScalar<string>("SELECT status FROM purchase WHERE id=@purchaseId", new { purchaseId }).ShouldBe("POSTED");
+        after.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@lot", new { lot }).ShouldBe(new Quantity(11).Scaled);
+        LotSourceReconciliation.CheckLot(after, null, lot).ShouldBeNull();
+        // A partial vendor return remains the way to send that stock back.
+        (await fixture.Purchasing.GetVendorReturnLotsAsync(purchaseId, ct)).Single().Returnable.ShouldBe(new Quantity(11));
     }
 
     [Fact]

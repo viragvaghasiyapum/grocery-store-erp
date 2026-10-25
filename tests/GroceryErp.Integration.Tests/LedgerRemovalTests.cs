@@ -57,7 +57,7 @@ public sealed class LedgerRemovalTests
                 """, new { lot });
         }
 
-        Should.Throw<InvalidOperationException>(store.Runner.Run).Message.ShouldContain("after the direct-stock upgrade");
+        Should.Throw<InvalidOperationException>(() => store.Runner.Run()).Message.ShouldContain("after the direct-stock upgrade");
 
         using SqliteConnection after = store.Factory.Open();
         after.ExecuteScalar<long>("PRAGMA user_version").ShouldBe(35L);
@@ -82,7 +82,7 @@ public sealed class LedgerRemovalTests
                 """, new { lot });
         }
 
-        Should.Throw<InvalidOperationException>(store.Runner.Run).Message.ShouldContain("no carried-forward correction");
+        Should.Throw<InvalidOperationException>(() => store.Runner.Run()).Message.ShouldContain("no carried-forward correction");
 
         using SqliteConnection after = store.Factory.Open();
         after.ExecuteScalar<long>("PRAGMA user_version").ShouldBe(35L);

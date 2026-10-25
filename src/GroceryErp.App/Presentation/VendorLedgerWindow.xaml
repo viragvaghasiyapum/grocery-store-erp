@@ -14,7 +14,7 @@
       <TabItem Header="{l:Tr Purchasing_Purchases}">
         <DataGrid x:Name="PurchasesGrid" Style="{StaticResource CatalogGrid}">
           <DataGrid.Columns>
-            <DataGridTextColumn Width="140" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date}"/>
+            <DataGridTextColumn Width="140" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date, StringFormat=dd MMM yyyy}"/>
             <DataGridTextColumn Width="230" Header="{l:Tr Purchasing_Document}" Binding="{Binding Reference}"/>
             <DataGridTextColumn Width="150" Header="{l:Tr Purchasing_Total}" Binding="{Binding Debit}"/>
             <DataGridTextColumn Width="150" Header="{l:Tr Purchasing_Balance}" Binding="{Binding Balance}"/>
@@ -24,7 +24,7 @@
       <TabItem Header="{l:Tr Purchasing_Payments}">
         <DataGrid x:Name="PaymentsGrid" Style="{StaticResource CatalogGrid}">
           <DataGrid.Columns>
-            <DataGridTextColumn Width="140" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date}"/>
+            <DataGridTextColumn Width="140" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date, StringFormat=dd MMM yyyy}"/>
             <DataGridTextColumn Width="230" Header="{l:Tr Purchasing_Reference}" Binding="{Binding Reference}"/>
             <DataGridTextColumn Width="150" Header="{l:Tr Purchasing_Amount}" Binding="{Binding Credit}"/>
             <DataGridTextColumn Width="150" Header="{l:Tr Purchasing_Balance}" Binding="{Binding Balance}"/>
@@ -34,7 +34,7 @@
       <TabItem Header="{l:Tr Purchasing_VendorReturns}">
         <DataGrid x:Name="ReturnsGrid" Style="{StaticResource CatalogGrid}">
           <DataGrid.Columns>
-            <DataGridTextColumn Width="140" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date}"/>
+            <DataGridTextColumn Width="140" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date, StringFormat=dd MMM yyyy}"/>
             <DataGridTextColumn Width="230" Header="{l:Tr Purchasing_Document}" Binding="{Binding Reference}"/>
             <DataGridTextColumn Width="150" Header="{l:Tr Purchasing_Credit}" Binding="{Binding Credit}"/>
             <DataGridTextColumn Width="150" Header="{l:Tr Purchasing_Balance}" Binding="{Binding Balance}"/>
@@ -44,7 +44,7 @@
       <TabItem Header="{l:Tr Purchasing_VendorLedger}">
         <DataGrid x:Name="LedgerGrid" Style="{StaticResource CatalogGrid}">
           <DataGrid.Columns>
-            <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date}"/>
+            <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date, StringFormat=dd MMM yyyy}"/>
             <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Mode}" Binding="{Binding Kind}"/>
             <DataGridTextColumn Width="180" Header="{l:Tr Purchasing_Document}" Binding="{Binding Reference}"/>
             <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Debit}" Binding="{Binding Debit}"/>
@@ -59,8 +59,8 @@
             <DataGridTextColumn Width="240" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
             <DataGridTextColumn Width="130" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
             <DataGridTextColumn Width="120" Header="{l:Tr Stock_Batch}" Binding="{Binding BatchNumber}"/>
-            <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Received}" Binding="{Binding ReceivedDate}"/>
-            <DataGridTextColumn Width="120" Header="{l:Tr Stock_Expiry}" Binding="{Binding ExpiryDate}"/>
+            <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Received}" Binding="{Binding ReceivedDate, StringFormat=dd MMM yyyy}"/>
+            <DataGridTextColumn Width="120" Header="{l:Tr Stock_Expiry}" Binding="{Binding ExpiryDate, StringFormat=dd MMM yyyy}"/>
             <DataGridTextColumn Width="110" Header="{l:Tr Stock_OnHand}" Binding="{Binding OnHand}"/>
           </DataGrid.Columns>
         </DataGrid>

@@ -38,8 +38,7 @@ public partial class VendorPaymentWindow : Window
             {
                 VendorBox.ItemsSource = await _purchasing.GetVendorsAsync(includeInactive: true);
                 if (_vendorId is long id) VendorBox.SelectedValue = id;
-                DateBox.SelectedDate = ((Application.Current as App)?.ServicesOrNull?.GetService<IClock>()?.BusinessDate
-                    ?? DateOnly.FromDateTime(DateTime.Today)).ToDateTime(TimeOnly.MinValue);
+                DateBox.SelectedDate = App.BusinessDate.ToDateTime(TimeOnly.MinValue);
                 (_vendorId is null ? VendorField : AmountField).FocusInput();
             }
             catch (Exception exception) { Summary.ShowMessage(UserError.Message(exception)); }

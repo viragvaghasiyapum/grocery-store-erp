@@ -85,6 +85,10 @@ public partial class ShellWindow : FluentWindow
         _lastActivity = clock?.Now ?? DateTime.MinValue;
         PreviewKeyDown += OnPreviewKeyDown;
         PreviewMouseDown += (_, _) => TouchActivity();
+        // The title bar holds the brand and every status control in one row; a narrow window
+        // drops the tagline first so the status controls keep their room.
+        SizeChanged += (_, args) =>
+            StoreTagline.Visibility = args.NewSize.Width >= 1280 ? Visibility.Visible : Visibility.Collapsed;
         if (authentication is not null && settings is not null && clock is not null)
         {
             _idleTimer = new DispatcherTimer(TimeSpan.FromSeconds(30), DispatcherPriority.Background,
@@ -187,7 +191,7 @@ public partial class ShellWindow : FluentWindow
 
     internal void RecordScannerActivity()
     {
-        _lastScan = _clock?.Now ?? DateTime.Now;
+        _lastScan = _clock?.Now ?? App.ClockNow;
         RenderScannerStatus();
     }
 
@@ -300,6 +304,8 @@ public partial class ShellWindow : FluentWindow
     {
         if (_authentication is null) return;
         LockOverlay.Visibility = Visibility.Visible;
+        // The status controls sit in the title bar, above the overlay; hidden, they cannot be used.
+        StatusBar.Visibility = Visibility.Hidden;
         UnlockPassword.Clear();
         LockError.Text = "";
         Dispatcher.BeginInvoke(UnlockPassword.Focus);
@@ -322,6 +328,7 @@ public partial class ShellWindow : FluentWindow
             UnlockPassword.IsEnabled = false;
             await _authentication.UnlockAsync(UnlockPassword.Password);
             LockOverlay.Visibility = Visibility.Collapsed;
+            StatusBar.Visibility = Visibility.Visible;
             TouchActivity();
         }
         catch (DomainException exception) when (exception.Code == ErrorCode.WrongPassword)

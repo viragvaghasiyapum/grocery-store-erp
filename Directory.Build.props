@@ -11,5 +11,11 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
+  <!-- The banned APIs apply to every shipped project, not only Core: a business date taken from
+       the machine clock instead of IClock ignores the business-day start hour. -->
+  <ItemGroup Condition="$(MSBuildProjectDirectory.Replace('\','/').Contains('/src/'))">
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" Link="BannedSymbols.txt" />
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
 </Project>
 

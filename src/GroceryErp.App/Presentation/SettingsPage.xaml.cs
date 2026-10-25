@@ -43,6 +43,7 @@ public partial class SettingsPage : Page
         _clock = clock;
         _paths = paths;
         DataRoot.Text = _paths.Root;
+        HardwareRendering.IsChecked = _settings.Current.HardwareRendering;
         Loaded += (_, _) =>
         {
             TranslationSource.Instance.PropertyChanged += TranslationChanged;
@@ -167,6 +168,24 @@ public partial class SettingsPage : Page
         }
         catch (Exception exception) { ShowError(exception); }
         finally { SaveScannerPortButton.IsEnabled = true; }
+    }
+
+    // The drawing mode is chosen once at startup, so the saved choice applies after a restart.
+    private async void HardwareRendering_OnClick(object sender, RoutedEventArgs e)
+    {
+        bool enabled = HardwareRendering.IsChecked == true;
+        try
+        {
+            HardwareRendering.IsEnabled = false;
+            await _settings.SaveAsync(new Dictionary<string, string> { ["ui.hardware_rendering"] = enabled ? "1" : "0" });
+            ShowStatus("Settings_DisplaySaved");
+        }
+        catch (Exception exception)
+        {
+            HardwareRendering.IsChecked = !enabled;
+            ShowError(exception);
+        }
+        finally { HardwareRendering.IsEnabled = true; }
     }
 
     private async void MoveData_OnClick(object sender, RoutedEventArgs e)

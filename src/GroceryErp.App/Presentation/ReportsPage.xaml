@@ -2,13 +2,14 @@
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
- Title="{l:Tr Reports_Title}" ScrollViewer.CanContentScroll="False">
- <Grid Margin="16,10,16,10">
-  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <DockPanel>
-   <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-    <Button Margin="0,0,8,0" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
-    <Menu VerticalAlignment="Center" MinHeight="36">
+ Title="{l:Tr Reports_Title}" FontFamily="{StaticResource AppFont}" ScrollViewer.CanContentScroll="False">
+ <Grid Margin="14,8,14,8">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+  <!-- One title row: the status line and the totals of the whole result, then the actions. -->
+  <DockPanel Margin="0,0,0,6">
+   <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+    <Button Style="{StaticResource ToolbarButton}" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
+    <Menu VerticalAlignment="Center" Background="Transparent">
      <MenuItem Header="{l:Tr Common_Actions}">
       <MenuItem x:Name="ExportExcelButton" Click="Export_OnClick" Header="{l:Tr Reports_ExportExcel}"/>
       <MenuItem x:Name="PnlCsvButton" Click="ExportPnlCsv_OnClick" Header="{l:Tr Reports_ExportPnlCsv}"/>
@@ -16,12 +17,19 @@
       <MenuItem x:Name="PreviewA4Button" Click="Preview_OnClick" Header="{l:Tr Reports_PrintA4}"/>
      </MenuItem>
     </Menu>
-    <Button x:Name="CancelExportButton" IsEnabled="False" Visibility="Collapsed" Margin="8,0,0,0" Click="CancelExport_OnClick" Content="{l:Tr Reports_CancelExport}"/>
-    <ProgressBar x:Name="ExportProgress" Width="72" Height="5" Margin="8,0,0,0" VerticalAlignment="Center" IsIndeterminate="True" Visibility="Collapsed"/>
    </StackPanel>
-   <TextBlock FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" Text="{l:Tr Reports_Title}"/>
+   <!-- Shown only while an export runs. -->
+   <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
+    <ProgressBar x:Name="ExportProgress" Width="64" Height="5" Margin="0,0,8,0" VerticalAlignment="Center" IsIndeterminate="True" Visibility="Collapsed"/>
+    <Button x:Name="CancelExportButton" Style="{StaticResource ToolbarButton}" Margin="0" IsEnabled="False" Visibility="Collapsed" Click="CancelExport_OnClick" Content="{l:Tr Reports_CancelExport}"/>
+   </StackPanel>
+   <TextBlock x:Name="TotalsText" DockPanel.Dock="Right" Margin="12,0,12,0" VerticalAlignment="Center" FontWeight="SemiBold"
+              TextTrimming="CharacterEllipsis" MaxWidth="520" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+   <TextBlock Style="{StaticResource PageTitle}" Text="{l:Tr Reports_Title}"/>
+   <TextBlock x:Name="StatusText" Style="{StaticResource StatusText}" AutomationProperties.LiveSetting="Polite"
+              ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
   </DockPanel>
-  <WrapPanel Grid.Row="1" Margin="0,8,0,2">
+  <WrapPanel Grid.Row="1" Margin="0,0,0,2">
    <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_Report}"/>
    <ComboBox x:Name="ReportPicker" Width="230" Margin="0,0,14,6" SelectionChanged="ReportPicker_OnSelectionChanged" AutomationProperties.Name="{l:Tr Reports_Report}"/>
    <StackPanel x:Name="PnlPeriodControls" Orientation="Horizontal" Margin="0,0,14,6">
@@ -39,10 +47,11 @@
    <CheckBox x:Name="CompareCheck" Margin="0,0,14,6" Click="CompareCheck_OnClick" Content="{l:Tr Reports_ComparePrevious}"/>
    <CheckBox x:Name="IncludeExpiredCheck" Visibility="Collapsed" IsChecked="True" Margin="0,0,14,6" Click="IncludeExpired_OnClick" Content="{l:Tr Reports_IncludeExpired}"/>
    <CheckBox x:Name="MismatchesCheck" Visibility="Collapsed" Margin="0,0,14,6" Click="IncludeExpired_OnClick" Content="{l:Tr Reports_MismatchesOnly}"/>
+   <ToggleButton x:Name="MoreFiltersToggle" Margin="0,0,0,6" MinHeight="32" Padding="10,4" Click="MoreFilters_OnClick"
+                 Content="{l:Tr Common_MoreFilters}"/>
   </WrapPanel>
-  <Expander x:Name="MoreFiltersExpander" Grid.Row="2" Header="{l:Tr Reports_MoreFilters}" Margin="0,0,0,6">
-   <!-- Only the filters that apply to the chosen report are shown. -->
-   <WrapPanel Margin="0,4,0,0">
+  <!-- Only the filters that apply to the chosen report are shown. -->
+  <WrapPanel x:Name="MoreFiltersPanel" Grid.Row="2" Margin="0,0,0,2" Visibility="Collapsed">
     <StackPanel x:Name="StatusFilterPanel" Orientation="Horizontal"><TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_Status}"/><ComboBox x:Name="StatusPicker" Width="130" Margin="0,0,12,6" SelectionChanged="FilterPicker_OnSelectionChanged" AutomationProperties.Name="{l:Tr Reports_Status}"/></StackPanel>
     <StackPanel x:Name="PaymentFilterPanel" Orientation="Horizontal"><TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_Payment}"/><ComboBox x:Name="PaymentPicker" Width="130" Margin="0,0,12,6" SelectionChanged="FilterPicker_OnSelectionChanged" AutomationProperties.Name="{l:Tr Reports_Payment}"/></StackPanel>
     <StackPanel x:Name="ProductFilterPanel" Orientation="Horizontal"><TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterProduct}"/><TextBox x:Name="ProductFilter" Width="90" Margin="0,0,12,6" AutomationProperties.Name="{l:Tr Reports_FilterProduct}"/></StackPanel>
@@ -53,8 +62,7 @@
      <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterEntity}"/><TextBox x:Name="EntityFilter" Width="110" Margin="0,0,12,6" AutomationProperties.Name="{l:Tr Reports_FilterEntity}"/>
      <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterAction}"/><TextBox x:Name="ActionFilter" Width="110" Margin="0,0,12,6" AutomationProperties.Name="{l:Tr Reports_FilterAction}"/>
     </StackPanel>
-   </WrapPanel>
-  </Expander>
+  </WrapPanel>
   <Border Grid.Row="3" Padding="6" CornerRadius="8" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"><Grid>
    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
    <Border x:Name="PnlStatusBadge" HorizontalAlignment="Left" Margin="0,0,0,6" Padding="8,3" CornerRadius="4" Visibility="Collapsed"
@@ -89,9 +97,5 @@
     </StackPanel>
    </ScrollViewer>
   </Grid></Border>
-  <DockPanel Grid.Row="4" Margin="0,6,0,0" LastChildFill="True">
-   <TextBlock x:Name="TotalsText" DockPanel.Dock="Right" Margin="12,0,0,0" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="640"/>
-   <TextBlock x:Name="StatusText" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
-  </DockPanel>
  </Grid>
 </Page>

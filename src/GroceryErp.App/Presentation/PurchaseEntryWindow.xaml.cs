@@ -358,7 +358,7 @@ public partial class PurchaseEntryWindow : Window
             Money charges = new(Parse(ChargesBox?.Text ?? "0"));
             IReadOnlyList<Money> landed = LandedCost.Compute(costLines, charges, _taxIsCost);
             var warnings = new List<string>();
-            DateOnly received = DateOnly.FromDateTime(ReceivedDateBox.SelectedDate ?? DateTime.Today);
+            DateOnly received = ReceivedDateBox.SelectedDate is DateTime picked ? DateOnly.FromDateTime(picked) : App.BusinessDate;
             for (int index = 0; index < editLines.Count; index++)
             {
                 PurchaseEditLine editLine = editLines[index];

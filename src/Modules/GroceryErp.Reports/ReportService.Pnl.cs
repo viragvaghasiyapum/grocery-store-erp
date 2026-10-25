@@ -352,7 +352,9 @@ public sealed partial class ReportService
         new("TOTAL", code, null, label, months, Total(months));
 
     private static Money Sum(IEnumerable<PnlLine> lines) => Money.FromScaled(lines.Sum(static x => x.Amount.Scaled));
-    private static Percent Ratio(Money amount, Money basis) => basis == Money.Zero ? Percent.Zero : new(amount.Value * 100m / basis.Value);
+    // A margin is shown only on positive net sales; a period whose returns exceed its sales would
+    // otherwise show a meaningless figure such as 16,677,300%.
+    private static Percent Ratio(Money amount, Money basis) => basis.Value <= 0m ? Percent.Zero : new(amount.Value * 100m / basis.Value);
     private static string Day(DateOnly date) => date.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture);
     private static string Format(string template, string value) => string.Format(CultureInfo.InvariantCulture, template, value);
 }

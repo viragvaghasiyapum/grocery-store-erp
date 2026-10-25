@@ -16,6 +16,11 @@ public sealed class ScaleUiTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
+    [DllImport("user32.dll")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetProcessDpiAwarenessContext(nint value);
+
     [Fact]
     public async Task LargeStore_ModuleNavigationRemainsResponsive()
     {
@@ -32,6 +37,9 @@ public sealed class ScaleUiTests
         if (!File.Exists(Path.Combine(root, "db", "grocery.db")))
             throw new FileNotFoundException("The isolated UI database is missing.", Path.Combine(root, "db", "grocery.db"));
 
+        // On a scaled display a process that is not DPI-aware captures only the top-left part of
+        // the app window; per-monitor awareness makes each capture the whole window.
+        SetProcessDpiAwarenessContext(-4);
         var records = new List<object>();
         var start = new ProcessStartInfo(executable) { UseShellExecute = false };
         start.Environment["GROCERY_ERP_TEST_DATA_ROOT"] = root;
@@ -41,12 +49,24 @@ public sealed class ScaleUiTests
             var launchTimer = Stopwatch.StartNew();
             app = UiApplication.Launch(start);
             using var automation = new UIA3Automation();
-            Window login = await WaitWindowAsync(app, automation, "PasswordBox", TimeSpan.FromMinutes(3));
+            // A store from an older version first shows the upgrade with its estimate; the run
+            // confirms it and times the upgrade separately from the sign-in window.
+            Window login = await WaitWindowAsync(app, automation, ["PasswordBox", "UpgradeButton"], TimeSpan.FromMinutes(3));
+            double? upgradeMilliseconds = null;
+            if (login.FindFirstDescendant(cf => cf.ByAutomationId("UpgradeButton")) is { } upgradeButton)
+            {
+                await Task.Delay(1000, TestContext.Current.CancellationToken);
+                login.CaptureToFile(Path.Combine(root, "scale-audit-ui-upgrade.png"));
+                var upgradeTimer = Stopwatch.StartNew();
+                upgradeButton.Press();
+                login = await WaitWindowAsync(app, automation, "PasswordBox", TimeSpan.FromMinutes(30));
+                upgradeMilliseconds = upgradeTimer.Elapsed.TotalMilliseconds;
+            }
             double loginReadyMilliseconds = launchTimer.Elapsed.TotalMilliseconds;
             login.FindFirstDescendant(cf => cf.ByAutomationId("UsernameBox"))!.AsTextBox().Text = "owner";
             login.FindFirstDescendant(cf => cf.ByAutomationId("PasswordBox"))!.AsTextBox().Text = "scale-audit-2026";
             login.FindAllDescendants().First(element =>
-                element.ControlType == FlaUI.Core.Definitions.ControlType.Button && element.Name == "Sign in").Click();
+                element.ControlType == FlaUI.Core.Definitions.ControlType.Button && element.Name == "Sign in").Press();
             Window shell;
             var signInTimer = Stopwatch.StartNew();
             try
@@ -65,16 +85,17 @@ public sealed class ScaleUiTests
             }
             File.WriteAllText(Path.Combine(root, "phase6-ui-startup.json"), JsonSerializer.Serialize(new
             {
+                upgradeMilliseconds,
                 loginReadyMilliseconds,
                 shellReadyAfterSignInMilliseconds = signInTimer.Elapsed.TotalMilliseconds,
             }, JsonOptions));
             foreach (Window other in app.GetAllTopLevelWindows(automation).Where(window =>
                          window.FindFirstDescendant(cf => cf.ByAutomationId("BackupStatusButton")) is null))
-                other.FindFirstDescendant(cf => cf.ByName("OK"))?.Click();
+                other.FindFirstDescendant(cf => cf.ByName("OK"))?.Press();
             await Task.Delay(2000, TestContext.Current.CancellationToken);
             foreach (Window other in app.GetAllTopLevelWindows(automation).Where(window =>
                          window.FindFirstDescendant(cf => cf.ByAutomationId("BackupStatusButton")) is null))
-                other.FindFirstDescendant(cf => cf.ByName("Later"))?.Click();
+                other.FindFirstDescendant(cf => cf.ByName("Later"))?.Press();
 
             if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_PHASE5_UPDATE") == "1" ||
                 Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_PHASE5_OUTPUT") == "1")
@@ -85,7 +106,7 @@ public sealed class ScaleUiTests
                         window.FindAllDescendants().Any(element =>
                             DescribeElement(element).Contains("Saved print jobs", StringComparison.Ordinal)));
                     if (review is null) break;
-                    review.FindFirstDescendant(cf => cf.ByName("OK"))?.Click();
+                    review.FindFirstDescendant(cf => cf.ByName("OK"))?.Press();
                     await Task.Delay(250, TestContext.Current.CancellationToken);
                 }
             }
@@ -165,10 +186,10 @@ public sealed class ScaleUiTests
                 return;
             }
 
-            // Every Phase 7 page, then Products and Purchases again so repeated navigation shows
-            // whether memory keeps rising.
-            foreach ((string label, string control) in new[]
-            {
+            // Every page, then Products and Purchases again so repeated navigation shows whether
+            // memory keeps rising. GROCERY_SCALE_UI_ROUNDS adds further full rounds of every page.
+            (string Label, string Control)[] pages =
+            [
                 ("Products", "SearchBox"),
                 ("Purchases", "PurchasesGrid"),
                 ("Vendors", "VendorsGrid"),
@@ -178,20 +199,34 @@ public sealed class ScaleUiTests
                 ("Billing (POS)", "ScanBox"),
                 ("Dashboard", "TodaySales"),
                 ("Money out", "MoneyOutTabs"),
-                ("Products", "SearchBox"),
-                ("Purchases", "PurchasesGrid"),
-                ("Money out", "MoneyOutTabs"),
-            })
+            ];
+            int extraRounds = int.TryParse(Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_ROUNDS"),
+                out int rounds) && rounds > 1 ? rounds - 1 : 0;
+            var captured = new HashSet<string>(StringComparer.Ordinal);
+            foreach ((string label, string control) in pages
+                         .Concat([("Products", "SearchBox"), ("Purchases", "PurchasesGrid"), ("Money out", "MoneyOutTabs")])
+                         .Concat(Enumerable.Range(0, extraRounds).SelectMany(_ => pages)))
             {
                 var timer = Stopwatch.StartNew();
                 File.AppendAllText(Path.Combine(root, "scale-audit-ui-progress.txt"), $"Starting {label}{Environment.NewLine}");
+                // The first element with the page's name is the navigation item or its text; the
+                // item itself is the invokable ancestor.
                 AutomationElement action = shell.FindFirstDescendant(cf => cf.ByName(label))
                     ?? throw new InvalidOperationException($"Missing navigation action: {label}");
-                action.Click();
+                for (AutomationElement? candidate = action; candidate is not null; candidate = candidate.Parent)
+                    if (candidate.Patterns.Invoke.IsSupported) { action = candidate; break; }
+                action.Press();
                 try
                 {
-                    await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId(control)) is not null,
-                        TimeSpan.FromSeconds(20));
+                    // An invoke that arrives while the previous page is still settling can be dropped;
+                    // repeat it every few seconds until the page's control appears.
+                    var pressed = Stopwatch.StartNew();
+                    await WaitUntilAsync(() =>
+                    {
+                        if (shell.FindFirstDescendant(cf => cf.ByAutomationId(control)) is not null) return true;
+                        if (pressed.Elapsed > TimeSpan.FromSeconds(4)) { action.Press(); pressed.Restart(); }
+                        return false;
+                    }, TimeSpan.FromSeconds(20), 250);
                 }
                 catch (TimeoutException)
                 {
@@ -208,6 +243,12 @@ public sealed class ScaleUiTests
                     throw;
                 }
                 double controlFoundMilliseconds = timer.Elapsed.TotalMilliseconds;
+                // This process's UI Automation wrappers pin the app's automation peers, and through
+                // them every page already visited, until they are finalized. Release them so the
+                // app's memory below is the app's own.
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
                 await Task.Delay(1500, TestContext.Current.CancellationToken);
                 using Process? process = Process.GetProcessesByName("GroceryErp.App")
                     .OrderByDescending(static item => item.StartTime).FirstOrDefault();
@@ -225,9 +266,12 @@ public sealed class ScaleUiTests
                     "Money out" => "MoneyOutTabs",
                     _ => throw new InvalidOperationException($"Unknown page: {label}"),
                 };
-                int gridRowItems = shell.FindFirstDescendant(cf => cf.ByAutomationId(gridId))?
-                    .FindAllDescendants().Count(element =>
-                        element.ControlType == FlaUI.Core.Definitions.ControlType.DataItem) ?? 0;
+                // The Grid pattern reports the loaded rows without making the app build an
+                // automation peer for every cell, which would inflate the memory being measured.
+                AutomationElement? grid = shell.FindFirstDescendant(cf => cf.ByAutomationId(gridId));
+                int gridRowItems = grid is null ? 0 : grid.Patterns.Grid.IsSupported
+                    ? grid.Patterns.Grid.Pattern.RowCount.Value
+                    : grid.FindAllChildren().Length;
                 var record = new
                 {
                     page = label,
@@ -235,12 +279,14 @@ public sealed class ScaleUiTests
                     settledMilliseconds = timer.Elapsed.TotalMilliseconds,
                     workingSet = process?.WorkingSet64,
                     peakWorkingSet = process?.PeakWorkingSet64,
+                    privateBytes = process?.PrivateMemorySize64,
                     gridRowItems,
                     alive = !app.HasExited
                 };
                 records.Add(record);
                 Console.WriteLine(JsonSerializer.Serialize(record));
-                if (label is "Products" or "Reports" or "Dashboard")
+                // Each page once, on its first visit, as it looks at the run's window size.
+                if (captured.Add(label))
                     shell.CaptureToFile(Path.Combine(root, "scale-audit-ui-" + label.ToLowerInvariant().Replace(' ', '-') + ".png"));
                 Assert.False(app.HasExited, $"App exited on {label}");
                 if (label == "Billing (POS)" &&
@@ -260,6 +306,13 @@ public sealed class ScaleUiTests
                 await AuditDialogsAsync(app, automation, shell, root);
             if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_EXPORT") == "1")
                 await ExportFullHistoryAsync(app, automation, shell, root);
+            // A memory investigation can capture the process here, after the last page settled.
+            if (int.TryParse(Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_HOLD_SECONDS"), out int hold) && hold > 0)
+            {
+                File.AppendAllText(Path.Combine(root, "scale-audit-ui-progress.txt"),
+                    $"Holding process {app.ProcessId} for {hold} s{Environment.NewLine}");
+                await Task.Delay(TimeSpan.FromSeconds(hold), TestContext.Current.CancellationToken);
+            }
             shell.Close();
             await WaitUntilAsync(() => app.HasExited, TimeSpan.FromMinutes(3));
         }
@@ -319,7 +372,7 @@ public sealed class ScaleUiTests
             Assert.NotNull(archive.GetEntry("xl/worksheets/sheet1.xml"));
 
         AutomationElement cancelExport = shell.FindFirstDescendant(cf => cf.ByAutomationId("CancelExportButton"))!;
-        AutomationElement moreFilters = shell.FindFirstDescendant(cf => cf.ByAutomationId("MoreFiltersExpander"))!;
+        AutomationElement moreFilters = shell.FindFirstDescendant(cf => cf.ByAutomationId("MoreFiltersToggle"))!;
         AutomationElement statusText = shell.FindFirstDescendant(cf => cf.ByAutomationId("StatusText"))!;
         string csv = Path.Combine(root, $"phase5-ui-sales-full-{Guid.NewGuid():N}.csv");
         shell.FindFirstDescendant(cf => cf.ByAutomationId("FullCsvButton"))!.Click();
@@ -798,7 +851,10 @@ public sealed class ScaleUiTests
     private static async Task ExportFullHistoryAsync(UiApplication app, UIA3Automation automation,
         Window shell, string root)
     {
-        shell.FindFirstDescendant(cf => cf.ByName("Sales history"))!.Click();
+        AutomationElement history = shell.FindFirstDescendant(cf => cf.ByName("Sales history"))!;
+        for (AutomationElement? candidate = history; candidate is not null; candidate = candidate.Parent)
+            if (candidate.Patterns.Invoke.IsSupported) { history = candidate; break; }
+        history.Press();
         await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("ExportButton")) is not null,
             TimeSpan.FromSeconds(20));
         string? dateText = Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_EXPORT_DATE");
@@ -813,12 +869,12 @@ public sealed class ScaleUiTests
                 System.Globalization.CultureInfo.InvariantCulture);
             AutomationElement input = shell.FindFirstDescendant(cf => cf.ByAutomationId(picker))!
                 .FindFirstDescendant(cf => cf.ByAutomationId("PART_TextBox"))!;
-            input.AsTextBox().Text = date.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture);
+            input.AsTextBox().Text = date.ToString("dd-MM-yyyy", System.Globalization.CultureInfo.InvariantCulture);
             Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.TAB);
         }
         string path = Path.Combine(root, "phase1-five-million-history-" + Guid.NewGuid().ToString("N") + ".csv");
         var timer = Stopwatch.StartNew();
-        shell.FindFirstDescendant(cf => cf.ByAutomationId("ExportButton"))!.Click();
+        shell.FindFirstDescendant(cf => cf.ByAutomationId("ExportButton"))!.Press();
         await Task.Delay(700, TestContext.Current.CancellationToken);
         Window? save = null;
         try
@@ -842,13 +898,14 @@ public sealed class ScaleUiTests
         Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
         await WaitUntilAsync(() => File.Exists(path), TimeSpan.FromMinutes(15));
         timer.Stop();
-        long count = File.ReadLines(path).LongCount() - 1;
+        // The file opens with its filters and the column headings and closes with the totals row.
+        long count = File.ReadLines(path).LongCount() - 3;
         long expected = long.Parse(Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_EXPECT_EXPORT_ROWS") ?? "5000000",
             System.Globalization.CultureInfo.InvariantCulture);
         Assert.Equal(expected, count);
         if (expected == 5_000_000)
         {
-            string firstRow = File.ReadLines(path).Skip(1).First();
+            string firstRow = File.ReadLines(path).Skip(2).First();
             Assert.Contains("\"PHASE1-5000000\"", firstRow, StringComparison.Ordinal);
             Assert.EndsWith(",1.00", firstRow, StringComparison.Ordinal);
         }
@@ -873,16 +930,20 @@ public sealed class ScaleUiTests
         catch (FlaUI.Core.Exceptions.PropertyNotSupportedException) { return "<unavailable>"; }
     }
 
+    private static Task<Window> WaitWindowAsync(UiApplication app, UIA3Automation automation,
+        string automationId, TimeSpan timeout) => WaitWindowAsync(app, automation, [automationId], timeout);
+
+    // The first top-level window that holds any of the controls.
     private static async Task<Window> WaitWindowAsync(UiApplication app, UIA3Automation automation,
-        string automationId, TimeSpan timeout)
+        string[] automationIds, TimeSpan timeout)
     {
         Window? found = null;
         await WaitUntilAsync(() =>
         {
             try
             {
-                found = app.GetAllTopLevelWindows(automation).FirstOrDefault(window =>
-                    window.FindFirstDescendant(cf => cf.ByAutomationId(automationId)) is not null);
+                found = app.GetAllTopLevelWindows(automation).FirstOrDefault(window => automationIds.Any(automationId =>
+                    window.FindFirstDescendant(cf => cf.ByAutomationId(automationId)) is not null));
                 return found is not null;
             }
             catch (COMException exception) when (exception.HResult == unchecked((int)0x80131505))

@@ -21,15 +21,15 @@ public sealed class NullMigrationBackup : IMigrationBackup
 
 public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMigrationBackup backup)
 {
-    public const int LatestVersion = 36;
+    public const int LatestVersion = 37;
 
     /// <summary>Backup reason for the last store that still holds the stock ledger; rotation keeps it.</summary>
     public const string LedgerArchiveReason = "pre-ledger-removal";
 
-    public void Run() => RunTo(LatestVersion);
+    public void Run(IProgress<MigrationProgress>? progress = null) => RunTo(LatestVersion, progress);
 
     // Tests and the scale audit stop at an older version to rehearse a later upgrade.
-    internal void RunTo(int targetVersion)
+    internal void RunTo(int targetVersion, IProgress<MigrationProgress>? progress = null)
     {
         ArgumentOutOfRangeException.ThrowIfGreaterThan(targetVersion, LatestVersion);
         DapperSetup.Register();
@@ -45,11 +45,17 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
         if (current >= targetVersion) return;
         // The backup before schema 36 is the only remaining copy of the stock ledger.
         if (current > 0)
+        {
+            progress?.Report(new(MigrationStage.Backup));
             backup.CreateBeforeMigration(current < 36 && targetVersion >= 36
                 ? $"{LedgerArchiveReason}-v{current}" : $"pre-migration-v{current}");
+        }
 
-        foreach (Script script in scripts.Where(item => item.Version > current && item.Version <= targetVersion))
+        Script[] steps = [.. scripts.Where(item => item.Version > current && item.Version <= targetVersion)];
+        for (int step = 0; step < steps.Length; step++)
         {
+            Script script = steps[step];
+            progress?.Report(new(MigrationStage.Upgrade, step + 1, steps.Length));
             if (script.Version == 29)
                 connection.Execute("PRAGMA foreign_keys=OFF;");
             // Whole-history rebuilds sort millions of sale lines; spill them to disk
@@ -84,8 +90,12 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
                     DirectStockCutover.Finish(connection, transaction, closedCounts);
                 if (pnlBefore is not null)
                     LedgerRemoval.Finish(connection, transaction, pnlBefore);
+                // Migration 019 runs before settings or the clock exist; the dashboard moves this
+                // first window to the business date on its first refresh.
+#pragma warning disable RS0030
                 if (script.Version == 19)
                     DashboardTopProjection.Rebuild(connection, transaction, DateOnly.FromDateTime(DateTime.Now));
+#pragma warning restore RS0030
                 if (script.Version != 16)
                     connection.Execute(
                         $"PRAGMA user_version = {script.Version.ToString(CultureInfo.InvariantCulture)};",
@@ -107,6 +117,7 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
                 connection.Execute("PRAGMA user_version = 16;");
             }
         }
+        progress?.Report(new(MigrationStage.Finishing));
         connection.Execute("PRAGMA optimize;");
     }
 

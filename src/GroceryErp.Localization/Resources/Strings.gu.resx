@@ -29,6 +29,10 @@
   <data name="Settings_ScannerPortMissing" xml:space="preserve"><value>{0} (હાલ મળ્યું નથી)</value><comment>MT – needs review</comment></data>
   <data name="Settings_SaveScannerPort" xml:space="preserve"><value>સ્કેનર પોર્ટ સાચવો</value><comment>MT – needs review</comment></data>
   <data name="Settings_ScannerPortSaved" xml:space="preserve"><value>સ્કેનર પોર્ટ સાચવ્યો.</value><comment>MT – needs review</comment></data>
+  <data name="Settings_DisplayTitle" xml:space="preserve"><value>ડિસ્પ્લે</value><comment>MT – needs review</comment></data>
+  <data name="Settings_HardwareRendering" xml:space="preserve"><value>સ્ક્રીન દોરવા માટે ગ્રાફિક્સ કાર્ડ વાપરો</value><comment>MT – needs review</comment></data>
+  <data name="Settings_HardwareRenderingHelp" xml:space="preserve"><value>એપ તેની સ્ક્રીન સૉફ્ટવેરથી દોરે છે, જેમાં ઓછી મેમરી વપરાય છે. આ કમ્પ્યુટર પર સ્ક્રીન ધીમી લાગે તો જ આ ચાલુ કરો. ફેરફાર એપ ફરી શરૂ થયા પછી લાગુ થશે.</value><comment>MT – needs review</comment></data>
+  <data name="Settings_DisplaySaved" xml:space="preserve"><value>ડિસ્પ્લે સેટિંગ સાચવ્યું. તેને લાગુ કરવા માટે એપ ફરી શરૂ કરો.</value><comment>MT – needs review</comment></data>
   <data name="Demo_Title" xml:space="preserve"><value>તમારી દુકાન, વ્યવસાય માટે તૈયાર</value><comment>MT – needs review</comment></data>
   <data name="Demo_Body" xml:space="preserve"><value>દુકાનનું કામ સંભાળવા માટે મેનૂનો ઉપયોગ કરો. નીચેની રકમ અને તારીખ ફોર્મેટના ઉદાહરણો છે.</value><comment>MT – needs review</comment></data>
   <data name="Demo_AmountLabel" xml:space="preserve"><value>નમૂનાની રકમ</value><comment>MT – needs review</comment></data>
@@ -849,7 +853,6 @@
   <data name="Reports_Period" xml:space="preserve"><value>સમયગાળો</value></data>
   <data name="Reports_From" xml:space="preserve"><value>થી</value></data>
   <data name="Reports_To" xml:space="preserve"><value>સુધી</value></data>
-  <data name="Reports_MoreFilters" xml:space="preserve"><value>વધુ ફિલ્ટર</value></data>
   <data name="Reports_Status" xml:space="preserve"><value>સ્થિતિ</value></data>
   <data name="Reports_Payment" xml:space="preserve"><value>ચુકવણી પદ્ધતિ</value></data>
   <data name="Reports_InvalidDates" xml:space="preserve"><value>અંતિમ તારીખ શરૂઆતની તારીખ પછી અથવા એ જ હોવી જોઈએ.</value></data>
@@ -1413,4 +1416,22 @@
   <data name="Settings_CompactDoneDetail" xml:space="preserve"><value>તેનું કદ {0} થી {1} થયું. ચકાસાયેલ બેકઅપ: {2}</value><comment>MT – needs review</comment></data>
   <data name="Settings_CompactFailed" xml:space="preserve"><value>નાનો કરવાનું પૂરું ન થયું. મૂળ ડેટાબેઝ યથાવત રાખ્યો છે.</value><comment>MT – needs review</comment></data>
   <data name="Error_CompactionFailed" xml:space="preserve"><value>ડેટાબેઝ નાનો ન થઈ શક્યો. મૂળ ડેટાબેઝ યથાવત રાખ્યો છે; સેટિંગ્સ, બેકઅપમાંથી ફરી પ્રયાસ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_Title" xml:space="preserve"><value>તમારો ડેટા અપડેટ કરો</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_Context" xml:space="preserve"><value>આ આવૃત્તિ તમારો ડેટા નવા સ્વરૂપમાં રાખે છે. સાઇન ઇન કરતા પહેલાં તમારો ડેટા આવૃત્તિ {0} થી {1} માં અપડેટ થશે. દરેક પગલું કાં તો પૂરેપૂરું થાય છે અથવા કંઈ બદલતું નથી.</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_Estimate" xml:space="preserve"><value>અંદાજિત સમય: લગભગ {0}. ધીમા કમ્પ્યુટર પર વધુ સમય લાગી શકે છે; તે ચાલતું હોય ત્યારે કમ્પ્યુટર બંધ કરશો નહીં.</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_UnderMinute" xml:space="preserve"><value>એક મિનિટથી ઓછો</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_Minutes" xml:space="preserve"><value>{0} મિનિટ</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_Space" xml:space="preserve"><value>જરૂરી ખાલી જગ્યા: {1} પર {0}; {2} ખાલી છે.</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_SpaceUnknown" xml:space="preserve"><value>જરૂરી ખાલી જગ્યા: {1} પર {0}.</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_Backup" xml:space="preserve"><value>પહેલાં તમારા બધા ડેટાનો ચકાસેલો બેકઅપ {0} માં સાચવવામાં આવે છે.</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_LedgerArchive" xml:space="preserve"><value>તે બેકઅપ કાયમ માટે રાખવામાં આવે છે: તે જૂના સ્ટોક ખાતાની છેલ્લી નકલ છે.</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_NoSpace" xml:space="preserve"><value>અપડેટ માટે પૂરતી ખાલી જગ્યા નથી. {1} પર ઓછામાં ઓછી {0} જગ્યા ખાલી કરો, પછી એપ ફરી શરૂ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_Start" xml:space="preserve"><value>હમણાં અપડેટ કરો</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_Exit" xml:space="preserve"><value>બહાર નીકળો</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_StageBackup" xml:space="preserve"><value>તમારા ડેટાનો બેકઅપ સાચવી અને ચકાસી રહ્યા છીએ…</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_StageUpgrade" xml:space="preserve"><value>તમારો ડેટા અપડેટ થઈ રહ્યો છે: પગલું {0} / {1}…</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_StageFinishing" xml:space="preserve"><value>અપડેટ પૂરું કરી રહ્યા છીએ…</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_Failed" xml:space="preserve"><value>અપડેટ પૂરું થાય તે પહેલાં અટકી ગયું.</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_Recovery" xml:space="preserve"><value>તમારો ડેટા સુરક્ષિત છે: અધૂરું રહેલું પગલું કંઈ બદલતું નથી, અને અપડેટ પહેલાં સાચવેલો બેકઅપ {0} માં છે. ફરી પ્રયાસ કરવા એપ ફરી શરૂ કરો. જો તે ફરી અટકે, તો {1} માંની લૉગ ફાઇલો સપોર્ટને મોકલો. પાછલી આવૃત્તિ પર પાછા જવા, તે ઇન્સ્ટોલ કરો અને સેટિંગ્સ → બેકઅપ માં તે બેકઅપ રિસ્ટોર કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Upgrade_OpenBackups" xml:space="preserve"><value>બેકઅપ ફોલ્ડર ખોલો</value><comment>MT – needs review</comment></data>
 </root>

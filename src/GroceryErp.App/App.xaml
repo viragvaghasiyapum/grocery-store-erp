@@ -25,6 +25,7 @@
       <p:PurchaseLineKindConverter x:Key="PurchaseLineKindConverter"/>
       <p:LotOriginConverter x:Key="LotOriginConverter"/>
       <p:PurchaseStatusConverter x:Key="PurchaseStatusConverter"/>
+      <p:DepreciationMethodConverter x:Key="DepreciationMethodConverter"/>
       <Style TargetType="{x:Type p:AnimatedSection}">
         <Setter Property="Template">
           <Setter.Value>

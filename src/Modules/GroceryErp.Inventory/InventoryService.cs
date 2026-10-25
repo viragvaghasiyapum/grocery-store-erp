@@ -95,18 +95,19 @@ public sealed partial class InventoryService(
     /// <summary>Most lots one "all matching" bulk action may resolve; larger sets must be narrowed.</summary>
     public const int MaxBulkLots = 5000;
 
+    // Labels follow the business date (@date), as the expiry filters do, not the machine clock.
     private const string ExpiryBucketSql = """
         CASE WHEN l.is_active=0 THEN 'BLOCKED' WHEN l.qty_on_hand<=0 THEN 'EMPTY'
              WHEN l.expiry_date IS NULL THEN 'NONE'
-             WHEN l.expiry_date<date('now','localtime') THEN 'EXPIRED'
-             WHEN l.expiry_date<=date('now','localtime','+7 days') THEN 'CRITICAL'
-             WHEN julianday(l.expiry_date)-julianday('now','localtime','start of day')<=
+             WHEN l.expiry_date<@date THEN 'EXPIRED'
+             WHEN l.expiry_date<=date(@date,'+7 days') THEN 'CRITICAL'
+             WHEN julianday(l.expiry_date)-julianday(@date)<=
                   COALESCE(p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
                            CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30)
                   THEN 'SOON' ELSE 'FRESH' END
         """;
 
-    private static (string Conditions, DynamicParameters Parameters) LotConditions(LotFilter filter)
+    private (string Conditions, DynamicParameters Parameters) LotConditions(LotFilter filter)
     {
         if (filter.Status is not ("ALL" or "AVAILABLE" or "ZERO" or "BLOCKED") ||
             filter.Expiry is not ("ALL" or "EXPIRED" or "EXPIRING" or "NONE") ||
@@ -114,7 +115,7 @@ public sealed partial class InventoryService(
             throw new DomainException(ErrorCode.Validation, "Invalid lot filter.");
         if (filter.ExpiryFrom > filter.ExpiryTo || filter.MinPrice > filter.MaxPrice)
             throw new DomainException(ErrorCode.Validation, "The filter range starts after it ends.");
-        DateOnly today = filter.AsOf ?? DateOnly.FromDateTime(DateTime.Today);
+        DateOnly today = filter.AsOf ?? periods.Today;
         var parameters = new DynamicParameters();
         parameters.Add("productId", filter.ProductId);
         parameters.Add("date", Format(today));
@@ -166,24 +167,18 @@ public sealed partial class InventoryService(
         long[] ids = lotIds.Where(static id => id > 0).Distinct().ToArray();
         if (ids.Length > 200) throw new DomainException(ErrorCode.Validation, "Select at most 200 lots per batch.");
         if (ids.Length == 0) return Task.FromResult<IReadOnlyList<LotItem>>([]);
-        return database.ReadAsync(connection => (IReadOnlyList<LotItem>)connection.Query<LotRow>("""
+        string date = Format(periods.Today);
+        return database.ReadAsync(connection => (IReadOnlyList<LotItem>)connection.Query<LotRow>($$"""
             SELECT l.id AS Id,l.product_id AS ProductId,p.name AS ProductName,l.lot_code AS LotCode,
                    l.batch_no AS BatchNumber,l.received_date AS ReceivedDate,l.expiry_date AS ExpiryDate,
                    l.unit_cost AS UnitCost,l.mrp AS Mrp,l.selling_price AS SellingPrice,
                    l.qty_received AS Received,l.qty_on_hand AS OnHand,l.is_active AS IsActive,
                    l.detail_version AS DetailVersion,
-                   CASE WHEN l.is_active=0 THEN 'BLOCKED' WHEN l.qty_on_hand<=0 THEN 'EMPTY'
-                        WHEN l.expiry_date IS NULL THEN 'NONE'
-                        WHEN l.expiry_date<date('now','localtime') THEN 'EXPIRED'
-                        WHEN l.expiry_date<=date('now','localtime','+7 days') THEN 'CRITICAL'
-                        WHEN julianday(l.expiry_date)-julianday('now','localtime','start of day')<=
-                             COALESCE(p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
-                                      CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30)
-                             THEN 'SOON' ELSE 'FRESH' END AS ExpiryBucketCode
+                   {{ExpiryBucketSql}} AS ExpiryBucketCode
             FROM product_lot l JOIN product p ON p.id=l.product_id
             JOIN category c ON c.id=p.category_id LEFT JOIN category pc ON pc.id=c.parent_id
             WHERE l.id IN @ids ORDER BY l.id
-            """, new { ids }).Select(static row => row.ToModel()).ToList(), cancellationToken);
+            """, new { ids, date }).Select(static row => row.ToModel()).ToList(), cancellationToken);
     }
 
     public async Task<long> CreateDirectLotAsync(OpeningStockLine line, string reason,

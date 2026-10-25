@@ -23,7 +23,7 @@ public partial class ProductEditorWindow : Window
         Loaded += async (_, _) =>
         {
             IServiceProvider? services = (Application.Current as App)?.ServicesOrNull;
-            DateOnly today = services?.GetService<IClock>()?.BusinessDate ?? DateOnly.FromDateTime(DateTime.Today);
+            DateOnly today = App.BusinessDate;
             bool regular = services?.GetService<ISettings>()?.Current.TaxMode == "REGULAR";
             await Form.LoadAsync(_catalog, _productId, today, regular);
             SaveButton.IsEnabled = Form.CanSave;

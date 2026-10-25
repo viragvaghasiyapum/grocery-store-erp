@@ -130,8 +130,10 @@ public enum CatalogBulkAction { Archive, Restore, Category, Tax, Classification,
 public sealed record CatalogBulkCommand(CatalogBulkAction Action, long? TargetId = null, string? TargetCode = null);
 
 /// <summary>A product's eligibility for a bulk action, resolved on the server before anything changes.</summary>
+/// <param name="SaleLines">For a category change, the product's sale lines, which bound the report-day
+/// work the change triggers; 0 for other actions.</param>
 public sealed record CatalogBulkRow(long Id, string Sku, string Name, bool Eligible, string? ReasonKey,
-    Quantity Quantity, Money CostValue);
+    Quantity Quantity, Money CostValue, long SaleLines = 0);
 
 public sealed record CatalogBulkPreview(int Selected, IReadOnlyList<long> EligibleIds,
     int Skipped, Quantity AffectedQuantity, Money AffectedCost)

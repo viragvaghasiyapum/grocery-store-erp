@@ -10,18 +10,23 @@
   <Grid Margin="14,8,14,8">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-      <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
     </Grid.RowDefinitions>
-    <DockPanel Margin="0,0,0,6">
-      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+    <DockPanel x:Name="TitleRow" Margin="0,0,0,6">
+      <!-- Most important first: when the row is narrow the last actions fold behind More. -->
+      <StackPanel x:Name="TitleActions" DockPanel.Dock="Right" Orientation="Horizontal">
+        <Button Style="{StaticResource ToolbarButton}" Click="NewPurchase_OnClick" Content="{l:Tr Purchasing_NewPurchase}" FontWeight="SemiBold"
+                ToolTip="Ctrl+N"/>
         <Button x:Name="OpenButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="Open_OnClick" Content="{l:Tr Purchasing_Open}"/>
         <Button x:Name="VendorReturnButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="VendorReturn_OnClick" Content="{l:Tr Purchasing_VendorReturn}"/>
-        <Button x:Name="ReturnHistoryButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="ReturnHistory_OnClick" Content="{l:Tr Purchasing_ReturnHistory}"/>
         <Button x:Name="CancelPurchaseButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="CancelPurchase_OnClick" Content="{l:Tr Purchasing_CancelPurchase}"/>
-        <Button Style="{StaticResource ToolbarButton}" Margin="0" Click="NewPurchase_OnClick" Content="{l:Tr Purchasing_NewPurchase}" FontWeight="SemiBold"
-                ToolTip="Ctrl+N"/>
+        <Button x:Name="ReturnHistoryButton" Style="{StaticResource ToolbarButton}" Margin="0" IsEnabled="False" Click="ReturnHistory_OnClick" Content="{l:Tr Purchasing_ReturnHistory}"/>
+        <Menu x:Name="MoreActionsMenu" VerticalAlignment="Center" Background="Transparent" Visibility="Collapsed">
+          <MenuItem x:Name="MoreActions" Header="{l:Tr Common_MoreActions}"/>
+        </Menu>
       </StackPanel>
-      <TextBlock Style="{StaticResource PageTitle}" Text="{l:Tr Purchasing_Title}"/>
+      <TextBlock x:Name="TitleText" Style="{StaticResource PageTitle}" Text="{l:Tr Purchasing_Title}"/>
+      <p:PagerBar x:Name="Pager"/>
     </DockPanel>
     <WrapPanel x:Name="FilterBar" Grid.Row="1" Margin="0,0,0,2">
       <ui:TextBox x:Name="DocumentFilter" Width="190" Margin="0,0,6,4" PlaceholderText="{l:Tr Purchasing_DocumentFilter}"
@@ -36,9 +41,9 @@
         <ComboBoxItem Tag="CANCELLED" Content="{l:Tr Purchasing_StatusVoided}"/>
       </ComboBox>
       <TextBlock x:Name="FromLabel" Style="{StaticResource FilterLabel}" Text="{l:Tr Reports_From}"/>
-      <DatePicker x:Name="FromBox" SelectedDateFormat="Short" Width="118" Margin="0,0,6,4" SelectedDateChanged="Date_OnChanged" AutomationProperties.Name="{l:Tr Reports_From}"/>
+      <DatePicker x:Name="FromBox" SelectedDateFormat="Short" Width="132" Margin="0,0,6,4" SelectedDateChanged="Date_OnChanged" AutomationProperties.Name="{l:Tr Reports_From}"/>
       <TextBlock x:Name="ToLabel" Style="{StaticResource FilterLabel}" Text="{l:Tr Reports_To}"/>
-      <DatePicker x:Name="ToBox" SelectedDateFormat="Short" Width="118" Margin="0,0,6,4" SelectedDateChanged="Date_OnChanged" AutomationProperties.Name="{l:Tr Reports_To}"/>
+      <DatePicker x:Name="ToBox" SelectedDateFormat="Short" Width="132" Margin="0,0,6,4" SelectedDateChanged="Date_OnChanged" AutomationProperties.Name="{l:Tr Reports_To}"/>
       <ToggleButton x:Name="MoreFiltersToggle" Margin="0,0,6,4" MinHeight="32" Padding="10,4" Click="MoreFilters_OnClick"
                     Content="{l:Tr Common_MoreFilters}"/>
       <Button Style="{StaticResource ToolbarButton}" Margin="0,0,0,4" Click="ClearFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
@@ -90,6 +95,5 @@
       <TextBlock x:Name="EmptyText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
                  TextWrapping="Wrap" Text="{l:Tr Purchasing_Empty}"/>
     </Grid>
-    <p:PagerBar x:Name="Pager" Grid.Row="4"/>
   </Grid>
 </Page>

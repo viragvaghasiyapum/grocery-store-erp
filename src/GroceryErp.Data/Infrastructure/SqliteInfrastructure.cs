@@ -31,6 +31,9 @@ public sealed class SqliteConnectionFactory
     // only on disposable synthetic stores and keep the output out of app logs.
     public Action<string, string>? SqlTrace { get; set; }
 
+    /// <summary>The main database file this factory opens.</summary>
+    public string DatabaseFile { get; }
+
     public bool IsExclusive { get { lock (_barrier) return _barrier.ExclusiveOwner is not null; } }
     public bool OwnsExclusive { get { lock (_barrier) return _barrier.ExclusiveOwner == this; } }
     public int ActiveConnections { get { lock (_barrier) return _barrier.ActiveConnections; } }
@@ -65,6 +68,7 @@ public sealed class SqliteConnectionFactory
     public SqliteConnectionFactory(AppPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
+        DatabaseFile = paths.DatabaseFile;
         _walFile = paths.DatabaseFile + "-wal";
         _barrier = Barriers.GetOrAdd(Path.GetFullPath(paths.DatabaseFile), static _ => new ConnectionBarrier());
         _connectionString = new SqliteConnectionStringBuilder
@@ -79,6 +83,7 @@ public sealed class SqliteConnectionFactory
 
     internal SqliteConnectionFactory(string databaseFile, bool pooling = true)
     {
+        DatabaseFile = databaseFile;
         _walFile = databaseFile + "-wal";
         _barrier = Barriers.GetOrAdd(Path.GetFullPath(databaseFile), static _ => new ConnectionBarrier());
         _connectionString = new SqliteConnectionStringBuilder
@@ -378,6 +383,34 @@ public sealed class DbExecutor : IDisposable
     {
         public static readonly System.Reflection.PropertyInfo? Property =
             typeof(T).GetProperty("Items") ?? typeof(T).GetProperty("Rows") ?? typeof(T).GetProperty("Lines");
+    }
+}
+
+/// <summary>
+/// Lets one read spill its sorts to temporary files instead of process memory. SQLite groups rows
+/// by sorting all of them first, so a report grouping every sale line held the whole sort in memory:
+/// an all-dates item sales export peaked above 1 GB. Connections otherwise keep in-memory temporary
+/// storage, which is faster for the small sorts of the cashier and list pages.
+/// </summary>
+public static class LargeSort
+{
+    /// <summary>Use for the duration of the statement; disposing restores the pooled connection's default.</summary>
+    public static IDisposable SpillToDisk(SqliteConnection connection)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        connection.Execute("PRAGMA temp_store = FILE;");
+        return new Restore(connection);
+    }
+
+    private sealed class Restore(SqliteConnection connection) : IDisposable
+    {
+        // A cancelled read can leave SQLite's interrupt pending; the setting only affects speed, so
+        // failing to restore it must not replace the read's own outcome.
+        public void Dispose()
+        {
+            try { connection.Execute("PRAGMA temp_store = MEMORY;"); }
+            catch (SqliteException) { }
+        }
     }
 }
 

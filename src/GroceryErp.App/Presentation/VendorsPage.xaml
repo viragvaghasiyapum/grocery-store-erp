@@ -10,17 +10,18 @@
   <Grid Margin="14,8,14,8">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-      <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
     </Grid.RowDefinitions>
     <DockPanel Margin="0,0,0,6">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-        <Button x:Name="LedgerButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="Ledger_OnClick" Content="{l:Tr Purchasing_VendorLedger}"/>
-        <Button x:Name="EditButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="Edit_OnClick" Content="{l:Tr Purchasing_EditVendor}"/>
-        <Button Style="{StaticResource ToolbarButton}" Click="Payment_OnClick" Content="{l:Tr Purchasing_Payment}"/>
-        <Button Style="{StaticResource ToolbarButton}" Margin="0" Click="New_OnClick" Content="{l:Tr Purchasing_NewVendor}" FontWeight="SemiBold"
+        <Button Style="{StaticResource ToolbarButton}" Click="New_OnClick" Content="{l:Tr Purchasing_NewVendor}" FontWeight="SemiBold"
                 ToolTip="Ctrl+N"/>
+        <Button Style="{StaticResource ToolbarButton}" Click="Payment_OnClick" Content="{l:Tr Purchasing_Payment}"/>
+        <Button x:Name="EditButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="Edit_OnClick" Content="{l:Tr Purchasing_EditVendor}"/>
+        <Button x:Name="LedgerButton" Style="{StaticResource ToolbarButton}" Margin="0" IsEnabled="False" Click="Ledger_OnClick" Content="{l:Tr Purchasing_VendorLedger}"/>
       </StackPanel>
       <TextBlock Style="{StaticResource PageTitle}" Text="{l:Tr Purchasing_Vendors}"/>
+      <p:PagerBar x:Name="Pager"/>
     </DockPanel>
     <WrapPanel x:Name="FilterBar" Grid.Row="1" Margin="0,0,0,2">
       <ui:TextBox x:Name="SearchBox" Width="280" Margin="0,0,6,4" PlaceholderText="{l:Tr Purchasing_VendorSearch}"
@@ -74,6 +75,5 @@
       <TextBlock x:Name="EmptyText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
                  TextWrapping="Wrap" Text="{l:Tr Purchasing_VendorsEmpty}"/>
     </Grid>
-    <p:PagerBar x:Name="Pager" Grid.Row="3"/>
   </Grid>
 </Page>

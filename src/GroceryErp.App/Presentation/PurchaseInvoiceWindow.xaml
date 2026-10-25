@@ -23,8 +23,8 @@
         <DataGridTextColumn Width="190" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
         <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_ExpenseCategory}" Binding="{Binding ExpenseCategoryName}"/>
         <DataGridTextColumn Width="90" Header="{l:Tr Stock_Batch}" Binding="{Binding BatchNumber}"/>
-        <DataGridTextColumn Width="95" Header="{l:Tr Purchasing_MfgDate}" Binding="{Binding ManufacturingDate}"/>
-        <DataGridTextColumn Width="95" Header="{l:Tr Stock_Expiry}" Binding="{Binding ExpiryDate}"/>
+        <DataGridTextColumn Width="95" Header="{l:Tr Purchasing_MfgDate}" Binding="{Binding ManufacturingDate, StringFormat=dd MMM yyyy}"/>
+        <DataGridTextColumn Width="95" Header="{l:Tr Stock_Expiry}" Binding="{Binding ExpiryDate, StringFormat=dd MMM yyyy}"/>
         <DataGridTextColumn Width="75" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
         <DataGridTextColumn Width="75" Header="{l:Tr Purchasing_FreeQty}" Binding="{Binding FreeQuantity}"/>
         <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_Rate}" Binding="{Binding Rate}"/>

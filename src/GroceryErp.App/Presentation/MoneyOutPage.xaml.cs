@@ -48,6 +48,7 @@ public partial class MoneyOutPage : Page
         _inventory = inventory ?? services!.GetRequiredService<InventoryService>();
         _clock = clock ?? services!.GetRequiredService<IClock>();
         _loadOnShow = loadOnShow;
+        _ = new ActionStrip(ExpenseActions, ExpenseButtons, ExpenseMoreMenu, ExpenseMore, static () => 160);
         _damageFit = new FitPageSize(DamageGrid);
         _expenseFit = new FitPageSize(ExpenseGrid);
         _damageFit.RowsChanged += async (_, _) => await LoadDamagesAsync(PageMove.Same);
@@ -65,6 +66,7 @@ public partial class MoneyOutPage : Page
         ApplyState(PageStateStore.Current?.Get<State>(StateKey));
         UpdateActions();
         LanguageRefresh.Attach(this, () => _ = RefreshForLanguageAsync());
+        Loaded += (_, _) => PlaceTabActions();
         if (loadOnShow) Loaded += async (_, _) =>
         {
             await LoadMastersAsync();
@@ -150,6 +152,20 @@ public partial class MoneyOutPage : Page
         }
         catch (Exception exception) { ShowStatus(UserError.Message(exception)); }
         finally { _restoring = false; }
+    }
+
+    // Keeps the tab row's status and actions level with the headers, starting after the last one.
+    private void TabHeader_OnSizeChanged(object sender, SizeChangedEventArgs e) => PlaceTabActions();
+
+    // The headers are first sized before the page is loaded, so placement also runs on load.
+    private void PlaceTabActions()
+    {
+        if (PaymentsTab.ActualWidth <= 0 || PresentationSource.FromVisual(PaymentsTab) is null) return;
+        Point corner = PaymentsTab.TranslatePoint(new Point(PaymentsTab.ActualWidth, 0), MoneyOutTabs);
+        TabActions.Margin = new Thickness(corner.X + 12, corner.Y, 0, 0);
+        // Centred on the visible tab, which leaves a gap below it inside the item.
+        TabActions.Height = PaymentsTab.Template?.FindName("TabBorder", PaymentsTab) is FrameworkElement border && border.ActualHeight > 0
+            ? border.ActualHeight : PaymentsTab.ActualHeight;
     }
 
     private void UpdateActions()

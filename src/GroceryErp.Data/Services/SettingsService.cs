@@ -36,6 +36,8 @@ public sealed record AppSettings(
     public string UiLanguage => Get("ui.language", "en-IN");
     public string UiTheme => Get("ui.theme", "Light");
     public string UiBackdrop => Get("ui.backdrop", "None");
+    // Software drawing keeps the graphics driver's memory out of the process; the owner can opt into the GPU.
+    public bool HardwareRendering => GetBool("ui.hardware_rendering", false);
     public bool AlwaysShowThreeDecimals => GetBool("format.always_3dp", true);
     public string PrintLanguage => Get("print.language", "en-IN");
     public bool PrintBilingualNames => GetBool("print.bilingual_names", true);

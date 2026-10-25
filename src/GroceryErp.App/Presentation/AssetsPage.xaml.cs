@@ -46,6 +46,7 @@ public partial class AssetsPage : Page
         _assets = assets ?? services!.GetRequiredService<AssetService>();
         _clock = clock ?? services!.GetRequiredService<IClock>();
         _purchasing = purchasing ?? services!.GetRequiredService<PurchasingService>();
+        _ = new ActionStrip(TitleRow, TitleActions, MoreActionsMenu, MoreActions, ActionStrip.TitleRow(TitleText));
         _fit = new FitPageSize(AssetGrid);
         // Method and status cells and the row count are set in code, so a reload re-renders them.
         LanguageRefresh.Attach(this, () => _ = LoadAsync(PageMove.Same));
@@ -135,6 +136,7 @@ public partial class AssetsPage : Page
     {
         AssetItem? asset = AssetGrid.SelectedItem as AssetItem;
         EditAssetButton.IsEnabled = asset is not null;
+        TimelineButton.IsEnabled = asset is not null;
         DisposeButton.IsEnabled = asset is { DisposedDate: null };
     }
 
@@ -182,8 +184,7 @@ public partial class AssetsPage : Page
 
     private async void ViewTimeline_OnClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Tag: AssetItem asset }) return;
-        AssetGrid.SelectedItem = asset;
+        if (AssetGrid.SelectedItem is not AssetItem asset) return;
         try
         {
             IReadOnlyList<DepreciationEntry> schedule = await _assets.GetScheduleAsync(asset.Id);

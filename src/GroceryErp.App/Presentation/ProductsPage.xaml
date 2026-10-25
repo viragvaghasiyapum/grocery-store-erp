@@ -14,23 +14,24 @@
     </Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-      <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
     </Grid.RowDefinitions>
 
     <DockPanel Margin="0,0,0,6">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-        <Menu x:Name="ImportMenu" VerticalAlignment="Center" Margin="0,0,6,0" Background="Transparent">
+        <Button Style="{StaticResource ToolbarButton}" Click="New_OnClick" Content="{l:Tr Catalog_New}" FontWeight="SemiBold"
+                ToolTip="Ctrl+N"/>
+        <Button x:Name="MastersButton" Style="{StaticResource ToolbarButton}" Click="Masters_OnClick" Content="{l:Tr Catalog_Masters}"/>
+        <Menu x:Name="ImportMenu" VerticalAlignment="Center" Background="Transparent">
           <MenuItem Header="{l:Tr Catalog_ImportMenu}">
             <MenuItem Click="Import_OnClick" Header="{l:Tr Catalog_Import}"/>
             <MenuItem Click="OpeningImport_OnClick" Header="{l:Tr Stock_OpeningImport}"/>
             <MenuItem Click="OpeningTemplate_OnClick" Header="{l:Tr Stock_OpeningTemplate}"/>
           </MenuItem>
         </Menu>
-        <Button x:Name="MastersButton" Style="{StaticResource ToolbarButton}" Click="Masters_OnClick" Content="{l:Tr Catalog_Masters}"/>
-        <Button Style="{StaticResource ToolbarButton}" Margin="0" Click="New_OnClick" Content="{l:Tr Catalog_New}" FontWeight="SemiBold"
-                ToolTip="Ctrl+N"/>
       </StackPanel>
       <TextBlock Style="{StaticResource PageTitle}" Text="{l:Tr Catalog_Title}"/>
+      <p:PagerBar x:Name="Pager"/>
     </DockPanel>
 
     <WrapPanel x:Name="FilterBar" Grid.Row="1" Margin="0,0,0,2">
@@ -160,8 +161,6 @@
                  TextWrapping="Wrap" TextAlignment="Center" MaxWidth="420" Text="{l:Tr Catalog_Empty}"/>
     </Grid>
 
-    <p:PagerBar x:Name="Pager" Grid.Row="4"/>
-
-    <p:ProductDetailsPanel x:Name="Details" Grid.Column="1" Grid.RowSpan="5" Margin="10,-8,-14,-8" Visibility="Collapsed"/>
+    <p:ProductDetailsPanel x:Name="Details" Grid.Column="1" Grid.RowSpan="4" Margin="10,-8,-14,-8" Visibility="Collapsed"/>
   </Grid>
 </Page>

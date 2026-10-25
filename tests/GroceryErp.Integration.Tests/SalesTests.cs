@@ -973,7 +973,7 @@ public sealed class SalesTests
             Clock = new FixedClock(new DateTime(2026, 9, 27, 10, 30, 0));
             var ledger = new LotQuantities(settings);
             _ledger = ledger;
-            Catalog = new CatalogService(Database, new AuditLog(), settings);
+            Catalog = new CatalogService(Database, new AuditLog(), settings, Clock);
             Inventory = new InventoryService(Database, ledger, new DocNumberService(settings), new PeriodGuard(settings, Clock), new AuditLog());
             Sales = new SalesService(Database, ledger, new DocNumberService(settings),
                 new PeriodGuard(settings, Clock), settings, new AuditLog(), Clock);

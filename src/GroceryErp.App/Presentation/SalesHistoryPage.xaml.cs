@@ -54,8 +54,11 @@ public partial class SalesHistoryPage : Page
         RestoreState();
         _ = new FilterRow(FilterBar, ProductBox, MoreFiltersToggle, MoreFiltersPanel)
             .Fold(FromLabel, FromPicker, ToLabel, ToPicker).Fold(StatusBox);
+        _ = new ActionStrip(TitleRow, TitleActions, MoreActionsMenu, MoreActions, ActionStrip.TitleRow(TitleText));
         _fit = new FitPageSize(HistoryGrid);
         _fit.RowsChanged += async (_, _) => await RefreshAsync(reset: false);
+        Pager.PreviousRequested += async (_, _) => await PreviousPageAsync();
+        Pager.NextRequested += async (_, _) => await NextPageAsync();
         PreviewKeyDown += (_, args) =>
         {
             if (args.Key != Key.F || Keyboard.Modifiers != ModifierKeys.Control) return;
@@ -122,8 +125,7 @@ public partial class SalesHistoryPage : Page
             return false;
         }
         _loadingHistory = true;
-        PreviousButton.IsEnabled = false;
-        NextButton.IsEnabled = false;
+        Pager.SetLoading(true);
         try
         {
             DateOnly? pageDate = reset ? null : forward || backward ? requestedDate : _beforeDate;
@@ -140,19 +142,16 @@ public partial class SalesHistoryPage : Page
             _beforeId = pageId;
             timing.Bind(() => HistoryGrid.ItemsSource = items);
             CloseDetails();
-            StatusText.Text = TranslationSource.Instance.Format("Sales_ResultCount", items.Count);
-            PreviousButton.IsEnabled = _previous.Count > 0;
-            NextButton.IsEnabled = items.Count == PageSize;
-            PageText.Text = _previous.Count > 0 || items.Count == PageSize
-                ? TranslationSource.Instance.Format("Pager_Page", _previous.Count + 1) : string.Empty;
+            Pager.Status = TranslationSource.Instance.Format("Sales_ResultCount", items.Count);
+            Pager.Update(_previous.Count + 1, _previous.Count > 0, items.Count == PageSize);
             UpdateActions();
             return true;
         }
         catch (Exception exception)
         {
-            StatusText.Text = UserError.Message(exception);
-            PreviousButton.IsEnabled = _previous.Count > 0;
-            NextButton.IsEnabled = HistoryGrid.ItemsSource is IReadOnlyList<SaleHistoryItem> rows && rows.Count == PageSize;
+            Pager.Status = UserError.Message(exception);
+            Pager.Update(_previous.Count + 1, _previous.Count > 0,
+                HistoryGrid.ItemsSource is IReadOnlyList<SaleHistoryItem> rows && rows.Count == PageSize);
             return false;
         }
         finally
@@ -226,7 +225,7 @@ public partial class SalesHistoryPage : Page
         sale.InvoiceNumber ?? sale.Id.ToString(Digits), sale.SaleDate.ToString("dd-MM-yyyy", Digits),
         sale.GrandTotal.Value.ToString("N2", Digits));
 
-    private async void Next_OnClick(object sender, RoutedEventArgs e)
+    private async Task NextPageAsync()
     {
         if (_loadingHistory) return;
         if (HistoryGrid.ItemsSource is not IReadOnlyList<SaleHistoryItem> items || items.Count != PageSize) return;
@@ -234,7 +233,7 @@ public partial class SalesHistoryPage : Page
             requestedId: items[^1].Id, forward: true);
     }
 
-    private async void Previous_OnClick(object sender, RoutedEventArgs e)
+    private async Task PreviousPageAsync()
     {
         if (_loadingHistory || _previous.Count == 0) return;
         (DateOnly? date, long? id) = _previous.Peek();
@@ -247,10 +246,22 @@ public partial class SalesHistoryPage : Page
         CloseDetails();
     }
 
+    private void HistoryGrid_OnDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (HistoryGrid.SelectedItem is SaleHistoryItem) ViewBillItems_OnClick(sender, e);
+    }
+
+    // Enter opens the selected bill instead of moving to the next row.
+    private void HistoryGrid_OnPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || Keyboard.Modifiers != ModifierKeys.None || HistoryGrid.SelectedItem is not SaleHistoryItem) return;
+        e.Handled = true;
+        ViewBillItems_OnClick(sender, e);
+    }
+
     private async void ViewBillItems_OnClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Tag: SaleHistoryItem item }) return;
-        HistoryGrid.SelectedItem = item;
+        if (HistoryGrid.SelectedItem is not SaleHistoryItem item) return;
         try
         {
             SaleDetails sale = await _sales.GetAsync(item.Id);
@@ -264,7 +275,7 @@ public partial class SalesHistoryPage : Page
             RefreshDetailHeading();
             SideOverlayMotion.Show(DetailOverlay, DetailPanel, DetailBackdrop);
         }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 
     private void CloseDetails()
@@ -352,6 +363,7 @@ public partial class SalesHistoryPage : Page
     {
         if (ReprintButton is null) return;
         SaleStatus? status = (HistoryGrid.SelectedItem as SaleHistoryItem)?.Status;
+        ViewItemsButton.IsEnabled = status is not null;
         ReprintButton.IsEnabled = status is SaleStatus.Completed or SaleStatus.PartiallyRefunded or SaleStatus.Refunded or SaleStatus.Void;
         VoidButton.IsEnabled = status == SaleStatus.Completed;
         ReturnButton.IsEnabled = status is SaleStatus.Completed or SaleStatus.PartiallyRefunded;
@@ -363,9 +375,9 @@ public partial class SalesHistoryPage : Page
         try
         {
             await _printer.PrintAsync(await _sales.GetReceiptAsync(sale.Id, duplicate: true));
-            StatusText.Text = TranslationSource.Instance.Format("Sales_Reprinted", sale.InvoiceNumber ?? "");
+            Pager.Status = TranslationSource.Instance.Format("Sales_Reprinted", sale.InvoiceNumber ?? "");
         }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 
     private async void Void_OnClick(object sender, RoutedEventArgs e)
@@ -374,7 +386,7 @@ public partial class SalesHistoryPage : Page
         var dialog = new SaleActionWindow(false, context: BillContext(sale)) { Owner = Window.GetWindow(this) };
         if (dialog.ShowDialog() != true) return;
         try { await _sales.VoidAsync(sale.Id, dialog.Reason, OperationGuard.NewId()); await RefreshAsync(); }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 
     private async void Return_OnClick(object sender, RoutedEventArgs e)
@@ -386,7 +398,7 @@ public partial class SalesHistoryPage : Page
             IReadOnlyList<ReturnableSaleLine> lines = await _sales.GetReturnableLinesAsync(item.Id);
             if (lines.Count == 0)
             {
-                StatusText.Text = TranslationSource.Instance["Sales_NothingToReturn"];
+                Pager.Status = TranslationSource.Instance["Sales_NothingToReturn"];
                 return;
             }
             var dialog = new SaleActionWindow(true, lines, BillContext(item)) { Owner = Window.GetWindow(this) };
@@ -420,10 +432,10 @@ public partial class SalesHistoryPage : Page
             try { await _printer.PrintAsync(await _sales.GetReturnReceiptAsync(returned.ReturnId)); }
             catch (Exception exception)
             {
-                StatusText.Text = TranslationSource.Instance.Format("Sales_ReturnPrintFailed", returned.ReturnNumber, UserError.Message(exception));
+                Pager.Status = TranslationSource.Instance.Format("Sales_ReturnPrintFailed", returned.ReturnNumber, UserError.Message(exception));
             }
         }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 
     private async void DayEnd_OnClick(object sender, RoutedEventArgs e)
@@ -435,7 +447,7 @@ public partial class SalesHistoryPage : Page
             DayEndSummary summary = await _sales.GetDayEndAsync(date);
             new DayEndWindow(summary, _printer) { Owner = Window.GetWindow(this) }.ShowDialog();
         }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 
     private async void Export_OnClick(object sender, RoutedEventArgs e)
@@ -448,7 +460,7 @@ public partial class SalesHistoryPage : Page
         _exportCancellation = cancellation;
         ExportButton.IsEnabled = false;
         CancelExportButton.IsEnabled = true;
-        ExportProgress.Visibility = Visibility.Visible;
+        ExportPanel.Visibility = Visibility.Visible;
         try
         {
             SaleHistoryFilter filter = CreateFilter(null, null, 500);
@@ -468,12 +480,15 @@ public partial class SalesHistoryPage : Page
                 decimal grandTotal = 0;
                 DateOnly? beforeDate = null;
                 long? beforeId = null;
+                // One builder for every page, written chunk by chunk: a page turned into one string was
+                // a large object, and 1,744 pages of them grew the large-object heap by 159 MiB.
+                var chunk = new StringBuilder();
                 while (true)
                 {
                     cancellation.Token.ThrowIfCancellationRequested();
                     IReadOnlyList<SaleHistoryItem> page = await _sales.GetHistoryAsync(
                         filter with { BeforeDate = beforeDate, BeforeId = beforeId }, cancellation.Token);
-                    var chunk = new StringBuilder(page.Count * 96);
+                    chunk.Clear();
                     foreach (SaleHistoryItem item in page)
                     {
                         chunk.Append(Csv(item.SaleDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))).Append(',')
@@ -484,9 +499,9 @@ public partial class SalesHistoryPage : Page
                             .Append(item.GrandTotal.Value.ToString("0.00", CultureInfo.InvariantCulture)).AppendLine();
                         grandTotal += item.GrandTotal.Value;
                     }
-                    await writer.WriteAsync(chunk.ToString().AsMemory(), cancellation.Token);
+                    await writer.WriteAsync(chunk, cancellation.Token);
                     exported += page.Count;
-                    if (exported % 5000 == 0) StatusText.Text = TranslationSource.Instance.Format("Sales_Exported", exported);
+                    if (exported % 5000 == 0) Pager.Status = TranslationSource.Instance.Format("Sales_Exported", exported);
                     if (page.Count < 500) break;
                     beforeDate = page[^1].SaleDate;
                     beforeId = page[^1].Id;
@@ -498,17 +513,17 @@ public partial class SalesHistoryPage : Page
                 await file.FlushAsync(cancellation.Token);
             }
             File.Move(temporary, picker.FileName, overwrite: true);
-            StatusText.Text = TranslationSource.Instance.Format("Sales_Exported", exported);
+            Pager.Status = TranslationSource.Instance.Format("Sales_Exported", exported);
         }
-        catch (OperationCanceledException) { StatusText.Text = TranslationSource.Instance["Sales_ExportCancelled"]; }
-        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+        catch (OperationCanceledException) { Pager.Status = TranslationSource.Instance["Sales_ExportCancelled"]; }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
         finally
         {
             if (File.Exists(temporary)) File.Delete(temporary);
             _exportCancellation = null;
             ExportButton.IsEnabled = true;
             CancelExportButton.IsEnabled = false;
-            ExportProgress.Visibility = Visibility.Collapsed;
+            ExportPanel.Visibility = Visibility.Collapsed;
         }
     }
 

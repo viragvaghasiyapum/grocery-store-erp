@@ -9,15 +9,21 @@
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European"
     ScrollViewer.CanContentScroll="False">
   <Grid Margin="14,8,14,8">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <DockPanel Margin="0,0,0,6">
-      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-        <Button Style="{StaticResource ToolbarButton}" Click="Post_OnClick" Content="{l:Tr Assets_PostNow}" ToolTip="{l:Tr Assets_PostAllHint}"/>
-        <Button x:Name="DisposeButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="Dispose_OnClick" Content="{l:Tr Assets_Dispose}"/>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <DockPanel x:Name="TitleRow" Margin="0,0,0,6">
+      <!-- Most important first: when the row is narrow the last actions fold behind More. -->
+      <StackPanel x:Name="TitleActions" DockPanel.Dock="Right" Orientation="Horizontal">
+        <Button Style="{StaticResource ToolbarButton}" Click="NewAsset_OnClick" Content="{l:Tr Assets_New}" FontWeight="SemiBold" ToolTip="Ctrl+N"/>
         <Button x:Name="EditAssetButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="EditAsset_OnClick" Content="{l:Tr Assets_EditSelected}"/>
-        <Button Style="{StaticResource ToolbarButton}" Margin="0" Click="NewAsset_OnClick" Content="{l:Tr Assets_New}" FontWeight="SemiBold" ToolTip="Ctrl+N"/>
+        <Button x:Name="TimelineButton" Style="{StaticResource ToolbarButton}" IsEnabled="False" Click="ViewTimeline_OnClick" Content="{l:Tr Assets_ViewTimeline}"/>
+        <Button Style="{StaticResource ToolbarButton}" Click="Post_OnClick" Content="{l:Tr Assets_PostNow}" ToolTip="{l:Tr Assets_PostAllHint}"/>
+        <Button x:Name="DisposeButton" Style="{StaticResource ToolbarButton}" Margin="0" IsEnabled="False" Click="Dispose_OnClick" Content="{l:Tr Assets_Dispose}"/>
+        <Menu x:Name="MoreActionsMenu" VerticalAlignment="Center" Background="Transparent" Visibility="Collapsed">
+          <MenuItem x:Name="MoreActions" Header="{l:Tr Common_MoreActions}"/>
+        </Menu>
       </StackPanel>
-      <TextBlock Style="{StaticResource PageTitle}" Text="{l:Tr Assets_Title}"/>
+      <TextBlock x:Name="TitleText" Style="{StaticResource PageTitle}" Text="{l:Tr Assets_Title}"/>
+      <p:PagerBar x:Name="Pager"/>
     </DockPanel>
     <WrapPanel Grid.Row="1" Margin="0,0,0,2">
       <ui:TextBox x:Name="AssetSearchBox" Width="260" Margin="0,0,6,4" PlaceholderText="{l:Tr Assets_SearchHint}"
@@ -29,17 +35,10 @@
       <DataGrid x:Name="AssetGrid" Style="{StaticResource CompactTableGrid}" SelectionChanged="AssetGrid_OnSelectionChanged"
                 MouseDoubleClick="AssetGrid_OnDoubleClick" AutomationProperties.Name="{l:Tr Assets_Title}">
         <DataGrid.Columns>
-          <DataGridTemplateColumn Width="125" Header="{l:Tr Assets_ViewTimeline}">
-            <DataGridTemplateColumn.CellTemplate><DataTemplate>
-              <Button Content="{l:Tr Assets_ViewTimeline}" Tag="{Binding}" Click="ViewTimeline_OnClick"
-                      HorizontalAlignment="Center" VerticalAlignment="Center" Height="28" MinHeight="0" MinWidth="0"
-                      Padding="8,2" FontSize="11"/>
-            </DataTemplate></DataGridTemplateColumn.CellTemplate>
-          </DataGridTemplateColumn>
           <DataGridTextColumn Width="2*" MinWidth="160" Header="{l:Tr Catalog_Name}" Binding="{Binding Name}"/>
           <DataGridTextColumn Width="120" Header="{l:Tr Catalog_Category}" Binding="{Binding Category}"/>
           <DataGridTextColumn Width="125" Header="{l:Tr Assets_Cost}" Binding="{Binding Cost}"/>
-          <DataGridTextColumn Width="80" Header="{l:Tr Assets_Method}" Binding="{Binding Method}"/>
+          <DataGridTextColumn Width="80" Header="{l:Tr Assets_Method}" Binding="{Binding Method, Converter={StaticResource DepreciationMethodConverter}}"/>
           <DataGridTextColumn Width="80" Header="{l:Tr Assets_Rate}" Binding="{Binding Rate}"/>
           <DataGridTextColumn Width="130" Header="{l:Tr Assets_BookValue}" Binding="{Binding BookValue}"/>
           <DataGridTextColumn Width="120" Header="{l:Tr Assets_Disposed}" Binding="{Binding DisposedDate, StringFormat=dd MMM yyyy}"/>
@@ -47,8 +46,7 @@
       </DataGrid>
       <TextBlock x:Name="EmptyText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" Text="{l:Tr Assets_Empty}"/>
     </Grid>
-    <p:PagerBar x:Name="Pager" Grid.Row="3"/>
-    <Grid x:Name="TimelineOverlay" Grid.RowSpan="4" Panel.ZIndex="10" Visibility="Collapsed">
+    <Grid x:Name="TimelineOverlay" Grid.RowSpan="3" Panel.ZIndex="10" Visibility="Collapsed">
       <Border x:Name="TimelineBackdrop" Background="#88000000" MouseDown="TimelineBackdrop_OnMouseDown"/>
       <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
         <Border x:Name="TimelinePanel" Grid.Column="1" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"

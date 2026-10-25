@@ -22,6 +22,7 @@ internal sealed class ActionStrip
     private readonly FrameworkElement _menu;
     private readonly MenuItem _more;
     private readonly Button[] _order;
+    private readonly Func<double>? _reserve;
     private readonly DispatcherTimer _settle;
     private int _kept = -1;
 
@@ -29,7 +30,10 @@ internal sealed class ActionStrip
     /// <param name="buttons">The panel holding the buttons, most important first, and then the menu.</param>
     /// <param name="menu">The menu that shows the More item.</param>
     /// <param name="more">The More item that receives the buttons that do not fit.</param>
-    public ActionStrip(FrameworkElement room, Panel buttons, FrameworkElement menu, MenuItem more)
+    /// <param name="reserve">Width of the room kept for what shares the row, such as a title row's
+    /// title and status line.</param>
+    public ActionStrip(FrameworkElement room, Panel buttons, FrameworkElement menu, MenuItem more,
+        Func<double>? reserve = null)
     {
         ArgumentNullException.ThrowIfNull(room);
         ArgumentNullException.ThrowIfNull(buttons);
@@ -39,6 +43,7 @@ internal sealed class ActionStrip
         _buttons = buttons;
         _menu = menu;
         _more = more;
+        _reserve = reserve;
         _order = [.. buttons.Children.OfType<Button>()];
         // Language changes are applied after the new text is laid out.
         _settle = new DispatcherTimer(DispatcherPriority.Loaded, room.Dispatcher) { Interval = TimeSpan.Zero };
@@ -64,6 +69,13 @@ internal sealed class ActionStrip
         };
     }
 
+    /// <summary>
+    /// The reserve for a page's title row: the title with its margin and the least width that
+    /// keeps the status line and page arrows readable.
+    /// </summary>
+    public static Func<double> TitleRow(FrameworkElement title, double status = 220) =>
+        () => title.ActualWidth + title.Margin.Left + title.Margin.Right + status;
+
     private void TranslationChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == "Item[]" && !_settle.IsEnabled) _settle.Start();
@@ -71,8 +83,8 @@ internal sealed class ActionStrip
 
     private void Arrange()
     {
-        double available = _room.ActualWidth;
-        if (available <= 0 || !_room.IsLoaded) return;
+        if (_room.ActualWidth <= 0 || !_room.IsLoaded) return;
+        double available = _room.ActualWidth - (_reserve?.Invoke() ?? 0);
         double[] widths = _order.Select(static button => Width(button)).ToArray();
         int kept = _order.Length;
         // A little slack absorbs rounding so the row never wraps by a pixel.

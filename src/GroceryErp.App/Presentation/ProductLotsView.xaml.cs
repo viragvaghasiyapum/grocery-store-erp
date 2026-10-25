@@ -89,8 +89,7 @@ public partial class ProductLotsView : UserControl
         return LoadAsync(PageMove.First);
     }
 
-    private static DateOnly BusinessDate =>
-        (Application.Current as App)?.ServicesOrNull?.GetService<IClock>()?.BusinessDate ?? DateOnly.FromDateTime(DateTime.Today);
+    private static DateOnly BusinessDate => App.BusinessDate;
 
     private LotFilter CurrentFilter() => new()
     {

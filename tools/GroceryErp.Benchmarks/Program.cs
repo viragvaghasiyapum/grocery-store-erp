@@ -3,6 +3,7 @@ using System.Globalization;
 using ClosedXML.Excel;
 using GroceryErp.Catalog;
 using GroceryErp.Catalog.Barcodes;
+using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
 
@@ -19,7 +20,7 @@ try
     await settings.LoadAsync();
     var audit = new AuditLog();
     var importer = new ProductExcelImporter(database, audit, settings);
-    var catalog = new CatalogService(database, audit, settings);
+    var catalog = new CatalogService(database, audit, settings, new SystemClock(settings));
     string workbookPath = Path.Combine(root, "benchmark-products.xlsx");
     ProductExcelImporter.WriteTemplate(workbookPath);
     using (var workbook = new XLWorkbook(workbookPath))

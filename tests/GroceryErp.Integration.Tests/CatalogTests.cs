@@ -4,6 +4,7 @@ using GroceryErp.Catalog;
 using GroceryErp.Catalog.Barcodes;
 using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
+using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
 using GroceryErp.Printing;
@@ -642,6 +643,25 @@ public sealed class CatalogTests
         long second = await fixture.Service.CreateAsync(fixture.Product("Bulk Two", "bulk"), TestContext.Current.CancellationToken);
         long category = await fixture.Service.CreateCategoryAsync(new("Bulk Category", null, null, null), TestContext.Current.CancellationToken);
         long tax = await fixture.Service.CreateTaxRateAsync("GST 9%", 9m, TestContext.Current.CancellationToken);
+        using (var seed = fixture.Factory.Open())
+        {
+            long lot = seed.ExecuteScalar<long>("""
+                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,selling_price,qty_received)
+                VALUES (@first,'BULK-LOT','2026-09-01',1000,2000,0) RETURNING id
+                """, new { first });
+            long sale = seed.ExecuteScalar<long>("INSERT INTO sale(sale_date,status) VALUES ('2026-09-02','DRAFT') RETURNING id");
+            seed.Execute("""
+                INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,
+                    taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+                VALUES (@sale,1,@first,@lot,'Bulk One',1000,2000,2000,0,2000,1000,1000),
+                       (@sale,2,@first,@lot,'Bulk One',1000,2000,2000,0,2000,1000,1000)
+                """, new { sale, first, lot });
+        }
+        // A category change re-files each product's sale lines, so its preview counts them for batching.
+        (await fixture.Service.PreviewBulkAsync([first, second], new(CatalogBulkAction.Category, category),
+            TestContext.Current.CancellationToken)).Rows.Select(static row => row.SaleLines).ShouldBe([2L, 0L]);
+        (await fixture.Service.PreviewBulkAsync([first, second], new(CatalogBulkAction.Tax, tax),
+            TestContext.Current.CancellationToken)).Rows.Select(static row => row.SaleLines).ShouldBe([0L, 0L]);
 
         (await fixture.Service.RunBulkBatchAsync(new(CatalogBulkAction.Category, category), [first, second],
             BulkBatch.OperationId(OperationGuard.NewId(), 0), TestContext.Current.CancellationToken))
@@ -674,7 +694,7 @@ public sealed class CatalogTests
             CategoryId = connection.ExecuteScalar<long>("INSERT INTO category(name) VALUES ('Groceries') RETURNING id");
             UnitId = connection.ExecuteScalar<long>("SELECT id FROM uom WHERE code='PCS'");
             TaxRateId = connection.ExecuteScalar<long>("SELECT id FROM tax_rate WHERE rate_pct=5000");
-            Service = new CatalogService(Database, new AuditLog(), Settings);
+            Service = new CatalogService(Database, new AuditLog(), Settings, new SystemClock(Settings));
         }
 
         public string Root { get; }

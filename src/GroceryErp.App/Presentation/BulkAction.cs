@@ -3,7 +3,8 @@ using GroceryErp.Data.Services;
 namespace GroceryErp.App.Presentation;
 
 /// <summary>One row the server resolved for a bulk action, with its eligibility before anything changes.</summary>
-internal sealed record BulkCandidate(long Id, string Label, bool Eligible, string? SkipReasonKey = null);
+/// <param name="Weight">The row's share of a batch's work when the action sets a <see cref="BulkAction.WeightBudget"/>.</param>
+internal sealed record BulkCandidate(long Id, string Label, bool Eligible, string? SkipReasonKey = null, long Weight = 0);
 
 /// <summary>The server-resolved rows of a bulk action and a localized description of its effect.</summary>
 internal sealed record BulkPlan(IReadOnlyList<BulkCandidate> Candidates, string? Effect = null)
@@ -35,7 +36,36 @@ internal sealed class BulkAction
 
     internal const int DefaultBatchSize = 50;
 
+    /// <summary>
+    /// When set, a batch also stops before its rows' total <see cref="BulkCandidate.Weight"/> passes
+    /// this budget, for an action whose cost per row varies widely; a heavier row runs alone.
+    /// </summary>
+    public long? WeightBudget { get; init; }
+
     public required Func<CancellationToken, Task<BulkPlan>> Plan { get; init; }
 
     public required Func<IReadOnlyList<long>, string, CancellationToken, Task<IReadOnlyList<BulkItemResult>>> Run { get; init; }
+
+    /// <summary>The eligible rows in review order, cut into batches by size and weight.</summary>
+    internal long[][] Batches(IEnumerable<BulkCandidate> eligible)
+    {
+        ArgumentNullException.ThrowIfNull(eligible);
+        int size = Math.Clamp(BatchSize, 1, BulkBatch.MaxBatchSize);
+        var batches = new List<long[]>();
+        var current = new List<long>(size);
+        long weight = 0;
+        foreach (BulkCandidate candidate in eligible)
+        {
+            if (current.Count == size || (current.Count > 0 && weight + candidate.Weight > WeightBudget))
+            {
+                batches.Add([.. current]);
+                current.Clear();
+                weight = 0;
+            }
+            current.Add(candidate.Id);
+            weight += candidate.Weight;
+        }
+        if (current.Count > 0) batches.Add([.. current]);
+        return [.. batches];
+    }
 }

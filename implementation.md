@@ -1023,6 +1023,7 @@ never update a page the user already left.
 | Theme | Light by default (bright shops, glare); Dark and System available |
 | Status colors | Success/Warning/Danger always paired with an icon or text (never color alone) |
 | Backdrop | None by default; Mica optional (`ui.backdrop`) |
+| Drawing | Software rendering by default (about 190 MiB less memory on the large-store journey); graphics card optional (`ui.hardware_rendering`) |
 
 Define tokens once in `GroceryErp.UI.Common/Themes/Tokens.xaml`; no hard-coded sizes or colors in pages.
 
@@ -3741,6 +3742,7 @@ Seeded by migrations (001/002) or defaulted in code.
 | `scanner.max_gap_ms` / `scanner.min_length` | `35` / `6` | Burst detector thresholds |
 | `ui.language` | `en-IN` | UI language: `en-IN` or `gu-IN` |
 | `ui.theme` / `ui.backdrop` | `Light` / `None` | Appearance |
+| `ui.hardware_rendering` | `0` | `1` draws with the graphics card; the default software drawing keeps the driver's memory out of the process. Applies at the next start |
 | `ui.grid.<name>` | — | Saved column layout |
 | `format.always_3dp` | `1` | Show 3 decimals on whole-unit quantities |
 | `print.language` | `en-IN` | Language of printed bills/labels: `en-IN` or `gu-IN` |

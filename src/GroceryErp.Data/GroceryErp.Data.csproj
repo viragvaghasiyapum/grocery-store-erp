@@ -45,5 +45,6 @@
     <EmbeddedResource Include="../../034_annual_close.sql" Link="db/034_annual_close.sql" />
     <EmbeddedResource Include="../../035_list_filter_indexes.sql" Link="db/035_list_filter_indexes.sql" />
     <EmbeddedResource Include="../../036_remove_stock_ledger.sql" Link="db/036_remove_stock_ledger.sql" />
+    <EmbeddedResource Include="../../037_barcode_lot_index.sql" Link="db/037_barcode_lot_index.sql" />
   </ItemGroup>
 </Project>

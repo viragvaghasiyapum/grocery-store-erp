@@ -21,7 +21,7 @@ using GroceryErp.Reports;
 using GroceryErp.Sales;
 
 if (args.Length < 1)
-    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase3-purchase-read|phase7-filters|phase1-schema-audit|phase1-rollback|refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|phase6-reports|phase6-matrix|phase6-category-index|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|phase5-label-failure|phase5-live-write|phase5-return-reconcile|phase5-sales-read|phase5-count-read|phase5-fixture-align|phase5-direct-audit|phase5-direct-crash|phase5-direct-crash-check|phase6-annual|rebuild-pnl-days|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
+    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase9-profile|phase9-export|phase3-purchase-read|phase7-filters|phase1-schema-audit|phase1-rollback|refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|phase6-reports|phase6-matrix|phase6-category-index|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|phase5-label-failure|phase5-live-write|phase5-return-reconcile|phase5-sales-read|phase5-count-read|phase5-fixture-align|phase5-direct-audit|phase5-direct-crash|phase5-direct-crash-check|phase6-annual|rebuild-pnl-days|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
 
 string root = Path.GetFullPath(args[0]);
 string mode = args.Length > 1 ? args[1] : "read";
@@ -106,7 +106,7 @@ var clock = new AuditClock(new DateTime(2026, 9, 26, 12, 0, 0));
 var numbers = new DocNumberService(settings);
 var periods = new PeriodGuard(settings, clock);
 var ledger = new LotQuantities(settings);
-var catalog = new CatalogService(database, audit, settings);
+var catalog = new CatalogService(database, audit, settings, clock);
 var inventory = new InventoryService(database, ledger, numbers, periods, audit);
 var purchasing = new PurchasingService(database, ledger, numbers, periods, settings, audit);
 var sales = new SalesService(database, ledger, numbers, periods, settings, audit, clock);
@@ -189,6 +189,7 @@ var rowCounts = new Dictionary<string, long>();
 List<PhaseOneStorageRow>? phaseOneStorage = null;
 Dictionary<string, long>? phaseOneChecks = null;
 Dictionary<string, long>? phaseTwoChecks = null;
+object? phaseNine = null;
 
 using (var connection = factory.Open())
 {
@@ -319,6 +320,61 @@ switch (mode)
             ["hasMore"] = page.HasMore ? 1 : 0,
         };
         if (page.Items.Count == 0) throw new InvalidDataException("Count page is empty.");
+        break;
+    }
+    // Phase 9 query and write review: isolated, mixed and per-statement profiles of every hot path.
+    case "phase9-profile":
+        if (!Path.GetFileName(root).Contains("rehearsal", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The Phase 9 profile writes documents; use a disposable rehearsal root.");
+        phaseNine = await new PhaseNineProfile(paths, factory, database, settings, audit, backups).RunAsync();
+        break;
+    // The full-history CSV gate: one report over every date through the streaming export, with the
+    // process peak, the managed allocation, and how fast a second export stops when it is cancelled.
+    // The fourth argument names the report: SalesRegister (one row per bill, the default) or an
+    // aggregate such as ItemSales, which groups every sale line. Run each in a fresh process.
+    case "phase9-export":
+    {
+        ReportKind exportKind = args.Length > 3 ? Enum.Parse<ReportKind>(args[3]) : ReportKind.SalesRegister;
+        var exportReports = new ReportService(database, settings, new AuditClock(new DateTime(2026, 10, 18, 12, 0, 0)));
+        var filter = new ReportFilter(From: new DateOnly(2019, 1, 1), To: new DateOnly(2026, 10, 18), Limit: 5000);
+        string path = Path.Combine(paths.ExportsDir, "phase9-full-history.csv");
+        long allocatedBefore = GC.GetTotalAllocatedBytes(precise: true);
+        process.Refresh();
+        long workingBefore = process.WorkingSet64;
+        var exportTimer = Stopwatch.StartNew();
+        long exported = await exportReports.ExportCsvAsync(exportKind, filter, path);
+        exportTimer.Stop();
+        process.Refresh();
+        long fileBytes = new FileInfo(path).Length;
+        File.Delete(path);
+        using var cancellation = new CancellationTokenSource();
+        var cancelTimer = new Stopwatch();
+        bool cancelled = false;
+        Task cancelLater = Task.Run(async () => { await Task.Delay(3000); cancelTimer.Start(); await cancellation.CancelAsync(); });
+        try { await exportReports.ExportCsvAsync(exportKind, filter, path, cancellationToken: cancellation.Token); }
+        catch (OperationCanceledException) { cancelled = true; cancelTimer.Stop(); }
+        await cancelLater;
+        // A report that finished before the cancel leaves its finished file; only a partial file is a leak.
+        if (!cancelled) File.Delete(path);
+        bool partialLeft = Directory.EnumerateFiles(paths.ExportsDir, "phase9-full-history.csv*").Any();
+        phaseNine = new
+        {
+            report = exportKind.ToString(),
+            rows = exported,
+            fileBytes,
+            milliseconds = exportTimer.Elapsed.TotalMilliseconds,
+            workingSetBeforeBytes = workingBefore,
+            peakWorkingSetBytes = process.PeakWorkingSet64,
+            allocatedBytes = GC.GetTotalAllocatedBytes(precise: true) - allocatedBefore,
+            gcPauseMilliseconds = GC.GetTotalPauseDuration().TotalMilliseconds,
+            cancelled,
+            cancelStopMilliseconds = cancelTimer.Elapsed.TotalMilliseconds,
+            partialLeft,
+        };
+        Console.WriteLine($"OK phase9-export {exportKind}: {exported} rows in {exportTimer.Elapsed.TotalSeconds:0.0} s, peak {process.PeakWorkingSet64 / 1048576.0:0} MiB, cancel stop {cancelTimer.Elapsed.TotalMilliseconds:0} ms");
+        // A report that finishes within the delay is not cancelled; it must still leave no partial file.
+        if (partialLeft || (!cancelled && exportTimer.Elapsed > TimeSpan.FromSeconds(3)))
+            throw new InvalidDataException("The cancelled export did not stop cleanly.");
         break;
     }
     // A cashier bill flow on the real write path while two readers page sales history.
@@ -4259,6 +4315,7 @@ File.WriteAllText(output, JsonSerializer.Serialize(new
     phaseOneStorage,
     phaseOneChecks,
     phaseTwoChecks,
+    phaseNine,
     machine = Environment.MachineName,
     logicalProcessors = Environment.ProcessorCount,
     dotnet = Environment.Version.ToString(),

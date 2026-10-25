@@ -29,6 +29,10 @@
   <data name="Settings_ScannerPortMissing" xml:space="preserve"><value>{0} (currently missing)</value></data>
   <data name="Settings_SaveScannerPort" xml:space="preserve"><value>Save scanner port</value></data>
   <data name="Settings_ScannerPortSaved" xml:space="preserve"><value>Scanner port saved.</value></data>
+  <data name="Settings_DisplayTitle" xml:space="preserve"><value>Display</value></data>
+  <data name="Settings_HardwareRendering" xml:space="preserve"><value>Use the graphics card for drawing</value></data>
+  <data name="Settings_HardwareRenderingHelp" xml:space="preserve"><value>The app draws its screens in software, which uses less memory. Turn this on only if screens feel slow on this computer. The change applies after the app restarts.</value></data>
+  <data name="Settings_DisplaySaved" xml:space="preserve"><value>Display setting saved. Restart the app to apply it.</value></data>
   <data name="Demo_Title" xml:space="preserve"><value>Your store, ready for business</value></data>
   <data name="Demo_Body" xml:space="preserve"><value>Use the menu to manage your store. The amount and date below are formatting examples.</value></data>
   <data name="Demo_AmountLabel" xml:space="preserve"><value>Sample amount</value></data>
@@ -849,7 +853,6 @@
   <data name="Reports_Period" xml:space="preserve"><value>Period</value></data>
   <data name="Reports_From" xml:space="preserve"><value>From</value></data>
   <data name="Reports_To" xml:space="preserve"><value>To</value></data>
-  <data name="Reports_MoreFilters" xml:space="preserve"><value>More filters</value></data>
   <data name="Reports_Status" xml:space="preserve"><value>Status</value></data>
   <data name="Reports_Payment" xml:space="preserve"><value>Payment mode</value></data>
   <data name="Reports_InvalidDates" xml:space="preserve"><value>End date must be on or after start date.</value></data>
@@ -1413,4 +1416,22 @@
   <data name="Settings_CompactDoneDetail" xml:space="preserve"><value>Its size went from {0} to {1}. Verified backup: {2}</value></data>
   <data name="Settings_CompactFailed" xml:space="preserve"><value>Compacting did not finish. The original database was kept.</value></data>
   <data name="Error_CompactionFailed" xml:space="preserve"><value>The database could not be compacted. The original database was kept; try again from Settings, Backup.</value></data>
+  <data name="Upgrade_Title" xml:space="preserve"><value>Update your data</value></data>
+  <data name="Upgrade_Context" xml:space="preserve"><value>This version keeps your data in a newer format. Before you sign in, your data is updated from data version {0} to {1}. Each step either finishes completely or changes nothing.</value></data>
+  <data name="Upgrade_Estimate" xml:space="preserve"><value>Estimated time: about {0}. It can take longer on a slower computer; do not switch the computer off while it runs.</value></data>
+  <data name="Upgrade_UnderMinute" xml:space="preserve"><value>under a minute</value></data>
+  <data name="Upgrade_Minutes" xml:space="preserve"><value>{0} minutes</value></data>
+  <data name="Upgrade_Space" xml:space="preserve"><value>Free space needed: {0} on {1}; {2} is free.</value></data>
+  <data name="Upgrade_SpaceUnknown" xml:space="preserve"><value>Free space needed: {0} on {1}.</value></data>
+  <data name="Upgrade_Backup" xml:space="preserve"><value>A verified backup of all your data is saved first, in {0}.</value></data>
+  <data name="Upgrade_LedgerArchive" xml:space="preserve"><value>That backup is kept permanently: it is the last copy of the old stock ledger.</value></data>
+  <data name="Upgrade_NoSpace" xml:space="preserve"><value>There is not enough free space for the update. Free at least {0} on {1}, then start the app again.</value></data>
+  <data name="Upgrade_Start" xml:space="preserve"><value>Update now</value></data>
+  <data name="Upgrade_Exit" xml:space="preserve"><value>Exit</value></data>
+  <data name="Upgrade_StageBackup" xml:space="preserve"><value>Saving and checking a backup of your data…</value></data>
+  <data name="Upgrade_StageUpgrade" xml:space="preserve"><value>Updating your data: step {0} of {1}…</value></data>
+  <data name="Upgrade_StageFinishing" xml:space="preserve"><value>Finishing the update…</value></data>
+  <data name="Upgrade_Failed" xml:space="preserve"><value>The update stopped before it finished.</value></data>
+  <data name="Upgrade_Recovery" xml:space="preserve"><value>Your data is safe: a step that did not finish changed nothing, and the backup saved before the update is in {0}. Start the app again to retry. If it stops again, send the log files in {1} to support. To go back to the previous version, install it and restore that backup in Settings → Backup.</value></data>
+  <data name="Upgrade_OpenBackups" xml:space="preserve"><value>Open backup folder</value></data>
 </root>

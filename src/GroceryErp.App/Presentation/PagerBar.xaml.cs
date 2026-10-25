@@ -4,7 +4,10 @@ using GroceryErp.Localization;
 
 namespace GroceryErp.App.Presentation;
 
-/// <summary>The footer of a table page: a status line and keyset Previous/Next with the page number.</summary>
+/// <summary>
+/// A table page's status line and keyset previous/next arrows with the page number, placed in the
+/// title row. The arrows show only when there is more than one page.
+/// </summary>
 public partial class PagerBar : UserControl
 {
     private int _page = 1;
@@ -45,8 +48,12 @@ public partial class PagerBar : UserControl
         NextButton.IsEnabled = _canGoForward && !loading;
     }
 
-    private void RenderPage() =>
-        PageText.Text = _page > 1 || _canGoForward ? TranslationSource.Instance.Format("Pager_Page", _page) : string.Empty;
+    private void RenderPage()
+    {
+        bool paged = _page > 1 || _canGoForward;
+        PageControls.Visibility = paged ? Visibility.Visible : Visibility.Collapsed;
+        PageText.Text = paged ? TranslationSource.Instance.Format("Pager_Page", _page) : string.Empty;
+    }
 
     private void OnTranslationChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {

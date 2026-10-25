@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Automation.Peers;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
@@ -204,6 +205,8 @@ public sealed class PhaseZeroSmokeTests
                 // WPF queues Application startup on the dispatcher. This test hosts pages
                 // only, so that startup must never run: it would open the real data store.
                 ConsumeApplicationStartup();
+                // The cultures Program.Main sets before the app starts, so dates show as they do in the app.
+                GroceryErp.App.App.ConfigureCultures();
                 Type layouts = typeof(GroceryErp.App.App).Assembly.GetType(
                     "GroceryErp.App.Presentation.TableColumnLayouts")!;
                 layouts.GetMethod("Register", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, null);
@@ -305,6 +308,7 @@ public sealed class PhaseZeroSmokeTests
                     new SystemClock(settings), paths);
                 var settingsHost = new Window { Content = settingsPage, Width = 1000, Height = 720 };
                 settingsHost.Show();
+                VerifyAccessibleNames(settingsHost);
                 Capture(settingsHost, "settings-top.en.png");
                 ((ScrollViewer)settingsPage.Content).ScrollToEnd();
                 Capture(settingsHost, "settings-bottom.en.png");
@@ -328,7 +332,40 @@ public sealed class PhaseZeroSmokeTests
                 compaction.Close();
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
 
-                var catalog = new CatalogService(database, new AuditLog(), settings);
+                // The upgrade confirmation states the estimate before the store changes, blocks when
+                // the volume is short of space, and says how to recover after a failure.
+                string upgradeBackups = Path.Combine(root, "backups");
+                var upgradePlan = new MigrationPlan(28, MigrationRunner.LatestVersion, 2_928_615_424, 40L * 1024 * 1024 * 1024,
+                    6_400_000_000, TimeSpan.FromSeconds(401), KeepsLedgerArchive: true, UiLanguage: "en-IN");
+                var upgrade = new UpgradeWindow(upgradePlan, static _ => Task.CompletedTask, upgradeBackups, Path.Combine(root, "logs"));
+                upgrade.Show();
+                ((Button)upgrade.FindName("UpgradeButton")).IsEnabled.ShouldBeTrue();
+                ((TextBlock)upgrade.FindName("EstimateText")).Text.ShouldContain("7 minutes");
+                ((TextBlock)upgrade.FindName("ContextText")).Text.ShouldContain(MigrationRunner.LatestVersion.ToString(CultureInfo.InvariantCulture));
+                ((FrameworkElement)upgrade.FindName("ArchiveText")).Visibility.ShouldBe(Visibility.Visible);
+                CaptureRevision(upgrade, "upgrade.en.png");
+                upgrade.ShowProgress(new MigrationProgress(MigrationStage.Upgrade, 3, 9));
+                ((TextBlock)upgrade.FindName("StageText")).Text.ShouldBe(translations.Format("Upgrade_StageUpgrade", 3, 9));
+                ((ProgressBar)upgrade.FindName("Progress")).Value.ShouldBe(200d / 9, 0.001);
+                CaptureRevision(upgrade, "upgrade-progress.en.png");
+                upgrade.ShowFailure(new GroceryErp.Core.Errors.DomainException(GroceryErp.Core.Errors.ErrorCode.DiskFull));
+                ((FrameworkElement)upgrade.FindName("FailurePanel")).Visibility.ShouldBe(Visibility.Visible);
+                ((FrameworkElement)upgrade.FindName("UpgradeButton")).Visibility.ShouldBe(Visibility.Collapsed);
+                ((TextBlock)upgrade.FindName("RecoveryText")).Text.ShouldContain(upgradeBackups);
+                CaptureRevision(upgrade, "upgrade-failed.en.png");
+                upgrade.Close();
+                translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
+                var blockedUpgrade = new UpgradeWindow(upgradePlan with { FreeBytes = 1_000_000_000 }, static _ => Task.CompletedTask,
+                    upgradeBackups, Path.Combine(root, "logs"));
+                blockedUpgrade.Show();
+                ((Button)blockedUpgrade.FindName("UpgradeButton")).IsEnabled.ShouldBeFalse();
+                ((FrameworkElement)blockedUpgrade.FindName("SpaceWarning")).Visibility.ShouldBe(Visibility.Visible);
+                ((TextBlock)blockedUpgrade.FindName("EstimateText")).Text.ShouldContain("7 મિનિટ");
+                CaptureRevision(blockedUpgrade, "upgrade-no-space.gu.png");
+                blockedUpgrade.Close();
+                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+
+                var catalog = new CatalogService(database, new AuditLog(), settings, new SystemClock(settings));
                 using (var catalogConnection = factory.Open())
                 {
                     long categoryId = catalogConnection.ExecuteScalar<long>(
@@ -360,6 +397,7 @@ public sealed class PhaseZeroSmokeTests
                 ((FrameworkElement)products.FindName("Selection")).Visibility.ShouldBe(Visibility.Collapsed);
                 ((FrameworkElement)products.FindName("Details")).Visibility.ShouldBe(Visibility.Collapsed);
                 ((PagerBar)products.FindName("Pager")).Status = translations.Format("Catalog_Count", 1);
+                VerifyAccessibleNames(productsWindow);
                 Capture(productsWindow, "products.en.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 ((ToggleButton)products.FindName("MoreFiltersToggle")).Content.ShouldBe(translations["Common_MoreFilters"]);
@@ -738,6 +776,7 @@ public sealed class PhaseZeroSmokeTests
                 var purchasesHost = new Window { Content = purchasesPage, Width = 1080, Height = 700 };
                 purchasesHost.Show();
                 ((DatePicker)purchasesPage.FindName("FromBox")).IsVisible.ShouldBeTrue();
+                VerifyAccessibleNames(purchasesHost);
                 Capture(purchasesHost, "purchases-page.en.png");
                 var moreFilters = (ToggleButton)purchasesPage.FindName("MoreFiltersToggle");
                 ((FrameworkElement)purchasesPage.FindName("ReturnableFilter")).IsVisible.ShouldBeFalse();
@@ -802,6 +841,7 @@ public sealed class PhaseZeroSmokeTests
                 vendorsHost.Show();
                 ((DataGrid)vendorsPage.FindName("VendorsGrid")).SelectedIndex = 0;
                 ((FrameworkElement)vendorsPage.FindName("Selection")).Visibility.ShouldBe(Visibility.Collapsed);
+                VerifyAccessibleNames(vendorsHost);
                 Capture(vendorsHost, "vendors-page.en.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 Capture(vendorsHost, "vendors-page.gu.png");
@@ -870,6 +910,9 @@ public sealed class PhaseZeroSmokeTests
                 // Add, edit and dispose open their own dialogs; the table keeps the page.
                 ((FrameworkElement)assetsPage.FindName("TimelineOverlay")).Visibility.ShouldBe(Visibility.Collapsed);
                 ((Button)assetsPage.FindName("EditAssetButton")).IsEnabled.ShouldBeFalse();
+                // The timeline opens from the title row for the selected asset, not a button in every row.
+                ((Button)assetsPage.FindName("TimelineButton")).IsEnabled.ShouldBeFalse();
+                VerifyAccessibleNames(assetsHost);
                 Capture(assetsHost, "assets.en.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 Capture(assetsHost, "assets.gu.png");
@@ -878,7 +921,7 @@ public sealed class PhaseZeroSmokeTests
                 assetGrid.AutoGenerateColumns.ShouldBeFalse();
                 assetGrid.CanUserResizeColumns.ShouldBeTrue();
                 assetGrid.CanUserReorderColumns.ShouldBeTrue();
-                assetGrid.Columns.Count.ShouldBe(8);
+                assetGrid.Columns.Count.ShouldBe(7);
                 assetGrid.Columns[1].Width = new DataGridLength(260, DataGridLengthUnitType.Pixel);
                 assetGrid.Columns[2].DisplayIndex = 1;
                 assetsHost.Close();
@@ -929,6 +972,7 @@ public sealed class PhaseZeroSmokeTests
                 };
                 var billingHost = new Window { Content = billing, Width = 1120, Height = 680 };
                 billingHost.Show();
+                VerifyAccessibleNames(billingHost);
                 Capture(billingHost, "billing.en.png");
                 TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 ((TextBlock)billing.FindName("SavingsText")).Text = TranslationSource.Instance.Format("Sales_Savings", "4.000");
@@ -999,6 +1043,14 @@ public sealed class PhaseZeroSmokeTests
                 };
                 var historyHost = new Window { Content = history, Width = 1120, Height = 720 };
                 historyHost.Show();
+                // Date pickers show the app's dd-MM-yyyy dates whatever the PC's region, and fit them.
+                var fromPicker = (DatePicker)history.FindName("FromPicker");
+                fromPicker.SelectedDate = new DateTime(2026, 10, 24);
+                historyHost.UpdateLayout();
+                fromPicker.Text.ShouldBe("24-10-2026");
+                var pickerText = FindVisualChild<System.Windows.Controls.Primitives.DatePickerTextBox>(fromPicker)!;
+                pickerText.ExtentWidth.ShouldBeLessThanOrEqualTo(pickerText.ViewportWidth + 0.5);
+                VerifyAccessibleNames(historyHost);
                 Capture(historyHost, "sales-history.en.png");
                 TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 ((TextBlock)history.FindName("DetailHeading")).Text = "S2627-000041 · રોકડ ₹109.000";
@@ -1178,6 +1230,7 @@ public sealed class PhaseZeroSmokeTests
                     var reportPicker = (ComboBox)reportsPage.FindName("ReportPicker");
                     reportPicker.SelectedIndex = 1;
                     PopulateReportCapture(reportsPage, translations);
+                    VerifyAccessibleNames(reportsHost);
                     Capture(reportsHost, "reports-table.en.png");
                     translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                     reportsPage.RefreshLocalizedChoices();
@@ -1213,6 +1266,7 @@ public sealed class PhaseZeroSmokeTests
                     dashboardHost = new Window { Content = dashboardPage, Width = 1120, Height = 700 };
                     dashboardHost.Show();
                     PopulateDashboardCapture(dashboardPage, translations);
+                    VerifyAccessibleNames(dashboardHost);
                     Capture(dashboardHost, "dashboard.en.png");
                     dashboardHost.Width = 740;
                     PopulateDashboardCapture(dashboardPage, translations);
@@ -1324,6 +1378,7 @@ public sealed class PhaseZeroSmokeTests
             var damageDetails = (CorrectionDetailsPanel)moneyOutPage.FindName("DamageDetails");
             PumpUntil(() => damageDetails.Visibility == Visibility.Visible);
             TextOf(damageDetails).ShouldContain("FY 2025-26 is finalized");
+            VerifyAccessibleNames(moneyOutHost);
             CaptureRevision(moneyOutHost, "damage-details.en.png");
             // The tabs are the page header: the active tab's actions share their line.
             var damageActions = (FrameworkElement)moneyOutPage.FindName("DamageActions");
@@ -1415,6 +1470,7 @@ public sealed class PhaseZeroSmokeTests
             PumpUntil(() => status.Text.StartsWith("Finalized · FY 2025-26", StringComparison.Ordinal));
             var pnlGrid = (DataGrid)reportsPage.FindName("PnlGrid");
             pnlGrid.Items.Count.ShouldBeGreaterThan(5);
+            VerifyAccessibleNames(reportsHost);
             CaptureRevision(reportsHost, "pnl-fiscal-finalized.en.png");
             translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
             PumpUntil(() => status.Text.StartsWith("અંતિમ", StringComparison.Ordinal) || !status.Text.StartsWith("Finalized", StringComparison.Ordinal));
@@ -1458,7 +1514,7 @@ public sealed class PhaseZeroSmokeTests
             var periods = new PeriodGuard(settings, clock);
             var ledger = new LotQuantities(settings);
             var numbers = new DocNumberService(settings);
-            var catalog = new CatalogService(database, new AuditLog(), settings);
+            var catalog = new CatalogService(database, new AuditLog(), settings, clock);
             var inventory = new InventoryService(database, ledger, numbers, periods, new AuditLog());
             var purchasing = new PurchasingService(database, ledger, numbers, periods, settings, new AuditLog());
             var moneyOut = new MoneyOutService(database, ledger, numbers, periods, new AuditLog());
@@ -1519,6 +1575,7 @@ public sealed class PhaseZeroSmokeTests
             previous.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             PumpUntil(() => grid.Items.Count == fitted && ((ProductListItem)grid.Items[0]).Id == first.Id);
             ShouldBeOneLine((FrameworkElement)products.FindName("FilterBar"));
+            VerifyAccessibleNames(productsHost);
             CaptureRevision(productsHost, "products.en.png");
 
             // An exact SKU leads the result, and a search shows at most eight rows.
@@ -1947,8 +2004,8 @@ public sealed class PhaseZeroSmokeTests
         return null;
     }
 
-    // Filters stay above and the pager below the table: only the rows scroll, and the
-    // table takes the height between them.
+    // The pager sits in the title row above the filters, and the table runs from the filters to
+    // the bottom edge: only the rows scroll.
     private static void VerifyStickyProductTable(Window window, ProductsPage page)
     {
         ScrollViewer.GetCanContentScroll(page).ShouldBeFalse();
@@ -1986,8 +2043,8 @@ public sealed class PhaseZeroSmokeTests
         double headerY = header.TranslatePoint(new Point(), window).Y;
         double gridBottom = grid.TranslatePoint(new Point(0, grid.ActualHeight), window).Y;
         pager.IsVisible.ShouldBeTrue();
-        (pagerY + pager.ActualHeight).ShouldBeLessThanOrEqualTo(((FrameworkElement)window.Content).ActualHeight + 1);
-        (pagerY - gridBottom).ShouldBeLessThan(16);
+        (pagerY + pager.ActualHeight).ShouldBeLessThanOrEqualTo(filtersY + 1);
+        (((FrameworkElement)window.Content).ActualHeight - gridBottom).ShouldBeLessThan(16);
         pager.TranslatePoint(new Point(pager.ActualWidth, 0), window).X.ShouldBeLessThan(window.ActualWidth);
         grid.ScrollIntoView(grid.Items[^1]);
         grid.UpdateLayout();
@@ -1995,6 +2052,31 @@ public sealed class PhaseZeroSmokeTests
         Math.Abs(filters.TranslatePoint(new Point(), window).Y - filtersY).ShouldBeLessThan(1);
         Math.Abs(pager.TranslatePoint(new Point(), window).Y - pagerY).ShouldBeLessThan(1);
         Math.Abs(header.TranslatePoint(new Point(), window).Y - headerY).ShouldBeLessThan(1);
+    }
+
+    // Every visible button, text box, list box and date box a keyboard or screen-reader user can
+    // reach announces a name: its text, or AutomationProperties.Name for an icon or input. A
+    // control's own template parts and scroll bars are not checked.
+    private static void VerifyAccessibleNames(Window window)
+    {
+        window.UpdateLayout();
+        var unnamed = new List<string>();
+        void Walk(DependencyObject node)
+        {
+            if (node is UIElement { IsVisible: false } or ScrollBar or DataGridColumnHeader) return;
+            if (node is ButtonBase or TextBoxBase or ComboBox or DatePicker or PasswordBox)
+            {
+                var control = (FrameworkElement)node;
+                string? name = UIElementAutomationPeer.CreatePeerForElement(control)?.GetName();
+                if (string.IsNullOrWhiteSpace(name))
+                    unnamed.Add($"{control.GetType().Name} '{control.Name}' in {VisualTreeHelper.GetParent(control)?.GetType().Name}");
+                return;
+            }
+            for (int index = 0; index < VisualTreeHelper.GetChildrenCount(node); index++)
+                Walk(VisualTreeHelper.GetChild(node, index));
+        }
+        Walk(window);
+        unnamed.ShouldBeEmpty();
     }
 
     private static void Capture(Window window, string fileName)

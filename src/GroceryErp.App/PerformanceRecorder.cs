@@ -88,7 +88,8 @@ internal sealed class PerformanceRecorder(AppPaths paths) : IHostedService, IDis
             string file = Path.Combine(paths.LogsDir,
                 "performance-" + DateTime.UtcNow.ToString("yyyyMMdd", CultureInfo.InvariantCulture) + ".jsonl");
             Directory.CreateDirectory(paths.LogsDir);
-            File.AppendAllText(file, JsonSerializer.Serialize(new { utc = DateTime.UtcNow, metrics }) + Environment.NewLine);
+            File.AppendAllText(file, JsonSerializer.Serialize(new { utc = DateTime.UtcNow, metrics, memory = MemorySnapshot.Capture() })
+                + Environment.NewLine);
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
@@ -139,4 +140,24 @@ internal sealed class PerformanceRecorder(AppPaths paths) : IHostedService, IDis
 
     private sealed record MetricWindowSummary(string Name, long Count, int Sampled,
         double P50, double P95, double P99);
+
+    // Process and GC totals at the flush: enough to tell managed heap growth from native,
+    // image or driver memory in the working set, and to follow allocation and pause rates.
+    private sealed record MemorySnapshot(long WorkingSetBytes, long PeakWorkingSetBytes, long PrivateBytes,
+        long GcHeapBytes, long GcCommittedBytes, long GcFragmentedBytes, long LargeObjectHeapBytes,
+        long AllocatedBytes, double GcPauseMilliseconds, int Gen0Collections, int Gen1Collections, int Gen2Collections,
+        long SqliteBytes, long SqlitePeakBytes)
+    {
+        public static MemorySnapshot Capture()
+        {
+            GCMemoryInfo info = GC.GetGCMemoryInfo();
+            using var process = System.Diagnostics.Process.GetCurrentProcess();
+            return new(process.WorkingSet64, process.PeakWorkingSet64, process.PrivateMemorySize64,
+                info.HeapSizeBytes, info.TotalCommittedBytes, info.FragmentedBytes,
+                info.GenerationInfo.Length > 3 ? info.GenerationInfo[3].SizeAfterBytes : 0,
+                GC.GetTotalAllocatedBytes(), GC.GetTotalPauseDuration().TotalMilliseconds,
+                GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2),
+                SQLitePCL.raw.sqlite3_memory_used(), SQLitePCL.raw.sqlite3_memory_highwater(0));
+        }
+    }
 }

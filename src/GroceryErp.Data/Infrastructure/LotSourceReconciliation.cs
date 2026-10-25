@@ -146,9 +146,11 @@ public static class LotSourceReconciliation
         long before, int pageSize, long? productId = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
-        List<LotSourceBalance> rows = connection.Query<LotSourceBalance>(BaseSql + """
-             WHERE l.id<@before AND (@productId IS NULL OR l.product_id=@productId) ORDER BY l.id DESC LIMIT @pageSize
-            """, new { before, pageSize, productId }, transaction).ToList();
+        // Separate statements, so one product's page seeks its lots through the product index.
+        List<LotSourceBalance> rows = connection.Query<LotSourceBalance>(BaseSql + (productId is null
+            ? " WHERE l.id<@before ORDER BY l.id DESC LIMIT @pageSize"
+            : " WHERE l.product_id=@productId AND l.id<@before ORDER BY l.id DESC LIMIT @pageSize"),
+            new { before, pageSize, productId }, transaction).ToList();
         if (rows.Count == 0) return rows;
         // A product's lots are spread across the ID range, so they are named exactly.
         return productId is null

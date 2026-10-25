@@ -1,43 +1,46 @@
-# Grocery ERP v1 release checklist
+# Grocery ERP 1.1.0 release checklist
 
-> **Revised release gate (18 October 2026):** [revised-implementation-plan.md](../revised-implementation-plan.md) is authoritative for the revised migration sequence and acceptance gates; the [Phase 0 baseline and rollback](phase0/baseline-and-rollback.md) supplies evidence and a rehearsal procedure. Before schema-29+ rollout, verify a pre-upgrade backup, free disk for backup plus rebuilt store plus WAL and margin, newer-schema refusal by old binaries, full source/lot and annual-snapshot parity, cold launch, sale/return, verified backup and restore. The checklist below describes the existing schema-28 release and must be updated to the implemented feature set before a later release. Stock Ledger and the separate Expiry screen are scheduled for removal only after their replacement workflows pass. Hardware, native Gujarati and operator pilot gates still need human sign-off.
+> [revised-implementation-plan.md](../revised-implementation-plan.md) §13.3 is authoritative for the release gates and their order; its Phase 9 execution record holds the measurements behind each checked item, and [docs/perf/1.1.0.md](perf/1.1.0.md) the performance results. This checklist covers release 1.1.0 on database schema 37.
 
 Record the operator, date, machine and evidence beside every item. Do not release with an unchecked
 software item. Hardware, language and pilot items require a named human sign-off.
 
-Interim code recheck on 8 October 2026 with SDK `10.0.401`: Release build had zero warnings,
-`dotnet format --verify-no-changes` passed, and `dotnet test GroceryErp.slnx -c Release --no-build --no-restore`
-reported 106 passed, zero failed, one packaged-journey skip. The boxes below require a versioned
-release run and evidence before sign-off.
+Software items marked done were verified on 25 October 2026 on the development PC (VARK, 24 logical
+processors, .NET 10.0.12, SQLite 3.53.3) with SDK `10.0.401`. They are local evidence, not the
+target-PC sign-off. Full-size evidence is under `artifacts/data/revision-phase9-rehearsal`.
 
 ## Automated release gate
 
-- [ ] `dotnet format GroceryErp.slnx --verify-no-changes --no-restore`
-- [ ] `dotnet build GroceryErp.slnx -c Release --no-restore` has zero warnings
-- [ ] Run `dotnet test GroceryErp.slnx -c Release --no-build --no-restore`; require zero failures.
-      The packaged UI journey may skip before packaging and must pass in the post-package rerun below.
-- [ ] Full data set generated with `dotnet run -c Release --project tools/GroceryErp.DataGen -- --output=<path>`
-- [ ] Performance results recorded in `docs/perf/<version>.md`; no path regressed by more than 20%
-- [ ] `scripts/build-release.ps1 -Version <semver>` produces the installer and local update feed
-- [ ] After packaging, set `GROCERY_PACKAGED_UI_TEST=1` and run the UI project runner again.
-      The FlaUI case extracts the portable release and uses an isolated temporary data root;
-      verify setup, product and vendor creation, purchase posting, every main page, scanned
-      cash sale, language switch, lock/unlock, manual backup and close backup.
+- [x] `dotnet format GroceryErp.slnx --verify-no-changes --no-restore`
+- [x] `dotnet build GroceryErp.slnx -c Release --no-restore` has zero warnings; `tools/GroceryErp.ScaleAudit` builds
+- [x] `dotnet test GroceryErp.slnx -c Release --no-build`: zero failures; the packaged and large-store journeys are opt-in and were run separately below
+- [x] Migration parity: a store left at each of schemas 1, 4, 15, 19, 25, 28, 29, 32, 33, 35 and 36 upgrades to the schema of a new store with clean integrity and foreign keys (`UpgradeTests`)
+- [x] Full-size rehearsal: the preserved 47,010-product / 223,272-lot / 871,876-sale / 5.19-million-line schema-36 store upgraded to 37; after profiling writes, a killed bill and a backup, all ten store checks passed (integrity, foreign keys, every lot against its source documents, every projection)
+- [x] Same-machine before/after profile of every Phase 9 hot path with mixed readers, writers and a backup; no unexplained regression (`docs/perf/1.1.0.md`)
+- [x] `scripts/build-release.ps1 -Version 1.1.0` produced the setup, portable zip, full package and the 1.0.10 → 1.1.0 delta in `artifacts/Releases`
+- [x] With `GROCERY_PACKAGED_UI_TEST=1`, the packaged operator journey passed on the 1.1.0 portable build: setup, product and vendor, purchase, every page, cash sale, Gujarati, lock/unlock, manual and close backups
+- [x] Large-store WPF journey on the published 1.1.0 build: the update window, every page over three rounds and a full-history Sales History export
+- [ ] Release binaries code-signed (needs the owner's signing certificate; Velopack reports the bundle unsigned)
 - [ ] Clean-PC install, uninstall and USB update tested without internet access
-- [ ] Backup created before update; post-update migrations, integrity checks and rollback verified
+
+## Upgrade package
+
+- [x] An existing store shows the update window before sign-in: data versions, time estimate, free space needed and free, the verified backup and, from before schema 36, its permanent ledger archive; nothing changes until **Update now**
+- [x] Too little space blocks the update; a failed step reports that it changed nothing, where the backup and logs are, and how to retry or go back
+- [x] Pre-upgrade verified backup is taken; a failing backup leaves the store unchanged; older binaries refuse the newer schema; restoring the pre-upgrade backup and upgrading again produces the same documents once (`UpgradeTests`)
+- [ ] Upgrade time and peak disk measured on the target shop PC against the window's estimate
+- [ ] Pilot period: daily lot reconciliation, report snapshots, backup success and error logs reviewed before broad rollout
 
 ## Localization and UI
 
-- [ ] Revised table pages at 1366×768 and 100/125/150% scaling: compact title/actions, search and primary filters, grid fills remaining height, pagination/status fixed below; no nested page scroll disabling row recycling
-- [ ] Forms and purchase line type tabs: only relevant fields shown, readable inline errors, primary action always visible; keyboard order and Gujarati text fit without clipping
-- [ ] Search/filter: bounded server page, cancellation of stale requests, empty/busy/error state; bulk action shows selected count, preview, conflict and partial-result handling
-- [ ] Paired full-size WPF navigation establishes stable working set and meets the agreed target-PC memory gate; Phase 0's current-build journeys peaked at 529–548 MiB versus 517–520 MiB on the pre-change build, so this gate remains open
-
-- [ ] Operator walkthrough on the target PC: create a product and vendor, post a purchase,
-      scan and complete a sale, view the dashboard, use Gujarati, lock/unlock, and close with a backup
-- [ ] `--pseudo` pass on every page at 1366×768 and 125%/150% scaling; no clipping or raw `⟦key⟧`
-- [ ] Native Gujarati reviewer signed off all UI, receipt, label and report terminology
-- [ ] All visible and printed numbers remain English digits in Gujarati mode
+- [x] Table pages at 1366×768: one title row with the count, page arrows and actions; one filter row; the table runs to the bottom edge (UI smoke test). Date boxes show dd-MM-yyyy on an en-US PC
+- [x] Every page's visible buttons, text boxes, lists and date boxes have accessible names (UI smoke test)
+- [x] English/Gujarati resource keys, placeholders and English digits (`LocalizationTests`)
+- [ ] 125% and 150% display scaling checked on the target PC; no clipping or raw `⟦key⟧` with `--pseudo`
+- [ ] WPF memory on the reference and target PCs: the local large-store journey is recorded in the Phase 9 record; the 350 MiB gate needs the reference PC
+- [ ] Keyboard-only sale, purchase and damage with the physical scanner
+- [ ] Native Gujarati reviewer signed off all UI, receipt, label, report, release-note and user-guide terminology (strings marked `MT – needs review`)
+- [ ] Operator walkthrough on the target PC: create a product and vendor, post a purchase, scan and complete a sale, view the dashboard, use Gujarati, lock/unlock, and close with a backup
 
 ## Store and hardware
 
@@ -48,11 +51,13 @@ release run and evidence before sign-off.
 - [ ] Interrupt printing before and after spooler acceptance; after restart, review each saved receipt/day-end/label job, confirm Ctrl+P retry and receipt DUPLICATE mark, and check that drawer pulses do not replay
 - [ ] Label printer is calibrated and its labels scan from 30 cm
 - [ ] Power-pull during a draft bill recovers the draft and every lot still reconciles to its source documents
-- [ ] Backup exported to USB and restored on a second PC
+- [ ] Verified backup and compaction timed on the target PC (local: 1.8 GB store backed up in 20.4 s)
+- [ ] Backup exported to USB and restored on a second PC (local: restored into an empty data root in 18.8 s and passed all ten checks)
 
 ## Business data and pilot
 
 - [ ] Store/GST/FY settings and tax/HSN data approved by the accountant
+- [ ] Owner review of the recorded decisions (Phases 6, 8 and 9 execution records)
 - [ ] Products and opening stock imported; ten random counts and top 200 barcodes checked
 - [ ] Vendors, opening balances, employees and assets checked
 - [ ] Owner walkthrough completed; password recovery copy stored safely

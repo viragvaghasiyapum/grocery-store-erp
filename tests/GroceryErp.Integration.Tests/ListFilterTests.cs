@@ -8,6 +8,7 @@ using GroceryErp.Data.Services;
 using GroceryErp.Expenses;
 using GroceryErp.Inventory;
 using GroceryErp.Purchasing;
+using GroceryErp.Reports;
 using Shouldly;
 using Xunit;
 
@@ -204,6 +205,45 @@ public sealed class ListFilterTests
         lots.Sum(static lot => lot.Quantity.Scaled).ShouldBe(new Quantity(5).Scaled + new Quantity(1).Scaled);
     }
 
+    [Fact]
+    public async Task ExpiryMarks_FollowTheBusinessDate_NotTheMachineClock()
+    {
+        using var fixture = new FilterFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        // Years from the machine date, so only the business date can call this lot expired.
+        long product;
+        using (var connection = fixture.Factory.Open())
+        {
+            product = connection.ExecuteScalar<long>("""
+                INSERT INTO product(sku,name,category_id,uom_id,tax_rate_id,default_selling_price)
+                VALUES ('BIZ-DATE','Business date product',@Grains,(SELECT id FROM uom WHERE code='PCS'),
+                        (SELECT id FROM tax_rate WHERE rate_pct=5000),30000) RETURNING id
+                """, new { fixture.Grains });
+            connection.Execute("""
+                INSERT INTO product_lot(product_id,lot_code,received_date,expiry_date,unit_cost,selling_price,qty_received,qty_on_hand)
+                VALUES (@product,'BIZ-LOT','2030-11-01','2031-01-05',20000,30000,2000,2000)
+                """, new { product });
+        }
+        foreach ((DateOnly businessDate, bool expired) in new[] { (new DateOnly(2030, 12, 1), false), (new DateOnly(2031, 1, 10), true) })
+        {
+            var clock = new FixedClock(businessDate);
+            var catalog = new CatalogService(fixture.Database, new AuditLog(), fixture.Settings, clock);
+            var inventory = new InventoryService(fixture.Database, new LotQuantities(fixture.Settings),
+                new DocNumberService(fixture.Settings), new PeriodGuard(fixture.Settings, clock), new AuditLog());
+            var reports = new ReportService(fixture.Database, fixture.Settings, clock);
+
+            (await catalog.SearchPageAsync(new("BIZ-DATE", Limit: 8), cancellationToken: ct)).Items.Single().HasExpiredStock.ShouldBe(expired);
+            (await catalog.SearchPageAsync(new(Limit: 100, ExpiryFilter: "EXPIRED"), cancellationToken: ct)).Items
+                .Any(item => item.Id == product).ShouldBe(expired);
+            (await inventory.GetLotPageAsync(new LotFilter { ProductId = product }, null, 15, ct)).Items.Single()
+                .ExpiryBucketCode.ShouldBe(expired ? "EXPIRED" : "FRESH");
+            // Days left count from the business date; 35 days ahead is outside the 30-day alert.
+            TabularReport expiry = await reports.GetReportAsync(ReportKind.Expiry, new ReportFilter(Limit: 500), ct);
+            expiry.Rows.Where(static row => Equals(row.Values["Sku"], "BIZ-DATE"))
+                .Select(static row => row.Values["Status"]).ShouldBe(expired ? ["EXPIRED"] : []);
+        }
+    }
+
     // Stock, vendor and expiry come from the store's lots after every purchase is posted, so they
     // check the service's projections and subqueries against the plain lot rows.
     private sealed record Seed(long Id, string Sku, string Name, string? Local, long Category, bool Branded, bool Internal,
@@ -230,7 +270,7 @@ public sealed class ListFilterTests
             var numbers = new DocNumberService(Settings);
             var periods = new PeriodGuard(Settings, clock);
             var ledger = new LotQuantities(Settings);
-            Catalog = new CatalogService(Database, new AuditLog(), Settings);
+            Catalog = new CatalogService(Database, new AuditLog(), Settings, clock);
             Inventory = new InventoryService(Database, ledger, numbers, periods, new AuditLog());
             Purchasing = new PurchasingService(Database, ledger, numbers, periods, Settings, new AuditLog());
             MoneyOut = new MoneyOutService(Database, ledger, numbers, periods, new AuditLog());

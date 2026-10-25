@@ -40,6 +40,7 @@ public partial class PurchasesPage : Page
         _purchasing = purchasing ?? ((App)Application.Current).Services.GetRequiredService<PurchasingService>();
         _ = new FilterRow(FilterBar, DocumentFilter, MoreFiltersToggle, MoreFiltersPanel)
             .Fold(VendorFilter).Fold(FromLabel, FromBox, ToLabel, ToBox).Fold(StatusFilter);
+        _ = new ActionStrip(TitleRow, TitleActions, MoreActionsMenu, MoreActions, ActionStrip.TitleRow(TitleText));
         _fit = new FitPageSize(PurchasesGrid);
         LanguageRefresh.Attach(this, () => _ = RefreshForLanguageAsync());
         _fit.RowsChanged += async (_, _) => await LoadAsync(PageMove.Same);

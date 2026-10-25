@@ -14,6 +14,7 @@ public static class Program
         if (args.Contains("--pseudo", StringComparer.OrdinalIgnoreCase))
             Localization.TranslationSource.Instance.PseudoLocalizationEnabled = true;
 
+        App.ConfigureCultures();
         var application = new App();
         application.InitializeComponent();
         application.Run();

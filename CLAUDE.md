@@ -18,7 +18,7 @@ An offline, single-user, single-PC grocery ERP for one shop: WPF on .NET 10, SQL
 
 `optimization*.md`, `audit.md`, `revised plan.md` and `luna/` are history. Don't treat them as current requirements.
 
-**Status (24 Oct 2026):** the old plan is fully implemented. The revised plan is implemented through **Phase 8** on **schema 36**: the direct-stock cutover (Phase 5), P/L heads with independent annual locks and snapshots (Phase 6), the simplified UI with SQL-side filters and reviewed bulk batches (Phase 7), and the removal of the stock ledger, its screens and dead code, with verified compaction (Phase 8). Phase 9 (scale and release) is next. Hardware, target-PC, native-Gujarati and operator sign-offs are human gates. Never claim them as passed.
+**Status (24 Oct 2026):** the old plan is fully implemented. The revised plan is implemented through **Phase 9** on **schema 37**: the direct-stock cutover (Phase 5), P/L heads with independent annual locks and snapshots (Phase 6), the simplified UI with SQL-side filters and reviewed bulk batches (Phase 7), the removal of the stock ledger, its screens and dead code, with verified compaction (Phase 8), and the full-scale review, upgrade confirmation and 1.1.0 release package (Phase 9). What remains are human gates: hardware, target-PC, second-PC restore, native-Gujarati and operator sign-offs. Never claim them as passed.
 
 ## Commands
 
@@ -28,7 +28,7 @@ The SDK is pinned to 10.0.401 by `global.json`. A repo-local SDK in `.tools/dotn
 dotnet restore GroceryErp.slnx
 dotnet format GroceryErp.slnx --verify-no-changes --no-restore   # CI gate
 dotnet build GroceryErp.slnx -c Release --no-restore            # warnings are errors
-dotnet test GroceryErp.slnx -c Release --no-build               # ~245 tests; 2 opt-in UI journeys skip
+dotnet test GroceryErp.slnx -c Release --no-build               # ~265 tests; 2 opt-in UI journeys skip
 ```
 
 The test runner is **Microsoft.Testing.Platform** with xUnit v3 (set in `global.json`). Use `--project` and the xUnit v3 filters. Older docs use VSTest-style `--filter "FullyQualifiedName~..."`; use the forms below instead:
@@ -65,7 +65,7 @@ Opt-in UI tests: `PackagedOperatorJourneyTests` needs `GROCERY_PACKAGED_UI_TEST=
 
 Follow the structure that exists. Don't create the PLANS.md folders for one feature.
 
-The composition root is `App.xaml.cs` `OnStartup`. It takes the single-instance mutex, resolves the data root (`SettingsBootstrap`/`AppPaths`), registers the foundation services, calls `IModule.Register` for each module, runs `StartupPipeline` (migrations and checks), then shows first-run setup and login, then `ShellWindow`.
+`Program.Main` sets the UI thread's cultures (`App.ConfigureCultures`) before the dispatcher starts; a culture set inside the async startup would be undone at its first await. The composition root is `App.xaml.cs` `OnStartup`. It takes the single-instance mutex, resolves the data root (`SettingsBootstrap`/`AppPaths`), registers the foundation services, calls `IModule.Register` for each module, shows `UpgradeWindow` when `MigrationRunner.Plan()` reports an existing store that needs migrating (nothing changes until the owner confirms), runs `StartupPipeline` (migrations and checks), then shows first-run setup and login, then `ShellWindow`. Windows draw in software (`RenderMode.SoftwareOnly`) unless `ui.hardware_rendering` is set.
 
 ### Database access
 
@@ -101,10 +101,10 @@ Triggers also enforce immutability: completed sale financials, posted purchase a
 
 ### Migrations
 
-- The scripts sit at the **repo root**, not in a `db/` folder, though PLANS.md says `db/*.sql`. `grocery_erp_schema.sql` is 001, followed by `002_…sql` through `036_remove_stock_ledger.sql`.
+- The scripts sit at the **repo root**, not in a `db/` folder, though PLANS.md says `db/*.sql`. `grocery_erp_schema.sql` is 001, followed by `002_…sql` through `037_barcode_lot_index.sql`.
 - Each script is embedded through an explicit `<EmbeddedResource … Link="db/NNN_name.sql">` in `src/GroceryErp.Data/GroceryErp.Data.csproj`.
 - To add a migration:
-  1. Create root `037_name.sql`.
+  1. Create root `038_name.sql`.
   2. Add its `EmbeddedResource` line.
   3. Bump `MigrationRunner.LatestVersion`. The runner requires a contiguous 001..Latest sequence.
 - The runner strips `PRAGMA user_version` lines from scripts and sets the version itself. It takes a pre-migration backup automatically.

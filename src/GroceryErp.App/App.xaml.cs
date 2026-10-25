@@ -3,7 +3,9 @@ using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Markup;
+using System.Windows.Media;
 using GroceryErp.App.Presentation;
 using GroceryErp.Assets;
 using GroceryErp.Catalog;
@@ -57,7 +59,9 @@ public partial class App : Application
 
         try
         {
-            ConfigureCultures();
+            // Every window before the settings load (the upgrade window, startup errors) draws in
+            // software; the store's choice applies before setup and sign-in.
+            RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
             _instanceMutex = new Mutex(initiallyOwned: false, @"Local\GroceryErp.SingleInstance");
             try { _ownsInstanceMutex = _instanceMutex.WaitOne(0); }
             catch (AbandonedMutexException) { _ownsInstanceMutex = true; }
@@ -155,11 +159,25 @@ public partial class App : Application
             BackupService backups = _host.Services.GetRequiredService<BackupService>();
             backups.RecoverInterruptedRestoreBeforeStartup();
             backups.FinishPendingCompaction();
+            // An existing store that needs an upgrade is shown with its time and space estimate
+            // first; nothing changes until the owner confirms, and it then runs off the UI thread.
+            MigrationRunner migrations = _host.Services.GetRequiredService<MigrationRunner>();
+            if (migrations.Plan() is { } plan)
+            {
+                if (plan.UiLanguage is "en-IN" or "gu-IN")
+                    TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo(plan.UiLanguage);
+                var upgrade = new UpgradeWindow(plan, progress => Task.Run(() => migrations.Run(progress)),
+                    paths.DefaultBackupDir, paths.LogsDir);
+                upgrade.Loaded += (_, _) => RecordStartup("upgrade-loaded");
+                if (upgrade.ShowDialog() != true) { await RequestShutdownAsync(); return; }
+                RecordStartup("upgrade-done");
+            }
             StartupState startup = await _host.Services.GetRequiredService<StartupPipeline>().RunAsync();
             // The compact store has opened again, so the original it replaced can go.
             backups.PurgeCompactedOriginals();
             RecordStartup("database-ready");
             TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo(startup.Settings.UiLanguage);
+            if (startup.Settings.HardwareRendering) RenderOptions.ProcessRenderMode = RenderMode.Default;
             _databaseReady = true;
 
             AuthenticationService authentication = _host.Services.GetRequiredService<AuthenticationService>();
@@ -361,15 +379,35 @@ public partial class App : Application
         base.OnExit(e);
     }
 
-    private static void ConfigureCultures()
+    private static int _culturesConfigured;
+
+    /// <summary>
+    /// Sets the calling UI thread's cultures. Runs synchronously before the dispatcher starts:
+    /// a culture set inside the asynchronous startup is undone when startup first awaits, and a
+    /// DatePicker then shows the machine's format (10/24/2026 on an en-US PC) instead of 24-10-2026.
+    /// </summary>
+    internal static void ConfigureCultures()
     {
         CultureInfo formatCulture = TranslationSource.FormatCulture;
         CultureInfo.DefaultThreadCurrentCulture = formatCulture;
-        CultureInfo.CurrentCulture = formatCulture;
-        FrameworkElement.LanguageProperty.OverrideMetadata(
-            typeof(FrameworkElement),
-            new FrameworkPropertyMetadata(XmlLanguage.GetLanguage(formatCulture.IetfLanguageTag)));
+        CultureInfo.CurrentCulture = PickerCulture;
+        if (Interlocked.Exchange(ref _culturesConfigured, 1) == 0)
+            FrameworkElement.LanguageProperty.OverrideMetadata(
+                typeof(FrameworkElement),
+                new FrameworkPropertyMetadata(XmlLanguage.GetLanguage(formatCulture.IetfLanguageTag)));
         TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+    }
+
+    // DatePicker formats with the thread culture; this is en-IN with the dd-MM-yyyy dates the app
+    // prints and accepts everywhere else.
+    private static readonly CultureInfo PickerCulture = CreatePickerCulture();
+
+    private static CultureInfo CreatePickerCulture()
+    {
+        var culture = (CultureInfo)TranslationSource.FormatCulture.Clone();
+        culture.DateTimeFormat.ShortDatePattern = "dd-MM-yyyy";
+        culture.DateTimeFormat.DateSeparator = "-";
+        return CultureInfo.ReadOnly(culture);
     }
 
     internal IServiceProvider Services =>
@@ -377,6 +415,17 @@ public partial class App : Application
 
     // Pages hosted by UI tests have no host; optional session helpers are then skipped.
     internal IServiceProvider? ServicesOrNull => _host?.Services;
+
+    // The business date and time from the app clock. Windows hosted without the app (UI tests)
+    // have no clock service and use the machine clock.
+    internal static DateOnly BusinessDate =>
+        (Current as App)?.ServicesOrNull?.GetService<IClock>()?.BusinessDate ?? DateOnly.FromDateTime(MachineNow);
+
+    internal static DateTime ClockNow => (Current as App)?.ServicesOrNull?.GetService<IClock>()?.Now ?? MachineNow;
+
+#pragma warning disable RS0030 // The one fallback for windows hosted without the app clock.
+    private static DateTime MachineNow => DateTime.Now;
+#pragma warning restore RS0030
 
     internal static IReadOnlyList<IModule> CreateModules() =>
     [
