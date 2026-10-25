@@ -4,20 +4,9 @@
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     xmlns:p="clr-namespace:GroceryErp.App.Presentation"
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
-  <Border Padding="14,10" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-          BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1,0,0,0">
+  <p:DetailPanel x:Name="Panel" CloseRequested="Panel_OnCloseRequested">
     <Grid>
-      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-      <DockPanel Margin="0,0,0,6">
-        <Button DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" Margin="8,0,0,0" VerticalAlignment="Top"
-                Click="Close_OnClick" Content="{l:Tr Common_Close}" ToolTip="Esc"/>
-        <StackPanel>
-          <TextBlock x:Name="NameText" Style="{StaticResource FormTitle}" FontSize="18" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
-          <TextBlock x:Name="ContextText" Style="{StaticResource FormContext}" Margin="0,2,0,0"/>
-          <TextBlock x:Name="StockText" Margin="0,2,0,0" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite"/>
-        </StackPanel>
-      </DockPanel>
-      <TabControl x:Name="Tabs" Grid.Row="1" SelectionChanged="Tabs_OnSelectionChanged">
+      <TabControl x:Name="Tabs" SelectionChanged="Tabs_OnSelectionChanged">
         <TabItem x:Name="BasicsTab" Header="{l:Tr Catalog_BasicsTab}" SizeChanged="TabHeader_OnSizeChanged">
           <Grid Margin="0,4,0,0">
             <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -36,8 +25,8 @@
         </TabItem>
       </TabControl>
       <!-- The selected tab's actions share the tab row, right of the headers, so the table keeps that height. -->
-      <ContentControl x:Name="TabActionsHost" Grid.Row="1" VerticalAlignment="Top" Focusable="False" IsTabStop="False"
+      <ContentControl x:Name="TabActionsHost" VerticalAlignment="Top" Focusable="False" IsTabStop="False"
                       Visibility="Collapsed"/>
     </Grid>
-  </Border>
+  </p:DetailPanel>
 </UserControl>

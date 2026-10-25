@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using GroceryErp.Catalog;
 using GroceryErp.Inventory;
 using GroceryErp.Localization;
@@ -8,7 +7,7 @@ using GroceryErp.Localization;
 namespace GroceryErp.App.Presentation;
 
 /// <summary>
-/// The Products slide-in panel for one product: Basics (the product form) and Lots. The Lots
+/// The Products detail panel for one product: Basics (the product form) and Lots. The Lots
 /// view is created only when its tab is first selected, and is released when another product opens.
 /// </summary>
 public partial class ProductDetailsPanel : UserControl
@@ -27,12 +26,6 @@ public partial class ProductDetailsPanel : UserControl
             if (_product is not null) ShowSummary(_product);
             SavedText.Text = string.Empty;
         });
-        PreviewKeyDown += (_, args) =>
-        {
-            if (args.Key != Key.Escape || args.Handled) return;
-            args.Handled = true;
-            CloseRequested?.Invoke(this, EventArgs.Empty);
-        };
     }
 
     public event EventHandler? CloseRequested;
@@ -83,15 +76,14 @@ public partial class ProductDetailsPanel : UserControl
 
     private void ShowSummary(ProductListItem product)
     {
-        NameText.Text = product.Name;
-        NameText.ToolTip = product.Name;
-        ContextText.Text = string.Join(" · ", new[]
+        Panel.Title = product.Name;
+        Panel.Facts = string.Join(" · ", new[]
         {
             product.Sku, product.Category, TranslationSource.Instance[product.ProductClass == "INTERNAL"
                 ? "Catalog_InternalUse" : "Catalog_Saleable"],
             product.IsActive ? null : TranslationSource.Instance["Catalog_ArchivedStatus"],
         }.Where(static part => !string.IsNullOrEmpty(part)));
-        StockText.Text = product.SellingPrice is { } price
+        Panel.Summary = product.SellingPrice is { } price
             ? TranslationSource.Instance.Format("Catalog_StockSummary", product.Stock, product.Uom, price)
             : TranslationSource.Instance.Format("Catalog_StockSummaryNoPrice", product.Stock, product.Uom);
     }
@@ -143,5 +135,5 @@ public partial class ProductDetailsPanel : UserControl
         SaveButton.IsEnabled = Form.CanSave;
     }
 
-    private void Close_OnClick(object sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, EventArgs.Empty);
+    private void Panel_OnCloseRequested(object? sender, EventArgs e) => CloseRequested?.Invoke(this, EventArgs.Empty);
 }

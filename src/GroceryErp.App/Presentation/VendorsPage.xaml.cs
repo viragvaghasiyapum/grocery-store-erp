@@ -18,6 +18,9 @@ public partial class VendorsPage : Page
     private readonly TableSelection<VendorItem> _selection = new(static vendor => vendor.Id);
     private readonly FitPageSize _fit;
     private readonly DispatcherTimer _searchDelay;
+    private readonly DetailSplit _ledgerSplit;
+    private VendorItem? _openVendor;
+    private bool _rebinding;
     private CheckBox? _pageCheck;
     private bool _restoring;
 
@@ -31,6 +34,8 @@ public partial class VendorsPage : Page
         LanguageRefresh.Attach(this, () => _ = LoadAsync(PageMove.Same));
         _fit = new FitPageSize(VendorsGrid);
         _fit.RowsChanged += async (_, _) => await LoadAsync(PageMove.Same);
+        _ledgerSplit = new DetailSplit(Layout, Ledger, Ledger, VendorsGrid, "Vendors", fullByDefault: true);
+        LedgerView.Initialize(_purchasing);
         _searchDelay = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromMilliseconds(150) };
         _searchDelay.Tick += async (_, _) =>
         {
@@ -98,7 +103,13 @@ public partial class VendorsPage : Page
             if (!request.IsCurrent) return;
             _pager.Commit(move, page.HasMore, page.NextName is null || page.NextId is null ? null : new NameCursor(page.NextName, page.NextId.Value));
             _selection.Refresh(page.Items);
-            timing.Bind(() => VendorsGrid.ItemsSource = page.Items);
+            long? openId = _ledgerSplit.IsOpen ? _openVendor?.Id : null;
+            _rebinding = true;
+            try { timing.Bind(() => VendorsGrid.ItemsSource = page.Items); }
+            finally { _rebinding = false; }
+            // A vendor still listed stays open, refreshed after an edit or payment.
+            if (openId is { } id && page.Items.FirstOrDefault(item => item.Id == id) is { } open) VendorsGrid.SelectedItem = open;
+            else CloseLedger();
             EmptyText.Visibility = page.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             Pager.Status = TranslationSource.Instance.Format("Purchasing_VendorCount", page.Items.Count);
             UpdateSelection();
@@ -145,10 +156,14 @@ public partial class VendorsPage : Page
 
     private VendorItem? Current => VendorsGrid.SelectedItem as VendorItem;
 
-    private void VendorsGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    // While the ledger is open it follows the selected vendor.
+    private async void VendorsGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        EditButton.IsEnabled = Current is not null;
+        EditButton.IsEnabled = LedgerEditButton.IsEnabled = Current is not null;
         LedgerButton.IsEnabled = Current is not null;
+        if (_rebinding || !_ledgerSplit.IsOpen) return;
+        if (Current is VendorItem vendor) await ShowLedgerAsync(vendor);
+        else CloseLedger();
     }
 
     private void VendorsGrid_OnDoubleClick(object sender, MouseButtonEventArgs e)
@@ -263,10 +278,46 @@ public partial class VendorsPage : Page
             await LoadAsync(PageMove.Same);
     }
 
-    private void Ledger_OnClick(object sender, RoutedEventArgs e)
+    private async void Ledger_OnClick(object sender, RoutedEventArgs e)
     {
-        if (Current is not VendorItem vendor) return;
-        new VendorLedgerWindow(_purchasing, vendor.Id, vendor.Name) { Owner = Window.GetWindow(this) }.ShowDialog();
+        if (Current is VendorItem vendor) await ShowLedgerAsync(vendor);
+    }
+
+    // Opens the vendor's ledger beside the list, or shows the vendor in the open panel.
+    private async Task ShowLedgerAsync(VendorItem vendor)
+    {
+        _openVendor = vendor;
+        Ledger.Title = vendor.Name;
+        Ledger.Facts = string.Join(" · ", new[]
+        {
+            vendor.Phone,
+            vendor.Gstin is { Length: > 0 } gstin ? $"GSTIN {gstin}" : null,
+            $"{TranslationSource.Instance["Purchasing_Balance"]} {vendor.BalanceDue}",
+        }.Where(static part => !string.IsNullOrEmpty(part)));
+        ShowRecordActions(false);
+        _ledgerSplit.Open();
+        await LedgerView.LoadAsync(vendor.Id);
+    }
+
+    private void CloseLedger()
+    {
+        _ledgerSplit.Close();
+        ShowRecordActions(true);
+        _openVendor = null;
+    }
+
+    // The vendor's own actions are in the open panel, so the title row keeps New vendor and Vendor payment.
+    private void ShowRecordActions(bool show)
+    {
+        Visibility visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        EditButton.Visibility = visibility;
+        LedgerButton.Visibility = visibility;
+    }
+
+    private void Ledger_OnCloseRequested(object? sender, EventArgs e)
+    {
+        CloseLedger();
+        VendorsGrid.Focus();
     }
 
     private async void Payment_OnClick(object sender, RoutedEventArgs e)

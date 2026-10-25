@@ -29,6 +29,9 @@ internal static class TableColumnLayouts
             new DragCompletedEventHandler(OnColumnResizeCompleted), true);
     }
 
+    /// <summary>Another per-PC table preference file, kept beside the column layouts.</summary>
+    internal static string PreferenceFile(string fileName) => Path.Combine(Path.GetDirectoryName(LayoutPath)!, fileName);
+
     private static string ResolveLayoutPath()
     {
         string? testRoot = Environment.GetEnvironmentVariable("GROCERY_ERP_TEST_DATA_ROOT");

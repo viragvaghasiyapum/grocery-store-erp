@@ -49,6 +49,10 @@ public partial class MoneyOutPage : Page
         _clock = clock ?? services!.GetRequiredService<IClock>();
         _loadOnShow = loadOnShow;
         _ = new ActionStrip(ExpenseActions, ExpenseButtons, ExpenseMoreMenu, ExpenseMore);
+        DamageDetails.Follow(DamageGrid);
+        ExpenseDetails.Follow(ExpenseGrid);
+        EmployeeDetails.Follow(EmployeeGrid);
+        SalaryDetails.Follow(SalaryRegisterGrid);
         _damageFit = new FitPageSize(DamageGrid);
         _expenseFit = new FitPageSize(ExpenseGrid);
         _damageFit.RowsChanged += async (_, _) => await LoadDamagesAsync(PageMove.Same);

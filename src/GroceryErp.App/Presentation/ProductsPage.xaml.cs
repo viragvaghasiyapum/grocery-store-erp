@@ -1,8 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using GroceryErp.Catalog;
 using GroceryErp.Core.Numerics;
@@ -35,6 +33,7 @@ public partial class ProductsPage : Page
     private readonly LatestRequest _requests = new();
     private readonly TableSelection<ProductListItem> _selection = new(static product => product.Id);
     private readonly FitPageSize _fit;
+    private readonly DetailSplit _details;
     private readonly DispatcherTimer _searchDelay;
     private readonly bool _loadOnShow;
     private CheckBox? _pageSelectionCheck;
@@ -75,6 +74,7 @@ public partial class ProductsPage : Page
         Selection.AllMatchingRequested += async (_, _) => await SelectAllMatchingAsync();
         Pager.PreviousRequested += async (_, _) => await LoadAsync(PageMove.Previous);
         Pager.NextRequested += async (_, _) => await LoadAsync(PageMove.Next);
+        _details = new DetailSplit(Layout, Details, Details.Panel, ProductsGrid, "Products");
         Details.CloseRequested += (_, _) => CloseDetails();
         Details.ProductChanged += async (_, _) => await LoadAsync(PageMove.Same);
         IServiceProvider? services = (Application.Current as App)?.ServicesOrNull;
@@ -83,7 +83,6 @@ public partial class ProductsPage : Page
         _pendingState = PageStateStore.Current?.Get<State>(StateKey);
         ApplyState(_pendingState);
         PreviewKeyDown += OnPreviewKeyDown;
-        SizeChanged += (_, _) => SizeDetails();
         Loaded += async (_, _) =>
         {
             TranslationSource.Instance.PropertyChanged += TranslationChanged;
@@ -232,7 +231,7 @@ public partial class ProductsPage : Page
             timing.Bind(() => ProductsGrid.ItemsSource = page.Items);
             EmptyText.Visibility = page.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             Pager.Status = TranslationSource.Instance.Format("Catalog_Count", page.Items.Count);
-            if (Details.Visibility == Visibility.Visible &&
+            if (_details.IsOpen &&
                 page.Items.FirstOrDefault(item => item.Id == Details.ProductId) is { } open)
                 Details.Refresh(open);
             UpdateSelection();
@@ -324,7 +323,7 @@ public partial class ProductsPage : Page
 
     private async void ProductsGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (Details.Visibility == Visibility.Visible && ProductsGrid.SelectedItem is ProductListItem product &&
+        if (_details.IsOpen && ProductsGrid.SelectedItem is ProductListItem product &&
             product.Id != Details.ProductId)
             await OpenDetailsAsync(product);
     }
@@ -336,32 +335,16 @@ public partial class ProductsPage : Page
 
     private async Task OpenDetailsAsync(ProductListItem product, bool lots = false)
     {
-        if (Details.Visibility == Visibility.Visible && Details.ProductId != product.Id && Details.HasUnsavedChanges &&
+        if (_details.IsOpen && Details.ProductId != product.Id && Details.HasUnsavedChanges &&
             MessageBox.Show(TranslationSource.Instance.Format("Catalog_DiscardChanges", Details.ProductName),
                 TranslationSource.Instance["Catalog_Title"], MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
             return;
-        if (Details.Visibility != Visibility.Visible)
+        if (!_details.IsOpen)
         {
-            Details.Visibility = Visibility.Visible;
             SetPanelOpen(true);
-            SizeDetails();
-            if (SystemParameters.ClientAreaAnimation)
-            {
-                var slide = new TranslateTransform();
-                Details.RenderTransform = slide;
-                slide.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(48, 0, TimeSpan.FromMilliseconds(200))
-                { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }, FillBehavior = FillBehavior.Stop });
-            }
+            _details.Open();
         }
         await Details.OpenAsync(product, lots);
-    }
-
-    private void SizeDetails()
-    {
-        if (Details.Visibility != Visibility.Visible) return;
-        // The list keeps its SKU and name columns; the panel gets the rest for the lot columns.
-        double width = Math.Clamp(ActualWidth * 0.62, 460, 820);
-        DetailsColumn.Width = new GridLength(width);
     }
 
     private void CloseDetails()
@@ -370,8 +353,7 @@ public partial class ProductsPage : Page
             MessageBox.Show(TranslationSource.Instance.Format("Catalog_DiscardChanges", Details.ProductName),
                 TranslationSource.Instance["Catalog_Title"], MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
             return;
-        Details.Visibility = Visibility.Collapsed;
-        DetailsColumn.Width = new GridLength(0);
+        _details.Close();
         SetPanelOpen(false);
         ProductsGrid.Focus();
     }

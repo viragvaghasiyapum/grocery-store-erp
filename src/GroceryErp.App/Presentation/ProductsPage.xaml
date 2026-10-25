@@ -7,7 +7,7 @@
     Title="{l:Tr Catalog_Title}" FontFamily="{StaticResource AppFont}"
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European"
     ScrollViewer.CanContentScroll="False">
-  <Grid Margin="14,8,14,8">
+  <Grid x:Name="Layout" Margin="14,8,14,8">
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="*" MinWidth="320"/>
       <ColumnDefinition x:Name="DetailsColumn" Width="0"/>

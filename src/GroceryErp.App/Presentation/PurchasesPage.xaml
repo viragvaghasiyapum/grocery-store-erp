@@ -7,7 +7,8 @@
     Title="{l:Tr Purchasing_Title}" FontFamily="{StaticResource AppFont}"
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European"
     ScrollViewer.CanContentScroll="False">
-  <Grid Margin="14,8,14,8">
+  <Grid x:Name="Layout" Margin="14,8,14,8">
+    <Grid.ColumnDefinitions><ColumnDefinition Width="*" MinWidth="320"/><ColumnDefinition Width="0"/></Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
@@ -98,5 +99,19 @@
         </p:SelectionBar>
       </p:PagerBar.Selection>
     </p:PagerBar>
+    <!-- An opened purchase shows beside the list, at full width until the operator chooses, and
+         follows the selection. A draft is still finished in the purchase form. -->
+    <p:DetailPanel x:Name="Invoice" Grid.Column="1" Grid.RowSpan="5" Margin="10,-8,-14,-8" Visibility="Collapsed"
+                   CloseRequested="Invoice_OnCloseRequested">
+      <p:DetailPanel.Actions>
+        <StackPanel Orientation="Horizontal">
+          <Button x:Name="InvoiceEditButton" Style="{StaticResource ToolbarButton}" Click="Open_OnClick" Content="{l:Tr Purchasing_Open}"/>
+          <Button x:Name="InvoiceVendorReturnButton" Style="{StaticResource ToolbarButton}" Click="VendorReturn_OnClick" Content="{l:Tr Purchasing_VendorReturn}"/>
+          <Button x:Name="InvoiceCancelButton" Style="{StaticResource ToolbarButton}" Click="CancelPurchase_OnClick" Content="{l:Tr Purchasing_CancelPurchase}"/>
+          <Button x:Name="InvoiceReturnHistoryButton" Style="{StaticResource ToolbarButton}" Click="ReturnHistory_OnClick" Content="{l:Tr Purchasing_ReturnHistory}"/>
+        </StackPanel>
+      </p:DetailPanel.Actions>
+      <p:PurchaseInvoiceView x:Name="InvoiceView"/>
+    </p:DetailPanel>
   </Grid>
 </Page>

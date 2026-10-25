@@ -29,8 +29,11 @@ public partial class SalesHistoryPage : Page
     private readonly Stack<(DateOnly? Date, long? Id)> _previous = new();
     private DateOnly? _beforeDate;
     private long? _beforeId;
+    private readonly DetailSplit _detail;
+    private SaleHistoryItem? _openSale;
     private SaleDetails? _selectedDetails;
     private SaleHistoryActivity? _selectedActivity;
+    private bool _rebinding;
     private readonly int[] _detailPages = new int[3];
     private const int DetailPageSize = 50;
     private bool _loadingHistory;
@@ -57,6 +60,9 @@ public partial class SalesHistoryPage : Page
         _ = new ActionStrip(TitleRow, TitleActions, MoreActionsMenu, MoreActions, ActionStrip.TitleRow(TitleText));
         _fit = new FitPageSize(HistoryGrid);
         _fit.RowsChanged += async (_, _) => await RefreshAsync(reset: false);
+        _detail = new DetailSplit(Layout, Detail, Detail, HistoryGrid, "SalesHistory");
+        DetailPager.PreviousRequested += (_, _) => MoveDetailPage(-1);
+        DetailPager.NextRequested += (_, _) => MoveDetailPage(1);
         Pager.PreviousRequested += async (_, _) => await PreviousPageAsync();
         Pager.NextRequested += async (_, _) => await NextPageAsync();
         PreviewKeyDown += (_, args) =>
@@ -140,8 +146,13 @@ public partial class SalesHistoryPage : Page
             else if (backward) _previous.Pop();
             _beforeDate = pageDate;
             _beforeId = pageId;
-            timing.Bind(() => HistoryGrid.ItemsSource = items);
-            CloseDetails();
+            long? openId = _detail.IsOpen ? _openSale?.Id : null;
+            _rebinding = true;
+            try { timing.Bind(() => HistoryGrid.ItemsSource = items); }
+            finally { _rebinding = false; }
+            // A bill still listed stays open, so an action taken from the panel keeps it in view.
+            if (openId is { } id && items.FirstOrDefault(item => item.Id == id) is { } open) HistoryGrid.SelectedItem = open;
+            else CloseDetails();
             Pager.Status = TranslationSource.Instance.Format("Sales_ResultCount", items.Count);
             Pager.Update(_previous.Count + 1, _previous.Count > 0, items.Count == PageSize);
             UpdateActions();
@@ -240,10 +251,13 @@ public partial class SalesHistoryPage : Page
         await RefreshAsync(reset: false, requestedDate: date, requestedId: id, backward: true);
     }
 
-    private void HistoryGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    // While the panel is open it follows the selected bill.
+    private async void HistoryGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         UpdateActions();
-        CloseDetails();
+        if (_rebinding || !_detail.IsOpen) return;
+        if (HistoryGrid.SelectedItem is SaleHistoryItem item) await ShowBillAsync(item);
+        else CloseDetails();
     }
 
     private void HistoryGrid_OnDoubleClick(object sender, MouseButtonEventArgs e)
@@ -261,56 +275,66 @@ public partial class SalesHistoryPage : Page
 
     private async void ViewBillItems_OnClick(object sender, RoutedEventArgs e)
     {
-        if (HistoryGrid.SelectedItem is not SaleHistoryItem item) return;
+        if (HistoryGrid.SelectedItem is SaleHistoryItem item) await ShowBillAsync(item);
+    }
+
+    // Opens the bill beside the list, or shows it in the open panel on its current tab.
+    private async Task ShowBillAsync(SaleHistoryItem item)
+    {
         try
         {
             SaleDetails sale = await _sales.GetAsync(item.Id);
             SaleHistoryActivity activity = await _sales.GetHistoryActivityAsync(item.Id);
             if (HistoryGrid.SelectedItem is not SaleHistoryItem selected || selected.Id != item.Id) return;
+            _openSale = item;
             _selectedDetails = sale;
             _selectedActivity = activity;
             Array.Clear(_detailPages);
-            DetailTabs.SelectedIndex = 0;
             RenderDetailPage();
             RefreshDetailHeading();
-            SideOverlayMotion.Show(DetailOverlay, DetailPanel, DetailBackdrop);
+            ShowRecordActions(false);
+            _detail.Open();
         }
         catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 
     private void CloseDetails()
     {
-        DetailOverlay.Visibility = Visibility.Collapsed;
+        _detail.Close();
+        ShowRecordActions(true);
+        _openSale = null;
         _selectedDetails = null;
         _selectedActivity = null;
         DetailGrid.ItemsSource = null;
         ReturnsGrid.ItemsSource = null;
         ActivityGrid.ItemsSource = null;
-        DetailHeading.Text = TranslationSource.Instance["Sales_SelectHistory"];
     }
 
-    private void CloseDetails_OnClick(object sender, RoutedEventArgs e) => CloseDetails();
+    // The bill's own actions are in the open panel, so the title row keeps only the page's.
+    private void ShowRecordActions(bool show)
+    {
+        Visibility visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        foreach (Button button in new[] { ViewItemsButton, ReturnButton, ReprintButton, VoidButton }) button.Visibility = visibility;
+    }
 
-    private void DetailBackdrop_OnMouseDown(object sender, MouseButtonEventArgs e) => CloseDetails();
+    private void Detail_OnCloseRequested(object? sender, EventArgs e)
+    {
+        CloseDetails();
+        HistoryGrid.Focus();
+    }
 
     private void DetailTabs_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (e.Source == DetailTabs) RenderDetailPage();
     }
 
-    private void PreviousDetail_OnClick(object sender, RoutedEventArgs e)
+    private void MoveDetailPage(int step)
     {
         int tab = DetailTabs.SelectedIndex;
-        if (tab < 0 || _detailPages[tab] == 0) return;
-        _detailPages[tab]--;
-        RenderDetailPage();
-    }
-
-    private void NextDetail_OnClick(object sender, RoutedEventArgs e)
-    {
-        int tab = DetailTabs.SelectedIndex;
-        if (tab < 0 || (_detailPages[tab] + 1) * DetailPageSize >= DetailCount(tab)) return;
-        _detailPages[tab]++;
+        if (tab < 0) return;
+        int page = _detailPages[tab] + step;
+        if (page < 0 || page * DetailPageSize >= DetailCount(tab)) return;
+        _detailPages[tab] = page;
         RenderDetailPage();
     }
 
@@ -324,7 +348,7 @@ public partial class SalesHistoryPage : Page
 
     private void RenderDetailPage()
     {
-        if (DetailTabs is null || DetailPageText is null) return;
+        if (DetailTabs is null || DetailPager is null) return;
         int tab = DetailTabs.SelectedIndex;
         if (tab < 0 || tab >= _detailPages.Length) return;
         int count = DetailCount(tab);
@@ -336,9 +360,8 @@ public partial class SalesHistoryPage : Page
             case 1: ReturnsGrid.ItemsSource = _selectedActivity?.Returns.Skip(start).Take(DetailPageSize).ToArray(); break;
             case 2: ActivityGrid.ItemsSource = _selectedActivity?.Events.Skip(start).Take(DetailPageSize).ToArray(); break;
         }
-        DetailPageText.Text = count == 0 ? "0" : $"{start + 1}–{Math.Min(start + DetailPageSize, count)} / {count}";
-        PreviousDetailButton.IsEnabled = start > 0;
-        NextDetailButton.IsEnabled = start + DetailPageSize < count;
+        DetailPager.Status = count == 0 ? "0" : $"{start + 1}–{Math.Min(start + DetailPageSize, count)} / {count}";
+        DetailPager.Update(_detailPages[tab] + 1, start > 0, start + DetailPageSize < count);
     }
 
     private void RefreshDetailHeading()
@@ -355,8 +378,11 @@ public partial class SalesHistoryPage : Page
             };
             return $"{TranslationSource.Instance[key]} ₹{payment.Amount.Value.ToString("N3", Digits)}";
         }));
-        DetailHeading.Text = TranslationSource.Instance.Format("Sales_DetailHeading",
+        Detail.Title = TranslationSource.Instance.Format("Sales_DetailHeading",
             sale.InvoiceNumber ?? sale.Id.ToString(Digits), modes);
+        Detail.Facts = _openSale is not { } item ? string.Empty : string.Join(" · ",
+            item.SaleDate.ToString("dd MMM yyyy", Digits), TranslationSource.Instance[$"Sales_Status_{item.Status}"],
+            $"₹{item.GrandTotal.Value.ToString("N3", Digits)}");
     }
 
     private void UpdateActions()
@@ -364,9 +390,10 @@ public partial class SalesHistoryPage : Page
         if (ReprintButton is null) return;
         SaleStatus? status = (HistoryGrid.SelectedItem as SaleHistoryItem)?.Status;
         ViewItemsButton.IsEnabled = status is not null;
-        ReprintButton.IsEnabled = status is SaleStatus.Completed or SaleStatus.PartiallyRefunded or SaleStatus.Refunded or SaleStatus.Void;
-        VoidButton.IsEnabled = status == SaleStatus.Completed;
-        ReturnButton.IsEnabled = status is SaleStatus.Completed or SaleStatus.PartiallyRefunded;
+        ReprintButton.IsEnabled = DetailReprintButton.IsEnabled =
+            status is SaleStatus.Completed or SaleStatus.PartiallyRefunded or SaleStatus.Refunded or SaleStatus.Void;
+        VoidButton.IsEnabled = DetailVoidButton.IsEnabled = status == SaleStatus.Completed;
+        ReturnButton.IsEnabled = DetailReturnButton.IsEnabled = status is SaleStatus.Completed or SaleStatus.PartiallyRefunded;
     }
 
     private async void Reprint_OnClick(object sender, RoutedEventArgs e)

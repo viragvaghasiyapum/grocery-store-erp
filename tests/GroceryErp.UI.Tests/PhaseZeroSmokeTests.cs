@@ -834,7 +834,7 @@ public sealed class PhaseZeroSmokeTests
                 reopenedPurchaseGrid.Columns[2].DisplayIndex.ShouldBe(1);
                 reopenedPurchasesHost.Close();
 
-                var vendorHistory = new VendorLedgerWindow(purchasing, 1, "Shree Wholesale Traders", loadOnShow: false);
+                var vendorHistory = new VendorLedgerView();
                 ((DataGrid)vendorHistory.FindName("PurchasesGrid")).ItemsSource = new[]
                 {
                     new VendorLedgerItem(new DateOnly(2026, 9, 28), "PURCHASE", "P2627-000051",
@@ -845,9 +845,10 @@ public sealed class PhaseZeroSmokeTests
                     new VendorLotItem("Tata Salt 1 kg", "L2627-000014", "SALT-2409",
                         new DateOnly(2026, 9, 28), new DateOnly(2027, 9, 28), new Quantity(11)),
                 };
-                vendorHistory.Show();
-                Capture(vendorHistory, "vendor-history.en.png");
-                vendorHistory.Close();
+                var vendorHistoryHost = new Window { Content = vendorHistory, Width = 900, Height = 620 };
+                vendorHistoryHost.Show();
+                Capture(vendorHistoryHost, "vendor-history.en.png");
+                vendorHistoryHost.Close();
 
                 var vendorReturn = new VendorReturnWindow(purchasing, 1, loadOnShow: false,
                     clock: new SystemClock(settings));
@@ -941,7 +942,7 @@ public sealed class PhaseZeroSmokeTests
                 var assetsHost = new Window { Content = assetsPage, Width = 1120, Height = 700 };
                 assetsHost.Show();
                 // Add, edit and dispose open their own dialogs; the table keeps the page.
-                ((FrameworkElement)assetsPage.FindName("TimelineOverlay")).Visibility.ShouldBe(Visibility.Collapsed);
+                ((FrameworkElement)assetsPage.FindName("Timeline")).Visibility.ShouldBe(Visibility.Collapsed);
                 ((Button)assetsPage.FindName("EditAssetButton")).IsEnabled.ShouldBeFalse();
                 // The timeline opens from the title row for the selected asset, not a button in every row.
                 ((Button)assetsPage.FindName("TimelineButton")).IsEnabled.ShouldBeFalse();
@@ -1062,7 +1063,6 @@ public sealed class PhaseZeroSmokeTests
                         1, new Money(59), "UPI", new DateTime(2026, 10, 3, 10, 20, 0), "Mistake"),
                 };
                 ((DataGrid)history.FindName("DetailGrid")).ItemsSource = lines;
-                ((TextBlock)history.FindName("DetailHeading")).Text = "S2627-000041 · Cash ₹109.000";
                 ((DataGrid)history.FindName("HistoryGrid")).ItemsSource = new[]
                 {
                     new SaleHistoryItem(1, "S2627-000041", new DateOnly(2026, 10, 3), SaleStatus.Completed,
@@ -1086,7 +1086,6 @@ public sealed class PhaseZeroSmokeTests
                 VerifyAccessibleNames(historyHost);
                 Capture(historyHost, "sales-history.en.png");
                 TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
-                ((TextBlock)history.FindName("DetailHeading")).Text = "S2627-000041 · રોકડ ₹109.000";
                 Capture(historyHost, "sales-history.gu.png");
                 TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 historyHost.Close();
@@ -1699,6 +1698,18 @@ public sealed class PhaseZeroSmokeTests
             opening.GetAwaiter().GetResult();
             details.Visibility.ShouldBe(Visibility.Visible);
             details.ProductId.ShouldBe(salt);
+            // The panel opens beside the list, which stays usable; the arrows step through its rows.
+            productsHost.UpdateLayout();
+            details.Panel.IsFullWidth.ShouldBeFalse();
+            grid.ActualWidth.ShouldBeGreaterThan(300);
+            details.TranslatePoint(new Point(), productsHost).X
+                .ShouldBeGreaterThanOrEqualTo(grid.TranslatePoint(new Point(grid.ActualWidth, 0), productsHost).X - 1);
+            details.Panel.PreviousButton.IsEnabled.ShouldBeFalse();
+            details.Panel.NextButton.IsEnabled.ShouldBeTrue();
+            details.Panel.NextButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            PumpUntil(() => details.ProductId != salt && grid.SelectedIndex == 1);
+            details.Panel.PreviousButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            PumpUntil(() => details.ProductId == salt && grid.SelectedIndex == 0);
             ((ContentControl)details.FindName("LotsHost")).Content.ShouldBeNull();
             // The panel has Basics and Lots only; the pre-upgrade ledger History tab is gone.
             ((TabControl)details.FindName("Tabs")).Items.Count.ShouldBe(2);
@@ -1735,7 +1746,7 @@ public sealed class PhaseZeroSmokeTests
             }
             ShouldFitTabRow();
             CaptureRevision(productsHost, "product-lots.en.png");
-            var stockText = (TextBlock)details.FindName("StockText");
+            TextBlock stockText = details.Panel.SummaryText;
             string englishStock = stockText.Text;
             translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
             // Text set in code follows the language too: the folded-filters toggle at once, the
@@ -1755,8 +1766,8 @@ public sealed class PhaseZeroSmokeTests
             ((MenuItem)moreActions.Items[^1]).IsEnabled.ShouldBe(labelButton.IsEnabled);
             CaptureRevision(productsHost, "product-lots.gu.png");
             translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
-            details.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(details)!, 0, Key.Escape)
-            { RoutedEvent = UIElement.PreviewKeyDownEvent });
+            details.Panel.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(details)!, 0, Key.Escape)
+            { RoutedEvent = Keyboard.KeyDownEvent });
             details.Visibility.ShouldBe(Visibility.Collapsed);
             productsHost.Close();
 
@@ -1778,6 +1789,42 @@ public sealed class PhaseZeroSmokeTests
             ((Button)purchases.FindName("OpenButton")).IsEnabled.ShouldBeTrue();
             ShouldBeOneLine((FrameworkElement)purchases.FindName("FilterBar"));
             CaptureRevision(purchasesHost, "purchases.en.png");
+            // Opening a purchase shows it in the detail panel at full width; its actions move into the
+            // panel, and the width switch puts the list back beside it, a choice the screen remembers.
+            var invoice = (DetailPanel)purchases.FindName("Invoice");
+            double[] listWidths = [.. purchaseGrid.Columns.Select(static column => column.ActualWidth)];
+            ((Button)purchases.FindName("OpenButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            PumpUntil(() => invoice.Visibility == Visibility.Visible);
+            invoice.IsFullWidth.ShouldBeTrue();
+            invoice.Title.ShouldContain(posted.DocumentNumber);
+            invoice.Facts.ShouldContain("Shree Wholesale Traders");
+            var invoiceView = (PurchaseInvoiceView)purchases.FindName("InvoiceView");
+            ((DataGrid)invoiceView.FindName("LinesGrid")).Items.Count.ShouldBe(1);
+            ((Button)purchases.FindName("OpenButton")).Visibility.ShouldBe(Visibility.Collapsed);
+            ((Button)purchases.FindName("InvoiceVendorReturnButton")).Visibility.ShouldBe(Visibility.Visible);
+            ((Button)purchases.FindName("InvoiceEditButton")).Visibility.ShouldBe(Visibility.Collapsed);
+            // Full width covers the list without narrowing it.
+            purchasesHost.UpdateLayout();
+            purchaseGrid.IsVisible.ShouldBeFalse();
+            VerifyAccessibleNames(purchasesHost);
+            CaptureRevision(purchasesHost, "purchase-panel-full.en.png");
+            invoice.WidthButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            purchasesHost.UpdateLayout();
+            invoice.IsFullWidth.ShouldBeFalse();
+            purchaseGrid.IsVisible.ShouldBeTrue();
+            purchaseGrid.ActualWidth.ShouldBeGreaterThan(300);
+            File.ReadAllText(TableColumnLayouts.PreferenceFile("detail-panels.json")).ShouldContain("\"Purchases\":false");
+            CaptureRevision(purchasesHost, "purchase-panel-side.en.png");
+            invoice.WidthButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            invoice.IsFullWidth.ShouldBeTrue();
+            invoice.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(purchasesHost)!, 0, Key.Escape)
+            { RoutedEvent = Keyboard.KeyDownEvent });
+            invoice.Visibility.ShouldBe(Visibility.Collapsed);
+            ((Button)purchases.FindName("OpenButton")).Visibility.ShouldBe(Visibility.Visible);
+            // The list's columns keep the widths they had before the panel opened.
+            purchasesHost.UpdateLayout();
+            for (int column = 0; column < listWidths.Length; column++)
+                Math.Abs(purchaseGrid.Columns[column].ActualWidth - listWidths[column]).ShouldBeLessThan(1);
             purchasesHost.Close();
 
             var vendors = new VendorsPage(purchasing);
@@ -1797,6 +1844,19 @@ public sealed class PhaseZeroSmokeTests
             vendorPager.TranslatePoint(new Point(), vendorsHost).Y
                 .ShouldBeGreaterThanOrEqualTo(vendorGrid.TranslatePoint(new Point(0, vendorGrid.ActualHeight), vendorsHost).Y - 1);
             CaptureRevision(vendorsHost, "vendors.en.png");
+            // The ledger opens in the detail panel at full width, in place of the old ledger window.
+            vendorGrid.SelectedIndex = 0;
+            ((Button)vendors.FindName("LedgerButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            var ledgerPanel = (DetailPanel)vendors.FindName("Ledger");
+            var ledgerView = (VendorLedgerView)vendors.FindName("LedgerView");
+            PumpUntil(() => ledgerPanel.Visibility == Visibility.Visible && ((DataGrid)ledgerView.FindName("PurchasesGrid")).Items.Count > 0);
+            ledgerPanel.Title.ShouldBe("Shree Wholesale Traders");
+            ledgerPanel.IsFullWidth.ShouldBeTrue();
+            ((Button)vendors.FindName("EditButton")).Visibility.ShouldBe(Visibility.Collapsed);
+            CaptureRevision(vendorsHost, "vendor-ledger-panel.en.png");
+            ledgerPanel.CloseButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            ledgerPanel.Visibility.ShouldBe(Visibility.Collapsed);
+            ((Button)vendors.FindName("EditButton")).Visibility.ShouldBe(Visibility.Visible);
             vendorsHost.Close();
 
             // Billing: a typed name lists its matches to pick from, rather than taking the first or
@@ -1839,6 +1899,33 @@ public sealed class PhaseZeroSmokeTests
             billGrid.Items.Count.ShouldBe(2);
             ((TextBlock)billing.FindName("StatusText")).Text.ShouldBe(translations["Purchasing_NoProduct"]);
             billingHost.Close();
+            long billId = (long)typeof(BillingPage).GetField("_saleId", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(billing)!;
+            Money billTotal = Run(() => sales.GetAsync(billId)).Totals.GrandTotal;
+            CompletedSale completedBill = Run(() => sales.CompleteAsync(new CompleteSaleCommand(billId,
+                [new PaymentInput(PaymentMode.Cash, billTotal)], OperationGuard.NewId())));
+
+            // Sales history: View bill items opens the bill beside the list, which stays usable.
+            var salesHistory = new SalesHistoryPage(sales, new ReceiptPrinter(settings), clock);
+            var salesHistoryHost = new Window { Content = salesHistory, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
+            salesHistoryHost.Show();
+            var historyGrid = (DataGrid)salesHistory.FindName("HistoryGrid");
+            PumpUntil(() => historyGrid.Items.Count == 1);
+            historyGrid.SelectedIndex = 0;
+            ((Button)salesHistory.FindName("ViewItemsButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            var billPanel = (DetailPanel)salesHistory.FindName("Detail");
+            PumpUntil(() => billPanel.Visibility == Visibility.Visible && ((DataGrid)salesHistory.FindName("DetailGrid")).Items.Count == 2);
+            billPanel.Title.ShouldContain(completedBill.InvoiceNumber);
+            billPanel.IsFullWidth.ShouldBeFalse();
+            salesHistoryHost.UpdateLayout();
+            historyGrid.ActualWidth.ShouldBeGreaterThan(300);
+            ((Button)salesHistory.FindName("ViewItemsButton")).Visibility.ShouldBe(Visibility.Collapsed);
+            ((Button)salesHistory.FindName("DetailReprintButton")).IsEnabled.ShouldBeTrue();
+            VerifyAccessibleNames(salesHistoryHost);
+            CaptureRevision(salesHistoryHost, "sales-history-panel.en.png");
+            billPanel.CloseButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            billPanel.Visibility.ShouldBe(Visibility.Collapsed);
+            ((Button)salesHistory.FindName("ViewItemsButton")).Visibility.ShouldBe(Visibility.Visible);
+            salesHistoryHost.Close();
 
             // Forms mark required fields, list errors at the top and keep the typed values.
             var vendorForm = new VendorEditorWindow(purchasing) { Language = AppLanguage };

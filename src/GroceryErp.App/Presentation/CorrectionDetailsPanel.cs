@@ -2,51 +2,49 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using GroceryErp.Data.Services;
 using GroceryErp.Localization;
 
 namespace GroceryErp.App.Presentation;
 
-// A narrow panel beside a money-out table: the selected entry's original posting and
-// each correction, how an edit would be dated, and the Edit and Void actions.
+// The narrow detail panel beside a money-out table: the selected entry's original posting and
+// each correction, how an edit would be dated, and the Edit and Void actions. It is the shared
+// detail panel, so Close, Esc and the record arrows work as on every page; it has no full width.
 public sealed class CorrectionDetailsPanel : Border
 {
-    private readonly TextBlock _title = new() { FontSize = 15, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
-    private readonly TextBlock _treatment = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 8) };
-    private readonly Button _edit = new() { MinWidth = 80, Margin = new Thickness(0, 0, 8, 0) };
-    private readonly Button _void = new() { MinWidth = 80, Margin = new Thickness(0, 0, 8, 0) };
-    private readonly Button _close = new() { MinWidth = 70 };
+    private readonly DetailPanel _panel = new() { CanResize = false };
+    private readonly TextBlock _treatment = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
+    private readonly Button _edit = new();
+    private readonly Button _void = new() { Margin = new Thickness(0) };
     private readonly ItemsControl _history = new();
-    private readonly WrapPanel _actions = new() { Margin = new Thickness(0, 0, 0, 10) };
     private readonly TextBlock _historyHeader = new() { FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 4) };
 
     public CorrectionDetailsPanel()
     {
-        Width = 300;
+        Width = 320;
         Margin = new Thickness(8, 0, 0, 0);
-        Padding = new Thickness(12);
-        CornerRadius = new CornerRadius(6);
-        BorderThickness = new Thickness(1);
-        SetResourceReference(BorderBrushProperty, "CardStrokeColorDefaultBrush");
-        SetResourceReference(BackgroundProperty, "CardBackgroundFillColorDefaultBrush");
         Visibility = Visibility.Collapsed;
+        // The panel is narrow, so a long entry title wraps instead of being cut short.
+        _panel.TitleText.TextWrapping = TextWrapping.Wrap;
+        _panel.TitleText.FontSize = 15;
+        _edit.SetResourceReference(StyleProperty, "ToolbarButton");
+        _void.SetResourceReference(StyleProperty, "ToolbarButton");
         _edit.Click += (_, _) => EditRequested?.Invoke(this, EventArgs.Empty);
         _void.Click += (_, _) => VoidRequested?.Invoke(this, EventArgs.Empty);
-        _close.Click += (_, _) => Visibility = Visibility.Collapsed;
-        _actions.Children.Add(_edit);
-        _actions.Children.Add(_void);
-        _actions.Children.Add(_close);
+        _panel.CloseRequested += (_, _) => Visibility = Visibility.Collapsed;
+        var actions = new StackPanel { Orientation = Orientation.Horizontal };
+        actions.Children.Add(_edit);
+        actions.Children.Add(_void);
+        _panel.Actions = actions;
         var body = new DockPanel();
-        DockPanel.SetDock(_title, Dock.Top);
         DockPanel.SetDock(_treatment, Dock.Top);
-        DockPanel.SetDock(_actions, Dock.Top);
         DockPanel.SetDock(_historyHeader, Dock.Top);
-        body.Children.Add(_title);
         body.Children.Add(_treatment);
-        body.Children.Add(_actions);
         body.Children.Add(_historyHeader);
         body.Children.Add(new ScrollViewer { Content = _history, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
-        Child = body;
+        _panel.Body = body;
+        Child = _panel;
         Localize();
         // A weak listener, so the shared translation source never keeps a closed page alive.
         System.ComponentModel.PropertyChangedEventManager.AddHandler(TranslationSource.Instance,
@@ -59,11 +57,13 @@ public sealed class CorrectionDetailsPanel : Border
     public event EventHandler? EditRequested;
     public event EventHandler? VoidRequested;
 
+    /// <summary>Makes the record arrows move through the table beside the panel.</summary>
+    public void Follow(Selector list) => _panel.Follow(list);
+
     public void Localize()
     {
         _edit.Content = T("MoneyOut_Edit");
         _void.Content = T("MoneyOut_Void");
-        _close.Content = T("Common_Close");
         _historyHeader.Text = T("MoneyOut_History");
         AutomationProperties.SetName(this, T("MoneyOut_History"));
     }
@@ -77,7 +77,7 @@ public sealed class CorrectionDetailsPanel : Border
         Localize();
         _edit.Visibility = actions ? Visibility.Visible : Visibility.Collapsed;
         _void.Visibility = actions ? Visibility.Visible : Visibility.Collapsed;
-        _title.Text = title;
+        _panel.Title = title;
         _treatment.Text = dating is null ? "" : Describe(dating);
         _treatment.Visibility = dating is null ? Visibility.Collapsed : Visibility.Visible;
         _edit.IsEnabled = canChange;

@@ -15,7 +15,7 @@ namespace GroceryErp.App.Presentation;
 
 /// <summary>
 /// Assets: search and keyset pages sized to the window, the asset and disposal forms as dialogs,
-/// and a side panel with each asset's depreciation timeline and terms.
+/// and a detail panel beside the list with each asset's depreciation timeline and terms.
 /// </summary>
 public partial class AssetsPage : Page
 {
@@ -27,6 +27,9 @@ public partial class AssetsPage : Page
     private readonly LatestRequest _requests = new();
     private readonly FitPageSize _fit;
     private readonly DispatcherTimer _searchDelay;
+    private readonly DetailSplit _timelineSplit;
+    private AssetItem? _openAsset;
+    private bool _rebinding;
     private IReadOnlyList<DepreciationEntry> _timeline = [];
     private int _timelinePage;
     private const int TimelinePageSize = 50;
@@ -51,6 +54,9 @@ public partial class AssetsPage : Page
         // Method and status cells and the row count are set in code, so a reload re-renders them.
         LanguageRefresh.Attach(this, () => _ = LoadAsync(PageMove.Same));
         _fit.RowsChanged += async (_, _) => await LoadAsync(PageMove.Same);
+        _timelineSplit = new DetailSplit(Layout, Timeline, Timeline, AssetGrid, "Assets");
+        TimelinePager.PreviousRequested += (_, _) => MoveTimelinePage(-1);
+        TimelinePager.NextRequested += (_, _) => MoveTimelinePage(1);
         _searchDelay = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromMilliseconds(200) };
         _searchDelay.Tick += async (_, _) =>
         {
@@ -96,8 +102,13 @@ public partial class AssetsPage : Page
             if (!request.IsCurrent) return;
             _pager.Commit(move, page.HasMore, page is { NextDisposed: { } disposed, NextName: { } name, NextId: { } id }
                 ? new AssetCursor(disposed, name, id) : null);
-            CloseTimeline();
-            timing.Bind(() => AssetGrid.ItemsSource = page.Items);
+            long? openId = _timelineSplit.IsOpen ? _openAsset?.Id : null;
+            _rebinding = true;
+            try { timing.Bind(() => AssetGrid.ItemsSource = page.Items); }
+            finally { _rebinding = false; }
+            // An asset still listed keeps its timeline open, refreshed after an edit or disposal.
+            if (openId is { } openAssetId && page.Items.FirstOrDefault(item => item.Id == openAssetId) is { } open) AssetGrid.SelectedItem = open;
+            else CloseTimeline();
             EmptyText.Visibility = page.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             Pager.Status = TranslationSource.Instance.Format("MoneyOut_RowCount", page.Items.Count);
         }
@@ -132,12 +143,16 @@ public partial class AssetsPage : Page
         await LoadAsync(PageMove.First);
     }
 
-    private void AssetGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    // While the timeline is open it follows the selected asset.
+    private async void AssetGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         AssetItem? asset = AssetGrid.SelectedItem as AssetItem;
-        EditAssetButton.IsEnabled = asset is not null;
+        EditAssetButton.IsEnabled = TimelineEditButton.IsEnabled = asset is not null;
         TimelineButton.IsEnabled = asset is not null;
-        DisposeButton.IsEnabled = asset is { DisposedDate: null };
+        DisposeButton.IsEnabled = TimelineDisposeButton.IsEnabled = asset is { DisposedDate: null };
+        if (_rebinding || !_timelineSplit.IsOpen) return;
+        if (asset is not null) await ShowTimelineAsync(asset);
+        else CloseTimeline();
     }
 
     private void AssetGrid_OnDoubleClick(object sender, MouseButtonEventArgs e)
@@ -184,7 +199,11 @@ public partial class AssetsPage : Page
 
     private async void ViewTimeline_OnClick(object sender, RoutedEventArgs e)
     {
-        if (AssetGrid.SelectedItem is not AssetItem asset) return;
+        if (AssetGrid.SelectedItem is AssetItem asset) await ShowTimelineAsync(asset);
+    }
+
+    private async Task ShowTimelineAsync(AssetItem asset)
+    {
         try
         {
             IReadOnlyList<DepreciationEntry> schedule = await _assets.GetScheduleAsync(asset.Id);
@@ -202,38 +221,53 @@ public partial class AssetsPage : Page
                     TranslationSource.Instance[$"MoneyOut_TermReason_{term.Reason}"],
                     term.CreatedAt.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture)),
             }).ToList();
+            _openAsset = asset;
             _timeline = schedule;
             _timelinePage = 0;
-            TimelineHeading.Text = $"{asset.Name} · {TranslationSource.Instance["Assets_ViewTimeline"]}";
+            Timeline.Title = asset.Name;
+            Timeline.Facts = string.Join(" · ", new[]
+            {
+                asset.Category,
+                $"{(asset.Method == DepreciationMethod.Wdv ? "WDV" : "SLM")} {asset.Rate.Value.ToString("0.###", TranslationSource.FormatCulture)}%",
+                $"{TranslationSource.Instance["Assets_BookValue"]} {asset.BookValue.Value.ToString("N3", TranslationSource.FormatCulture)}",
+                asset.DisposedDate is { } disposed
+                    ? $"{TranslationSource.Instance["Assets_Disposed"]} {disposed.ToString("dd MMM yyyy", TranslationSource.FormatCulture)}" : null,
+            }.Where(static part => !string.IsNullOrEmpty(part)));
             RenderTimelinePage();
-            SideOverlayMotion.Show(TimelineOverlay, TimelinePanel, TimelineBackdrop);
+            ShowRecordActions(false);
+            _timelineSplit.Open();
         }
         catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 
     private void CloseTimeline()
     {
-        TimelineOverlay.Visibility = Visibility.Collapsed;
+        _timelineSplit.Close();
+        ShowRecordActions(true);
+        _openAsset = null;
         _timeline = [];
         _timelinePage = 0;
         ScheduleGrid.ItemsSource = null;
     }
 
-    private void CloseTimeline_OnClick(object sender, RoutedEventArgs e) => CloseTimeline();
-
-    private void TimelineBackdrop_OnMouseDown(object sender, MouseButtonEventArgs e) => CloseTimeline();
-
-    private void PreviousTimeline_OnClick(object sender, RoutedEventArgs e)
+    // The asset's own actions are in the open panel, so the title row keeps only the page's.
+    private void ShowRecordActions(bool show)
     {
-        if (_timelinePage == 0) return;
-        _timelinePage--;
-        RenderTimelinePage();
+        Visibility visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        foreach (Button button in new[] { EditAssetButton, TimelineButton, DisposeButton }) button.Visibility = visibility;
     }
 
-    private void NextTimeline_OnClick(object sender, RoutedEventArgs e)
+    private void Timeline_OnCloseRequested(object? sender, EventArgs e)
     {
-        if ((_timelinePage + 1) * TimelinePageSize >= _timeline.Count) return;
-        _timelinePage++;
+        CloseTimeline();
+        AssetGrid.Focus();
+    }
+
+    private void MoveTimelinePage(int step)
+    {
+        int page = _timelinePage + step;
+        if (page < 0 || page * TimelinePageSize >= _timeline.Count) return;
+        _timelinePage = page;
         RenderTimelinePage();
     }
 
@@ -241,9 +275,8 @@ public partial class AssetsPage : Page
     {
         int start = _timelinePage * TimelinePageSize;
         ScheduleGrid.ItemsSource = _timeline.Skip(start).Take(TimelinePageSize).ToArray();
-        TimelinePageText.Text = _timeline.Count == 0 ? "0" :
+        TimelinePager.Status = _timeline.Count == 0 ? "0" :
             $"{start + 1}–{Math.Min(start + TimelinePageSize, _timeline.Count)} / {_timeline.Count}";
-        PreviousTimelineButton.IsEnabled = start > 0;
-        NextTimelineButton.IsEnabled = start + TimelinePageSize < _timeline.Count;
+        TimelinePager.Update(_timelinePage + 1, start > 0, start + TimelinePageSize < _timeline.Count);
     }
 }

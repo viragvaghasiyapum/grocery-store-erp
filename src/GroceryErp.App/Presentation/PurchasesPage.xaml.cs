@@ -15,8 +15,9 @@ namespace GroceryErp.App.Presentation;
 
 /// <summary>
 /// Purchases: server-side document, vendor, status, date, line type, product and return-eligibility
-/// filters; keyset pages sized to the window; Open/Void/Partial return with eligibility shown; and
-/// reviewed bulk void. Filters are kept for the session.
+/// filters; keyset pages sized to the window; an opened purchase in the detail panel beside the
+/// list; Void/Partial return with eligibility shown; and reviewed bulk void. Filters are kept for
+/// the session.
 /// </summary>
 public partial class PurchasesPage : Page
 {
@@ -28,6 +29,9 @@ public partial class PurchasesPage : Page
     private readonly TableSelection<PurchaseListItem> _selection = new(static purchase => purchase.Id);
     private readonly FitPageSize _fit;
     private readonly DispatcherTimer _searchDelay;
+    private readonly DetailSplit _invoiceSplit;
+    private PurchaseListItem? _openPurchase;
+    private bool _rebinding;
     private CheckBox? _pageCheck;
     private State? _pendingState;
     private bool _restoring;
@@ -44,6 +48,7 @@ public partial class PurchasesPage : Page
         _fit = new FitPageSize(PurchasesGrid);
         LanguageRefresh.Attach(this, () => _ = RefreshForLanguageAsync());
         _fit.RowsChanged += async (_, _) => await LoadAsync(PageMove.Same);
+        _invoiceSplit = new DetailSplit(Layout, Invoice, Invoice, PurchasesGrid, "Purchases", fullByDefault: true);
         _searchDelay = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromMilliseconds(250) };
         _searchDelay.Tick += async (_, _) =>
         {
@@ -170,7 +175,13 @@ public partial class PurchasesPage : Page
             if (!request.IsCurrent) return;
             _pager.Commit(move, page.HasMore, page.NextDate is { } date && page.NextId is { } next ? new DateCursor(date, next) : null);
             _selection.Refresh(page.Items);
-            timing.Bind(() => PurchasesGrid.ItemsSource = page.Items);
+            long? openId = _invoiceSplit.IsOpen ? _openPurchase?.Id : null;
+            _rebinding = true;
+            try { timing.Bind(() => PurchasesGrid.ItemsSource = page.Items); }
+            finally { _rebinding = false; }
+            // A purchase still listed stays open, refreshed after a return or void taken from the panel.
+            if (openId is { } id && page.Items.FirstOrDefault(item => item.Id == id) is { } open) PurchasesGrid.SelectedItem = open;
+            else CloseInvoice();
             EmptyText.Visibility = page.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             Pager.Status = TranslationSource.Instance.Format("Purchasing_Count", page.Items.Count);
             UpdateSelection();
@@ -231,7 +242,14 @@ public partial class PurchasesPage : Page
 
     private PurchaseListItem? Current => PurchasesGrid.SelectedItem as PurchaseListItem;
 
-    private void PurchasesGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateActions();
+    // While the panel is open it follows the selected purchase.
+    private async void PurchasesGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        UpdateActions();
+        if (_rebinding || !_invoiceSplit.IsOpen) return;
+        if (Current is PurchaseListItem purchase) await ShowInvoiceAsync(purchase);
+        else CloseInvoice();
+    }
 
     // Void needs a server check (no document may have used the purchase's stock), so the button
     // explains why it is unavailable instead of failing after a click.
@@ -241,18 +259,24 @@ public partial class PurchasesPage : Page
         OpenButton.IsEnabled = purchase is not null;
         VendorReturnButton.IsEnabled = purchase is { Status: "POSTED" };
         ReturnHistoryButton.IsEnabled = purchase is { Status: "POSTED" or "CANCELLED" };
-        CancelPurchaseButton.IsEnabled = false;
-        CancelPurchaseButton.ToolTip = null;
+        CancelPurchaseButton.IsEnabled = InvoiceCancelButton.IsEnabled = false;
+        CancelPurchaseButton.ToolTip = InvoiceCancelButton.ToolTip = null;
+        // The panel shows only what applies to the open purchase: Open for a draft, returns and void once posted.
+        InvoiceEditButton.Visibility = purchase is { Status: "DRAFT" } ? Visibility.Visible : Visibility.Collapsed;
+        InvoiceVendorReturnButton.Visibility = InvoiceCancelButton.Visibility =
+            purchase is { Status: "POSTED" } ? Visibility.Visible : Visibility.Collapsed;
+        InvoiceReturnHistoryButton.Visibility = purchase is { Status: "POSTED" or "CANCELLED" } ? Visibility.Visible : Visibility.Collapsed;
         if (purchase is not { Status: "POSTED" }) return;
         using LatestRequest.Scope request = _eligibility.Begin();
         try
         {
             IReadOnlyList<PurchasingBulkRow> rows = await _purchasing.PreviewVoidAsync([purchase.Id], request.Token);
             if (!request.IsCurrent || Current?.Id != purchase.Id) return;
-            CancelPurchaseButton.IsEnabled = rows.Count == 1 && rows[0].Eligible;
-            CancelPurchaseButton.ToolTip = rows is [{ Eligible: false, ReasonKey: { } reason }]
+            CancelPurchaseButton.IsEnabled = InvoiceCancelButton.IsEnabled = rows.Count == 1 && rows[0].Eligible;
+            CancelPurchaseButton.ToolTip = InvoiceCancelButton.ToolTip = rows is [{ Eligible: false, ReasonKey: { } reason }]
                 ? TranslationSource.Instance[reason] : TranslationSource.Instance["Purchasing_VoidAvailable"];
             ToolTipService.SetShowOnDisabled(CancelPurchaseButton, true);
+            ToolTipService.SetShowOnDisabled(InvoiceCancelButton, true);
         }
         catch (OperationCanceledException) when (request.Token.IsCancellationRequested) { }
         catch (Exception exception)
@@ -383,12 +407,56 @@ public partial class PurchasesPage : Page
                 Pager.Status = TranslationSource.Instance.Format("Purchasing_PostedNumber", number);
             return;
         }
+        await ShowInvoiceAsync(purchase);
+    }
+
+    // Opens the purchase beside the list, or shows it in the open panel.
+    private async Task ShowInvoiceAsync(PurchaseListItem purchase)
+    {
         try
         {
-            PurchaseInvoice invoice = await _purchasing.GetInvoiceAsync(purchase.Id);
-            new PurchaseInvoiceWindow(invoice) { Owner = Window.GetWindow(this) }.ShowDialog();
+            PurchaseInvoice? invoice = purchase.Status == "DRAFT" ? null : await _purchasing.GetInvoiceAsync(purchase.Id);
+            if (Current?.Id != purchase.Id) return;
+            _openPurchase = purchase;
+            static string Date(DateOnly date) => date.ToString("dd MMM yyyy", TranslationSource.FormatCulture);
+            Invoice.Title = $"{purchase.DocumentNumber ?? purchase.VendorInvoiceNumber ?? TranslationSource.Instance["Purchasing_StatusDraft"]}  ·  " +
+                PurchaseStatusConverter.Text(purchase.Status);
+            Invoice.Facts = string.Join(" · ", new[]
+            {
+                purchase.VendorName,
+                string.IsNullOrWhiteSpace(purchase.VendorInvoiceNumber) ? null
+                    : $"{TranslationSource.Instance["Purchasing_Invoice"]} {purchase.VendorInvoiceNumber}",
+                invoice?.VendorInvoiceDate is { } invoiceDate ? $"{TranslationSource.Instance["Purchasing_InvoiceDate"]} {Date(invoiceDate)}" : null,
+                $"{TranslationSource.Instance["Purchasing_Received"]} {Date(purchase.ReceivedDate)}",
+                $"{TranslationSource.Instance["Purchasing_Total"]} {purchase.GrandTotal}",
+            }.Where(static part => !string.IsNullOrEmpty(part)));
+            if (invoice is null) InvoiceView.ShowDraft();
+            else InvoiceView.Show(invoice);
+            ShowRecordActions(false);
+            _invoiceSplit.Open();
         }
         catch (Exception exception) { Pager.Status = UserError.Message(exception); }
+    }
+
+    private void CloseInvoice()
+    {
+        _invoiceSplit.Close();
+        ShowRecordActions(true);
+        _openPurchase = null;
+    }
+
+    // The purchase's own actions are in the open panel, so the title row keeps only New purchase.
+    private void ShowRecordActions(bool show)
+    {
+        Visibility visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        foreach (Button button in new[] { OpenButton, VendorReturnButton, CancelPurchaseButton, ReturnHistoryButton })
+            button.Visibility = visibility;
+    }
+
+    private void Invoice_OnCloseRequested(object? sender, EventArgs e)
+    {
+        CloseInvoice();
+        PurchasesGrid.Focus();
     }
 
     private async void CancelPurchase_OnClick(object sender, RoutedEventArgs e)

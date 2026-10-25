@@ -643,7 +643,6 @@
   <data name="Sales_ResultCount" xml:space="preserve"><value>{0} bills shown</value></data>
   <data name="Sales_Previous" xml:space="preserve"><value>Previous</value></data>
   <data name="Sales_Next" xml:space="preserve"><value>Next</value></data>
-  <data name="Sales_SelectHistory" xml:space="preserve"><value>Select a bill to see its lines</value></data>
   <data name="Sales_DetailHeading" xml:space="preserve"><value>{0}  ·  {1}</value></data>
   <data name="Sales_Reprinted" xml:space="preserve"><value>Reprinted {0}.</value></data>
   <data name="Sales_NothingToReturn" xml:space="preserve"><value>All items on this bill have already been returned.</value></data>
@@ -1443,4 +1442,9 @@
   <data name="Upgrade_Failed" xml:space="preserve"><value>The update stopped before it finished.</value></data>
   <data name="Upgrade_Recovery" xml:space="preserve"><value>Your data is safe: a step that did not finish changed nothing, and the backup saved before the update is in {0}. Start the app again to retry. If it stops again, send the log files in {1} to support. To go back to the previous version, install it and restore that backup in Settings → Backup.</value></data>
   <data name="Upgrade_OpenBackups" xml:space="preserve"><value>Open backup folder</value></data>
+  <data name="Common_PreviousRecord" xml:space="preserve"><value>Previous record</value></data>
+  <data name="Common_NextRecord" xml:space="preserve"><value>Next record</value></data>
+  <data name="Common_FullWidth" xml:space="preserve"><value>Use the full width</value></data>
+  <data name="Common_BesideList" xml:space="preserve"><value>Show beside the list</value></data>
+  <data name="Purchasing_DraftDetail" xml:space="preserve"><value>This purchase is a draft. Open it to add lines, save or post it.</value></data>
 </root>

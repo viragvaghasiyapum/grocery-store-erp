@@ -13,7 +13,8 @@
   <local:PaymentModesConverter x:Key="PaymentModesConverter"/>
   <local:SaleActivityConverter x:Key="SaleActivityConverter"/>
  </Page.Resources>
- <Grid Margin="14,8,14,8">
+ <Grid x:Name="Layout" Margin="14,8,14,8">
+  <Grid.ColumnDefinitions><ColumnDefinition Width="*" MinWidth="320"/><ColumnDefinition Width="0"/></Grid.ColumnDefinitions>
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <DockPanel x:Name="TitleRow" Grid.Row="0" Margin="0,0,0,6">
    <!-- Most important first: when the row is narrow the last actions fold behind More. -->
@@ -79,20 +80,21 @@
    </DataGrid.Columns>
   </DataGrid>
   <local:PagerBar x:Name="Pager" Grid.Row="3"/>
-  <Grid Grid.RowSpan="4" Panel.ZIndex="10" Visibility="Collapsed" x:Name="DetailOverlay">
-   <Border x:Name="DetailBackdrop" Background="#88000000" MouseDown="DetailBackdrop_OnMouseDown"/>
-   <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-   <Border x:Name="DetailPanel" Grid.Column="1" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-           BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1,0,0,0" Padding="18">
+  <!-- The bill opens beside the list; its arrows and the list both move to another bill. -->
+  <local:DetailPanel x:Name="Detail" Grid.Column="1" Grid.RowSpan="4" Margin="10,-8,-14,-8" Visibility="Collapsed"
+                     CloseRequested="Detail_OnCloseRequested">
+   <local:DetailPanel.Actions>
+    <StackPanel Orientation="Horizontal">
+     <Button x:Name="DetailReturnButton" Style="{StaticResource ToolbarButton}" Click="Return_OnClick" Content="{l:Tr Sales_Return}"/>
+     <Button x:Name="DetailReprintButton" Style="{StaticResource ToolbarButton}" Click="Reprint_OnClick" Content="{l:Tr Sales_Reprint}"/>
+     <Button x:Name="DetailVoidButton" Style="{StaticResource ToolbarButton}" Margin="0" Click="Void_OnClick" Content="{l:Tr Sales_Void}"/>
+    </StackPanel>
+   </local:DetailPanel.Actions>
    <Grid>
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-     <TextBlock x:Name="DetailHeading" FontSize="17" FontWeight="SemiBold" Text="{l:Tr Sales_SelectHistory}" TextWrapping="Wrap" VerticalAlignment="Center"/>
-     <Button Grid.Column="1" Margin="12,0,0,0" Click="CloseDetails_OnClick" Content="{l:Tr Common_Close}"/>
-    </Grid>
-    <TabControl x:Name="DetailTabs" Grid.Row="1" Margin="0,12,0,0" SelectionChanged="DetailTabs_OnSelectionChanged">
+    <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <TabControl x:Name="DetailTabs" SelectionChanged="DetailTabs_OnSelectionChanged">
      <TabItem Header="{l:Tr Sales_Items}">
-    <DataGrid x:Name="DetailGrid" Style="{StaticResource CompactTableGrid}" RowHeight="38">
+    <DataGrid x:Name="DetailGrid" Style="{StaticResource CompactTableGrid}" RowHeight="38" FrozenColumnCount="1">
      <DataGrid.Columns>
       <DataGridTextColumn Width="240" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
       <DataGridTextColumn Width="105" Header="{l:Tr Catalog_Sku}" Binding="{Binding SkuDisplay,Converter={StaticResource LegacySnapshotTextConverter}}"/>
@@ -131,13 +133,8 @@
       </DataGrid>
      </TabItem>
     </TabControl>
-    <StackPanel Grid.Row="2" Margin="0,12,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
-     <TextBlock x:Name="DetailPageText" VerticalAlignment="Center" Margin="0,0,12,0"/>
-     <Button x:Name="PreviousDetailButton" Click="PreviousDetail_OnClick" Content="{l:Tr Sales_Previous}"/>
-     <Button x:Name="NextDetailButton" Margin="6,0,0,0" Click="NextDetail_OnClick" Content="{l:Tr Sales_Next}"/>
-    </StackPanel>
+    <local:PagerBar x:Name="DetailPager" Grid.Row="1"/>
    </Grid>
-   </Border></Grid>
-  </Grid>
+  </local:DetailPanel>
  </Grid>
 </Page>

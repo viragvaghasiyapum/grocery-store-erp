@@ -643,7 +643,6 @@
   <data name="Sales_ResultCount" xml:space="preserve"><value>{0} બિલ બતાવ્યાં</value><comment>MT - needs review</comment></data>
   <data name="Sales_Previous" xml:space="preserve"><value>પાછળ</value><comment>MT - needs review</comment></data>
   <data name="Sales_Next" xml:space="preserve"><value>આગળ</value><comment>MT - needs review</comment></data>
-  <data name="Sales_SelectHistory" xml:space="preserve"><value>વસ્તુઓ જોવા બિલ પસંદ કરો</value><comment>MT - needs review</comment></data>
   <data name="Sales_DetailHeading" xml:space="preserve"><value>{0}  ·  {1}</value></data>
   <data name="Sales_Reprinted" xml:space="preserve"><value>{0} ફરી છાપ્યું.</value><comment>MT - needs review</comment></data>
   <data name="Sales_NothingToReturn" xml:space="preserve"><value>આ બિલની બધી વસ્તુઓ પહેલેથી પરત થઈ ગઈ છે.</value><comment>MT - needs review</comment></data>
@@ -1443,4 +1442,9 @@
   <data name="Upgrade_Failed" xml:space="preserve"><value>અપડેટ પૂરું થાય તે પહેલાં અટકી ગયું.</value><comment>MT – needs review</comment></data>
   <data name="Upgrade_Recovery" xml:space="preserve"><value>તમારો ડેટા સુરક્ષિત છે: અધૂરું રહેલું પગલું કંઈ બદલતું નથી, અને અપડેટ પહેલાં સાચવેલો બેકઅપ {0} માં છે. ફરી પ્રયાસ કરવા એપ ફરી શરૂ કરો. જો તે ફરી અટકે, તો {1} માંની લૉગ ફાઇલો સપોર્ટને મોકલો. પાછલી આવૃત્તિ પર પાછા જવા, તે ઇન્સ્ટોલ કરો અને સેટિંગ્સ → બેકઅપ માં તે બેકઅપ રિસ્ટોર કરો.</value><comment>MT – needs review</comment></data>
   <data name="Upgrade_OpenBackups" xml:space="preserve"><value>બેકઅપ ફોલ્ડર ખોલો</value><comment>MT – needs review</comment></data>
+  <data name="Common_PreviousRecord" xml:space="preserve"><value>પાછલી નોંધ</value><comment>MT – needs review</comment></data>
+  <data name="Common_NextRecord" xml:space="preserve"><value>આગળની નોંધ</value><comment>MT – needs review</comment></data>
+  <data name="Common_FullWidth" xml:space="preserve"><value>પૂરી પહોળાઈ વાપરો</value><comment>MT – needs review</comment></data>
+  <data name="Common_BesideList" xml:space="preserve"><value>યાદીની બાજુમાં બતાવો</value><comment>MT – needs review</comment></data>
+  <data name="Purchasing_DraftDetail" xml:space="preserve"><value>આ ખરીદી ડ્રાફ્ટ છે. લાઇન ઉમેરવા, સાચવવા કે પોસ્ટ કરવા તેને ખોલો.</value><comment>MT – needs review</comment></data>
 </root>
