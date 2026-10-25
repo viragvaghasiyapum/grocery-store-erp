@@ -1,12 +1,14 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Globalization;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Threading;
 using GroceryErp.Catalog;
 using GroceryErp.Catalog.Barcodes;
 using GroceryErp.Core;
@@ -26,22 +28,31 @@ public partial class PurchaseEntryWindow : Window
     private readonly PurchasingService _purchasing;
     private CatalogService? _catalog;
     private ScanResolver? _scanner;
-    private readonly List<ProductListItem> _availableProducts = [];
     private readonly long? _openingDraftId;
     private long? _purchaseId;
     private Money _roundStep = new(1);
     private bool _taxIsCost;
+    private (PurchaseEditLine Line, PropertyInfo Property, object? Value)? _uneditedCell;
     public ObservableCollection<PurchaseEditLine> Lines { get; } = [];
+    public IReadOnlyList<PurchaseKindChoice> LineKinds { get; }
+    public ObservableCollection<ExpenseCategoryItem> ExpenseCategories { get; } = [];
 
     /// <summary>Gets the GRN number after a successful post, so the caller can show it.</summary>
     public string? PostedDocumentNumber { get; private set; }
 
     public PurchaseEntryWindow(PurchasingService purchasing, long? draftId = null, bool loadOnShow = true)
     {
+        LineKinds =
+        [
+            new("PRODUCT", TranslationSource.Instance["Purchasing_TypeProduct"]),
+            new("INTERNAL", TranslationSource.Instance["Purchasing_TypeInternal"]),
+            new("EXPENSE", TranslationSource.Instance["Purchasing_TypeExpense"]),
+        ];
         InitializeComponent();
         _purchasing = purchasing;
         _openingDraftId = draftId;
         DataContext = this;
+        Lines.CollectionChanged += Lines_OnCollectionChanged;
         PreviewKeyDown += (_, args) =>
         {
             if (args.Key != Key.S || Keyboard.Modifiers != ModifierKeys.Control) return;
@@ -50,6 +61,9 @@ public partial class PurchaseEntryWindow : Window
         };
         if (loadOnShow) Loaded += LoadAsync;
     }
+
+    // Typed rates and discounts include GST when the bill prints them that way.
+    private bool RatesIncludeTax => RatesIncludeTaxBox.IsChecked == true;
 
     private async void LoadAsync(object sender, RoutedEventArgs e)
     {
@@ -61,22 +75,18 @@ public partial class PurchaseEntryWindow : Window
             _roundStep = Money.FromScaled(services.GetRequiredService<ISettings>().Current.BillRoundTo);
             _taxIsCost = !string.Equals(services.GetRequiredService<ISettings>().Current.TaxMode,
                 "REGULAR", StringComparison.Ordinal);
+            CostColumn.Header = TranslationSource.Instance[_taxIsCost ? "Purchasing_CostInclGst" : "Purchasing_CostExGst"];
             VendorBox.ItemsSource = await _purchasing.GetVendorsAsync();
-            ExpenseCategoryColumn.ItemsSource = await services.GetRequiredService<MoneyOutService>()
-                .GetExpenseCategoriesAsync();
-            LineKindColumn.ItemsSource = new[]
-            {
-                new PurchaseKindChoice("PRODUCT", TranslationSource.Instance["Purchasing_TypeProduct"]),
-                new PurchaseKindChoice("INTERNAL", TranslationSource.Instance["Purchasing_TypeInternal"]),
-                new PurchaseKindChoice("EXPENSE", TranslationSource.Instance["Purchasing_TypeExpense"]),
-            };
-            ProductColumn.ItemsSource = _availableProducts;
+            foreach (ExpenseCategoryItem category in await services.GetRequiredService<MoneyOutService>()
+                .GetExpenseCategoriesAsync())
+                ExpenseCategories.Add(category);
             if (_openingDraftId is long draftId)
             {
                 PurchaseDraft draft = await _purchasing.GetDraftAsync(draftId);
                 _purchaseId = draft.Id;
                 PurchaseDraftInput input = draft.Input;
                 VendorBox.SelectedValue = input.VendorId;
+                RatesIncludeTaxBox.IsChecked = input.RatesIncludeTax;
                 InvoiceBox.Text = input.VendorInvoiceNumber ?? "";
                 InvoiceDateBox.SelectedDate = input.VendorInvoiceDate?.ToDateTime(TimeOnly.MinValue);
                 ReceivedDateBox.SelectedDate = input.ReceivedDate.ToDateTime(TimeOnly.MinValue);
@@ -85,8 +95,8 @@ public partial class PurchaseEntryWindow : Window
                 NotesBox.Text = input.Notes ?? "";
                 foreach (PurchaseLineInput line in input.Lines)
                 {
-                    await EnsureProductChoiceAsync(line.ProductId);
                     PurchaseEditLine editLine = PurchaseEditLine.FromInput(line);
+                    editLine.ProductName = (await _catalog.GetAsync(line.ProductId)).Product.Name;
                     PurchaseLineDefaults defaults = await _purchasing.GetLineDefaultsAsync(input.VendorId,
                         line.ProductId, input.ReceivedDate);
                     editLine.ApplyMetadata(defaults);
@@ -99,7 +109,6 @@ public partial class PurchaseEntryWindow : Window
                 InvoiceDateBox.SelectedDate = today;
                 ReceivedDateBox.SelectedDate = today;
             }
-            if (Lines.Count == 0) Lines.Add(new());
             UpdateTotals();
         }
         catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
@@ -176,27 +185,69 @@ public partial class PurchaseEntryWindow : Window
         if (number == 0) lineErrors.Add(TranslationSource.Instance["Purchasing_NoLines"]);
         if (!form.Apply(this, Summary, lineErrors)) return null;
         var input = new PurchaseDraftInput(vendorId!.Value, InvoiceBox.Text, invoiceDate, received!.Value, billTotal,
-            charges ?? Money.Zero, NotesBox.Text, lines);
+            charges ?? Money.Zero, NotesBox.Text, lines)
+        { RatesIncludeTax = RatesIncludeTax };
         return await _purchasing.SaveDraftAsync(_purchaseId, input);
     }
 
     // Ctrl+D copies the cell above into the current cell (spreadsheet copy-down). The line type,
     // product and expense category are never copied, so a row's classification is always chosen.
+    // Ctrl+Delete removes the selected lines.
     private void LinesGrid_OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Delete && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            e.Handled = true;
+            RemoveLines(LinesGrid.SelectedItems.OfType<PurchaseEditLine>().ToList());
+            return;
+        }
         if (e.Key != Key.D || Keyboard.Modifiers != ModifierKeys.Control) return;
         e.Handled = true;
-        // Combo-box columns (type, product, expense category) are not bound text columns, so they are never copied.
-        if (LinesGrid.CurrentItem is not PurchaseEditLine line || LinesGrid.CurrentColumn is not DataGridBoundColumn column) return;
+        // Type and expense category are list columns, not bound text columns, and the product is read-only.
+        if (LinesGrid.CurrentItem is not PurchaseEditLine line || BoundProperty(LinesGrid.CurrentColumn) is not { } property) return;
         int index = Lines.IndexOf(line);
-        if (index <= 0 || column.Binding is not System.Windows.Data.Binding { Path.Path: { Length: > 0 } path }) return;
-        System.Reflection.PropertyInfo? property = typeof(PurchaseEditLine).GetProperty(path);
-        if (property is not { CanWrite: true }) return;
+        if (index <= 0) return;
         LinesGrid.CommitEdit(DataGridEditingUnit.Cell, true);
         property.SetValue(line, property.GetValue(Lines[index - 1]));
         LinesGrid.Items.Refresh();
         UpdateTotals();
     }
+
+    private static PropertyInfo? BoundProperty(DataGridColumn? column) =>
+        column is DataGridBoundColumn { IsReadOnly: false, Binding: Binding { Path.Path: { Length: > 0 } path } } &&
+        typeof(PurchaseEditLine).GetProperty(path) is { CanWrite: true } property ? property : null;
+
+    private void RemoveLine_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).DataContext is PurchaseEditLine line) RemoveLines([line]);
+    }
+
+    private void RemoveSelectedLines_OnClick(object sender, RoutedEventArgs e) =>
+        RemoveLines(LinesGrid.SelectedItems.OfType<PurchaseEditLine>().ToList());
+
+    // A value being typed in another line is kept; the grid lets go of a removed line's edit itself.
+    private void RemoveLines(List<PurchaseEditLine> lines)
+    {
+        if (lines.Count == 0) return;
+        LinesGrid.CommitEdit(DataGridEditingUnit.Row, true);
+        foreach (PurchaseEditLine line in lines) Lines.Remove(line);
+    }
+
+    private void Lines_OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        foreach (PurchaseEditLine line in e.OldItems?.OfType<PurchaseEditLine>() ?? []) line.PropertyChanged -= Line_OnPropertyChanged;
+        foreach (PurchaseEditLine line in e.NewItems?.OfType<PurchaseEditLine>() ?? []) line.PropertyChanged += Line_OnPropertyChanged;
+        ShowExpenseCategories();
+        UpdateTotals();
+    }
+
+    private void Line_OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PurchaseEditLine.LineKind)) ShowExpenseCategories();
+    }
+
+    private void ShowExpenseCategories() => ExpenseCategoryColumn.Visibility =
+        Lines.Any(static line => line.IsExpenseLine) ? Visibility.Visible : Visibility.Collapsed;
 
     private void Cancel_OnClick(object sender, RoutedEventArgs e) => DialogResult = false;
     private void SetBusy(bool busy) { SaveButton.IsEnabled = !busy; PostButton.IsEnabled = !busy; }
@@ -206,10 +257,26 @@ public partial class PurchaseEntryWindow : Window
         if (LinesGrid.CurrentItem is PurchaseEditLine line) await ApplyDefaultsAsync(line);
     }
 
+    private void LinesGrid_OnPreparingCellForEdit(object sender, DataGridPreparingCellForEditEventArgs e) =>
+        _uneditedCell = e.Row.Item is PurchaseEditLine line && BoundProperty(e.Column) is { } property
+            ? (line, property, property.GetValue(line)) : null;
+
+    // Figures reach the line while they are typed, so Esc puts back the value from before the edit.
     private void LinesGrid_OnCellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
     {
-        if (e.EditingElement is TextBox box) box.Text = InputNormalizer.Normalize(box.Text);
+        if (e.EditAction == DataGridEditAction.Cancel)
+        {
+            if (_uneditedCell is { } unedited && ReferenceEquals(unedited.Line, e.Row.Item))
+            {
+                unedited.Property.SetValue(unedited.Line, unedited.Value);
+                UpdateTotals();
+            }
+        }
+        else if (e.EditingElement is TextBox box) box.Text = InputNormalizer.Normalize(box.Text);
+        _uneditedCell = null;
     }
+
+    private void LinesGrid_OnSourceUpdated(object sender, DataTransferEventArgs e) => UpdateTotals();
 
     private async Task ApplyDefaultsAsync(PurchaseEditLine line)
     {
@@ -220,7 +287,9 @@ public partial class PurchaseEntryWindow : Window
         {
             PurchaseLineDefaults defaults = await _purchasing.GetLineDefaultsAsync(vendorId, line.ProductId,
                 DateOnly.FromDateTime(receivedDate));
-            line.Rate = defaults.LastRate?.Value ?? 0;
+            // The vendor's last rate is stored before GST; a bill typed including GST shows it with GST.
+            line.Rate = defaults.LastRate is { } lastRate
+                ? (RatesIncludeTax ? lastRate + lastRate.PercentOf(defaults.TaxRate) : lastRate).Value : 0;
             line.TaxRate = defaults.TaxRate.Value;
             line.Mrp = defaults.Mrp?.Value;
             line.SellingPrice = defaults.SellingPrice?.Value ?? 0;
@@ -234,8 +303,34 @@ public partial class PurchaseEntryWindow : Window
     }
     private void TotalsInput_OnTextChanged(object sender, TextChangedEventArgs e) => UpdateTotals();
 
+    // The figures already typed stay as they are; only their meaning changes, so the totals follow.
+    private void RatesIncludeTax_OnChanged(object sender, RoutedEventArgs e)
+    {
+        RateColumn.Header = TranslationSource.Instance[RatesIncludeTax ? "Purchasing_RateInclGst" : "Purchasing_Rate"];
+        UpdateTotals();
+    }
+
+    // A new purchase starts the way the vendor's last bill was typed, until it has a line.
+    private async void VendorBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_purchaseId is not null || Lines.Count > 0 || VendorBox.SelectedValue is not long vendorId) return;
+        try
+        {
+            bool includeTax = await _purchasing.GetLastRatesIncludeTaxAsync(vendorId);
+            if (_purchaseId is null && Lines.Count == 0 && Equals(VendorBox.SelectedValue, vendorId))
+                RatesIncludeTaxBox.IsChecked = includeTax;
+        }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
+    }
+
     private async void ProductSearchBox_OnKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Down && ProductChoices.IsOpen)
+        {
+            e.Handled = true;
+            ProductChoices.FocusSelected();
+            return;
+        }
         if (e.Key != Key.Enter) return;
         e.Handled = true;
         await FindProductAsync();
@@ -253,87 +348,49 @@ public partial class PurchaseEntryWindow : Window
             ScanResult scan = await _scanner.ResolveAsync(query);
             if (scan.ProductId is long productId)
             {
-                await EnsureProductChoiceAsync(productId);
-                var line = new PurchaseEditLine
-                {
-                    ProductId = productId,
-                    Quantity = scan.Quantity?.Value ?? 1m,
-                };
-                Lines.Add(line);
-                LinesGrid.SelectedItem = line;
-                LinesGrid.ScrollIntoView(line);
-                await ApplyDefaultsAsync(line);
-                ProductSearchBox.Clear();
-                ErrorText.Text = "";
+                ProductInput product = (await _catalog.GetAsync(productId)).Product;
+                await AddLineAsync(productId, product.Name, product.ProductClass, scan.Quantity?.Value ?? 1m);
                 return;
             }
             IReadOnlyList<ProductListItem> matches = await _catalog.SearchAsync(new ProductSearchFilter(query, Limit: 50));
-            foreach (ProductListItem match in matches)
-                if (_availableProducts.All(product => product.Id != match.Id)) _availableProducts.Add(match);
-            var existingIds = Lines.Select(static line => line.ProductId).ToHashSet();
-            ProductColumn.ItemsSource = matches.Concat(_availableProducts.Where(product => existingIds.Contains(product.Id)))
-                .DistinctBy(static product => product.Id).ToList();
             if (matches.Count == 1)
             {
-                var line = new PurchaseEditLine { ProductId = matches[0].Id };
-                Lines.Add(line);
-                LinesGrid.SelectedItem = line;
-                await ApplyDefaultsAsync(line);
-                ProductSearchBox.Clear();
-                ErrorText.Text = "";
+                await AddLineAsync(matches[0].Id, matches[0].Name, matches[0].ProductClass);
+                return;
             }
-            else
-            {
-                ErrorText.Text = matches.Count == 0
-                    ? TranslationSource.Instance["Purchasing_NoProduct"]
-                    : TranslationSource.Instance.Format("Purchasing_MatchesFound", matches.Count);
-                if (matches.Count > 1) OpenProductChoices();
-            }
+            ErrorText.Text = matches.Count == 0
+                ? TranslationSource.Instance["Purchasing_NoProduct"]
+                : TranslationSource.Instance.Format("Purchasing_MatchesFound", matches.Count);
+            if (matches.Count > 1) ProductChoices.Open(matches);
         }
         catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
 
-    private void OpenProductChoices()
+    private void ProductChoices_OnClosed(object? sender, EventArgs e) => ProductSearchBox.Focus();
+
+    private async void ProductChoices_OnPicked(object? sender, ProductListItem product)
     {
-        PurchaseEditLine? line = Lines.FirstOrDefault(static item => item.ProductId == 0);
-        if (line is null)
+        try { await AddLineAsync(product.Id, product.Name, product.ProductClass); }
+        catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
+    }
+
+    // An internal-use product starts as an Internal use line, which is the only type it can be bought as
+    // besides Expense.
+    private async Task AddLineAsync(long productId, string name, string? productClass, decimal quantity = 1m)
+    {
+        var line = new PurchaseEditLine
         {
-            line = new PurchaseEditLine();
-            Lines.Add(line);
-        }
+            ProductId = productId,
+            ProductName = name,
+            LineKind = productClass == "INTERNAL" ? "INTERNAL" : "PRODUCT",
+            Quantity = quantity,
+        };
+        Lines.Add(line);
         LinesGrid.SelectedItem = line;
-        LinesGrid.CurrentCell = new DataGridCellInfo(line, ProductColumn);
-        LinesGrid.ScrollIntoView(line, ProductColumn);
-        Dispatcher.BeginInvoke(() =>
-        {
-            LinesGrid.Focus();
-            LinesGrid.BeginEdit();
-            if (FindVisualChild<ComboBox>(LinesGrid) is { } choices)
-            {
-                choices.MaxDropDownHeight = 320;
-                choices.Focus();
-                choices.IsDropDownOpen = true;
-            }
-        }, DispatcherPriority.Loaded);
-    }
-
-    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
-    {
-        for (int index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
-        {
-            DependencyObject child = VisualTreeHelper.GetChild(parent, index);
-            if (child is T result) return result;
-            if (FindVisualChild<T>(child) is { } nested) return nested;
-        }
-        return null;
-    }
-
-    private async Task EnsureProductChoiceAsync(long productId)
-    {
-        if (_catalog is null || _availableProducts.Any(product => product.Id == productId)) return;
-        ProductDetails details = await _catalog.GetAsync(productId);
-        _availableProducts.Add(new ProductListItem { Id = productId, Name = details.Product.Name, Sku = details.Product.Sku });
-        ProductColumn.ItemsSource = _availableProducts;
+        LinesGrid.ScrollIntoView(line);
+        ProductSearchBox.Clear();
+        ErrorText.Text = "";
+        await ApplyDefaultsAsync(line);
     }
 
     private void UpdateTotals()
@@ -342,7 +399,9 @@ public partial class PurchaseEntryWindow : Window
         try
         {
             List<PurchaseEditLine> editLines = Lines.Where(static line => line.ProductId > 0).ToList();
-            List<PurchaseLineInput> lines = editLines.Select(static line => line.ToInput()).ToList();
+            bool includeTax = RatesIncludeTax;
+            List<PurchaseLineInput> lines = editLines
+                .Select(line => includeTax ? line.ToInput().ExcludingTax() : line.ToInput()).ToList();
             Money subtotal = Money.Zero;
             Money discounts = Money.Zero;
             Money tax = Money.Zero;
@@ -370,10 +429,7 @@ public partial class PurchaseEntryWindow : Window
                 editLine.SetCostPreview(landed[index].Value.ToString("N2", TranslationSource.FormatCulture),
                     margin is null ? "—" : margin.Value.ToString("N1", TranslationSource.FormatCulture) + "%",
                     margin < 0m);
-                string product = _availableProducts.FirstOrDefault(p => p.Id == line.ProductId)?.Name
-                    ?? ProductColumn.ItemsSource?.OfType<ProductListItem>()
-                        .FirstOrDefault(p => p.Id == line.ProductId)?.Name
-                    ?? line.ProductId.ToString(CultureInfo.InvariantCulture);
+                string product = editLine.ProductName;
                 if (line.ExpiryDate is DateOnly expiry && expiry <= received.AddDays(editLine.ExpiryAlertDays))
                     warnings.Add(TranslationSource.Instance.Format("Purchasing_WarningShortExpiry", product));
                 if (sellingExTax < landed[index])
@@ -414,6 +470,7 @@ public partial class PurchaseEntryWindow : Window
     {
         public event PropertyChangedEventHandler? PropertyChanged;
         public long ProductId { get; set; }
+        public string ProductName { get; set; } = "";
         private string _lineKind = "PRODUCT";
         public string LineKind
         {

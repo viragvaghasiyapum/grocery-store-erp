@@ -312,7 +312,7 @@
   <data name="Purchasing_ProductSearchHint" xml:space="preserve"><value>બારકોડ સ્કેન કરો અથવા નામ કે SKU થી શોધો, પછી Enter દબાવો.</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_FindProduct" xml:space="preserve"><value>વસ્તુ શોધો</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_NoProduct" xml:space="preserve"><value>મેળ ખાતી વસ્તુ મળી નથી.</value><comment>MT - needs review</comment></data>
-  <data name="Purchasing_MatchesFound" xml:space="preserve"><value>{0} વસ્તુઓ મળી. નામ કૉલમમાં પસંદ કરો.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_MatchesFound" xml:space="preserve"><value>{0} વસ્તુઓ મળી. શોધ ખાના નીચેની યાદીમાંથી એક પસંદ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_MfgDate" xml:space="preserve"><value>ઉત્પાદન તારીખ</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_Landed" xml:space="preserve"><value>એકમ દીઠ પડતર</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_Margin" xml:space="preserve"><value>નફો %</value><comment>MT - needs review</comment></data>
@@ -1327,7 +1327,16 @@
   <data name="Purchasing_AllVendors" xml:space="preserve"><value>બધા વિક્રેતાઓ</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_AnyLineType" xml:space="preserve"><value>કોઈપણ હરોળ પ્રકાર</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_AnyStatus" xml:space="preserve"><value>કોઈપણ સ્થિતિ</value><comment>MT - needs review</comment></data>
-  <data name="Purchasing_CopyDownHint" xml:space="preserve"><value>Ctrl+D ઉપરનો ખાનો નકલ કરે છે (હરોળ પ્રકાર કે ઉત્પાદન ક્યારેય નહીં). Ctrl+S મુસદ્દો સાચવે છે.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_CopyDownHint" xml:space="preserve"><value>Ctrl+D ઉપરનો ખાનો નકલ કરે છે (હરોળ પ્રકાર કે ઉત્પાદન ક્યારેય નહીં). Ctrl+Delete હરોળ કાઢે છે. Ctrl+S મુસદ્દો સાચવે છે.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_CostExGst" xml:space="preserve"><value>GST વગર પડતર</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_CostInclGst" xml:space="preserve"><value>GST સહિત પડતર</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_ProductChoices" xml:space="preserve"><value>મળતી વસ્તુઓ</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_RateBasis" xml:space="preserve"><value>બિલના દર</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_RateInclGst" xml:space="preserve"><value>GST સહિત દર</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_RatesIncludeGst" xml:space="preserve"><value>GST સહિત</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_RatesIncludeGstHint" xml:space="preserve"><value>સપ્લાયરના બિલમાં દર અને ડિસ્કાઉન્ટ GST સહિત છપાયા હોય ત્યારે ટિક કરો. છપાયા પ્રમાણે જ લખો; દરેક હરોળનો GST ભાગ આપમેળે ગણાય છે. આ વિક્રેતાનું આગલું બિલ પણ આ જ રીતે શરૂ થાય છે.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_RemoveLine" xml:space="preserve"><value>હરોળ કાઢો</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_RemoveLineHint" xml:space="preserve"><value>આ હરોળ કાઢો (Ctrl+Delete)</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_Count" xml:space="preserve"><value>ખરીદી: {0}</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_DeactivateEffect" xml:space="preserve"><value>નિષ્ક્રિય વિક્રેતાઓ નવી ખરીદીમાં દેખાતા નથી; તેમનો ઇતિહાસ રહે છે.</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_DocumentFilter" xml:space="preserve"><value>GRN કે વિક્રેતા બિલ નં.</value><comment>MT - needs review</comment></data>

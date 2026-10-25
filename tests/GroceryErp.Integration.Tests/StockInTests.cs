@@ -556,6 +556,62 @@ public sealed class StockInTests
     }
 
     [Fact]
+    public async Task PurchaseTypedIncludingGst_StoresBeforeGstFigures_ReopensAsTyped_AndIsRememberedForTheVendor()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        // The bill prints 262.50 a unit and a 21 discount, both including 5% GST: 250 and 20 before GST.
+        PurchaseDraftInput input = fixture.Purchase("INCL-1") with
+        {
+            Lines = [fixture.Purchase().Lines[0] with { Rate = new Money(262.5m), Discount = new Money(21) }],
+            RatesIncludeTax = true,
+        };
+        (await fixture.Purchasing.GetLastRatesIncludeTaxAsync(fixture.VendorId, cancellationToken)).ShouldBeFalse();
+        long id = await fixture.Purchasing.SaveDraftAsync(null, input, cancellationToken);
+        (await fixture.Purchasing.GetLastRatesIncludeTaxAsync(fixture.VendorId, cancellationToken)).ShouldBeTrue();
+
+        PurchaseDraft reopened = await fixture.Purchasing.GetDraftAsync(id, cancellationToken);
+        reopened.Input.RatesIncludeTax.ShouldBeTrue();
+        reopened.Input.Lines.Single().Rate.ShouldBe(new Money(262.5m));
+        reopened.Input.Lines.Single().Discount.ShouldBe(new Money(21));
+
+        PostedPurchase posted = await fixture.Purchasing.PostAsync(id, OperationGuard.NewId(), cancellationToken);
+        posted.Totals.Subtotal.ShouldBe(new Money(2500));
+        posted.Totals.Discount.ShouldBe(new Money(20));
+        posted.Totals.Tax.ShouldBe(new Money(124));
+        // 10 × 262.50 − 21 as typed, plus 100 other charges.
+        posted.Totals.GrandTotal.ShouldBe(new Money(2704));
+        using (var connection = fixture.Factory.Open())
+            connection.QuerySingle<(long Rate, long Discount, long EnteredRate, long EnteredDiscount, long LineTotal)>("""
+                SELECT unit_cost,discount,entered_rate,entered_discount,line_total FROM purchase_line WHERE purchase_id=@id
+                """, new { id }).ShouldBe((250_000L, 20_000L, 262_500L, 21_000L, 2_604_000L));
+
+        // A later bill typed before GST keeps no typed copy and becomes the vendor's choice.
+        long next = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("EXCL-1"), cancellationToken);
+        (await fixture.Purchasing.GetDraftAsync(next, cancellationToken)).Input.RatesIncludeTax.ShouldBeFalse();
+        (await fixture.Purchasing.GetLastRatesIncludeTaxAsync(fixture.VendorId, cancellationToken)).ShouldBeFalse();
+        using (var connection = fixture.Factory.Open())
+            connection.ExecuteScalar<long>("""
+                SELECT COUNT(*) FROM purchase_line WHERE purchase_id=@next AND entered_rate IS NULL AND entered_discount IS NULL
+                """, new { next }).ShouldBe(1L);
+    }
+
+    [Fact]
+    public void PurchaseLineExcludingTax_KeepsTheDiscountWithinTheConvertedLine()
+    {
+        // 1.001 including 5% is 0.953 before GST, so ten units are worth 9.53; the full discount
+        // of 10.01 converts to 9.533 and is capped at the line value.
+        PurchaseLineInput line = new PurchaseLineInput(1, null, null, null, new Quantity(10), Quantity.Zero,
+            new Money(1.001m), new Money(10.01m), new Percent(5), null, Money.Zero).ExcludingTax();
+        line.Rate.ShouldBe(new Money(0.953m));
+        line.Discount.ShouldBe(new Money(9.53m));
+
+        PurchaseLineInput untaxed = new(1, null, null, null, Quantity.One, Quantity.Zero,
+            new Money(99), new Money(9), Percent.Zero, null, Money.Zero);
+        untaxed.ExcludingTax().ShouldBe(untaxed);
+    }
+
+    [Fact]
     public async Task VendorDetails_CanBeLoadedEditedAndShownInLedger()
     {
         using var fixture = new StockInFixture();

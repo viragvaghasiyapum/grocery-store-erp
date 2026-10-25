@@ -1,0 +1,40 @@
+<Popup x:Class="GroceryErp.App.Presentation.ProductChoices"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    Placement="Bottom" StaysOpen="False">
+  <!-- Several matches for a typed search open under the search box; Enter or a click picks one. -->
+  <Border Background="White" BorderBrush="{StaticResource TableRuleBrush}" BorderThickness="1" Padding="2" MinWidth="360" MaxWidth="640"
+          TextElement.FontFamily="{StaticResource AppFont}"
+          NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+    <ListBox x:Name="List" MaxHeight="360" KeyDown="List_OnKeyDown" PreviewMouseLeftButtonUp="List_OnPreviewMouseLeftButtonUp"
+             ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="{l:Tr Purchasing_ProductChoices}">
+      <ListBox.ItemContainerStyle>
+        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+          <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+          <Setter Property="AutomationProperties.Name" Value="{Binding Name}"/>
+        </Style>
+      </ListBox.ItemContainerStyle>
+      <ListBox.ItemTemplate>
+        <DataTemplate>
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <StackPanel>
+              <TextBlock FontWeight="SemiBold" Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+              <!-- Faded rather than grey, so the second line stays readable on the selected row. -->
+              <TextBlock FontSize="12" Opacity="0.75" TextTrimming="CharacterEllipsis">
+                <Run Text="{Binding Sku, Mode=OneWay}"/><Run Text="   "/><Run Text="{Binding NameLocal, Mode=OneWay}"/>
+              </TextBlock>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Margin="16,0,0,0">
+              <TextBlock HorizontalAlignment="Right" Text="{Binding SellingPrice}"/>
+              <TextBlock HorizontalAlignment="Right" FontSize="12" Opacity="0.75">
+                <Run Text="{l:Tr Catalog_Stock}"/><Run Text=" "/><Run Text="{Binding Stock, Mode=OneWay}"/><Run Text=" "/><Run Text="{Binding Uom, Mode=OneWay}"/>
+              </TextBlock>
+            </StackPanel>
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+  </Border>
+</Popup>

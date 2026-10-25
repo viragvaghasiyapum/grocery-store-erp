@@ -37,6 +37,18 @@ public sealed record PurchaseLineInput(
 {
     public string LineKind { get; init; } = "PRODUCT";
     public long? ExpenseCategoryId { get; init; }
+
+    /// <summary>
+    /// Converts a line typed from a bill whose rate and discount include GST into the before-GST
+    /// rate and discount the purchase stores. The discount never exceeds the converted line value.
+    /// </summary>
+    public PurchaseLineInput ExcludingTax()
+    {
+        Money rate = Tax.FromInclusive(Rate, TaxRate).Taxable;
+        Money discount = Tax.FromInclusive(Discount, TaxRate).Taxable;
+        Money gross = rate * Quantity;
+        return this with { Rate = rate, Discount = discount > gross ? gross : discount };
+    }
 }
 
 public sealed record PurchaseDraftInput(
@@ -47,7 +59,14 @@ public sealed record PurchaseDraftInput(
     Money? VendorBillTotal,
     Money OtherCharges,
     string? Notes,
-    IReadOnlyList<PurchaseLineInput> Lines);
+    IReadOnlyList<PurchaseLineInput> Lines)
+{
+    /// <summary>
+    /// Gets whether the lines' rates and discounts were typed including GST, as the bill prints
+    /// them; otherwise they exclude GST.
+    /// </summary>
+    public bool RatesIncludeTax { get; init; }
+}
 
 public sealed record PurchaseDraft(long Id, PurchaseDraftInput Input);
 

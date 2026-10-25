@@ -10,7 +10,7 @@ public sealed class PurchasingModule(Type purchasesPage, Type vendorsPage) : IMo
     public string Key => "Purchasing";
     public ResourceManager Strings => SharedStrings.ResourceManager;
     public IEnumerable<NavItem> Navigation =>
-        [new("Purchasing_Navigation", "Cart24", purchasesPage, 30),
+        [new("Purchasing_Navigation", "VehicleTruckCube24", purchasesPage, 30),
          new("Purchasing_Vendors", "People24", vendorsPage, 40)];
     public void Register(IServiceCollection services) => services.AddSingleton<PurchasingService>();
 }

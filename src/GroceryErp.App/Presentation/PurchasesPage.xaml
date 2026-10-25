@@ -10,7 +10,7 @@
   <Grid Margin="14,8,14,8">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-      <RowDefinition Height="*"/>
+      <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
     <DockPanel x:Name="TitleRow" Margin="0,0,0,6">
       <!-- Most important first: when the row is narrow the last actions fold behind More. -->
@@ -26,7 +26,6 @@
         </Menu>
       </StackPanel>
       <TextBlock x:Name="TitleText" Style="{StaticResource PageTitle}" Text="{l:Tr Purchasing_Title}"/>
-      <p:PagerBar x:Name="Pager"/>
     </DockPanel>
     <WrapPanel x:Name="FilterBar" Grid.Row="1" Margin="0,0,0,2">
       <ui:TextBox x:Name="DocumentFilter" Width="190" Margin="0,0,6,4" PlaceholderText="{l:Tr Purchasing_DocumentFilter}"
@@ -60,27 +59,18 @@
                   TextChanged="Text_OnChanged" AutomationProperties.Name="{l:Tr Purchasing_ProductFilter}"/>
       <CheckBox x:Name="ReturnableFilter" Margin="0,0,0,4" VerticalAlignment="Center" Click="Check_OnClick" Content="{l:Tr Purchasing_ReturnableOnly}"/>
     </WrapPanel>
-    <p:SelectionBar x:Name="Selection" Grid.Row="1" Covers="{Binding ElementName=FilterBar}">
-      <p:SelectionBar.Actions>
-        <Menu VerticalAlignment="Center" Background="Transparent">
-          <MenuItem Header="{l:Tr Catalog_BulkActions}">
-            <MenuItem Click="BulkVoid_OnClick" Header="{l:Tr Purchasing_CancelSelected}"/>
-          </MenuItem>
-        </Menu>
-      </p:SelectionBar.Actions>
-    </p:SelectionBar>
     <Grid Grid.Row="3">
       <DataGrid x:Name="PurchasesGrid" Style="{StaticResource CompactTableGrid}" SelectionMode="Single"
                 SelectionChanged="PurchasesGrid_OnSelectionChanged" MouseDoubleClick="PurchasesGrid_OnDoubleClick"
                 PreviewKeyDown="PurchasesGrid_OnPreviewKeyDown" AutomationProperties.Name="{l:Tr Purchasing_Purchases}">
         <DataGrid.Columns>
-          <DataGridTemplateColumn Width="40" CanUserReorder="False" CanUserResize="False">
+          <DataGridTemplateColumn Width="48" MinWidth="44" CanUserReorder="False">
             <DataGridTemplateColumn.HeaderTemplate><DataTemplate>
-              <CheckBox HorizontalAlignment="Center" IsThreeState="True" Loaded="PageCheck_OnLoaded" Click="PageCheck_OnClick"
+              <CheckBox Style="{StaticResource RowCheck}" IsThreeState="True" Loaded="PageCheck_OnLoaded" Click="PageCheck_OnClick"
                         AutomationProperties.Name="{l:Tr Selection_ThisPage}"/>
             </DataTemplate></DataGridTemplateColumn.HeaderTemplate>
             <DataGridTemplateColumn.CellTemplate><DataTemplate>
-              <CheckBox HorizontalAlignment="Center" Loaded="RowCheck_OnLoaded" Click="RowCheck_OnClick"
+              <CheckBox Style="{StaticResource RowCheck}" Loaded="RowCheck_OnLoaded" Click="RowCheck_OnClick"
                         AutomationProperties.Name="{l:Tr Purchasing_SelectPurchase}"/>
             </DataTemplate></DataGridTemplateColumn.CellTemplate>
           </DataGridTemplateColumn>
@@ -95,5 +85,18 @@
       <TextBlock x:Name="EmptyText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
                  TextWrapping="Wrap" Text="{l:Tr Purchasing_Empty}"/>
     </Grid>
+    <p:PagerBar x:Name="Pager" Grid.Row="4">
+      <p:PagerBar.Selection>
+        <p:SelectionBar x:Name="Selection">
+          <p:SelectionBar.Actions>
+            <Menu VerticalAlignment="Center" Background="Transparent">
+              <MenuItem Header="{l:Tr Catalog_BulkActions}">
+                <MenuItem Click="BulkVoid_OnClick" Header="{l:Tr Purchasing_CancelSelected}"/>
+              </MenuItem>
+            </Menu>
+          </p:SelectionBar.Actions>
+        </p:SelectionBar>
+      </p:PagerBar.Selection>
+    </p:PagerBar>
   </Grid>
 </Page>

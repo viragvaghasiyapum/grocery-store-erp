@@ -14,7 +14,7 @@
   <local:SaleActivityConverter x:Key="SaleActivityConverter"/>
  </Page.Resources>
  <Grid Margin="14,8,14,8">
-  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <DockPanel x:Name="TitleRow" Grid.Row="0" Margin="0,0,0,6">
    <!-- Most important first: when the row is narrow the last actions fold behind More. -->
    <StackPanel x:Name="TitleActions" DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
@@ -36,7 +36,6 @@
     <Button x:Name="CancelExportButton" Style="{StaticResource ToolbarButton}" Margin="0" IsEnabled="False" Click="CancelExport_OnClick" Content="{l:Tr Common_Cancel}"/>
    </StackPanel>
    <TextBlock x:Name="TitleText" Style="{StaticResource PageTitle}" Text="{l:Tr Sales_History_Title}"/>
-   <local:PagerBar x:Name="Pager"/>
   </DockPanel>
   <StackPanel Grid.Row="1" Margin="0,0,0,2">
   <WrapPanel x:Name="FilterBar">
@@ -79,7 +78,8 @@
     <DataGridTextColumn Width="155" Header="{l:Tr Purchasing_Mode}" Binding="{Binding PaymentModes,Converter={StaticResource PaymentModesConverter}}"/>
    </DataGrid.Columns>
   </DataGrid>
-  <Grid Grid.RowSpan="3" Panel.ZIndex="10" Visibility="Collapsed" x:Name="DetailOverlay">
+  <local:PagerBar x:Name="Pager" Grid.Row="3"/>
+  <Grid Grid.RowSpan="4" Panel.ZIndex="10" Visibility="Collapsed" x:Name="DetailOverlay">
    <Border x:Name="DetailBackdrop" Background="#88000000" MouseDown="DetailBackdrop_OnMouseDown"/>
    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
    <Border x:Name="DetailPanel" Grid.Column="1" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"

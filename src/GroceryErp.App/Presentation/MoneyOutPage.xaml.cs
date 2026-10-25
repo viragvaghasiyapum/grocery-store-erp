@@ -48,7 +48,7 @@ public partial class MoneyOutPage : Page
         _inventory = inventory ?? services!.GetRequiredService<InventoryService>();
         _clock = clock ?? services!.GetRequiredService<IClock>();
         _loadOnShow = loadOnShow;
-        _ = new ActionStrip(ExpenseActions, ExpenseButtons, ExpenseMoreMenu, ExpenseMore, static () => 160);
+        _ = new ActionStrip(ExpenseActions, ExpenseButtons, ExpenseMoreMenu, ExpenseMore);
         _damageFit = new FitPageSize(DamageGrid);
         _expenseFit = new FitPageSize(ExpenseGrid);
         _damageFit.RowsChanged += async (_, _) => await LoadDamagesAsync(PageMove.Same);
@@ -354,12 +354,12 @@ public partial class MoneyOutPage : Page
             if (!request.IsCurrent) return;
             EmployeeGrid.ItemsSource = employees;
             EmployeeEmpty.Visibility = employees.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            EmployeeStatus.Text = TranslationSource.Instance.Format("MoneyOut_RowCount", employees.Count);
+            EmployeePager.Status = TranslationSource.Instance.Format("MoneyOut_RowCount", employees.Count);
         }
         catch (OperationCanceledException) when (request.Token.IsCancellationRequested) { }
         catch (Exception exception)
         {
-            if (request.IsCurrent) EmployeeStatus.Text = UserError.Message(exception);
+            if (request.IsCurrent) EmployeePager.Status = UserError.Message(exception);
         }
     }
 
@@ -368,12 +368,12 @@ public partial class MoneyOutPage : Page
         if (!YearMonth.TryParse(SalaryFromMonth.Text.Trim(), out YearMonth from) ||
             !YearMonth.TryParse(SalaryToMonth.Text.Trim(), out YearMonth to))
         {
-            SalaryStatus.Text = T("MoneyOut_SalaryFromFormat");
+            SalaryPager.Status = T("MoneyOut_SalaryFromFormat");
             return;
         }
         if (from > to)
         {
-            SalaryStatus.Text = T("Common_DateRangeInvalid");
+            SalaryPager.Status = T("Common_DateRangeInvalid");
             return;
         }
         using LatestRequest.Scope request = _requests.Begin();
@@ -384,12 +384,12 @@ public partial class MoneyOutPage : Page
             if (!request.IsCurrent) return;
             SalaryRegisterGrid.ItemsSource = payments;
             SalaryEmpty.Visibility = payments.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            SalaryStatus.Text = TranslationSource.Instance.Format("MoneyOut_RowCount", payments.Count);
+            SalaryPager.Status = TranslationSource.Instance.Format("MoneyOut_RowCount", payments.Count);
         }
         catch (OperationCanceledException) when (request.Token.IsCancellationRequested) { }
         catch (Exception exception)
         {
-            if (request.IsCurrent) SalaryStatus.Text = UserError.Message(exception);
+            if (request.IsCurrent) SalaryPager.Status = UserError.Message(exception);
         }
     }
 
@@ -399,8 +399,8 @@ public partial class MoneyOutPage : Page
         {
             case 0: DamagePager.Status = text; break;
             case 1: ExpensePager.Status = text; break;
-            case 2: EmployeeStatus.Text = text; break;
-            default: SalaryStatus.Text = text; break;
+            case 2: EmployeePager.Status = text; break;
+            default: SalaryPager.Status = text; break;
         }
     }
 

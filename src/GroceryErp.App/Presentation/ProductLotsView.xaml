@@ -8,7 +8,7 @@
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-      <RowDefinition Height="*"/>
+      <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
     <!-- The product panel moves this row onto its tab row; buttons that do not fit fold into More. -->
     <Grid x:Name="ActionBar" Margin="0,0,0,6">
@@ -23,45 +23,27 @@
         </Menu>
       </StackPanel>
     </Grid>
-    <!-- The page arrows sit at the end of the filter row; a selection covers only the filters. -->
-    <DockPanel Grid.Row="1" Margin="0,0,0,4">
-      <p:PagerBar x:Name="Pager" DockPanel.Dock="Right" MaxWidth="300" Margin="6,0,0,4"/>
-      <Grid>
-        <WrapPanel x:Name="FilterBar">
-          <ui:TextBox x:Name="SearchBox" Width="170" Margin="0,0,6,4" PlaceholderText="{l:Tr Stock_LotFilterSearch}"
-                      AutomationProperties.Name="{l:Tr Stock_LotFilterSearch}" TextChanged="Search_OnTextChanged"/>
-          <ComboBox x:Name="StatusFilter" Width="130" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged"
-                    AutomationProperties.Name="{l:Tr Stock_LotStatusFilter}">
-            <ComboBoxItem Tag="ALL" Content="{l:Tr Stock_ExpiryFilterAll}"/>
-            <ComboBoxItem Tag="AVAILABLE" Content="{l:Tr Stock_Available}"/>
-            <ComboBoxItem Tag="ZERO" Content="{l:Tr Stock_Expiry_EMPTY}"/>
-            <ComboBoxItem Tag="BLOCKED" Content="{l:Tr Stock_Expiry_BLOCKED}"/>
-          </ComboBox>
-          <ComboBox x:Name="ExpiryFilter" Width="160" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged"
-                    AutomationProperties.Name="{l:Tr Stock_ExpiryStatus}">
-            <ComboBoxItem Tag="ALL" Content="{l:Tr Stock_AnyExpiry}"/>
-            <ComboBoxItem Tag="EXPIRED" Content="{l:Tr MoneyOut_Expired}"/>
-            <ComboBoxItem Tag="EXPIRING" Content="{l:Tr Stock_Expiring}"/>
-            <ComboBoxItem Tag="NONE" Content="{l:Tr Stock_Expiry_NONE}"/>
-          </ComboBox>
-          <ToggleButton x:Name="MoreFiltersToggle" Margin="0,0,6,4" MinHeight="32" Padding="10,4" Click="MoreFilters_OnClick"
-                        Content="{l:Tr Common_MoreFilters}"/>
-          <Button Style="{StaticResource ToolbarButton}" Margin="0,0,0,4" Click="ClearFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
-        </WrapPanel>
-        <p:SelectionBar x:Name="Selection" Covers="{Binding ElementName=FilterBar}">
-          <p:SelectionBar.Actions>
-            <Menu VerticalAlignment="Center" Background="Transparent">
-              <MenuItem Header="{l:Tr Catalog_BulkActions}">
-                <MenuItem Click="BulkBlock_OnClick" Header="{l:Tr Stock_BlockSelected}"/>
-                <MenuItem Click="BulkUnblock_OnClick" Header="{l:Tr Stock_UnblockSelected}"/>
-                <MenuItem x:Name="BulkDamageItem" Click="BulkDamage_OnClick" Header="{l:Tr Stock_BulkDamage}"/>
-                <MenuItem Click="BulkDeleteZero_OnClick" Header="{l:Tr Stock_DeleteZero}"/>
-              </MenuItem>
-            </Menu>
-          </p:SelectionBar.Actions>
-        </p:SelectionBar>
-      </Grid>
-    </DockPanel>
+    <WrapPanel x:Name="FilterBar" Grid.Row="1" Margin="0,0,0,4">
+      <ui:TextBox x:Name="SearchBox" Width="170" Margin="0,0,6,4" PlaceholderText="{l:Tr Stock_LotFilterSearch}"
+                  AutomationProperties.Name="{l:Tr Stock_LotFilterSearch}" TextChanged="Search_OnTextChanged"/>
+      <ComboBox x:Name="StatusFilter" Width="130" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged"
+                AutomationProperties.Name="{l:Tr Stock_LotStatusFilter}">
+        <ComboBoxItem Tag="ALL" Content="{l:Tr Stock_ExpiryFilterAll}"/>
+        <ComboBoxItem Tag="AVAILABLE" Content="{l:Tr Stock_Available}"/>
+        <ComboBoxItem Tag="ZERO" Content="{l:Tr Stock_Expiry_EMPTY}"/>
+        <ComboBoxItem Tag="BLOCKED" Content="{l:Tr Stock_Expiry_BLOCKED}"/>
+      </ComboBox>
+      <ComboBox x:Name="ExpiryFilter" Width="160" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged"
+                AutomationProperties.Name="{l:Tr Stock_ExpiryStatus}">
+        <ComboBoxItem Tag="ALL" Content="{l:Tr Stock_AnyExpiry}"/>
+        <ComboBoxItem Tag="EXPIRED" Content="{l:Tr MoneyOut_Expired}"/>
+        <ComboBoxItem Tag="EXPIRING" Content="{l:Tr Stock_Expiring}"/>
+        <ComboBoxItem Tag="NONE" Content="{l:Tr Stock_Expiry_NONE}"/>
+      </ComboBox>
+      <ToggleButton x:Name="MoreFiltersToggle" Margin="0,0,6,4" MinHeight="32" Padding="10,4" Click="MoreFilters_OnClick"
+                    Content="{l:Tr Common_MoreFilters}"/>
+      <Button Style="{StaticResource ToolbarButton}" Margin="0,0,0,4" Click="ClearFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
+    </WrapPanel>
     <WrapPanel x:Name="MoreFiltersPanel" Grid.Row="2" Margin="0,0,0,4" Visibility="Collapsed">
       <ComboBox x:Name="SourceFilter" Width="150" Margin="0,0,10,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged"
                 AutomationProperties.Name="{l:Tr Stock_Source}">
@@ -82,13 +64,13 @@
                 SelectionChanged="LotsGrid_OnSelectionChanged" MouseDoubleClick="LotsGrid_OnDoubleClick"
                 AutomationProperties.Name="{l:Tr Stock_Lots}">
         <DataGrid.Columns>
-          <DataGridTemplateColumn Width="40" CanUserReorder="False" CanUserResize="False">
+          <DataGridTemplateColumn Width="48" MinWidth="44" CanUserReorder="False">
             <DataGridTemplateColumn.HeaderTemplate><DataTemplate>
-              <CheckBox HorizontalAlignment="Center" IsThreeState="True" Loaded="PageCheck_OnLoaded" Click="PageCheck_OnClick"
+              <CheckBox Style="{StaticResource RowCheck}" IsThreeState="True" Loaded="PageCheck_OnLoaded" Click="PageCheck_OnClick"
                         AutomationProperties.Name="{l:Tr Selection_ThisPage}"/>
             </DataTemplate></DataGridTemplateColumn.HeaderTemplate>
             <DataGridTemplateColumn.CellTemplate><DataTemplate>
-              <CheckBox HorizontalAlignment="Center" Loaded="RowCheck_OnLoaded" Click="RowCheck_OnClick"
+              <CheckBox Style="{StaticResource RowCheck}" Loaded="RowCheck_OnLoaded" Click="RowCheck_OnClick"
                         AutomationProperties.Name="{l:Tr Stock_SelectLot}"/>
             </DataTemplate></DataGridTemplateColumn.CellTemplate>
           </DataGridTemplateColumn>
@@ -115,5 +97,21 @@
       <TextBlock x:Name="EmptyText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
                  TextWrapping="Wrap" TextAlignment="Center" MaxWidth="360" Text="{l:Tr Stock_LotsEmpty}"/>
     </Grid>
+    <p:PagerBar x:Name="Pager" Grid.Row="4">
+      <p:PagerBar.Selection>
+        <p:SelectionBar x:Name="Selection">
+          <p:SelectionBar.Actions>
+            <Menu VerticalAlignment="Center" Background="Transparent">
+              <MenuItem Header="{l:Tr Catalog_BulkActions}">
+                <MenuItem Click="BulkBlock_OnClick" Header="{l:Tr Stock_BlockSelected}"/>
+                <MenuItem Click="BulkUnblock_OnClick" Header="{l:Tr Stock_UnblockSelected}"/>
+                <MenuItem x:Name="BulkDamageItem" Click="BulkDamage_OnClick" Header="{l:Tr Stock_BulkDamage}"/>
+                <MenuItem Click="BulkDeleteZero_OnClick" Header="{l:Tr Stock_DeleteZero}"/>
+              </MenuItem>
+            </Menu>
+          </p:SelectionBar.Actions>
+        </p:SelectionBar>
+      </p:PagerBar.Selection>
+    </p:PagerBar>
   </Grid>
 </UserControl>

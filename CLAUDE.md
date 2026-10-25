@@ -18,7 +18,7 @@ An offline, single-user, single-PC grocery ERP for one shop: WPF on .NET 10, SQL
 
 `optimization*.md`, `audit.md`, `revised plan.md` and `luna/` are history. Don't treat them as current requirements.
 
-**Status (24 Oct 2026):** the old plan is fully implemented. The revised plan is implemented through **Phase 9** on **schema 37**: the direct-stock cutover (Phase 5), P/L heads with independent annual locks and snapshots (Phase 6), the simplified UI with SQL-side filters and reviewed bulk batches (Phase 7), the removal of the stock ledger, its screens and dead code, with verified compaction (Phase 8), and the full-scale review, upgrade confirmation and 1.1.0 release package (Phase 9). What remains are human gates: hardware, target-PC, second-PC restore, native-Gujarati and operator sign-offs. Never claim them as passed.
+**Status (24 Oct 2026):** the old plan is fully implemented. The revised plan is implemented through **Phase 9** on **schema 37**: the direct-stock cutover (Phase 5), P/L heads with independent annual locks and snapshots (Phase 6), the simplified UI with SQL-side filters and reviewed bulk batches (Phase 7), the removal of the stock ledger, its screens and dead code, with verified compaction (Phase 8), and the full-scale review, upgrade confirmation and 1.1.0 release package (Phase 9). After it, the purchase entry update (25 Oct 2026, **schema 38**) added rates typed including GST, line removal, visible line lists and live totals. The operator feedback fixes (same day, no schema change) moved each table's row count, selection bar and page arrows into a footer (`PagerBar`, built in code like `SelectionBar` so the page's names work inside it) and made Billing list several name matches (`ProductChoices`) instead of opening Unknown barcode. What remains are human gates: hardware, target-PC, second-PC restore, native-Gujarati and operator sign-offs. Never claim them as passed.
 
 ## Commands
 
@@ -101,10 +101,10 @@ Triggers also enforce immutability: completed sale financials, posted purchase a
 
 ### Migrations
 
-- The scripts sit at the **repo root**, not in a `db/` folder, though PLANS.md says `db/*.sql`. `grocery_erp_schema.sql` is 001, followed by `002_…sql` through `037_barcode_lot_index.sql`.
+- The scripts sit at the **repo root**, not in a `db/` folder, though PLANS.md says `db/*.sql`. `grocery_erp_schema.sql` is 001, followed by `002_…sql` through `038_purchase_rates_include_tax.sql`.
 - Each script is embedded through an explicit `<EmbeddedResource … Link="db/NNN_name.sql">` in `src/GroceryErp.Data/GroceryErp.Data.csproj`.
 - To add a migration:
-  1. Create root `038_name.sql`.
+  1. Create root `039_name.sql`.
   2. Add its `EmbeddedResource` line.
   3. Bump `MigrationRunner.LatestVersion`. The runner requires a contiguous 001..Latest sequence.
 - The runner strips `PRAGMA user_version` lines from scripts and sets the version itself. It takes a pre-migration backup automatically.

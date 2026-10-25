@@ -690,6 +690,7 @@ public sealed class PhaseZeroSmokeTests
                 var purchaseLine = new PurchaseEntryWindow.PurchaseEditLine
                 {
                     ProductId = 1,
+                    ProductName = "Tata Salt 1 kg",
                     Batch = "SALT-2409",
                     Expiry = "2027-09-28",
                     Quantity = 10,
@@ -700,23 +701,43 @@ public sealed class PhaseZeroSmokeTests
                     SellingPrice = 300,
                 };
                 purchaseEntry.Lines.Add(purchaseLine);
-                ((DataGridComboBoxColumn)((DataGrid)purchaseEntry.FindName("LinesGrid")).Columns[0]).ItemsSource = new[]
-                {
-                    new PurchaseEntryWindow.PurchaseKindChoice("PRODUCT", "Product"),
-                    new PurchaseEntryWindow.PurchaseKindChoice("INTERNAL", "Internal use"),
-                    new PurchaseEntryWindow.PurchaseKindChoice("EXPENSE", "Expense"),
-                };
-                ((DataGridComboBoxColumn)((DataGrid)purchaseEntry.FindName("LinesGrid")).Columns[1]).ItemsSource = new[]
-                {
-                    new ProductListItem { Id = 1, Name = "Tata Salt 1 kg" },
-                };
                 ((TextBox)purchaseEntry.FindName("ChargesBox")).Text = "૧૦૦";
                 ((TextBox)purchaseEntry.FindName("BillTotalBox")).Text = "૨૭૨૫";
                 ((TextBlock)purchaseEntry.FindName("DifferenceText")).Text.ShouldBe("0.000");
                 ((TextBox)purchaseEntry.FindName("ChargesBox")).Text = "100";
                 ((TextBox)purchaseEntry.FindName("BillTotalBox")).Text = "2725";
                 purchaseEntry.Show();
+                // The line type is a visible list, the expense category column appears only for an
+                // Expense line, and each line has its own remove button.
+                var entryGrid = (DataGrid)purchaseEntry.FindName("LinesGrid");
+                var expenseColumn = (DataGridColumn)purchaseEntry.FindName("ExpenseCategoryColumn");
+                purchaseEntry.UpdateLayout();
+                Descendants<ComboBox>(entryGrid).First().SelectedValue.ShouldBe("PRODUCT");
+                expenseColumn.Visibility.ShouldBe(Visibility.Collapsed);
+                purchaseLine.LineKind = "EXPENSE";
+                expenseColumn.Visibility.ShouldBe(Visibility.Visible);
+                purchaseLine.LineKind = "PRODUCT";
+                expenseColumn.Visibility.ShouldBe(Visibility.Collapsed);
+                VerifyAccessibleNames(purchaseEntry);
                 Capture(purchaseEntry, "purchase-entry.en.png");
+                // Typed including GST, 10 × 250 plus 100 charges is the 2,600 the bill prints.
+                var ratesIncludeTax = (CheckBox)purchaseEntry.FindName("RatesIncludeTaxBox");
+                ratesIncludeTax.IsChecked = true;
+                ((TextBlock)purchaseEntry.FindName("SubtotalText")).Text.ShouldBe("2,380.950");
+                ((TextBlock)purchaseEntry.FindName("ComputedText")).Text.ShouldBe("2,600.000");
+                ((DataGridColumn)purchaseEntry.FindName("RateColumn")).Header.ShouldBe("Rate incl. GST");
+                Capture(purchaseEntry, "purchase-entry-incl-gst.en.png");
+                ratesIncludeTax.IsChecked = false;
+                ((TextBlock)purchaseEntry.FindName("ComputedText")).Text.ShouldBe("2,725.000");
+                var extraLine = new PurchaseEntryWindow.PurchaseEditLine { ProductId = 2, ProductName = "Sugar 1 kg", Rate = 40 };
+                purchaseEntry.Lines.Add(extraLine);
+                ((TextBlock)purchaseEntry.FindName("ComputedText")).Text.ShouldBe("2,765.000");
+                purchaseEntry.UpdateLayout();
+                Descendants<Button>(entryGrid)
+                    .Where(button => System.Windows.Automation.AutomationProperties.GetName(button) == "Remove line")
+                    .ElementAt(1).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                purchaseEntry.Lines.Single().ShouldBeSameAs(purchaseLine);
+                ((TextBlock)purchaseEntry.FindName("ComputedText")).Text.ShouldBe("2,725.000");
                 purchaseLine.ApplyMetadata(new PurchaseLineDefaults(new Money(200), new Percent(5),
                     new Money(350), new Money(200), null, 30, true));
                 purchaseLine.Expiry = "2026-10-01";
@@ -728,6 +749,17 @@ public sealed class PhaseZeroSmokeTests
                 ((TextBlock)purchaseEntry.FindName("WarningText")).Text.ShouldContain("selling below landed cost");
                 ((TextBlock)purchaseEntry.FindName("WarningText")).Text.ShouldContain("rate differs over 10%");
                 Capture(purchaseEntry, "purchase-entry-warnings.en.png");
+                // Enter on a search match adds it as a line; an internal-use product starts as Internal use.
+                var choices = (ListBox)((ProductChoices)purchaseEntry.FindName("ProductChoices")).FindName("List");
+                choices.ItemsSource = new[] { new ProductListItem { Id = 3, Name = "Packing twine", ProductClass = "INTERNAL" } };
+                choices.SelectedIndex = 0;
+                // Raised through the dispatcher, as input is, so the window's async work resumes on this thread.
+                purchaseEntry.Dispatcher.Invoke(() => choices.RaiseEvent(
+                    new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(purchaseEntry), 0, Key.Enter)
+                    { RoutedEvent = Keyboard.KeyDownEvent }));
+                purchaseEntry.Lines.Count.ShouldBe(2);
+                purchaseEntry.Lines[1].ProductName.ShouldBe("Packing twine");
+                purchaseEntry.Lines[1].LineKind.ShouldBe("INTERNAL");
                 purchaseEntry.Close();
 
                 var directCount = new DirectCountReviewWindow(
@@ -840,6 +872,7 @@ public sealed class PhaseZeroSmokeTests
                 var vendorsHost = new Window { Content = vendorsPage, Width = 1080, Height = 700 };
                 vendorsHost.Show();
                 ((DataGrid)vendorsPage.FindName("VendorsGrid")).SelectedIndex = 0;
+                ((PagerBar)vendorsPage.FindName("Pager")).Status = translations.Format("Purchasing_VendorCount", 2);
                 ((FrameworkElement)vendorsPage.FindName("Selection")).Visibility.ShouldBe(Visibility.Collapsed);
                 VerifyAccessibleNames(vendorsHost);
                 Capture(vendorsHost, "vendors-page.en.png");
@@ -1560,8 +1593,8 @@ public sealed class PhaseZeroSmokeTests
             productsHost.Show();
             var grid = (DataGrid)products.FindName("ProductsGrid");
             var pager = (PagerBar)products.FindName("Pager");
-            var next = (Button)pager.FindName("NextButton");
-            var previous = (Button)pager.FindName("PreviousButton");
+            Button next = pager.NextButton;
+            Button previous = pager.PreviousButton;
             PumpUntil(() => grid.Items.Count > 0 && next.IsEnabled);
             // A page is the rows that fit the table, so the table never scrolls inside.
             int fitted = grid.Items.Count;
@@ -1571,7 +1604,7 @@ public sealed class PhaseZeroSmokeTests
             var first = (ProductListItem)grid.Items[0];
             next.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             PumpUntil(() => grid.Items.Count > 0 && ((ProductListItem)grid.Items[0]).Id != first.Id && previous.IsEnabled);
-            ((TextBlock)pager.FindName("PageText")).Text.ShouldBe(translations.Format("Pager_Page", 2));
+            pager.PageText.Text.ShouldBe(translations.Format("Pager_Page", 2));
             previous.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             PumpUntil(() => grid.Items.Count == fitted && ((ProductListItem)grid.Items[0]).Id == first.Id);
             ShouldBeOneLine((FrameworkElement)products.FindName("FilterBar"));
@@ -1753,8 +1786,59 @@ public sealed class PhaseZeroSmokeTests
             var vendorGrid = (DataGrid)vendors.FindName("VendorsGrid");
             PumpUntil(() => vendorGrid.Items.Count == 1);
             ((VendorItem)vendorGrid.Items[0]).BalanceDue.ShouldBe(posted.Totals.GrandTotal);
+            // The select box fits its column whole, and the column widens like any other.
+            vendorsHost.UpdateLayout();
+            DataGridColumn selectColumn = vendorGrid.Columns[0];
+            selectColumn.CanUserResize.ShouldBeTrue();
+            CheckBox rowCheck = Descendants<CheckBox>(FindVisualChild<DataGridRow>(vendorGrid)!).First();
+            (rowCheck.ActualWidth + 12).ShouldBeLessThanOrEqualTo(selectColumn.ActualWidth);
+            // The row count and page arrows sit in the footer under the table.
+            var vendorPager = (PagerBar)vendors.FindName("Pager");
+            vendorPager.TranslatePoint(new Point(), vendorsHost).Y
+                .ShouldBeGreaterThanOrEqualTo(vendorGrid.TranslatePoint(new Point(0, vendorGrid.ActualHeight), vendorsHost).Y - 1);
             CaptureRevision(vendorsHost, "vendors.en.png");
             vendorsHost.Close();
+
+            // Billing: a typed name lists its matches to pick from, rather than taking the first or
+            // offering to save the name as a barcode; a single match joins the bill directly.
+            var sales = new SalesService(database, ledger, numbers, periods, settings, new AuditLog(), clock);
+            var billing = new BillingPage(sales, new ScanResolver(database), catalog, inventory, new ReceiptPrinter(settings),
+                loadOnShow: false);
+            var billingHost = new Window { Content = billing, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
+            billingHost.Show();
+            MethodInfo addText = typeof(BillingPage).GetMethod("AddTextAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            void TypeIntoBill(string text)
+            {
+                var typing = (Task)addText.Invoke(billing, [text, false])!;
+                PumpUntil(() => typing.IsCompleted);
+                typing.GetAwaiter().GetResult();
+            }
+            var billGrid = (DataGrid)billing.FindName("BillGrid");
+            var billChoices = (ProductChoices)billing.FindName("ProductChoices");
+            var billChoiceList = (ListBox)billChoices.FindName("List");
+            TypeIntoBill("2*salt");
+            billChoices.IsOpen.ShouldBeTrue();
+            string.Join(",", billChoiceList.Items.Cast<ProductListItem>().Select(static item => item.Sku).Order(StringComparer.Ordinal))
+                .ShouldBe("SALT001,SALT0011");
+            billGrid.Items.Count.ShouldBe(0);
+            CaptureRevision(billChoices, "billing-choices.en.png");
+            billChoiceList.SelectedItem = billChoiceList.Items.Cast<ProductListItem>().Single(static item => item.Sku == "SALT001");
+            billing.Dispatcher.Invoke(() => billChoiceList.RaiseEvent(
+                new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(billingHost)!, 0, Key.Enter)
+                { RoutedEvent = Keyboard.KeyDownEvent }));
+            PumpUntil(() => billGrid.Items.Count == 1);
+            billChoices.IsOpen.ShouldBeFalse();
+            ((SaleLine)billGrid.Items[0]).ProductName.ShouldBe("Tata Salt 1 kg");
+            // The quantity typed before * carries over to the picked product.
+            ((SaleLine)billGrid.Items[0]).Quantity.ShouldBe(new Quantity(2));
+            TypeIntoBill("black salt");
+            PumpUntil(() => billGrid.Items.Count == 2);
+            billChoices.IsOpen.ShouldBeFalse();
+            TypeIntoBill("no such thing");
+            billChoices.IsOpen.ShouldBeFalse();
+            billGrid.Items.Count.ShouldBe(2);
+            ((TextBlock)billing.FindName("StatusText")).Text.ShouldBe(translations["Purchasing_NoProduct"]);
+            billingHost.Close();
 
             // Forms mark required fields, list errors at the top and keep the typed values.
             var vendorForm = new VendorEditorWindow(purchasing) { Language = AppLanguage };
@@ -1919,18 +2003,31 @@ public sealed class PhaseZeroSmokeTests
 
     private static void CaptureRevision(Window window, string fileName)
     {
+        window.UpdateLayout();
+        CaptureRevision((Visual)window.Content, window.ActualWidth, window.ActualHeight, fileName);
+    }
+
+    // A popup draws in its own window, so a capture of the page leaves it out; this captures what it shows.
+    private static void CaptureRevision(Popup popup, string fileName)
+    {
+        var content = (FrameworkElement)popup.Child;
+        content.UpdateLayout();
+        CaptureRevision(content, content.ActualWidth, content.ActualHeight, fileName);
+    }
+
+    private static void CaptureRevision(Visual surface, double actualWidth, double actualHeight, string fileName)
+    {
         string? directory = Environment.GetEnvironmentVariable("GROCERY_REVISION_SCREENSHOT_DIR");
         if (string.IsNullOrEmpty(directory)) return;
         Directory.CreateDirectory(directory);
-        window.UpdateLayout();
-        int width = (int)Math.Ceiling(window.ActualWidth);
-        int height = (int)Math.Ceiling(window.ActualHeight);
+        int width = (int)Math.Ceiling(actualWidth);
+        int height = (int)Math.Ceiling(actualHeight);
         var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
         var background = new DrawingVisual();
         using (DrawingContext context = background.RenderOpen())
             context.DrawRectangle(Brushes.White, null, new Rect(0, 0, width, height));
         bitmap.Render(background);
-        bitmap.Render((Visual)window.Content);
+        bitmap.Render(surface);
         var encoder = new PngBitmapEncoder();
         encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using var output = File.Create(Path.Combine(directory, fileName));
@@ -2042,9 +2139,11 @@ public sealed class PhaseZeroSmokeTests
         double pagerY = pager.TranslatePoint(new Point(), window).Y;
         double headerY = header.TranslatePoint(new Point(), window).Y;
         double gridBottom = grid.TranslatePoint(new Point(0, grid.ActualHeight), window).Y;
+        // Filters above the table; the footer with the row count and page arrows under it, at the bottom edge.
         pager.IsVisible.ShouldBeTrue();
-        (pagerY + pager.ActualHeight).ShouldBeLessThanOrEqualTo(filtersY + 1);
-        (((FrameworkElement)window.Content).ActualHeight - gridBottom).ShouldBeLessThan(16);
+        filtersY.ShouldBeLessThan(headerY);
+        pagerY.ShouldBeGreaterThanOrEqualTo(gridBottom - 1);
+        (((FrameworkElement)window.Content).ActualHeight - (pagerY + pager.ActualHeight)).ShouldBeLessThan(16);
         pager.TranslatePoint(new Point(pager.ActualWidth, 0), window).X.ShouldBeLessThan(window.ActualWidth);
         grid.ScrollIntoView(grid.Items[^1]);
         grid.UpdateLayout();
@@ -2100,7 +2199,8 @@ public sealed class PhaseZeroSmokeTests
                 "discount-percent.en.png" or "day-end.en.png")) return;
         }
         string? phase3Directory = Environment.GetEnvironmentVariable("GROCERY_PHASE3_SCREENSHOT_DIR");
-        if (phase6Directory is null && phase3Directory is not null && fileName is not ("purchase-entry.en.png" or "purchase-entry-warnings.en.png" or "purchases-page.en.png" or
+        if (phase6Directory is null && phase3Directory is not null && fileName is not ("purchase-entry.en.png" or "purchase-entry-warnings.en.png" or
+            "purchase-entry-incl-gst.en.png" or "purchases-page.en.png" or
             "purchases-page.gu.png" or "stock-page.en.png" or "stock-lots.en.png" or "stock-ledger.en.png" or "stock-count.en.png" or "stock-count.gu.png" or
             "stock-count-scope.en.png" or "opening-stock-preview.en.png" or "vendor-history.en.png" or
             "product-lots.en.png" or

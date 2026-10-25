@@ -46,5 +46,6 @@
     <EmbeddedResource Include="../../035_list_filter_indexes.sql" Link="db/035_list_filter_indexes.sql" />
     <EmbeddedResource Include="../../036_remove_stock_ledger.sql" Link="db/036_remove_stock_ledger.sql" />
     <EmbeddedResource Include="../../037_barcode_lot_index.sql" Link="db/037_barcode_lot_index.sql" />
+    <EmbeddedResource Include="../../038_purchase_rates_include_tax.sql" Link="db/038_purchase_rates_include_tax.sql" />
   </ItemGroup>
 </Project>

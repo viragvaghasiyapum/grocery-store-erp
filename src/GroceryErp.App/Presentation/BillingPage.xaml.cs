@@ -33,6 +33,7 @@ public partial class BillingPage : Page, IDisposable
     private bool _offeredSavedBills;
     private bool _isCompleting;
     private long? _lastScannedProductId;
+    private Quantity _choiceQuantity = Quantity.One;
     private Task _billOperations = Task.CompletedTask;
     private int _refreshVersion;
     private readonly DispatcherTimer _printerTimer = new() { Interval = TimeSpan.FromSeconds(15) };
@@ -91,11 +92,12 @@ public partial class BillingPage : Page, IDisposable
                 _detector.ScanReceived += async (_, code) =>
                 {
                     (Window.GetWindow(this) as ShellWindow)?.RecordScannerActivity();
+                    ProductChoices.IsOpen = false;
                     string typed = InputNormalizer.Normalize(ScanBox.Text).Trim();
                     int marker = typed.IndexOf('*', StringComparison.Ordinal);
                     string input = marker > 0 ? typed[..(marker + 1)] + code : code;
                     ScanBox.Clear();
-                    await EnqueueBillActionAsync(() => AddTextAsync(input));
+                    await EnqueueBillActionAsync(() => AddTextAsync(input, scanned: true));
                 };
                 _detector.Attach(window);
             }
@@ -117,6 +119,12 @@ public partial class BillingPage : Page, IDisposable
 
     private async void ScanBox_OnKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Down && ProductChoices.IsOpen)
+        {
+            e.Handled = true;
+            ProductChoices.FocusSelected();
+            return;
+        }
         if (e.Key != Key.Enter) return;
         e.Handled = true;
         string value = ScanBox.Text;
@@ -140,7 +148,7 @@ public partial class BillingPage : Page, IDisposable
         }
     }
 
-    private async Task AddTextAsync(string text)
+    private async Task AddTextAsync(string text, bool scanned = false)
     {
         try
         {
@@ -161,12 +169,33 @@ public partial class BillingPage : Page, IDisposable
             long productId;
             Quantity quantity;
             long? lotId;
+            string? barcode = code;
             if (result.Kind == ScanResultKind.NotFound)
             {
-                IReadOnlyList<ProductListItem> matches = await _catalog.SearchAsync(new(Query: code, Limit: 2, SaleableOnly: true));
+                // A typed name is a search: one match joins the bill and several are listed to pick
+                // from. Only a code that reads as a barcode (a long number, or anything the scanner
+                // sent that matches nothing) is offered as an unknown barcode, so a name is never
+                // saved as one.
                 bool looksLikeBarcode = code.Length >= 8 && code.All(char.IsAsciiDigit);
-                if (matches.Count == 1 && !looksLikeBarcode)
+                IReadOnlyList<ProductListItem> matches = looksLikeBarcode ? []
+                    : await _catalog.SearchAsync(new(Query: code, Limit: 50, SaleableOnly: true));
+                if (matches.Count > 1)
+                {
+                    _choiceQuantity = prefix;
+                    StatusText.Text = TranslationSource.Instance.Format("Purchasing_MatchesFound", matches.Count);
+                    ProductChoices.Open(matches);
+                    return;
+                }
+                if (matches.Count == 1)
+                {
                     productId = matches[0].Id;
+                    barcode = null;
+                }
+                else if (!looksLikeBarcode && !scanned)
+                {
+                    StatusText.Text = TranslationSource.Instance["Purchasing_NoProduct"];
+                    return;
+                }
                 else
                 {
                     IServiceProvider services = ((App)Application.Current).Services;
@@ -195,13 +224,29 @@ public partial class BillingPage : Page, IDisposable
             }
             _saleId = result.Kind == ScanResultKind.Price && result.Price is { } totalPrice
                 ? await _sales.AddPriceLabelAsync(_saleId, productId, totalPrice * prefix, code)
-                : await _sales.AddProductAsync(_saleId, productId, quantity, lotId, code);
+                : await _sales.AddProductAsync(_saleId, productId, quantity, lotId, barcode);
             _lastScannedProductId = productId;
             await RefreshAsync();
         }
         catch (Exception exception) { StatusText.Text = Message(exception); }
         finally { ScanBox.Focus(); }
     }
+
+    // The quantity typed before * in the search applies to the product picked from the list.
+    private async void ProductChoices_OnPicked(object? sender, ProductListItem product) =>
+        await EnqueueBillActionAsync(async () =>
+        {
+            try
+            {
+                _saleId = await _sales.AddProductAsync(_saleId, product.Id, _choiceQuantity);
+                _lastScannedProductId = product.Id;
+                await RefreshAsync();
+            }
+            catch (Exception exception) { StatusText.Text = Message(exception); }
+            finally { ScanBox.Focus(); }
+        });
+
+    private void ProductChoices_OnClosed(object? sender, EventArgs e) => ScanBox.Focus();
 
     private async Task RefreshAsync()
     {

@@ -179,8 +179,8 @@ public sealed partial class PurchasingService(
             {
                 id = transaction.Connection.ExecuteScalar<long>("""
                     INSERT INTO purchase(vendor_id,vendor_invoice_no,vendor_invoice_date,received_date,vendor_bill_total,
-                                         other_charges,notes)
-                    VALUES (@VendorId,@invoice,@invoiceDate,@receivedDate,@bill,@charges,@notes) RETURNING id
+                                         other_charges,notes,rates_include_tax)
+                    VALUES (@VendorId,@invoice,@invoiceDate,@receivedDate,@bill,@charges,@notes,@ratesIncludeTax) RETURNING id
                     """, HeaderParameters(input), transaction.Transaction);
             }
             else
@@ -188,14 +188,15 @@ public sealed partial class PurchasingService(
                 id = purchaseId.Value;
                 int changed = transaction.Connection.Execute("""
                     UPDATE purchase SET vendor_id=@VendorId,vendor_invoice_no=@invoice,vendor_invoice_date=@invoiceDate,
-                        received_date=@receivedDate,vendor_bill_total=@bill,other_charges=@charges,notes=@notes
+                        received_date=@receivedDate,vendor_bill_total=@bill,other_charges=@charges,notes=@notes,
+                        rates_include_tax=@ratesIncludeTax
                     WHERE id=@id AND status='DRAFT'
                     """, Merge(HeaderParameters(input), id), transaction.Transaction);
                 if (changed == 0) throw PurchaseMissingOrFinalized(transaction, id);
                 transaction.Connection.Execute("DELETE FROM purchase_line WHERE purchase_id=@id", new { id }, transaction.Transaction);
             }
 
-            InsertDraftLines(transaction, id, input.Lines);
+            InsertDraftLines(transaction, id, input.Lines, input.RatesIncludeTax);
             audit.Write(transaction, "purchase", id, purchaseId is null ? "CREATE_DRAFT" : "UPDATE_DRAFT", new { lines = input.Lines.Count });
             return id;
         }, cancellationToken);
@@ -207,23 +208,35 @@ public sealed partial class PurchasingService(
             DraftHeader? header = connection.QuerySingleOrDefault<DraftHeader>("""
                 SELECT id AS Id,vendor_id AS VendorId,vendor_invoice_no AS VendorInvoiceNumber,
                        vendor_invoice_date AS VendorInvoiceDate,received_date AS ReceivedDate,
-                       vendor_bill_total AS VendorBillTotal,other_charges AS OtherCharges,notes AS Notes
+                       vendor_bill_total AS VendorBillTotal,other_charges AS OtherCharges,notes AS Notes,
+                       rates_include_tax AS RatesIncludeTax
                 FROM purchase WHERE id=@purchaseId AND status='DRAFT'
                 """, new { purchaseId });
             if (header is null) throw new DomainException(ErrorCode.NotFound, "purchase draft", purchaseId);
+            // A draft typed including GST shows the rates and discounts exactly as they were typed.
             IReadOnlyList<PurchaseLineInput> lines = connection.Query<PurchaseLineRow>("""
                 SELECT id AS Id,product_id AS ProductId,line_kind AS LineKind,
                        expense_category_id AS ExpenseCategoryId,batch_no AS BatchNumber,mfg_date AS ManufacturingDate,
                        expiry_date AS ExpiryDate,qty AS Quantity,free_qty AS FreeQuantity,
-                       unit_cost AS Rate,discount AS Discount,tax_rate_pct AS TaxRate,
-                       mrp AS Mrp,selling_price AS SellingPrice
+                       COALESCE(entered_rate,unit_cost) AS Rate,COALESCE(entered_discount,discount) AS Discount,
+                       tax_rate_pct AS TaxRate,mrp AS Mrp,selling_price AS SellingPrice
                 FROM purchase_line WHERE purchase_id=@purchaseId ORDER BY line_no
                 """, new { purchaseId }).Select(static row => row.ToInput()).ToList();
             return new PurchaseDraft(header.Id, new PurchaseDraftInput(header.VendorId, header.VendorInvoiceNumber,
                 header.VendorInvoiceDate, header.ReceivedDate,
                 header.VendorBillTotal is null ? null : Money.FromScaled(header.VendorBillTotal.Value),
-                Money.FromScaled(header.OtherCharges), header.Notes, lines));
+                Money.FromScaled(header.OtherCharges), header.Notes, lines)
+            { RatesIncludeTax = header.RatesIncludeTax });
         }, cancellationToken);
+
+    /// <summary>
+    /// Gets whether the vendor's most recent purchase (draft, posted or void) was typed with rates
+    /// including GST, so the next bill from that vendor starts the same way. False for a new vendor.
+    /// </summary>
+    public Task<bool> GetLastRatesIncludeTaxAsync(long vendorId, CancellationToken cancellationToken = default) =>
+        database.ReadAsync(connection => connection.ExecuteScalar<bool?>("""
+            SELECT rates_include_tax FROM purchase WHERE vendor_id=@vendorId ORDER BY id DESC LIMIT 1
+            """, new { vendorId }) ?? false, cancellationToken);
 
     public Task<PurchaseLineDefaults> GetLineDefaultsAsync(long vendorId, long productId, DateOnly receivedDate,
         CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
@@ -986,17 +999,21 @@ public sealed partial class PurchasingService(
                 """, new { vendorId }).Select(static row => new VendorLotItem(row.ProductName, row.LotCode,
                 row.BatchNumber, row.ReceivedDate, row.ExpiryDate, Quantity.FromScaled(row.OnHand))).ToList(), cancellationToken);
 
-    private static void InsertDraftLines(DbTx transaction, long purchaseId, IReadOnlyList<PurchaseLineInput> lines)
+    // Lines typed including GST are validated as typed, then stored before GST with the typed
+    // rate and discount kept beside them.
+    private static void InsertDraftLines(DbTx transaction, long purchaseId, IReadOnlyList<PurchaseLineInput> lines,
+        bool ratesIncludeTax)
     {
         for (int index = 0; index < lines.Count; index++)
         {
-            PurchaseLineInput line = lines[index];
+            PurchaseLineInput entered = lines[index];
             ProductRule rule = transaction.Connection.QuerySingleOrDefault<ProductRule>("""
                 SELECT p.track_expiry AS TrackExpiry,u.allow_fraction AS AllowFraction,
                        p.product_class AS ProductClass
                 FROM product p JOIN uom u ON u.id=p.uom_id WHERE p.id=@ProductId AND p.is_active=1
-                """, line, transaction.Transaction) ?? throw new DomainException(ErrorCode.NotFound, "product", line.ProductId);
-            ValidateLine(line, rule.TrackExpiry, rule.AllowFraction, default);
+                """, entered, transaction.Transaction) ?? throw new DomainException(ErrorCode.NotFound, "product", entered.ProductId);
+            ValidateLine(entered, rule.TrackExpiry, rule.AllowFraction, default);
+            PurchaseLineInput line = ratesIncludeTax ? entered.ExcludingTax() : entered;
             if (line.LineKind != "EXPENSE" &&
                 ((line.LineKind == "INTERNAL") != (rule.ProductClass == "INTERNAL")))
                 throw new DomainException(ErrorCode.Validation, "Purchase line type does not match product classification.");
@@ -1009,10 +1026,12 @@ public sealed partial class PurchasingService(
             transaction.Connection.Execute("""
                 INSERT INTO purchase_line(purchase_id,line_no,product_id,line_kind,expense_category_id,
                                           batch_no,mfg_date,expiry_date,qty,free_qty,
-                                          unit_cost,discount,tax_rate_pct,tax_amount,line_total,landed_unit_cost,mrp,selling_price)
+                                          unit_cost,discount,tax_rate_pct,tax_amount,line_total,landed_unit_cost,mrp,selling_price,
+                                          entered_rate,entered_discount)
                 VALUES (@purchaseId,@lineNo,@ProductId,@LineKind,@ExpenseCategoryId,
                         @BatchNumber,@ManufacturingDate,@ExpiryDate,@Quantity,@FreeQuantity,
-                        @Rate,@Discount,@TaxRate,@tax,@lineTotal,0,@Mrp,@SellingPrice)
+                        @Rate,@Discount,@TaxRate,@tax,@lineTotal,0,@Mrp,@SellingPrice,
+                        @enteredRate,@enteredDiscount)
                 """, new
             {
                 purchaseId,
@@ -1032,6 +1051,8 @@ public sealed partial class PurchasingService(
                 lineTotal = (taxable + tax).Scaled,
                 Mrp = line.Mrp?.Scaled,
                 SellingPrice = line.SellingPrice.Scaled,
+                enteredRate = ratesIncludeTax ? entered.Rate.Scaled : (long?)null,
+                enteredDiscount = ratesIncludeTax ? entered.Discount.Scaled : (long?)null,
             }, transaction.Transaction);
         }
     }
@@ -1140,6 +1161,7 @@ public sealed partial class PurchasingService(
         bill = input.VendorBillTotal?.Scaled,
         charges = input.OtherCharges.Scaled,
         notes = Optional(input.Notes, 1000),
+        ratesIncludeTax = input.RatesIncludeTax ? 1 : 0,
     };
 
     private static Dictionary<string, object?> Merge(object source, long id)
@@ -1165,7 +1187,7 @@ public sealed partial class PurchasingService(
     private sealed class VendorDetailsRow { public string Name { get; init; } = ""; public string? ContactPerson { get; init; } public string? Phone { get; init; } public string? AlternatePhone { get; init; } public string? Email { get; init; } public string? Address { get; init; } public string? City { get; init; } public string? State { get; init; } public string? Pincode { get; init; } public string? Gstin { get; init; } public string? Pan { get; init; } public string? UpiId { get; init; } public string? BankDetails { get; init; } public int PaymentTermsDays { get; init; } public long OpeningBalance { get; init; } public string? Notes { get; init; } }
     private sealed class ProductRule { public bool TrackExpiry { get; init; } public bool AllowFraction { get; init; } public string ProductClass { get; init; } = "SALEABLE"; }
     private sealed class PurchaseHeader { public long Id { get; init; } public long VendorId { get; init; } public DateOnly ReceivedDate { get; init; } public string Status { get; init; } = ""; public long OtherCharges { get; init; } public long? VendorBillTotal { get; init; } }
-    private sealed class DraftHeader { public long Id { get; init; } public long VendorId { get; init; } public string? VendorInvoiceNumber { get; init; } public DateOnly? VendorInvoiceDate { get; init; } public DateOnly ReceivedDate { get; init; } public long? VendorBillTotal { get; init; } public long OtherCharges { get; init; } public string? Notes { get; init; } }
+    private sealed class DraftHeader { public long Id { get; init; } public long VendorId { get; init; } public string? VendorInvoiceNumber { get; init; } public DateOnly? VendorInvoiceDate { get; init; } public DateOnly ReceivedDate { get; init; } public long? VendorBillTotal { get; init; } public long OtherCharges { get; init; } public string? Notes { get; init; } public bool RatesIncludeTax { get; init; } }
     private sealed class LineDefaultsRow { public bool TrackExpiry { get; init; } public bool PriceIncludesTax { get; init; } public int? ShelfLifeDays { get; init; } public int ExpiryAlertDays { get; init; } public long TaxRate { get; init; } public long? Mrp { get; init; } public long? SellingPrice { get; init; } public long? LastRate { get; init; } }
     private sealed class PurchaseLineRow { public long Id { get; init; } public long ProductId { get; init; } public string LineKind { get; init; } = "PRODUCT"; public long? ExpenseCategoryId { get; init; } public string ProductClass { get; init; } = "SALEABLE"; public string? BatchNumber { get; init; } public DateOnly? ManufacturingDate { get; init; } public DateOnly? ExpiryDate { get; init; } public long Quantity { get; init; } public long FreeQuantity { get; init; } public long Rate { get; init; } public long Discount { get; init; } public long TaxRate { get; init; } public long? Mrp { get; init; } public long SellingPrice { get; init; } public bool TrackExpiry { get; init; } public bool AllowFraction { get; init; } public PurchaseLineInput ToInput() => new(ProductId, BatchNumber, ManufacturingDate, ExpiryDate, GroceryErp.Core.Numerics.Quantity.FromScaled(Quantity), GroceryErp.Core.Numerics.Quantity.FromScaled(FreeQuantity), Money.FromScaled(Rate), Money.FromScaled(Discount), Percent.FromScaled(TaxRate), Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(SellingPrice)) { LineKind = LineKind, ExpenseCategoryId = ExpenseCategoryId }; }
     private sealed class CancelLotRow { public long LotId { get; init; } public long ProductId { get; init; } public long Received { get; init; } public long OnHand { get; init; } public long UnitCost { get; init; } public long PurchaseLineId { get; init; } public bool Touched { get; init; } }

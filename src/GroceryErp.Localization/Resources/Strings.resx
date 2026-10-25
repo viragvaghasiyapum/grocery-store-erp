@@ -312,7 +312,7 @@
   <data name="Purchasing_ProductSearchHint" xml:space="preserve"><value>Scan a barcode or search by name or SKU, then press Enter.</value></data>
   <data name="Purchasing_FindProduct" xml:space="preserve"><value>Find product</value></data>
   <data name="Purchasing_NoProduct" xml:space="preserve"><value>No matching product was found.</value></data>
-  <data name="Purchasing_MatchesFound" xml:space="preserve"><value>{0} products found. Choose one in the Name column.</value></data>
+  <data name="Purchasing_MatchesFound" xml:space="preserve"><value>{0} products found. Choose one from the list under the search box.</value></data>
   <data name="Purchasing_MfgDate" xml:space="preserve"><value>Mfg date</value></data>
   <data name="Purchasing_Landed" xml:space="preserve"><value>Landed / unit</value></data>
   <data name="Purchasing_Margin" xml:space="preserve"><value>Margin %</value></data>
@@ -1327,7 +1327,16 @@
   <data name="Purchasing_AllVendors" xml:space="preserve"><value>All vendors</value></data>
   <data name="Purchasing_AnyLineType" xml:space="preserve"><value>Any line type</value></data>
   <data name="Purchasing_AnyStatus" xml:space="preserve"><value>Any status</value></data>
-  <data name="Purchasing_CopyDownHint" xml:space="preserve"><value>Ctrl+D copies the cell above (never the line type or product). Ctrl+S saves the draft.</value></data>
+  <data name="Purchasing_CopyDownHint" xml:space="preserve"><value>Ctrl+D copies the cell above (never the line type or product). Ctrl+Delete removes the line. Ctrl+S saves the draft.</value></data>
+  <data name="Purchasing_CostExGst" xml:space="preserve"><value>Cost ex GST</value></data>
+  <data name="Purchasing_CostInclGst" xml:space="preserve"><value>Cost incl. GST</value></data>
+  <data name="Purchasing_ProductChoices" xml:space="preserve"><value>Matching products</value></data>
+  <data name="Purchasing_RateBasis" xml:space="preserve"><value>Bill rates</value></data>
+  <data name="Purchasing_RateInclGst" xml:space="preserve"><value>Rate incl. GST</value></data>
+  <data name="Purchasing_RatesIncludeGst" xml:space="preserve"><value>Include GST</value></data>
+  <data name="Purchasing_RatesIncludeGstHint" xml:space="preserve"><value>Tick when the supplier bill prints rates and discounts including GST. Type them as printed; the GST part of each line is worked out for you. The next bill from this vendor starts the same way.</value></data>
+  <data name="Purchasing_RemoveLine" xml:space="preserve"><value>Remove line</value></data>
+  <data name="Purchasing_RemoveLineHint" xml:space="preserve"><value>Remove this line (Ctrl+Delete)</value></data>
   <data name="Purchasing_Count" xml:space="preserve"><value>Purchases: {0}</value></data>
   <data name="Purchasing_DeactivateEffect" xml:space="preserve"><value>Inactive vendors are hidden from new purchases; their history stays.</value></data>
   <data name="Purchasing_DocumentFilter" xml:space="preserve"><value>GRN or vendor bill no.</value></data>

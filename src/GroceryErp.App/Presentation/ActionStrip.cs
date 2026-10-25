@@ -31,7 +31,7 @@ internal sealed class ActionStrip
     /// <param name="menu">The menu that shows the More item.</param>
     /// <param name="more">The More item that receives the buttons that do not fit.</param>
     /// <param name="reserve">Width of the room kept for what shares the row, such as a title row's
-    /// title and status line.</param>
+    /// title.</param>
     public ActionStrip(FrameworkElement room, Panel buttons, FrameworkElement menu, MenuItem more,
         Func<double>? reserve = null)
     {
@@ -69,12 +69,9 @@ internal sealed class ActionStrip
         };
     }
 
-    /// <summary>
-    /// The reserve for a page's title row: the title with its margin and the least width that
-    /// keeps the status line and page arrows readable.
-    /// </summary>
-    public static Func<double> TitleRow(FrameworkElement title, double status = 220) =>
-        () => title.ActualWidth + title.Margin.Left + title.Margin.Right + status;
+    /// <summary>The reserve for a page's title row: the title with its margin.</summary>
+    public static Func<double> TitleRow(FrameworkElement title) =>
+        () => title.ActualWidth + title.Margin.Left + title.Margin.Right;
 
     private void TranslationChanged(object? sender, PropertyChangedEventArgs e)
     {

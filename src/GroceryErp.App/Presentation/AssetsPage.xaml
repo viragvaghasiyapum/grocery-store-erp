@@ -9,7 +9,7 @@
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European"
     ScrollViewer.CanContentScroll="False">
   <Grid Margin="14,8,14,8">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <DockPanel x:Name="TitleRow" Margin="0,0,0,6">
       <!-- Most important first: when the row is narrow the last actions fold behind More. -->
       <StackPanel x:Name="TitleActions" DockPanel.Dock="Right" Orientation="Horizontal">
@@ -23,7 +23,6 @@
         </Menu>
       </StackPanel>
       <TextBlock x:Name="TitleText" Style="{StaticResource PageTitle}" Text="{l:Tr Assets_Title}"/>
-      <p:PagerBar x:Name="Pager"/>
     </DockPanel>
     <WrapPanel Grid.Row="1" Margin="0,0,0,2">
       <ui:TextBox x:Name="AssetSearchBox" Width="260" Margin="0,0,6,4" PlaceholderText="{l:Tr Assets_SearchHint}"
@@ -46,7 +45,8 @@
       </DataGrid>
       <TextBlock x:Name="EmptyText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" Text="{l:Tr Assets_Empty}"/>
     </Grid>
-    <Grid x:Name="TimelineOverlay" Grid.RowSpan="3" Panel.ZIndex="10" Visibility="Collapsed">
+    <p:PagerBar x:Name="Pager" Grid.Row="3"/>
+    <Grid x:Name="TimelineOverlay" Grid.RowSpan="4" Panel.ZIndex="10" Visibility="Collapsed">
       <Border x:Name="TimelineBackdrop" Background="#88000000" MouseDown="TimelineBackdrop_OnMouseDown"/>
       <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
         <Border x:Name="TimelinePanel" Grid.Column="1" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"

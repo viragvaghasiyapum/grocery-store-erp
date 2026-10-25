@@ -21,6 +21,13 @@
         <Setter Property="ColumnHeaderHeight" Value="32"/>
         <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
       </Style>
+      <!-- A table's select box, header or row: just the box, centred, so a narrow column never cuts it. -->
+      <Style x:Key="RowCheck" TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+        <Setter Property="MinWidth" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+      </Style>
       <p:ExpiryBucketConverter x:Key="ExpiryBucketConverter"/>
       <p:PurchaseLineKindConverter x:Key="PurchaseLineKindConverter"/>
       <p:LotOriginConverter x:Key="LotOriginConverter"/>

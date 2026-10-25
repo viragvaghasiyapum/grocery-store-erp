@@ -18,7 +18,7 @@
                 AutomationProperties.Name="{l:Tr MoneyOut_Title}">
       <TabItem Header="{l:Tr MoneyOut_Damages}">
         <Grid>
-          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <WrapPanel>
             <ui:TextBox x:Name="DamageSearch" Width="210" Margin="0,0,6,4" PlaceholderText="{l:Tr MoneyOut_DamageSearch}"
                         TextChanged="Search_OnTextChanged" AutomationProperties.Name="{l:Tr MoneyOut_DamageSearch}"/>
@@ -62,11 +62,12 @@
             <TextBlock x:Name="DamageEmpty" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" Text="{l:Tr MoneyOut_DamagesEmpty}"/>
             <p:CorrectionDetailsPanel x:Name="DamageDetails" Grid.Column="1" EditRequested="DamageDetails_OnEdit" VoidRequested="DamageDetails_OnVoid"/>
           </Grid>
+          <p:PagerBar x:Name="DamagePager" Grid.Row="2"/>
         </Grid>
       </TabItem>
       <TabItem Header="{l:Tr MoneyOut_Expenses}">
         <Grid>
-          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <WrapPanel>
             <ui:TextBox x:Name="ExpenseSearch" Width="210" Margin="0,0,6,4" PlaceholderText="{l:Tr MoneyOut_ExpenseSearch}"
                         TextChanged="Search_OnTextChanged" AutomationProperties.Name="{l:Tr MoneyOut_ExpenseSearch}"/>
@@ -101,11 +102,12 @@
             <TextBlock x:Name="ExpenseEmpty" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" Text="{l:Tr MoneyOut_ExpensesEmpty}"/>
             <p:CorrectionDetailsPanel x:Name="ExpenseDetails" Grid.Column="1" EditRequested="ExpenseDetails_OnEdit" VoidRequested="ExpenseDetails_OnVoid"/>
           </Grid>
+          <p:PagerBar x:Name="ExpensePager" Grid.Row="2"/>
         </Grid>
       </TabItem>
       <TabItem Header="{l:Tr MoneyOut_Employees}">
         <Grid>
-          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <WrapPanel>
             <ui:TextBox x:Name="EmployeeSearch" Width="220" Margin="0,0,6,4" PlaceholderText="{l:Tr MoneyOut_EmployeeSearch}"
                         TextChanged="Search_OnTextChanged" AutomationProperties.Name="{l:Tr MoneyOut_EmployeeSearch}"/>
@@ -132,11 +134,12 @@
             <TextBlock x:Name="EmployeeEmpty" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" Text="{l:Tr MoneyOut_EmployeesEmpty}"/>
             <p:CorrectionDetailsPanel x:Name="EmployeeDetails" Grid.Column="1"/>
           </Grid>
+          <p:PagerBar x:Name="EmployeePager" Grid.Row="2"/>
         </Grid>
       </TabItem>
       <TabItem x:Name="PaymentsTab" Header="{l:Tr MoneyOut_PostedPayments}" SizeChanged="TabHeader_OnSizeChanged">
         <Grid>
-          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <WrapPanel>
             <TextBlock Style="{StaticResource FilterLabel}" Text="{l:Tr Reports_From}"/>
             <TextBox x:Name="SalaryFromMonth" Width="80" Margin="0,0,6,4" MaxLength="7" ToolTip="YYYY-MM" TextChanged="Search_OnTextChanged"
@@ -172,19 +175,20 @@
             <TextBlock x:Name="SalaryEmpty" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" Text="{l:Tr MoneyOut_PaymentsEmpty}"/>
             <p:CorrectionDetailsPanel x:Name="SalaryDetails" Grid.Column="1" EditRequested="SalaryDetails_OnEdit" VoidRequested="SalaryDetails_OnVoid"/>
           </Grid>
+          <p:PagerBar x:Name="SalaryPager" Grid.Row="2"/>
         </Grid>
       </TabItem>
     </TabControl>
-    <!-- The tab row is the page's title row: right of the headers, the active tab's status line and
-         page arrows, then its actions, most important first; Expenses folds its last ones into More. -->
+    <!-- The tab row is the page's title row: right of the headers, the active tab's actions, most
+         important first; Expenses folds its last ones into More. Status and page arrows are in each
+         tab's footer. -->
     <Grid x:Name="TabActions" Panel.ZIndex="1" VerticalAlignment="Top">
-      <DockPanel x:Name="DamageActions">
+      <DockPanel x:Name="DamageActions" LastChildFill="False">
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
           <Button Style="{StaticResource ToolbarButton}" Margin="0" Click="RecordDamage_OnClick" Content="{l:Tr MoneyOut_RecordDamage}" FontWeight="SemiBold"/>
         </StackPanel>
-        <p:PagerBar x:Name="DamagePager"/>
       </DockPanel>
-      <DockPanel x:Name="ExpenseActions" Visibility="Collapsed">
+      <DockPanel x:Name="ExpenseActions" Visibility="Collapsed" LastChildFill="False">
         <StackPanel x:Name="ExpenseButtons" DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
           <Button Style="{StaticResource ToolbarButton}" Click="NewExpense_OnClick" Content="{l:Tr MoneyOut_NewExpense}" FontWeight="SemiBold"/>
           <Button Style="{StaticResource ToolbarButton}" Click="RepeatExpense_OnClick" Content="{l:Tr MoneyOut_RepeatLastMonth}"/>
@@ -195,23 +199,18 @@
             <MenuItem x:Name="ExpenseMore" Header="{l:Tr Common_MoreActions}"/>
           </Menu>
         </StackPanel>
-        <p:PagerBar x:Name="ExpensePager"/>
       </DockPanel>
-      <DockPanel x:Name="EmployeeActions" Visibility="Collapsed">
+      <DockPanel x:Name="EmployeeActions" Visibility="Collapsed" LastChildFill="False">
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
           <Button Style="{StaticResource ToolbarButton}" Click="NewEmployee_OnClick" Content="{l:Tr MoneyOut_NewEmployee}" FontWeight="SemiBold"/>
           <Button x:Name="EditEmployeeButton" Style="{StaticResource ToolbarButton}" Margin="0" IsEnabled="False" Click="EditEmployee_OnClick" Content="{l:Tr Catalog_Edit}"/>
         </StackPanel>
-        <TextBlock x:Name="EmployeeStatus" Style="{StaticResource StatusText}" Margin="0,0,12,0" AutomationProperties.LiveSetting="Polite"
-                   ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
       </DockPanel>
-      <DockPanel x:Name="SalaryActions" Visibility="Collapsed">
+      <DockPanel x:Name="SalaryActions" Visibility="Collapsed" LastChildFill="False">
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
           <Button Style="{StaticResource ToolbarButton}" Click="PrepareSalary_OnClick" Content="{l:Tr MoneyOut_PrepareSalary}" FontWeight="SemiBold"/>
           <Button Style="{StaticResource ToolbarButton}" Margin="0" Click="RecordAdvance_OnClick" Content="{l:Tr MoneyOut_RecordAdvance}"/>
         </StackPanel>
-        <TextBlock x:Name="SalaryStatus" Style="{StaticResource StatusText}" Margin="0,0,12,0" AutomationProperties.LiveSetting="Polite"
-                   ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
       </DockPanel>
     </Grid>
   </Grid>

@@ -107,17 +107,16 @@ public sealed class PackagedOperatorJourneyTests
             Enter(purchase, "InvoiceBox", "PKG-INV-001");
             Enter(purchase, "ProductSearchBox", barcode);
             Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
-            try { await WaitUntilAsync(() => PurchaseRows(purchase).Length >= 2, TimeSpan.FromSeconds(10)); }
+            try { await WaitUntilAsync(() => PurchaseRows(purchase).Length >= 1, TimeSpan.FromSeconds(10)); }
             catch (TimeoutException)
             {
                 throw new TimeoutException($"Purchase scan did not add a line: rows={PurchaseRows(purchase).Length}, " +
                     $"search={Find(purchase, "ProductSearchBox").AsTextBox().Text}, " +
                     $"error={Find(purchase, "ErrorText").Name}");
             }
-            // Columns: line type, product, expense category, batch, mfg date, expiry, quantity, free, rate.
-            EditPurchaseCell(purchase, 3, "PKG-BATCH");
-            EditPurchaseCell(purchase, 5, DateTime.Today.AddYears(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
-            EditPurchaseCell(purchase, 8, "20");
+            EditPurchaseCell(purchase, "Batch", "PKG-BATCH");
+            EditPurchaseCell(purchase, "Expiry", DateTime.Today.AddYears(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            EditPurchaseCell(purchase, "Rate", "20");
             Click(purchase, "PostButton");
             await WaitUntilAsync(() => PurchaseExists(store), TimeSpan.FromSeconds(10));
             foreach (Window prompt in app.GetAllTopLevelWindows(automation).Where(window =>
@@ -240,13 +239,14 @@ public sealed class PackagedOperatorJourneyTests
         Find(purchase, "LinesGrid").FindAllDescendants()
             .Where(element => element.ControlType.ToString() == "DataItem").ToArray();
 
-    private static void EditPurchaseCell(Window purchase, int column, string value)
+    // Finds the scanned line's cell by its column header, so added or hidden columns do not move it.
+    private static void EditPurchaseCell(Window purchase, string header, string value)
     {
-        AutomationElement row = PurchaseRows(purchase)[1];
+        AutomationElement row = PurchaseRows(purchase)[0];
         AutomationElement[] cells = row.FindAllChildren();
-        if (cells.Length <= column)
-            throw new InvalidOperationException($"Purchase column {column} was not found ({cells.Length} cells).");
-        AutomationElement cell = cells[column];
+        AutomationElement cell = cells.FirstOrDefault(element => element.Patterns.TableItem.PatternOrDefault?
+                .ColumnHeaderItems.ValueOrDefault?.FirstOrDefault()?.Name == header)
+            ?? throw new InvalidOperationException($"Purchase column {header} was not found ({cells.Length} cells).");
         cell.DoubleClick();
         Keyboard.Type(value);
         Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.TAB);

@@ -10,7 +10,7 @@
   <Grid Margin="14,8,14,8">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-      <RowDefinition Height="*"/>
+      <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
     <DockPanel Margin="0,0,0,6">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
@@ -21,7 +21,6 @@
         <Button x:Name="LedgerButton" Style="{StaticResource ToolbarButton}" Margin="0" IsEnabled="False" Click="Ledger_OnClick" Content="{l:Tr Purchasing_VendorLedger}"/>
       </StackPanel>
       <TextBlock Style="{StaticResource PageTitle}" Text="{l:Tr Purchasing_Vendors}"/>
-      <p:PagerBar x:Name="Pager"/>
     </DockPanel>
     <WrapPanel x:Name="FilterBar" Grid.Row="1" Margin="0,0,0,2">
       <ui:TextBox x:Name="SearchBox" Width="280" Margin="0,0,6,4" PlaceholderText="{l:Tr Purchasing_VendorSearch}"
@@ -35,28 +34,18 @@
       <CheckBox x:Name="BalanceFilter" Margin="4,0,12,4" VerticalAlignment="Center" Click="Check_OnClick" Content="{l:Tr Purchasing_WithBalance}"/>
       <Button Style="{StaticResource ToolbarButton}" Margin="0,0,0,4" Click="ClearFilters_OnClick" Content="{l:Tr Purchasing_ClearFilters}"/>
     </WrapPanel>
-    <p:SelectionBar x:Name="Selection" Grid.Row="1" Covers="{Binding ElementName=FilterBar}">
-      <p:SelectionBar.Actions>
-        <Menu VerticalAlignment="Center" Background="Transparent">
-          <MenuItem Header="{l:Tr Catalog_BulkActions}">
-            <MenuItem Click="Activate_OnClick" Header="{l:Tr Purchasing_ActivateSelectedVendors}"/>
-            <MenuItem Click="Deactivate_OnClick" Header="{l:Tr Purchasing_DeactivateSelectedVendors}"/>
-          </MenuItem>
-        </Menu>
-      </p:SelectionBar.Actions>
-    </p:SelectionBar>
     <Grid Grid.Row="2">
       <DataGrid x:Name="VendorsGrid" Style="{StaticResource CompactTableGrid}" SelectionMode="Single"
                 SelectionChanged="VendorsGrid_OnSelectionChanged" MouseDoubleClick="VendorsGrid_OnDoubleClick"
                 PreviewKeyDown="VendorsGrid_OnPreviewKeyDown" AutomationProperties.Name="{l:Tr Purchasing_Vendors}">
         <DataGrid.Columns>
-          <DataGridTemplateColumn Width="40" CanUserReorder="False" CanUserResize="False">
+          <DataGridTemplateColumn Width="48" MinWidth="44" CanUserReorder="False">
             <DataGridTemplateColumn.HeaderTemplate><DataTemplate>
-              <CheckBox HorizontalAlignment="Center" IsThreeState="True" Loaded="PageCheck_OnLoaded" Click="PageCheck_OnClick"
+              <CheckBox Style="{StaticResource RowCheck}" IsThreeState="True" Loaded="PageCheck_OnLoaded" Click="PageCheck_OnClick"
                         AutomationProperties.Name="{l:Tr Selection_ThisPage}"/>
             </DataTemplate></DataGridTemplateColumn.HeaderTemplate>
             <DataGridTemplateColumn.CellTemplate><DataTemplate>
-              <CheckBox HorizontalAlignment="Center" Loaded="RowCheck_OnLoaded" Click="RowCheck_OnClick"
+              <CheckBox Style="{StaticResource RowCheck}" Loaded="RowCheck_OnLoaded" Click="RowCheck_OnClick"
                         AutomationProperties.Name="{l:Tr Purchasing_SelectVendor}"/>
             </DataTemplate></DataGridTemplateColumn.CellTemplate>
           </DataGridTemplateColumn>
@@ -75,5 +64,19 @@
       <TextBlock x:Name="EmptyText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
                  TextWrapping="Wrap" Text="{l:Tr Purchasing_VendorsEmpty}"/>
     </Grid>
+    <p:PagerBar x:Name="Pager" Grid.Row="3">
+      <p:PagerBar.Selection>
+        <p:SelectionBar x:Name="Selection">
+          <p:SelectionBar.Actions>
+            <Menu VerticalAlignment="Center" Background="Transparent">
+              <MenuItem Header="{l:Tr Catalog_BulkActions}">
+                <MenuItem Click="Activate_OnClick" Header="{l:Tr Purchasing_ActivateSelectedVendors}"/>
+                <MenuItem Click="Deactivate_OnClick" Header="{l:Tr Purchasing_DeactivateSelectedVendors}"/>
+              </MenuItem>
+            </Menu>
+          </p:SelectionBar.Actions>
+        </p:SelectionBar>
+      </p:PagerBar.Selection>
+    </p:PagerBar>
   </Grid>
 </Page>

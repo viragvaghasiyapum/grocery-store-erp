@@ -14,7 +14,7 @@
     </Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-      <RowDefinition Height="*"/>
+      <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
     <DockPanel Margin="0,0,0,6">
@@ -31,7 +31,6 @@
         </Menu>
       </StackPanel>
       <TextBlock Style="{StaticResource PageTitle}" Text="{l:Tr Catalog_Title}"/>
-      <p:PagerBar x:Name="Pager"/>
     </DockPanel>
 
     <WrapPanel x:Name="FilterBar" Grid.Row="1" Margin="0,0,0,2">
@@ -78,40 +77,19 @@
       <CheckBox x:Name="LooseFilter" Margin="0,0,12,4" Click="CheckFilter_OnClick" Content="{l:Tr Catalog_Loose}"/>
     </WrapPanel>
 
-    <p:SelectionBar x:Name="Selection" Grid.Row="1" Covers="{Binding ElementName=FilterBar}">
-      <p:SelectionBar.Actions>
-        <Menu VerticalAlignment="Center" Background="Transparent">
-          <MenuItem Header="{l:Tr Catalog_BulkActions}">
-            <MenuItem Click="BulkRemove_OnClick" Header="{l:Tr Catalog_RemoveSelected}"/>
-            <MenuItem Click="BulkRestore_OnClick" Header="{l:Tr Catalog_RestoreSelected}"/>
-            <Separator/>
-            <MenuItem Click="BulkCategory_OnClick" Header="{l:Tr Catalog_SetCategory}"/>
-            <MenuItem Click="BulkTax_OnClick" Header="{l:Tr Catalog_SetTaxRate}"/>
-            <MenuItem Click="BulkClass_OnClick" Header="{l:Tr Catalog_SetProductClass}"/>
-            <Separator/>
-            <MenuItem Click="BulkLabels_OnClick" Header="{l:Tr Catalog_PrintLabelsSelected}"/>
-            <MenuItem Click="BulkBarcode_OnClick" Header="{l:Tr Catalog_GenerateBarcodeSelected}"/>
-            <Separator/>
-            <MenuItem Click="Reconcile_OnClick" Header="{l:Tr Stock_ReconcileSelected}"/>
-            <MenuItem Click="WriteOffExpired_OnClick" Header="{l:Tr Catalog_WriteOffExpiredSelected}"/>
-          </MenuItem>
-        </Menu>
-      </p:SelectionBar.Actions>
-    </p:SelectionBar>
-
     <Grid Grid.Row="3">
       <DataGrid x:Name="ProductsGrid" Style="{StaticResource CompactTableGrid}" RowHeight="40" SelectionMode="Single"
                 SelectionChanged="ProductsGrid_OnSelectionChanged" MouseDoubleClick="ProductsGrid_OnDoubleClick"
                 PreviewKeyDown="ProductsGrid_OnPreviewKeyDown" AutomationProperties.Name="{l:Tr Catalog_Title}">
         <DataGrid.Columns>
-          <DataGridTemplateColumn Width="40" CanUserReorder="False" CanUserResize="False">
+          <DataGridTemplateColumn Width="48" MinWidth="44" CanUserReorder="False">
             <DataGridTemplateColumn.HeaderTemplate><DataTemplate>
-              <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" IsThreeState="True"
+              <CheckBox Style="{StaticResource RowCheck}" IsThreeState="True"
                         Loaded="PageSelectionCheck_OnLoaded" Click="PageSelectionCheck_OnClick"
                         AutomationProperties.Name="{l:Tr Selection_ThisPage}"/>
             </DataTemplate></DataGridTemplateColumn.HeaderTemplate>
             <DataGridTemplateColumn.CellTemplate><DataTemplate>
-              <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" Loaded="ProductCheck_OnLoaded"
+              <CheckBox Style="{StaticResource RowCheck}" Loaded="ProductCheck_OnLoaded"
                         Click="ProductCheck_OnClick" AutomationProperties.Name="{l:Tr Catalog_SelectProduct}"/>
             </DataTemplate></DataGridTemplateColumn.CellTemplate>
           </DataGridTemplateColumn>
@@ -161,6 +139,31 @@
                  TextWrapping="Wrap" TextAlignment="Center" MaxWidth="420" Text="{l:Tr Catalog_Empty}"/>
     </Grid>
 
-    <p:ProductDetailsPanel x:Name="Details" Grid.Column="1" Grid.RowSpan="4" Margin="10,-8,-14,-8" Visibility="Collapsed"/>
+    <p:PagerBar x:Name="Pager" Grid.Row="4">
+      <p:PagerBar.Selection>
+        <p:SelectionBar x:Name="Selection">
+          <p:SelectionBar.Actions>
+            <Menu VerticalAlignment="Center" Background="Transparent">
+              <MenuItem Header="{l:Tr Catalog_BulkActions}">
+                <MenuItem Click="BulkRemove_OnClick" Header="{l:Tr Catalog_RemoveSelected}"/>
+                <MenuItem Click="BulkRestore_OnClick" Header="{l:Tr Catalog_RestoreSelected}"/>
+                <Separator/>
+                <MenuItem Click="BulkCategory_OnClick" Header="{l:Tr Catalog_SetCategory}"/>
+                <MenuItem Click="BulkTax_OnClick" Header="{l:Tr Catalog_SetTaxRate}"/>
+                <MenuItem Click="BulkClass_OnClick" Header="{l:Tr Catalog_SetProductClass}"/>
+                <Separator/>
+                <MenuItem Click="BulkLabels_OnClick" Header="{l:Tr Catalog_PrintLabelsSelected}"/>
+                <MenuItem Click="BulkBarcode_OnClick" Header="{l:Tr Catalog_GenerateBarcodeSelected}"/>
+                <Separator/>
+                <MenuItem Click="Reconcile_OnClick" Header="{l:Tr Stock_ReconcileSelected}"/>
+                <MenuItem Click="WriteOffExpired_OnClick" Header="{l:Tr Catalog_WriteOffExpiredSelected}"/>
+              </MenuItem>
+            </Menu>
+          </p:SelectionBar.Actions>
+        </p:SelectionBar>
+      </p:PagerBar.Selection>
+    </p:PagerBar>
+
+    <p:ProductDetailsPanel x:Name="Details" Grid.Column="1" Grid.RowSpan="5" Margin="10,-8,-14,-8" Visibility="Collapsed"/>
   </Grid>
 </Page>

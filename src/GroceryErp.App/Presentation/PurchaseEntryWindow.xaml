@@ -1,15 +1,16 @@
 <Window x:Class="GroceryErp.App.Presentation.PurchaseEntryWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
         xmlns:p="clr-namespace:GroceryErp.App.Presentation"
         Title="{l:Tr Purchasing_NewPurchase}" Width="1320" Height="700" MinWidth="940" MinHeight="560" WindowStartupLocation="CenterOwner"
+        FocusManager.FocusedElement="{Binding ElementName=ProductSearchBox}"
         FontFamily="{StaticResource AppFont}" NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
   <Grid Margin="14">
     <Grid.Resources>
       <BooleanToVisibilityConverter x:Key="BoolVisibility"/>
       <Style x:Key="StockLineText" TargetType="TextBlock"><Setter Property="Visibility" Value="{Binding IsStockLine, Converter={StaticResource BoolVisibility}}"/></Style>
       <Style x:Key="StockLineEdit" TargetType="TextBox"><Setter Property="Visibility" Value="{Binding IsStockLine, Converter={StaticResource BoolVisibility}}"/></Style>
-      <Style x:Key="ExpenseCategoryStyle" TargetType="ComboBox"><Setter Property="Visibility" Value="{Binding IsExpenseLine, Converter={StaticResource BoolVisibility}}"/></Style>
     </Grid.Resources>
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <StackPanel Margin="0,0,0,8">
@@ -18,15 +19,23 @@
       <p:FormErrorSummary x:Name="Summary"/>
     </StackPanel>
     <Grid Grid.Row="1">
-      <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-      <p:FormField x:Name="VendorField" Label="{l:Tr Purchasing_Vendor}" IsRequired="True" Margin="0,0,8,4"><ComboBox x:Name="VendorBox" DisplayMemberPath="Name" SelectedValuePath="Id"/></p:FormField>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <p:FormField x:Name="VendorField" Label="{l:Tr Purchasing_Vendor}" IsRequired="True" Margin="0,0,8,4"><ComboBox x:Name="VendorBox" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="VendorBox_OnSelectionChanged"/></p:FormField>
       <p:FormField x:Name="InvoiceField" Grid.Column="1" Label="{l:Tr Purchasing_Invoice}" Margin="8,0,8,4"><TextBox x:Name="InvoiceBox"/></p:FormField>
       <p:FormField x:Name="InvoiceDateField" Grid.Column="2" Label="{l:Tr Purchasing_InvoiceDate}" Margin="8,0,8,4"><DatePicker x:Name="InvoiceDateBox" SelectedDateFormat="Short"/></p:FormField>
-      <p:FormField x:Name="ReceivedField" Grid.Column="3" Label="{l:Tr Purchasing_Received}" IsRequired="True" Margin="8,0,0,4"><DatePicker x:Name="ReceivedDateBox" SelectedDateFormat="Short"/></p:FormField>
+      <p:FormField x:Name="ReceivedField" Grid.Column="3" Label="{l:Tr Purchasing_Received}" IsRequired="True" Margin="8,0,8,4"><DatePicker x:Name="ReceivedDateBox" SelectedDateFormat="Short"/></p:FormField>
+      <p:FormField x:Name="RatesField" Grid.Column="4" Label="{l:Tr Purchasing_RateBasis}" Margin="8,0,0,4">
+        <CheckBox x:Name="RatesIncludeTaxBox" Content="{l:Tr Purchasing_RatesIncludeGst}" ToolTip="{l:Tr Purchasing_RatesIncludeGstHint}"
+                  Checked="RatesIncludeTax_OnChanged" Unchecked="RatesIncludeTax_OnChanged"/>
+      </p:FormField>
     </Grid>
     <Grid Grid.Row="2" Margin="0,8,0,4">
       <Grid.ColumnDefinitions><ColumnDefinition Width="280"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-      <TextBox x:Name="ProductSearchBox" KeyDown="ProductSearchBox_OnKeyDown" ToolTip="{l:Tr Purchasing_ProductSearchHint}"/>
+      <TextBox x:Name="ProductSearchBox" KeyDown="ProductSearchBox_OnKeyDown" ToolTip="{l:Tr Purchasing_ProductSearchHint}"
+               AutomationProperties.Name="{l:Tr Purchasing_FindProduct}"/>
+      <!-- Several matches open under the search box; the chosen product is added as a line. -->
+      <p:ProductChoices x:Name="ProductChoices" PlacementTarget="{Binding ElementName=ProductSearchBox}"
+                        Picked="ProductChoices_OnPicked" Closed="ProductChoices_OnClosed"/>
       <Button Grid.Column="1" Margin="8,0,0,0" Click="FindProduct_OnClick" Content="{l:Tr Purchasing_FindProduct}"/>
       <StackPanel Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center">
         <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="{l:Tr Purchasing_ProductSearchHint}"/>
@@ -34,25 +43,68 @@
         <TextBlock FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="{l:Tr Purchasing_CopyDownHint}" TextWrapping="Wrap"/>
       </StackPanel>
     </Grid>
-    <DataGrid Style="{StaticResource CatalogGrid}" x:Name="LinesGrid" Grid.Row="3" ItemsSource="{Binding Lines}" AutoGenerateColumns="False" CanUserAddRows="True" IsReadOnly="False"
+    <!-- Lines come only from the search box. Type and expense category are always-visible lists that
+         change the line directly, so their columns never enter the grid's edit mode. -->
+    <DataGrid Style="{StaticResource CatalogGrid}" x:Name="LinesGrid" Grid.Row="3" ItemsSource="{Binding Lines}" AutoGenerateColumns="False"
+              CanUserAddRows="False" CanUserDeleteRows="False" IsReadOnly="False"
               Margin="0,4,0,0" GridLinesVisibility="All" HeadersVisibility="Column" RowHeight="34" ColumnHeaderHeight="34"
-              CurrentCellChanged="LinesGrid_OnCurrentCellChanged" CellEditEnding="LinesGrid_OnCellEditEnding"
+              CurrentCellChanged="LinesGrid_OnCurrentCellChanged" PreparingCellForEdit="LinesGrid_OnPreparingCellForEdit"
+              CellEditEnding="LinesGrid_OnCellEditEnding" Binding.SourceUpdated="LinesGrid_OnSourceUpdated"
               PreviewKeyDown="LinesGrid_OnPreviewKeyDown" AutomationProperties.Name="{l:Tr Purchasing_Lines}">
+      <DataGrid.ContextMenu>
+        <ContextMenu>
+          <MenuItem Header="{l:Tr Purchasing_RemoveLine}" InputGestureText="Ctrl+Del" Click="RemoveSelectedLines_OnClick"/>
+        </ContextMenu>
+      </DataGrid.ContextMenu>
       <DataGrid.Columns>
-        <DataGridComboBoxColumn x:Name="LineKindColumn" Width="105" Header="{l:Tr Purchasing_LineType}" SelectedValueBinding="{Binding LineKind, UpdateSourceTrigger=PropertyChanged}" SelectedValuePath="Code" DisplayMemberPath="Label"/>
-        <DataGridComboBoxColumn Width="155" Header="{l:Tr Catalog_Name}" SelectedValueBinding="{Binding ProductId}" SelectedValuePath="Id" DisplayMemberPath="Name" x:Name="ProductColumn"/>
-        <DataGridComboBoxColumn x:Name="ExpenseCategoryColumn" Width="140" Header="{l:Tr Purchasing_ExpenseCategory}" SelectedValueBinding="{Binding ExpenseCategoryId}" SelectedValuePath="Id" DisplayMemberPath="Name" ElementStyle="{StaticResource ExpenseCategoryStyle}" EditingElementStyle="{StaticResource ExpenseCategoryStyle}"/>
+        <DataGridTemplateColumn Width="44" MinWidth="40" IsReadOnly="True" CanUserReorder="False">
+          <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate>
+              <Button Click="RemoveLine_OnClick" Focusable="False" Padding="0" Width="28" Height="26" MinWidth="0" MinHeight="0"
+                      Content="{ui:SymbolIcon Delete20}"
+                      ToolTip="{l:Tr Purchasing_RemoveLineHint}" AutomationProperties.Name="{l:Tr Purchasing_RemoveLine}"/>
+            </DataTemplate>
+          </DataGridTemplateColumn.CellTemplate>
+        </DataGridTemplateColumn>
+        <DataGridTemplateColumn x:Name="LineKindColumn" Width="125" IsReadOnly="True" Header="{l:Tr Purchasing_LineType}">
+          <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate>
+              <ComboBox Margin="2,1" Padding="8,2" MinHeight="0" VerticalAlignment="Center"
+                        ItemsSource="{Binding DataContext.LineKinds, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                        SelectedValuePath="Code" DisplayMemberPath="Label" SelectedValue="{Binding LineKind, UpdateSourceTrigger=PropertyChanged}"
+                        AutomationProperties.Name="{l:Tr Purchasing_LineType}"/>
+            </DataTemplate>
+          </DataGridTemplateColumn.CellTemplate>
+        </DataGridTemplateColumn>
+        <DataGridTextColumn x:Name="ProductColumn" Width="170" IsReadOnly="True" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}">
+          <DataGridTextColumn.ElementStyle>
+            <Style TargetType="TextBlock"><Setter Property="TextTrimming" Value="CharacterEllipsis"/><Setter Property="ToolTip" Value="{Binding ProductName}"/></Style>
+          </DataGridTextColumn.ElementStyle>
+        </DataGridTextColumn>
+        <!-- Shown only while a line is an Expense line. -->
+        <DataGridTemplateColumn x:Name="ExpenseCategoryColumn" Width="150" IsReadOnly="True" Visibility="Collapsed" Header="{l:Tr Purchasing_ExpenseCategory}">
+          <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate>
+              <ComboBox Margin="2,1" Padding="8,2" MinHeight="0" VerticalAlignment="Center"
+                        Visibility="{Binding IsExpenseLine, Converter={StaticResource BoolVisibility}}"
+                        ItemsSource="{Binding DataContext.ExpenseCategories, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                        SelectedValuePath="Id" DisplayMemberPath="Name" SelectedValue="{Binding ExpenseCategoryId, UpdateSourceTrigger=PropertyChanged}"
+                        AutomationProperties.Name="{l:Tr Purchasing_ExpenseCategory}"/>
+            </DataTemplate>
+          </DataGridTemplateColumn.CellTemplate>
+        </DataGridTemplateColumn>
         <DataGridTextColumn Width="75" Header="{l:Tr Stock_Batch}" Binding="{Binding Batch}" ElementStyle="{StaticResource StockLineText}" EditingElementStyle="{StaticResource StockLineEdit}"/>
         <DataGridTextColumn Width="80" Header="{l:Tr Purchasing_MfgDate}" Binding="{Binding ManufacturingDate}" ElementStyle="{StaticResource StockLineText}" EditingElementStyle="{StaticResource StockLineEdit}"/>
         <DataGridTextColumn Width="88" Header="{l:Tr Stock_Expiry}" Binding="{Binding Expiry}" ElementStyle="{StaticResource StockLineText}" EditingElementStyle="{StaticResource StockLineEdit}"/>
-        <DataGridTextColumn Width="75" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
-        <DataGridTextColumn Width="65" Header="{l:Tr Purchasing_FreeQty}" Binding="{Binding FreeQuantity}"/>
-        <DataGridTextColumn Width="70" Header="{l:Tr Purchasing_Rate}" Binding="{Binding Rate}"/>
-        <DataGridTextColumn Width="75" Header="{l:Tr Purchasing_Discount}" Binding="{Binding Discount}"/>
-        <DataGridTextColumn Width="60" Header="{l:Tr Purchasing_Gst}" Binding="{Binding TaxRate}"/>
-        <DataGridTextColumn Width="65" Header="MRP" Binding="{Binding Mrp}" ElementStyle="{StaticResource StockLineText}" EditingElementStyle="{StaticResource StockLineEdit}"/>
-        <DataGridTextColumn Width="75" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}" ElementStyle="{StaticResource StockLineText}" EditingElementStyle="{StaticResource StockLineEdit}"/>
-        <DataGridTextColumn Width="85" IsReadOnly="True" Header="{l:Tr Stock_UnitCost}" Binding="{Binding LandedCostText}" ElementStyle="{StaticResource StockLineText}"/>
+        <!-- Figures that change the totals update them while they are typed. -->
+        <DataGridTextColumn Width="75" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}"/>
+        <DataGridTextColumn Width="72" Header="{l:Tr Purchasing_FreeQty}" Binding="{Binding FreeQuantity, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}"/>
+        <DataGridTextColumn x:Name="RateColumn" Width="110" Header="{l:Tr Purchasing_Rate}" Binding="{Binding Rate, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}"/>
+        <DataGridTextColumn Width="82" Header="{l:Tr Purchasing_Discount}" Binding="{Binding Discount, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}"/>
+        <DataGridTextColumn Width="60" Header="{l:Tr Purchasing_Gst}" Binding="{Binding TaxRate, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}"/>
+        <DataGridTextColumn Width="65" Header="MRP" Binding="{Binding Mrp, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}" ElementStyle="{StaticResource StockLineText}" EditingElementStyle="{StaticResource StockLineEdit}"/>
+        <DataGridTextColumn Width="75" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}" ElementStyle="{StaticResource StockLineText}" EditingElementStyle="{StaticResource StockLineEdit}"/>
+        <DataGridTextColumn x:Name="CostColumn" Width="95" IsReadOnly="True" Header="{l:Tr Purchasing_CostExGst}" Binding="{Binding LandedCostText}" ElementStyle="{StaticResource StockLineText}"/>
         <DataGridTextColumn Width="65" IsReadOnly="True" Header="{l:Tr Purchasing_Margin}" Binding="{Binding MarginText}">
           <DataGridTextColumn.ElementStyle>
             <Style TargetType="TextBlock">
