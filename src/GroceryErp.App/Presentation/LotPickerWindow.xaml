@@ -15,7 +15,7 @@
     <DataGridTextColumn Width="110" Header="{l:Tr Stock_Batch}" Binding="{Binding BatchNumber}"/>
     <DataGridTextColumn Width="105" Header="{l:Tr Stock_Expiry}" Binding="{Binding ExpiryDate, StringFormat=dd MMM yyyy}"/>
     <DataGridTextColumn Width="90" Header="{l:Tr Stock_Quantity}" Binding="{Binding OnHand}"/>
-    <DataGridTextColumn Width="105" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}"/>
+    <DataGridTextColumn Width="105" Header="{l:Tr Pos_Price}" Binding="{Binding SellingPrice}"/>
     <DataGridTextColumn Width="90" Header="{l:Tr Stock_Mrp}" Binding="{Binding Mrp}"/>
    </DataGrid.Columns>
   </DataGrid>

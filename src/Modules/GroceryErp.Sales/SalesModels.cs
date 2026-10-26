@@ -49,6 +49,22 @@ public sealed record SaleLine(
     public string? LotCode { get; init; }
     public string? SnapshotProvenance { get; init; }
     public string? LegacyUnknownFields { get; init; }
+
+    /// <summary>Gets the name of the tax charged on the sale as it was at completion; none when no tax was charged.</summary>
+    public string? TaxLabel { get; init; }
+
+    /// <summary>Gets one piece's purchase tax, copied from the lot; null for a line saved before tax snapshots.</summary>
+    public Money? UnitCostTax { get; init; }
+
+    /// <summary>Gets one piece's purchase price including tax, copied from the lot.</summary>
+    public Money? UnitCostInclTax { get; init; }
+
+    /// <summary>Gets one piece's purchase price before tax.</summary>
+    public Money? PurchasePrice => UnitCostInclTax is { } incl && UnitCostTax is { } tax ? incl - tax : null;
+
+    /// <summary>Gets the tax charged as shown, so Before tax + Tax charged = Total on screen.</summary>
+    public decimal TaxChargedShown => TwoDecimals.Remainder(Total, Taxable);
+
     public string SkuDisplay => Sku ??
         (SnapshotProvenance == "LEGACY_SALE_LINE" ? "Legacy unknown" : "—");
     public string BatchDisplay => BatchNumber ??
@@ -144,9 +160,10 @@ public sealed record SaleHistoryActivity(IReadOnlyList<SaleReturnHistoryItem> Re
 public sealed record ReturnLineInput(long SaleLineId, Quantity Quantity, bool Resellable,
     ReturnRecreationInput? Recreation = null);
 
+/// <summary>The operator's review of a legacy line whose deleted product a return recreates; prices always include tax.</summary>
 public sealed record ReturnRecreationInput(string Sku, string ProductName, string? ProductNameLocal,
     long CategoryId, long UnitId, long TaxRateId, string TaxMode, string? HsnCode,
-    bool PriceIncludesTax, bool TrackExpiry, bool IsLoose, string ProductClass,
+    bool TrackExpiry, bool IsLoose, string ProductClass,
     DateOnly? ExpiryDate);
 
 public sealed record ReturnRecreationOption(long Id, string Label, long? RateScaled = null);
@@ -158,7 +175,7 @@ public sealed record ReturnRecreationOptions(
 public sealed record ReturnRecreationDraft(
     long SaleLineId, string SuggestedSku, string ProductName, string? ProductNameLocal,
     long? CategoryId, string? CategoryName, long? UnitId, string? UnitCode,
-    long? TaxRateId, Percent TaxRate, string? HsnCode, bool PriceIncludesTax,
+    long? TaxRateId, Percent TaxRate, string? HsnCode,
     bool? TrackExpiry, bool? IsLoose, string? ProductClass,
     string? BatchNumber, DateOnly? ExpiryDate, Money UnitCost, Money SellingPrice,
     Money? Mrp, IReadOnlyList<string> MissingFields)

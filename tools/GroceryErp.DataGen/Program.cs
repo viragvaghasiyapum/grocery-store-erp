@@ -171,13 +171,19 @@ void InsertPurchasesAndLots(SqliteConnection connection)
                 long cost = 20_000 + productId % 180 * 1000L;
                 long price = cost + Math.Max(5_000, cost / 4);
                 DateOnly expiry = received.AddDays(90 + random.Next(641));
+                // Every line is bought at GST 5% (tax rate 2) in Regular mode, so the booked cost is
+                // the purchase price before tax and the lot keeps the line's tax per piece.
                 connection.Execute("""
                     INSERT INTO purchase_line(id,purchase_id,line_no,product_id,batch_no,expiry_date,qty,unit_cost,
-                      tax_rate_pct,tax_amount,line_total,landed_unit_cost,mrp,selling_price)
-                    VALUES (@id,@purchase,@line,@product,@batch,@expiry,1000000,@cost,5000,500000,10500000,@cost,@mrp,@price);
+                      tax_rate_pct,tax_amount,line_total,landed_unit_cost,mrp,selling_price,
+                      tax_rate_id,tax_label_snapshot,landed_unit_tax,landed_unit_cost_incl_tax)
+                    VALUES (@id,@purchase,@line,@product,@batch,@expiry,1000000,@cost,5000,500000,10500000,@cost,@mrp,@price,
+                      2,'GST 5%',@unitTax,@inclTax);
                     INSERT INTO product_lot(id,product_id,lot_code,batch_no,purchase_line_id,vendor_id,received_date,
-                      expiry_date,unit_cost,mrp,selling_price,qty_received)
-                    VALUES (@id,@product,@lot,@batch,@id,@vendor,@received,@expiry,@cost,@mrp,@price,1000000);
+                      expiry_date,unit_cost,mrp,selling_price,qty_received,
+                      tax_rate_id_snapshot,tax_label_snapshot,tax_rate_pct_snapshot,unit_tax,unit_cost_incl_tax)
+                    VALUES (@id,@product,@lot,@batch,@id,@vendor,@received,@expiry,@cost,@mrp,@price,1000000,
+                      2,'GST 5%',5000,@unitTax,@inclTax);
                     UPDATE product_lot SET qty_on_hand=1000000 WHERE id=@id;
                     """, new
                 {
@@ -188,6 +194,8 @@ void InsertPurchasesAndLots(SqliteConnection connection)
                     batch = $"B{nextLot:D7}",
                     expiry = Iso(expiry),
                     cost,
+                    unitTax = UnitTax(cost),
+                    inclTax = cost + UnitTax(cost),
                     mrp = price + 10_000,
                     price,
                     lot = $"L{nextLot:D7}",
@@ -265,8 +273,10 @@ void InsertSales(SqliteConnection connection)
                 gross += lineGross; taxable += lineTaxable; tax += lineTax; costTotal += lineCost;
                 connection.Execute("""
                     INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,mrp,tax_rate_pct,
-                      taxable_amount,tax_amount,line_total,unit_cost,cost_amount,product_name_local,hsn_code,price_includes_tax)
-                    VALUES (@sale,@line,@product,@lot,@name,@qty,@price,@mrp,5000,@taxable,@tax,@total,@cost,@costAmount,@local,'1001',1);
+                      taxable_amount,tax_amount,line_total,unit_cost,cost_amount,product_name_local,hsn_code,price_includes_tax,
+                      tax_label_snapshot,unit_cost_tax,unit_cost_incl_tax)
+                    VALUES (@sale,@line,@product,@lot,@name,@qty,@price,@mrp,5000,@taxable,@tax,@total,@cost,@costAmount,@local,'1001',1,
+                      'GST 5%',@unitTax,@inclTax);
                     UPDATE product_lot SET qty_on_hand=qty_on_hand-@qty WHERE id=@lot;
                     """, new
                 {
@@ -282,6 +292,8 @@ void InsertSales(SqliteConnection connection)
                     tax = lineTax,
                     total = lineGross,
                     cost = unitCost,
+                    unitTax = UnitTax(unitCost),
+                    inclTax = unitCost + UnitTax(unitCost),
                     costAmount = lineCost,
                     local = localNames[productId],
                 }, transaction);
@@ -376,6 +388,8 @@ int TakeAvailableLot(int productId, DateOnly saleDate, long quantity)
 
 int Scaled(int value) => Math.Max(1, (int)Math.Round(value * scale, MidpointRounding.AwayFromZero));
 static string Iso(DateOnly value) => value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+// One piece's GST 5% on a before-tax fx3 cost, rounded half up as Money.PercentOf rounds.
+static long UnitTax(long cost) => (cost * 5000 + 50_000) / 100_000;
 static string Timestamp(DateOnly value) => $"{value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} 12:00:00";
 
 sealed class GeneratedLot(int id, DateOnly received, DateOnly expiry, long remaining)

@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
         xmlns:p="clr-namespace:GroceryErp.App.Presentation"
-        Title="{l:Tr Stock_AddDirectLot}" Width="540" Height="560" MinWidth="460" MinHeight="460"
+        Title="{l:Tr Stock_AddDirectLot}" Width="560" Height="640" MinWidth="460" MinHeight="480"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
         NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
   <Grid Margin="20">
@@ -16,7 +16,11 @@
     <ScrollViewer Grid.Row="2" Margin="0,8,0,0" VerticalScrollBarVisibility="Auto">
       <UniformGrid x:Name="Fields" Columns="2" Margin="0,0,8,0" VerticalAlignment="Top">
         <p:FormField x:Name="QuantityField" Label="{l:Tr Stock_Quantity}" IsRequired="True"><TextBox x:Name="QuantityBox"/></p:FormField>
-        <p:FormField x:Name="CostField" Label="{l:Tr Stock_UnitCost}" IsRequired="True"><TextBox x:Name="CostBox"/></p:FormField>
+        <p:FormField x:Name="CostField" Label="{l:Tr Stock_UnitCost}" IsRequired="True" Hint="{l:Tr Stock_PurchasePriceHint}"><TextBox x:Name="CostBox"/></p:FormField>
+        <p:FormField x:Name="TaxField" Label="{l:Tr Catalog_TaxRate}" IsRequired="True"><ComboBox x:Name="TaxBox" DisplayMemberPath="Name" SelectedValuePath="Id"/></p:FormField>
+        <!-- Worked out from the purchase price and tax rate; Purchase price + Tax/unit = incl. tax. -->
+        <p:FormField x:Name="UnitTaxField" Label="{l:Tr Stock_UnitTax}"><TextBox x:Name="UnitTaxBox" IsReadOnly="True" IsTabStop="False"/></p:FormField>
+        <p:FormField x:Name="InclTaxField" Label="{l:Tr Stock_CostInclTax}"><TextBox x:Name="InclTaxBox" IsReadOnly="True" IsTabStop="False"/></p:FormField>
         <p:FormField x:Name="PriceField" Label="{l:Tr Catalog_Price}" IsRequired="True"><TextBox x:Name="PriceBox"/></p:FormField>
         <p:FormField x:Name="MrpField" Label="{l:Tr Stock_Mrp}"><TextBox x:Name="MrpBox"/></p:FormField>
         <p:FormField x:Name="BatchField" Label="{l:Tr Stock_Batch}"><TextBox x:Name="BatchBox" MaxLength="40"/></p:FormField>

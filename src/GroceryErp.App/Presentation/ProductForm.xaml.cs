@@ -22,6 +22,10 @@ public partial class ProductForm : UserControl
     private CatalogService? _catalog;
     private IReadOnlyCollection<ProductBarcodeInput> _originalBarcodes = [];
     private bool _taxRequired;
+    private LotCostPreview? _firstLotCost;
+    // The first lot's tax follows the product's rate until the operator picks another one.
+    private bool _firstLotTaxChosen;
+    private bool _followingProductTax;
 
     private bool _tracking;
 
@@ -68,7 +72,8 @@ public partial class ProductForm : UserControl
             CategoryBox.ItemsSource = categories.Where(static item => item.IsActive).ToList();
             BrandBox.ItemsSource = (await catalog.GetBrandsAsync(cancellationToken)).Where(static item => item.IsActive).ToList();
             UnitBox.ItemsSource = await catalog.GetUnitsAsync(cancellationToken);
-            TaxRateBox.ItemsSource = (await catalog.GetTaxRatesAsync(cancellationToken)).Where(static item => item.IsActive).ToList();
+            IReadOnlyList<TaxRateItem> rates = await catalog.GetTaxRatesAsync(cancellationToken);
+            TaxRateBox.ItemsSource = rates.Where(static item => item.IsActive).ToList();
             FirstLotDateBox.SelectedDate = businessDate.ToDateTime(TimeOnly.MinValue);
             if (productId is null)
             {
@@ -76,6 +81,9 @@ public partial class ProductForm : UserControl
                 CategoryBox.SelectedIndex = 0;
                 UnitBox.SelectedIndex = 0;
                 TaxRateBox.SelectedIndex = 0;
+                _firstLotCost ??= new LotCostPreview(FirstLotCostBox, FirstLotTaxBox, FirstLotUnitTaxBox, FirstLotInclTaxBox);
+                _firstLotTaxChosen = false;
+                FollowProductTax(() => _firstLotCost.Load(rates, TaxRateBox.SelectedValue as long?));
                 if (categories.Count == 0)
                 {
                     Summary.ShowMessage(TranslationSource.Instance["Catalog_CategoryRequiredFirst"]);
@@ -115,7 +123,6 @@ public partial class ProductForm : UserControl
         UnitBox.SelectedValue = product.UomId;
         HsnBox.Text = product.HsnCode;
         TaxRateBox.SelectedValue = product.TaxRateId;
-        PricesIncludeTaxBox.IsChecked = product.PriceIncludesTax;
         LooseBox.IsChecked = product.IsLoose;
         PluBox.Text = product.PluCode;
         TrackExpiryBox.IsChecked = product.TrackExpiry;
@@ -131,6 +138,24 @@ public partial class ProductForm : UserControl
     private void LooseBox_OnChanged(object sender, RoutedEventArgs e)
     {
         if (PluBox is not null) PluBox.IsEnabled = LooseBox.IsChecked == true;
+    }
+
+    private void TaxRateBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_firstLotTaxChosen || FirstLotTaxBox?.ItemsSource is null) return;
+        FollowProductTax(() => FirstLotTaxBox.SelectedValue = TaxRateBox.SelectedValue);
+    }
+
+    private void FirstLotTaxBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_followingProductTax) _firstLotTaxChosen = true;
+    }
+
+    private void FollowProductTax(Action change)
+    {
+        _followingProductTax = true;
+        try { change(); }
+        finally { _followingProductTax = false; }
     }
 
     /// <summary>Validates and saves. Returns the product ID, or null when the form shows what to fix.</summary>
@@ -167,7 +192,7 @@ public partial class ProductForm : UserControl
             barcodes[0] = barcodes[0] with { IsPrimary = true };
         var input = new ProductInput(sku!, name!, LocalNameBox.Text, AliasesBox.Text, categoryId!.Value,
             BrandBox.SelectedValue as long?, unitId!.Value, hsn, taxRateId,
-            PricesIncludeTaxBox.IsChecked == true, loose, plu, TrackExpiryBox.IsChecked == true, shelfLife, expiryAlert,
+            loose, plu, TrackExpiryBox.IsChecked == true, shelfLife, expiryAlert,
             new Quantity(reorder ?? 0), price, mrp, barcodes)
         { ProductClass = ProductClassBox.SelectedValue as string ?? "SALEABLE" };
         try
@@ -210,6 +235,7 @@ public partial class ProductForm : UserControl
     {
         Quantity? quantity = form.Quantity(FirstLotQtyField, FirstLotQtyBox.Text);
         Money? cost = form.Money(FirstLotCostField, FirstLotCostBox.Text, required: true);
+        long? taxRateId = form.Choice(FirstLotTaxField, FirstLotTaxBox.SelectedValue);
         Money? price = form.Money(FirstLotPriceField, FirstLotPriceBox.Text, required: true);
         Money? mrp = form.Money(FirstLotMrpField, FirstLotMrpBox.Text);
         if (price is { } p && mrp is { } m && p.Value > m.Value) form.AddKey(FirstLotPriceField, "Error_PriceAboveMrp");
@@ -219,7 +245,8 @@ public partial class ProductForm : UserControl
         string? reason = form.Text(FirstLotReasonField, FirstLotReasonBox.Text, required: true, maxLength: 500);
         return quantity is null || cost is null || price is null || received is null || reason is null ? null
             : new NewProductLotInput(quantity.Value, cost.Value, price.Value, mrp, FirstLotBatchBox.Text, expiry,
-                received.Value, reason);
+                received.Value, reason)
+            { TaxRateId = taxRateId };
     }
 
     private FormField? FieldFor(ErrorCode code) => code switch

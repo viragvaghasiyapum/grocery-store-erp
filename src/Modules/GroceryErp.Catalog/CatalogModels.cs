@@ -19,7 +19,6 @@ public sealed record ProductInput(
     long UomId,
     string? HsnCode,
     long? TaxRateId,
-    bool PriceIncludesTax,
     bool IsLoose,
     string? PluCode,
     bool TrackExpiry,
@@ -33,9 +32,17 @@ public sealed record ProductInput(
     public string ProductClass { get; init; } = "SALEABLE";
 }
 
-public sealed record NewProductLotInput(Quantity Quantity, Money UnitCost,
+/// <summary>
+/// A new product's first lot. The purchase price is one piece's price before tax; the selling price
+/// and MRP include tax, as every price does.
+/// </summary>
+public sealed record NewProductLotInput(Quantity Quantity, Money PurchasePrice,
     Money SellingPrice, Money? Mrp, string? BatchNumber, DateOnly? ExpiryDate,
-    DateOnly ReceivedDate, string Reason);
+    DateOnly ReceivedDate, string Reason)
+{
+    /// <summary>Gets the tax rate the lot was bought at, or null for the product's rate.</summary>
+    public long? TaxRateId { get; init; }
+}
 
 public sealed class ProductListItem
 {
@@ -49,6 +56,9 @@ public sealed class ProductListItem
     public long StockScaled { get; init; }
     public long? SellingPriceScaled { get; init; }
     public long? MrpScaled { get; init; }
+
+    /// <summary>Gets the next lot to sell's purchase price including tax, the lot its price and MRP come from.</summary>
+    public long? CostInclTaxScaled { get; init; }
     public bool IsLoose { get; init; }
     public bool IsActive { get; init; }
     public bool HasBarcode { get; init; }
@@ -57,6 +67,7 @@ public sealed class ProductListItem
     public Quantity Stock => Quantity.FromScaled(StockScaled);
     public Money? SellingPrice => SellingPriceScaled is null ? null : Money.FromScaled(SellingPriceScaled.Value);
     public Money? Mrp => MrpScaled is null ? null : Money.FromScaled(MrpScaled.Value);
+    public Money? CostInclTax => CostInclTaxScaled is null ? null : Money.FromScaled(CostInclTaxScaled.Value);
 }
 
 public sealed record ProductSearchFilter(

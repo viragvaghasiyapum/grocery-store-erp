@@ -293,7 +293,7 @@ public sealed partial class CatalogService
     }
 
     // Projects a page of product IDs (selected by the inner query, which must return id and name)
-    // to list rows with stock total and the FEFO lot's price.
+    // to list rows with stock total and the FEFO lot's price, MRP and purchase price including tax.
     private static string ListSql(string visible) => $$"""
         WITH visible AS MATERIALIZED ({{visible}})
         SELECT p.id AS Id, p.sku AS Sku, p.name AS Name, p.name_local AS NameLocal,
@@ -301,6 +301,7 @@ public sealed partial class CatalogService
                COALESCE(total.quantity,0) AS StockScaled,
                COALESCE(l.selling_price,p.default_selling_price) AS SellingPriceScaled,
                COALESCE(l.mrp,p.default_mrp) AS MrpScaled,
+               l.unit_cost_incl_tax AS CostInclTaxScaled,
                p.is_loose AS IsLoose, p.is_active AS IsActive, p.product_class AS ProductClass,
                EXISTS(SELECT 1 FROM product_barcode pb WHERE pb.product_id=p.id AND pb.lot_id IS NULL) AS HasBarcode,
                EXISTS(SELECT 1 FROM product_lot ex WHERE ex.product_id=p.id AND ex.qty_on_hand>0

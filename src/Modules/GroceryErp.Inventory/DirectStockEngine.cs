@@ -1,5 +1,6 @@
 using Dapper;
 using GroceryErp.Core.Errors;
+using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
 
@@ -63,7 +64,10 @@ public sealed class DirectStockEngine : IDirectStockEngine
         var lot = tx.Connection.QuerySingleOrDefault<CountLot>("""
             SELECT id AS LotId,product_id AS ProductId,qty_on_hand AS OnHand,
                    quantity_version AS Version,unit_cost AS Cost,selling_price AS Price,
-                   mrp AS Mrp,expiry_date AS Expiry,batch_no AS Batch
+                   mrp AS Mrp,expiry_date AS Expiry,batch_no AS Batch,
+                   tax_rate_id_snapshot AS TaxRateId,tax_label_snapshot AS TaxLabel,
+                   tax_rate_pct_snapshot AS TaxRatePct,unit_tax AS UnitTax,
+                   unit_cost_incl_tax AS UnitCostInclTax
             FROM product_lot WHERE id=@lotId
             """, new { lotId }, tx.Transaction) ?? throw new DomainException(ErrorCode.NotFound, lotId);
         if (lot.Version != expectedVersion || lot.OnHand != oldQuantity)
@@ -104,12 +108,21 @@ public sealed class DirectStockEngine : IDirectStockEngine
         }
         else if (delta > 0)
         {
+            // Found stock is the counted lot's stock: same cost and the same saved tax. A lot saved
+            // before tax snapshots gets the product's rate as it is now.
+            LotTax tax = lot.UnitTax is { } unitTax && lot.UnitCostInclTax is { } inclTax
+                ? new LotTax(new TaxRateSnapshot(lot.TaxRateId, lot.TaxLabel, Percent.FromScaled(lot.TaxRatePct ?? 0)),
+                    new PurchaseUnitCost(Money.FromScaled(inclTax - unitTax), Money.FromScaled(unitTax),
+                        Money.FromScaled(inclTax), Money.FromScaled(lot.Cost)))
+                : LotTaxes.FromBooked(tx, LotTaxes.ProductRate(tx, lot.ProductId), Money.FromScaled(lot.Cost));
             sourceId = tx.Connection.ExecuteScalar<long>("""
                 INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,
-                  unit_cost,mrp,selling_price,qty_received,direct_reason)
-                VALUES (@productId,@code,@batch,@date,@expiry,@cost,@mrp,@price,@delta,@reason)
+                  unit_cost,mrp,selling_price,qty_received,direct_reason,
+                  tax_rate_id_snapshot,tax_label_snapshot,tax_rate_pct_snapshot,unit_tax,unit_cost_incl_tax)
+                VALUES (@productId,@code,@batch,@date,@expiry,@cost,@mrp,@price,@delta,@reason,
+                  @taxRateId,@taxLabel,@taxRatePct,@unitTax,@unitCostInclTax)
                 RETURNING id
-                """, new
+                """, tax.AddTo(new DynamicParameters(new
             {
                 productId = lot.ProductId,
                 code = "RC-" + operationId,
@@ -121,7 +134,7 @@ public sealed class DirectStockEngine : IDirectStockEngine
                 price = lot.Price,
                 delta,
                 reason
-            }, tx.Transaction);
+            })), tx.Transaction);
             Change(tx, sourceId.Value, delta, 1);
             CheckAffected(tx, [lotId, sourceId.Value]);
             kind = "DIRECT_ORIGIN";
@@ -198,6 +211,11 @@ public sealed class DirectStockEngine : IDirectStockEngine
         public long? Mrp { get; init; }
         public string? Expiry { get; init; }
         public string? Batch { get; init; }
+        public long? TaxRateId { get; init; }
+        public string? TaxLabel { get; init; }
+        public long? TaxRatePct { get; init; }
+        public long? UnitTax { get; init; }
+        public long? UnitCostInclTax { get; init; }
     }
     private sealed class CountResult
     {

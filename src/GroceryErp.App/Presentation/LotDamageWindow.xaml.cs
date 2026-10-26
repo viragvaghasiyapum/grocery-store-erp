@@ -66,7 +66,7 @@ public partial class LotDamageWindow : Window
     {
         _lot = lot;
         LotText.Text = TranslationSource.Instance.Format("Stock_LotDamageContext",
-            lot.ProductName, lot.LotCode, lot.OnHand, lot.UnitCost);
+            lot.ProductName, lot.LotCode, lot.OnHand, lot.PurchasePrice ?? lot.UnitCost);
         QuantityField.Hint = TranslationSource.Instance.Format("MoneyOut_DamageAvailable", lot.OnHand);
         ReasonBox.SelectedIndex = lot.ExpiryBucketCode == "EXPIRED" ? 0 : 5;
         UpdatePreview();

@@ -3,6 +3,7 @@ using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
+using GroceryErp.Inventory;
 
 namespace GroceryErp.Sales;
 
@@ -75,7 +76,8 @@ public sealed partial class SalesService
                    sl.batch_no_snapshot AS BatchNumber,
                    sl.expiry_date_snapshot AS ExpiryDate,sl.unit_cost AS UnitCost,
                    sl.unit_price AS SellingPrice,sl.mrp AS Mrp,
-                   sl.tax_mode_snapshot AS TaxMode
+                   sl.tax_mode_snapshot AS TaxMode,sl.tax_label_snapshot AS TaxLabel,
+                   sl.unit_cost_tax AS UnitCostTax,sl.unit_cost_incl_tax AS UnitCostInclTax
             FROM sale_line sl WHERE sl.id=@saleLineId
             """, new { saleLineId }, tx.Transaction);
         if (reviewed is not null)
@@ -100,7 +102,6 @@ public sealed partial class SalesService
                 TaxRateId = reviewed.TaxRateId,
                 TaxMode = reviewed.TaxMode,
                 HsnCode = reviewed.HsnCode?.Trim(),
-                PriceIncludesTax = reviewed.PriceIncludesTax,
                 TrackExpiry = reviewed.TrackExpiry,
                 IsLoose = reviewed.IsLoose,
                 ProductClass = reviewed.ProductClass,
@@ -111,7 +112,6 @@ public sealed partial class SalesService
                     product_name_snapshot=@ProductName,product_name_local_snapshot=@ProductNameLocal,
                     category_id_snapshot=@CategoryId,uom_id_snapshot=@UnitId,
                     tax_rate_id_snapshot=@TaxRateId,tax_mode_snapshot=@TaxMode,
-                    price_includes_tax_snapshot=@PriceIncludesTax,
                     track_expiry_snapshot=@TrackExpiry,is_loose_snapshot=@IsLoose,
                     expiry_date_snapshot=@ExpiryDate,snapshot_provenance='OPERATOR_REVIEW',
                     legacy_unknown_fields=NULL WHERE id=@returnLineId
@@ -124,13 +124,17 @@ public sealed partial class SalesService
                 row.UnitId,
                 row.TaxRateId,
                 row.TaxMode,
-                row.PriceIncludesTax,
                 row.TrackExpiry,
                 row.IsLoose,
                 row.ExpiryDate,
                 returnLineId
             }, tx.Transaction);
         }
+        // Every price includes tax. A line saved as excluding tax charged its rate on top, so the
+        // returned stock's price is that customer price, capped at MRP.
+        Money price = Money.FromScaled(row.SellingPrice);
+        if (!row.PriceIncludesTax) price += price.PercentOf(Percent.FromScaled(row.TaxRateScaled));
+        if (row.Mrp is { } mrp && price.Scaled > mrp) price = Money.FromScaled(mrp);
         if (row.ExpiryDate is { } expiry && expiry < returnDate)
             throw new DomainException(ErrorCode.ExpiredLot, expiry);
         long productId = row.ProductId;
@@ -174,11 +178,11 @@ public sealed partial class SalesService
                 throw new DomainException(ErrorCode.Validation, "No return SKU is available for the deleted product.");
             productId = tx.Connection.ExecuteScalar<long>("""
                 INSERT INTO product(sku,name,name_local,category_id,uom_id,hsn_code,
-                    tax_rate_id,price_includes_tax,is_loose,track_expiry,
+                    tax_rate_id,is_loose,track_expiry,
                     default_selling_price,default_mrp,product_class)
                 VALUES (@sku,@ProductName,@ProductNameLocal,@CategoryId,@UnitId,@HsnCode,
-                    @TaxRateId,@PriceIncludesTax,@IsLoose,@TrackExpiry,
-                    @SellingPrice,@Mrp,'SALEABLE') RETURNING id
+                    @TaxRateId,@IsLoose,@TrackExpiry,
+                    @price,@Mrp,'SALEABLE') RETURNING id
                 """, new
             {
                 sku,
@@ -188,21 +192,29 @@ public sealed partial class SalesService
                 row.UnitId,
                 row.HsnCode,
                 row.TaxRateId,
-                row.PriceIncludesTax,
                 row.IsLoose,
                 row.TrackExpiry,
-                row.SellingPrice,
+                price = price.Scaled,
                 row.Mrp
             }, tx.Transaction);
         }
+        // The lot keeps the sale line's tax label and the cost-side tax the line copied from the
+        // sold lot. A line saved before tax snapshots derives them from its booked cost and percent.
+        var rate = new TaxRateSnapshot(row.TaxRateId, row.TaxLabel, Percent.FromScaled(row.TaxRateScaled));
+        LotTax tax = row.UnitCostTax is { } unitTax && row.UnitCostInclTax is { } inclTax
+            ? new LotTax(rate, new PurchaseUnitCost(Money.FromScaled(inclTax - unitTax), Money.FromScaled(unitTax),
+                Money.FromScaled(inclTax), Money.FromScaled(row.UnitCost)))
+            : LotTaxes.FromBooked(tx, rate, Money.FromScaled(row.UnitCost));
         string lotCode = documentNumbers.Next(tx, DocType.Lot, returnDate);
         long lotId = tx.Connection.ExecuteScalar<long>("""
             INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,
-                unit_cost,mrp,selling_price,qty_received,origin_kind,origin_ref_id)
+                unit_cost,mrp,selling_price,qty_received,origin_kind,origin_ref_id,
+                tax_rate_id_snapshot,tax_label_snapshot,tax_rate_pct_snapshot,unit_tax,unit_cost_incl_tax)
             VALUES (@productId,@lotCode,@BatchNumber,@receivedDate,@ExpiryDate,
-                @UnitCost,@Mrp,@SellingPrice,@quantity,'CUSTOMER_RETURN',@returnLineId)
+                @UnitCost,@Mrp,@price,@quantity,'CUSTOMER_RETURN',@returnLineId,
+                @taxRateId,@taxLabel,@taxRatePct,@unitTax,@unitCostInclTax)
             RETURNING id
-            """, new
+            """, tax.AddTo(new DynamicParameters(new
         {
             productId,
             lotCode,
@@ -211,10 +223,10 @@ public sealed partial class SalesService
             row.ExpiryDate,
             row.UnitCost,
             row.Mrp,
-            row.SellingPrice,
+            price = price.Scaled,
             quantity = quantity.Scaled,
             returnLineId
-        }, tx.Transaction);
+        })), tx.Transaction);
         return (productId, lotId);
     }
 
@@ -279,7 +291,7 @@ public sealed partial class SalesService
         return new ReturnRecreationDraft(row.SaleLineId, suggested, row.ProductName, row.ProductNameLocal,
             row.CategoryId, row.CategoryName, row.UnitId, row.UnitCode,
             row.TaxRateId, Percent.FromScaled(row.TaxRateScaled), row.HsnCode,
-            row.PriceIncludesTax, row.TrackExpiry, row.IsLoose, row.ProductClass,
+            row.TrackExpiry, row.IsLoose, row.ProductClass,
             row.BatchNumber, row.ExpiryDate, Money.FromScaled(row.UnitCost),
             Money.FromScaled(row.SellingPrice), row.Mrp is null ? null : Money.FromScaled(row.Mrp.Value),
             missing)
@@ -332,5 +344,8 @@ public sealed partial class SalesService
         public long SellingPrice { get; init; }
         public long? Mrp { get; init; }
         public string? TaxMode { get; init; }
+        public string? TaxLabel { get; init; }
+        public long? UnitCostTax { get; init; }
+        public long? UnitCostInclTax { get; init; }
     }
 }

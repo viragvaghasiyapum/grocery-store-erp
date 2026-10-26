@@ -230,17 +230,12 @@ public sealed class ListFilterTests
             var catalog = new CatalogService(fixture.Database, new AuditLog(), fixture.Settings, clock);
             var inventory = new InventoryService(fixture.Database, new LotQuantities(fixture.Settings),
                 new DocNumberService(fixture.Settings), new PeriodGuard(fixture.Settings, clock), new AuditLog());
-            var reports = new ReportService(fixture.Database, fixture.Settings, clock);
 
             (await catalog.SearchPageAsync(new("BIZ-DATE", Limit: 8), cancellationToken: ct)).Items.Single().HasExpiredStock.ShouldBe(expired);
             (await catalog.SearchPageAsync(new(Limit: 100, ExpiryFilter: "EXPIRED"), cancellationToken: ct)).Items
                 .Any(item => item.Id == product).ShouldBe(expired);
             (await inventory.GetLotPageAsync(new LotFilter { ProductId = product }, null, 15, ct)).Items.Single()
                 .ExpiryBucketCode.ShouldBe(expired ? "EXPIRED" : "FRESH");
-            // Days left count from the business date; 35 days ahead is outside the 30-day alert.
-            TabularReport expiry = await reports.GetReportAsync(ReportKind.Expiry, new ReportFilter(Limit: 500), ct);
-            expiry.Rows.Where(static row => Equals(row.Values["Sku"], "BIZ-DATE"))
-                .Select(static row => row.Values["Status"]).ShouldBe(expired ? ["EXPIRED"] : []);
         }
     }
 
@@ -364,10 +359,14 @@ public sealed class ListFilterTests
             long alphonso = Seeds.Single(static seed => seed.Name == "Alphonso Mango").Id;
             long cleaner = Seeds.Single(static seed => seed.Internal).Id;
             long expenseCategory;
+            long gst5;
             using (var connection = Factory.Open())
+            {
                 expenseCategory = connection.ExecuteScalar<long>("SELECT id FROM expense_category ORDER BY id LIMIT 1");
+                gst5 = connection.ExecuteScalar<long>("SELECT id FROM tax_rate WHERE rate_pct=5000");
+            }
             PurchaseLineInput Line(long product, string kind = "PRODUCT") => new(product, "PB-" + product, null, Today.AddDays(300),
-                new Quantity(4), Quantity.Zero, new Money(20), Money.Zero, new Percent(5), new Money(40), new Money(30))
+                new Quantity(4), Quantity.Zero, new Money(20), Money.Zero, gst5, new Money(40), new Money(30))
             { LineKind = kind, ExpenseCategoryId = kind == "EXPENSE" ? expenseCategory : null };
             long Post(string invoice, int daysAgo, params PurchaseLineInput[] lines)
             {

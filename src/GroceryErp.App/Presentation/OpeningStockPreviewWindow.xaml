@@ -15,7 +15,7 @@
         <DataGridTextColumn Width="70" Header="{l:Tr Catalog_Row}" Binding="{Binding RowNumber}"/>
         <DataGridTextColumn Width="180" Header="{l:Tr Catalog_Sku}" Binding="{Binding Sku}"/>
         <DataGridTextColumn Width="100" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
-        <DataGridTextColumn Width="110" Header="{l:Tr Stock_UnitCost}" Binding="{Binding UnitCost}"/>
+        <DataGridTextColumn Width="110" Header="{l:Tr Stock_UnitCost}" Binding="{Binding PurchasePrice}"/>
         <DataGridTextColumn Width="120" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}"/>
         <DataGridTextColumn Width="300" Header="{l:Tr Catalog_ImportErrors}" Binding="{Binding ErrorText}"/>
       </DataGrid.Columns>

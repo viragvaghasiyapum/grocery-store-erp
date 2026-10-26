@@ -60,7 +60,8 @@
       <TextBox x:Name="MaxPriceBox" Width="70" Margin="0,0,0,4" TextChanged="Search_OnTextChanged" AutomationProperties.Name="{l:Tr Stock_MaxPrice}"/>
     </WrapPanel>
     <Grid Grid.Row="3">
-      <DataGrid x:Name="LotsGrid" Style="{StaticResource CompactTableGrid}" SelectionMode="Single"
+      <!-- The select box and lot code stay in view while the price columns scroll. -->
+      <DataGrid x:Name="LotsGrid" Style="{StaticResource CompactTableGrid}" SelectionMode="Single" FrozenColumnCount="2"
                 SelectionChanged="LotsGrid_OnSelectionChanged" MouseDoubleClick="LotsGrid_OnDoubleClick"
                 AutomationProperties.Name="{l:Tr Stock_Lots}">
         <DataGrid.Columns>
@@ -87,9 +88,14 @@
             </DataTemplate></DataGridTemplateColumn.CellTemplate>
           </DataGridTemplateColumn>
           <DataGridTextColumn Width="80" Header="{l:Tr Stock_OnHand}" Binding="{Binding OnHand}"/>
-          <DataGridTextColumn Width="78" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}"/>
-          <DataGridTextColumn Width="72" Header="{l:Tr Stock_Mrp}" Binding="{Binding Mrp}"/>
-          <DataGridTextColumn Width="80" Header="{l:Tr Stock_UnitCost}" Binding="{Binding UnitCost}"/>
+          <!-- Purchase price + Tax/unit = Purchase price incl. tax as shown; the tax column is the
+               rate the lot was bought at. -->
+          <DataGridTextColumn Width="92" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice, Converter={StaticResource Amount}}"/>
+          <DataGridTextColumn Width="76" Header="{l:Tr Stock_Mrp}" Binding="{Binding Mrp, Converter={StaticResource Amount}}"/>
+          <DataGridTextColumn Width="100" Header="{l:Tr Stock_UnitCost}" Binding="{Binding PurchasePrice, Converter={StaticResource Amount}}"/>
+          <DataGridTextColumn Width="82" Header="{l:Tr Purchasing_Gst}" Binding="{Binding TaxLabel, TargetNullValue=—}"/>
+          <DataGridTextColumn Width="76" Header="{l:Tr Stock_UnitTax}" Binding="{Binding UnitTaxShown, Converter={StaticResource Amount}}"/>
+          <DataGridTextColumn Width="118" Header="{l:Tr Stock_CostInclTax}" Binding="{Binding UnitCostInclTax, Converter={StaticResource Amount}}"/>
           <DataGridTextColumn Width="105" Header="{l:Tr Stock_Source}" Binding="{Binding OriginKind, Converter={StaticResource LotOriginConverter}}"/>
           <DataGridTextColumn Width="88" Header="{l:Tr Reports_Column_Received}" Binding="{Binding ReceivedDate, StringFormat=dd MMM yy}"/>
         </DataGrid.Columns>

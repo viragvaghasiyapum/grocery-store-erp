@@ -102,8 +102,16 @@
       <DataGridTextColumn Width="115" Header="{l:Tr Stock_Batch}" Binding="{Binding BatchDisplay,Converter={StaticResource LegacySnapshotTextConverter}}"/>
       <DataGridTextColumn Width="115" Header="{l:Tr Stock_Expiry}" Binding="{Binding ExpiryDisplay,Converter={StaticResource LegacySnapshotTextConverter}}"/>
       <DataGridTextColumn Width="85" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
-      <DataGridTextColumn Width="110" Header="{l:Tr Catalog_Price}" Binding="{Binding UnitPrice}"/>
-      <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Total}" Binding="{Binding Total}"/>
+      <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Price}" Binding="{Binding UnitPrice, Converter={StaticResource Amount}}"/>
+      <!-- The cost side, per piece, then the sale side from the line's saved amounts:
+           Before tax + Tax charged = Total as shown. -->
+      <DataGridTextColumn Width="100" Header="{l:Tr Stock_UnitCost}" Binding="{Binding PurchasePrice, Converter={StaticResource Amount}}"/>
+      <DataGridTextColumn Width="118" Header="{l:Tr Stock_CostInclTax}" Binding="{Binding UnitCostInclTax, Converter={StaticResource Amount}}"/>
+      <DataGridTextColumn Width="82" Header="{l:Tr Purchasing_Gst}" Binding="{Binding TaxLabel, TargetNullValue=—}"
+                          HeaderStyle="{StaticResource TableGroupHeader}" CellStyle="{StaticResource TableGroupCell}"/>
+      <DataGridTextColumn Width="100" Header="{l:Tr Sales_BeforeTax}" Binding="{Binding Taxable, Converter={StaticResource Amount}}"/>
+      <DataGridTextColumn Width="100" Header="{l:Tr Sales_TaxCharged}" Binding="{Binding TaxChargedShown, Converter={StaticResource Amount}}"/>
+      <DataGridTextColumn Width="110" Header="{l:Tr Purchasing_Total}" Binding="{Binding Total, Converter={StaticResource Amount}}"/>
      </DataGrid.Columns>
     </DataGrid>
      </TabItem>

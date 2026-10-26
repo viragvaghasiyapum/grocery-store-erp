@@ -18,7 +18,7 @@ An offline, single-user, single-PC grocery ERP for one shop: WPF on .NET 10, SQL
 
 `optimization*.md`, `audit.md`, `revised plan.md` and `luna/` are history. Don't treat them as current requirements.
 
-**Status (24 Oct 2026):** the old plan is fully implemented. The revised plan is implemented through **Phase 9** on **schema 37**: the direct-stock cutover (Phase 5), P/L heads with independent annual locks and snapshots (Phase 6), the simplified UI with SQL-side filters and reviewed bulk batches (Phase 7), the removal of the stock ledger, its screens and dead code, with verified compaction (Phase 8), and the full-scale review, upgrade confirmation and 1.1.0 release package (Phase 9). After it, the purchase entry update (25 Oct 2026, **schema 38**) added rates typed including GST, line removal, visible line lists and live totals. The operator feedback fixes (same day, no schema change) moved each table's row count, selection bar and page arrows into a footer (`PagerBar`, built in code like `SelectionBar` so the page's names work inside it) and made Billing list several name matches (`ProductChoices`) instead of opening Unknown barcode. Every record's detail view is now a `DetailPanel` placed by `DetailSplit` (beside the list or full width, remembered per screen); editing stays in dialog forms. What remains are human gates: hardware, target-PC, second-PC restore, native-Gujarati and operator sign-offs. Never claim them as passed.
+**Status (26 Oct 2026):** the old plan is fully implemented. The revised plan is implemented through **Phase 9** on **schema 37**: the direct-stock cutover (Phase 5), P/L heads with independent annual locks and snapshots (Phase 6), the simplified UI with SQL-side filters and reviewed bulk batches (Phase 7), the removal of the stock ledger, its screens and dead code, with verified compaction (Phase 8), and the full-scale review, upgrade confirmation and 1.1.0 release package (Phase 9). After it, the purchase entry update (25 Oct 2026, **schema 38**) added rates typed including GST, line removal, visible line lists and live totals. The operator feedback fixes (same day, no schema change) moved each table's row count, selection bar and page arrows into a footer (`PagerBar`, built in code like `SelectionBar` so the page's names work inside it) and made Billing list several name matches (`ProductChoices`) instead of opening Unknown barcode. Every record's detail view is now a `DetailPanel` placed by `DetailSplit` (beside the list or full width, remembered per screen); editing stays in dialog forms. Reports were then cut to seven (P&L, sales register, item-wise sales, purchase register, GST summary, current unsold stock, purchased vs used reconciliation); low stock and expiry are Products filters, balances due are in Vendors, and the audit log is written but has no viewer. The tax decisions (revised plan §15, 26 Oct 2026, **schema 39**) save the tax label and one piece's purchase price, tax and price including tax on every purchase line, lot and sale line (`LotTaxes` in `Inventory/LotTax.cs` derives them for lots without a purchase line), so each row shows Purchase price + Tax/unit = Purchase price incl. tax at two decimals. Every selling price and MRP now includes tax (a trigger rejects `product.price_includes_tax <> 1`), lot cost and tax are fixed at creation, general labels say Tax instead of GST, and P/L, COGS and the GST summary keep the booked cost. What remains are human gates: hardware, target-PC, second-PC restore, native-Gujarati and operator sign-offs. Never claim them as passed.
 
 ## Commands
 
@@ -28,7 +28,7 @@ The SDK is pinned to 10.0.401 by `global.json`. A repo-local SDK in `.tools/dotn
 dotnet restore GroceryErp.slnx
 dotnet format GroceryErp.slnx --verify-no-changes --no-restore   # CI gate
 dotnet build GroceryErp.slnx -c Release --no-restore            # warnings are errors
-dotnet test GroceryErp.slnx -c Release --no-build               # ~265 tests; 2 opt-in UI journeys skip
+dotnet test GroceryErp.slnx -c Release --no-build               # ~290 tests; 2 opt-in UI journeys skip
 ```
 
 The test runner is **Microsoft.Testing.Platform** with xUnit v3 (set in `global.json`). Use `--project` and the xUnit v3 filters. Older docs use VSTest-style `--filter "FullyQualifiedName~..."`; use the forms below instead:
@@ -91,6 +91,7 @@ A finalizing write follows this shape (see `SalesService.CompleteAsync`):
 - Schema 36 dropped `stock_movement`, its type table, the old count sheets (`stock_count*`) and `direct_stock_live`. Older migrations and their C# hooks still name them; nothing else may. Legacy adjustments live on as `LEGACY_MOVEMENT` corrections, with their original reference in `legacy_adjustment_source`.
 - `DirectStockEngine` handles reviewed physical counts (a deficit becomes categorized damage, a surplus becomes a new direct-origin lot) and source-document reconciliation (`CheckLot`, `CheckAll`, `Data/Infrastructure/LotSourceReconciliation.cs`).
 - FEFO allocation is `ILotQuantities.AllocateFefo`.
+- Every lot writer saves the lot's five tax snapshot columns (`tax_rate_id_snapshot`, `tax_label_snapshot`, `tax_rate_pct_snapshot`, `unit_tax`, `unit_cost_incl_tax`) through `LotTaxes`/`LandedCost`; schema-39 triggers reject inconsistent values and any later change to a lot's cost or tax. Empty values mean the lot predates schema 39.
 - Compaction (`Data/Backup/BackupService.Compaction.cs`) runs between sign-in and the shell: `VACUUM INTO` a copy, verify it, save it as a verified backup, swap it in with the restore markers. Never `VACUUM` the live store.
 
 ### Projections and immutability live in SQL triggers
@@ -101,10 +102,10 @@ Triggers also enforce immutability: completed sale financials, posted purchase a
 
 ### Migrations
 
-- The scripts sit at the **repo root**, not in a `db/` folder, though PLANS.md says `db/*.sql`. `grocery_erp_schema.sql` is 001, followed by `002_…sql` through `038_purchase_rates_include_tax.sql`.
+- The scripts sit at the **repo root**, not in a `db/` folder, though PLANS.md says `db/*.sql`. `grocery_erp_schema.sql` is 001, followed by `002_…sql` through `039_tax_snapshots.sql`.
 - Each script is embedded through an explicit `<EmbeddedResource … Link="db/NNN_name.sql">` in `src/GroceryErp.Data/GroceryErp.Data.csproj`.
 - To add a migration:
-  1. Create root `039_name.sql`.
+  1. Create root `040_name.sql`.
   2. Add its `EmbeddedResource` line.
   3. Bump `MigrationRunner.LatestVersion`. The runner requires a contiguous 001..Latest sequence.
 - The runner strips `PRAGMA user_version` lines from scripts and sets the version itself. It takes a pre-migration backup automatically.

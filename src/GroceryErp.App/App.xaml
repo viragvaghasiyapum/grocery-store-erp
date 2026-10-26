@@ -31,6 +31,7 @@
       <p:ExpiryBucketConverter x:Key="ExpiryBucketConverter"/>
       <p:PurchaseLineKindConverter x:Key="PurchaseLineKindConverter"/>
       <p:LotOriginConverter x:Key="LotOriginConverter"/>
+      <p:AmountConverter x:Key="Amount"/>
       <p:PurchaseStatusConverter x:Key="PurchaseStatusConverter"/>
       <p:DepreciationMethodConverter x:Key="DepreciationMethodConverter"/>
       <Style TargetType="{x:Type p:AnimatedSection}">

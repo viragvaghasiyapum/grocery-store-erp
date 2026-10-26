@@ -68,9 +68,11 @@ public sealed partial class MigrationRunner
 
     // Seconds per GiB of store for each step, measured on the full-size rehearsal store on the
     // development PC (i7-13700HX): 25 to 28 took 40.6 s and 28 to 29 88.3 s on 2.3-2.4 GB, and 31
-    // to 33 69.2 s on 2.9 GB; the other steps took seconds or less. The verified backup taken first
-    // ran at 10-40 s per GiB depending on the disk cache, so the slower figure is used. A slower
-    // shop PC takes longer, which the confirmation says.
+    // to 33 69.2 s on 2.9 GB; 38 to 39 took 12.4 s on 1.8 GB with the file in the OS cache and 37 s
+    // from a cold disk, because SQLite checks every row of a table with CHECK constraints when a
+    // column is added, and migration 39 adds three to sale_line; the other steps took seconds or
+    // less. The verified backup taken first ran at 10-40 s per GiB depending on the disk cache, so
+    // the slower figures are used. A slower shop PC takes longer, which the confirmation says.
     internal static TimeSpan Estimate(int from, int to, long databaseBytes)
     {
         double gib = databaseBytes / (1024d * 1024 * 1024);
@@ -79,7 +81,7 @@ public sealed partial class MigrationRunner
             seconds += gib * version switch
             {
                 29 => 38,
-                32 => 22,
+                32 or 39 => 22,
                 26 or 27 or 28 => 6,
                 30 or 31 or 33 => 1.5,
                 <= 25 => 1,

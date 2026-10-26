@@ -15,6 +15,18 @@ public static class Fx3
     public static decimal FromScaled(long scaled) => scaled / (decimal)Factor;
 }
 
+/// <summary>
+/// Screens show money with two decimals while every saved value keeps three. In a row that reads
+/// A + B = C, B is shown as the shown C minus the shown A, so the row adds up on screen.
+/// </summary>
+public static class TwoDecimals
+{
+    public static decimal Round(Money value) => decimal.Round(value.Value, 2, MidpointRounding.AwayFromZero);
+
+    /// <summary>The part shown between a shown whole and its other shown part.</summary>
+    public static decimal Remainder(Money whole, Money other) => Round(whole) - Round(other);
+}
+
 public readonly record struct Money : IComparable<Money>
 {
     public Money(decimal value) => Value = Fx3.Round(value);

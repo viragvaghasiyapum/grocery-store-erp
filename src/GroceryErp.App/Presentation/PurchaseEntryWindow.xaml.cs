@@ -33,9 +33,14 @@ public partial class PurchaseEntryWindow : Window
     private Money _roundStep = new(1);
     private bool _taxIsCost;
     private (PurchaseEditLine Line, PropertyInfo Property, object? Value)? _uneditedCell;
+    // Every rate's percent, including inactive ones a reopened draft still uses.
+    private readonly Dictionary<long, Percent> _ratePercents = [];
     public ObservableCollection<PurchaseEditLine> Lines { get; } = [];
     public IReadOnlyList<PurchaseKindChoice> LineKinds { get; }
     public ObservableCollection<ExpenseCategoryItem> ExpenseCategories { get; } = [];
+
+    /// <summary>Gets the tax rates a line can choose: the active ones, and any rate a loaded draft already uses.</summary>
+    public ObservableCollection<TaxRateItem> TaxRates { get; } = [];
 
     /// <summary>Gets the GRN number after a successful post, so the caller can show it.</summary>
     public string? PostedDocumentNumber { get; private set; }
@@ -62,7 +67,7 @@ public partial class PurchaseEntryWindow : Window
         if (loadOnShow) Loaded += LoadAsync;
     }
 
-    // Typed rates and discounts include GST when the bill prints them that way.
+    // Typed rates and discounts include tax when the bill prints them that way.
     private bool RatesIncludeTax => RatesIncludeTaxBox.IsChecked == true;
 
     private async void LoadAsync(object sender, RoutedEventArgs e)
@@ -75,16 +80,21 @@ public partial class PurchaseEntryWindow : Window
             _roundStep = Money.FromScaled(services.GetRequiredService<ISettings>().Current.BillRoundTo);
             _taxIsCost = !string.Equals(services.GetRequiredService<ISettings>().Current.TaxMode,
                 "REGULAR", StringComparison.Ordinal);
-            CostColumn.Header = TranslationSource.Instance[_taxIsCost ? "Purchasing_CostInclGst" : "Purchasing_CostExGst"];
             VendorBox.ItemsSource = await _purchasing.GetVendorsAsync();
             foreach (ExpenseCategoryItem category in await services.GetRequiredService<MoneyOutService>()
                 .GetExpenseCategoriesAsync())
                 ExpenseCategories.Add(category);
+            IReadOnlyList<TaxRateItem> rates = await _catalog.GetTaxRatesAsync();
+            UseTaxRates(rates);
             if (_openingDraftId is long draftId)
             {
                 PurchaseDraft draft = await _purchasing.GetDraftAsync(draftId);
                 _purchaseId = draft.Id;
                 PurchaseDraftInput input = draft.Input;
+                // A rate made inactive since the draft was saved stays available to its lines.
+                foreach (TaxRateItem rate in rates.Where(rate => !rate.IsActive &&
+                             input.Lines.Any(line => line.TaxRateId == rate.Id)))
+                    TaxRates.Add(rate);
                 VendorBox.SelectedValue = input.VendorId;
                 RatesIncludeTaxBox.IsChecked = input.RatesIncludeTax;
                 InvoiceBox.Text = input.VendorInvoiceNumber ?? "";
@@ -113,6 +123,23 @@ public partial class PurchaseEntryWindow : Window
         }
         catch (Exception exception) { ErrorText.Text = UserError.Message(exception); }
     }
+
+    /// <summary>Sets the rates the Tax lists offer (the active ones) and every rate's percent for the totals.</summary>
+    public void UseTaxRates(IReadOnlyList<TaxRateItem> rates)
+    {
+        ArgumentNullException.ThrowIfNull(rates);
+        _ratePercents.Clear();
+        TaxRates.Clear();
+        foreach (TaxRateItem rate in rates)
+        {
+            _ratePercents[rate.Id] = new Percent(rate.Rate);
+            if (rate.IsActive) TaxRates.Add(rate);
+        }
+        UpdateTotals();
+    }
+
+    private Percent RateOf(long? taxRateId) =>
+        taxRateId is { } id && _ratePercents.TryGetValue(id, out Percent rate) ? rate : Percent.Zero;
 
     private async void Save_OnClick(object sender, RoutedEventArgs e)
     {
@@ -203,10 +230,17 @@ public partial class PurchaseEntryWindow : Window
         }
         if (e.Key != Key.D || Keyboard.Modifiers != ModifierKeys.Control) return;
         e.Handled = true;
-        // Type and expense category are list columns, not bound text columns, and the product is read-only.
-        if (LinesGrid.CurrentItem is not PurchaseEditLine line || BoundProperty(LinesGrid.CurrentColumn) is not { } property) return;
+        // Type and expense category are list columns, not bound text columns, and the product is
+        // read-only. The tax list is the one list column that copies down.
+        if (LinesGrid.CurrentItem is not PurchaseEditLine line) return;
         int index = Lines.IndexOf(line);
         if (index <= 0) return;
+        if (ReferenceEquals(LinesGrid.CurrentColumn, TaxColumn))
+        {
+            line.TaxRateId = Lines[index - 1].TaxRateId;
+            return;
+        }
+        if (BoundProperty(LinesGrid.CurrentColumn) is not { } property) return;
         LinesGrid.CommitEdit(DataGridEditingUnit.Cell, true);
         property.SetValue(line, property.GetValue(Lines[index - 1]));
         LinesGrid.Items.Refresh();
@@ -244,6 +278,7 @@ public partial class PurchaseEntryWindow : Window
     private void Line_OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(PurchaseEditLine.LineKind)) ShowExpenseCategories();
+        else if (e.PropertyName == nameof(PurchaseEditLine.TaxRateId)) UpdateTotals();
     }
 
     private void ShowExpenseCategories() => ExpenseCategoryColumn.Visibility =
@@ -287,10 +322,12 @@ public partial class PurchaseEntryWindow : Window
         {
             PurchaseLineDefaults defaults = await _purchasing.GetLineDefaultsAsync(vendorId, line.ProductId,
                 DateOnly.FromDateTime(receivedDate));
-            // The vendor's last rate is stored before GST; a bill typed including GST shows it with GST.
+            // The line starts at the product's rate when it is active; otherwise one must be chosen.
+            line.TaxRateId = defaults.TaxRateId is { } rateId && TaxRates.Any(rate => rate.Id == rateId) ? rateId : null;
+            // The vendor's last rate is stored before tax; a bill typed including tax shows it with tax.
+            Percent taxRate = RateOf(line.TaxRateId);
             line.Rate = defaults.LastRate is { } lastRate
-                ? (RatesIncludeTax ? lastRate + lastRate.PercentOf(defaults.TaxRate) : lastRate).Value : 0;
-            line.TaxRate = defaults.TaxRate.Value;
+                ? (RatesIncludeTax ? lastRate + lastRate.PercentOf(taxRate) : lastRate).Value : 0;
             line.Mrp = defaults.Mrp?.Value;
             line.SellingPrice = defaults.SellingPrice?.Value ?? 0;
             line.Expiry = defaults.SuggestedExpiry?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -400,45 +437,52 @@ public partial class PurchaseEntryWindow : Window
         {
             List<PurchaseEditLine> editLines = Lines.Where(static line => line.ProductId > 0).ToList();
             bool includeTax = RatesIncludeTax;
+            Percent[] rates = editLines.Select(line => RateOf(line.TaxRateId)).ToArray();
             List<PurchaseLineInput> lines = editLines
-                .Select(line => includeTax ? line.ToInput().ExcludingTax() : line.ToInput()).ToList();
+                .Select((line, index) => includeTax ? line.ToInput().ExcludingTax(rates[index]) : line.ToInput()).ToList();
             Money subtotal = Money.Zero;
             Money discounts = Money.Zero;
             Money tax = Money.Zero;
             var costLines = new List<PurchaseCostLine>(lines.Count);
-            foreach (PurchaseLineInput line in lines)
+            for (int index = 0; index < lines.Count; index++)
             {
+                PurchaseLineInput line = lines[index];
                 subtotal += line.Rate * line.Quantity;
                 discounts += line.Discount;
-                Money lineTax = Tax.FromExclusive(line.Rate * line.Quantity - line.Discount, line.TaxRate).Tax;
+                Money lineTax = Tax.FromExclusive(line.Rate * line.Quantity - line.Discount, rates[index]).Tax;
                 tax += lineTax;
                 costLines.Add(new PurchaseCostLine(line.Quantity, line.FreeQuantity, line.Rate, line.Discount, lineTax));
             }
             Money charges = new(Parse(ChargesBox?.Text ?? "0"));
-            IReadOnlyList<Money> landed = LandedCost.Compute(costLines, charges, _taxIsCost);
+            IReadOnlyList<PurchaseUnitCost> units = LandedCost.Compute(costLines, charges, _taxIsCost);
             var warnings = new List<string>();
             DateOnly received = ReceivedDateBox.SelectedDate is DateTime picked ? DateOnly.FromDateTime(picked) : App.BusinessDate;
             for (int index = 0; index < editLines.Count; index++)
             {
                 PurchaseEditLine editLine = editLines[index];
                 PurchaseLineInput line = lines[index];
-                Money sellingExTax = editLine.PriceIncludesTax
-                    ? Tax.FromInclusive(line.SellingPrice, line.TaxRate).Taxable : line.SellingPrice;
-                decimal? margin = sellingExTax > Money.Zero
-                    ? (sellingExTax.Value - landed[index].Value) * 100m / sellingExTax.Value : null;
-                editLine.SetCostPreview(landed[index].Value.ToString("N2", TranslationSource.FormatCulture),
+                PurchaseUnitCost unit = units[index];
+                // Margin is measured as P&L books it: the selling price before the line's tax against
+                // the purchase price in Regular mode; with no tax on sales, the whole price against the
+                // purchase price including tax.
+                Money saleValue = _taxIsCost ? line.SellingPrice : Tax.FromInclusive(line.SellingPrice, rates[index]).Taxable;
+                decimal? margin = editLine.IsStockLine && saleValue > Money.Zero
+                    ? (saleValue.Value - unit.Booked.Value) * 100m / saleValue.Value : null;
+                editLine.SetCostPreview(AmountConverter.Text(TwoDecimals.Round(unit.BeforeTax)),
+                    AmountConverter.Text(TwoDecimals.Remainder(unit.InclTax, unit.BeforeTax)),
+                    AmountConverter.Text(TwoDecimals.Round(unit.InclTax)),
                     margin is null ? "—" : margin.Value.ToString("N1", TranslationSource.FormatCulture) + "%",
                     margin < 0m);
                 string product = editLine.ProductName;
                 if (line.ExpiryDate is DateOnly expiry && expiry <= received.AddDays(editLine.ExpiryAlertDays))
                     warnings.Add(TranslationSource.Instance.Format("Purchasing_WarningShortExpiry", product));
-                if (sellingExTax < landed[index])
+                if (editLine.IsStockLine && saleValue < unit.Booked)
                     warnings.Add(TranslationSource.Instance.Format("Purchasing_WarningBelowCost", product));
                 if (editLine.LastPurchaseRate is decimal lastRate && lastRate > 0m &&
                     Math.Abs(line.Rate.Value - lastRate) > lastRate * 0.1m)
                     warnings.Add(TranslationSource.Instance.Format("Purchasing_WarningRateChanged", product));
             }
-            foreach (PurchaseEditLine line in Lines.Except(editLines)) line.SetCostPreview("", "", false);
+            foreach (PurchaseEditLine line in Lines.Except(editLines)) line.ClearCostPreview();
             WarningText.Text = string.Join("  •  ", warnings);
             Money beforeRound = subtotal - discounts + tax + charges;
             Money roundOff = MoneyMath.RoundOff(beforeRound, _roundStep);
@@ -455,7 +499,7 @@ public partial class PurchaseEntryWindow : Window
         }
         catch (Exception)
         {
-            foreach (PurchaseEditLine line in Lines) line.SetCostPreview("", "", false);
+            foreach (PurchaseEditLine line in Lines) line.ClearCostPreview();
             WarningText.Text = "";
             ComputedText.Text = "—";
             DifferenceText.Text = "—";
@@ -480,11 +524,26 @@ public partial class PurchaseEntryWindow : Window
         public bool IsStockLine => LineKind != "EXPENSE";
         public bool IsExpenseLine => LineKind == "EXPENSE";
         public long? ExpenseCategoryId { get; set; }
+        private long? _taxRateId;
+
+        /// <summary>Gets or sets the tax rate chosen for the line from the Tax list.</summary>
+        public long? TaxRateId
+        {
+            get => _taxRateId;
+            set { if (_taxRateId == value) return; _taxRateId = value; Notify(); }
+        }
         public long DefaultsLoadedForProductId { get; set; }
         public decimal? LastPurchaseRate { get; private set; }
         public int ExpiryAlertDays { get; private set; }
-        public bool PriceIncludesTax { get; private set; } = true;
-        public string LandedCostText { get; private set; } = "";
+
+        /// <summary>Gets one piece's purchase price before tax, as shown.</summary>
+        public string PurchasePriceText { get; private set; } = "";
+
+        /// <summary>Gets one piece's tax as shown, so the shown prices add up.</summary>
+        public string UnitTaxText { get; private set; } = "";
+
+        /// <summary>Gets one piece's purchase price including tax, as shown.</summary>
+        public string InclTaxText { get; private set; } = "";
         public string MarginText { get; private set; } = "";
         public bool MarginNegative { get; private set; }
         public string? Batch { get; set; }
@@ -494,25 +553,30 @@ public partial class PurchaseEntryWindow : Window
         public decimal FreeQuantity { get; set; }
         public decimal Rate { get; set; }
         public decimal Discount { get; set; }
-        public decimal TaxRate { get; set; }
         public decimal? Mrp { get; set; }
         public decimal SellingPrice { get; set; }
         public void ApplyMetadata(PurchaseLineDefaults defaults)
         {
+            ArgumentNullException.ThrowIfNull(defaults);
             LastPurchaseRate = defaults.LastRate?.Value;
             ExpiryAlertDays = defaults.ExpiryAlertDays;
-            PriceIncludesTax = defaults.PriceIncludesTax;
         }
-        public void SetCostPreview(string landedCost, string margin, bool marginNegative)
+        public void SetCostPreview(string purchasePrice, string unitTax, string inclTax, string margin, bool marginNegative)
         {
-            if (LandedCostText == landedCost && MarginText == margin && MarginNegative == marginNegative) return;
-            LandedCostText = landedCost;
+            if (PurchasePriceText == purchasePrice && UnitTaxText == unitTax && InclTaxText == inclTax &&
+                MarginText == margin && MarginNegative == marginNegative) return;
+            PurchasePriceText = purchasePrice;
+            UnitTaxText = unitTax;
+            InclTaxText = inclTax;
             MarginText = margin;
             MarginNegative = marginNegative;
-            Notify(nameof(LandedCostText));
+            Notify(nameof(PurchasePriceText));
+            Notify(nameof(UnitTaxText));
+            Notify(nameof(InclTaxText));
             Notify(nameof(MarginText));
             Notify(nameof(MarginNegative));
         }
+        public void ClearCostPreview() => SetCostPreview("", "", "", "", false);
         private void Notify([CallerMemberName] string? propertyName = null) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
@@ -520,8 +584,9 @@ public partial class PurchaseEntryWindow : Window
         public string? Problem()
         {
             if (Quantity <= 0) return "Purchasing_LineQuantity";
-            if (FreeQuantity < 0 || Rate < 0 || Discount < 0 || TaxRate < 0 || SellingPrice < 0 || Mrp < 0)
+            if (FreeQuantity < 0 || Rate < 0 || Discount < 0 || SellingPrice < 0 || Mrp < 0)
                 return "Purchasing_LineNegative";
+            if (TaxRateId is null) return "Purchasing_TaxRateRequired";
             if (IsExpenseLine && ExpenseCategoryId is null) return "Purchasing_ExpenseCategoryRequired";
             if (!IsDate(ManufacturingDate) || !IsDate(Expiry)) return "Purchasing_LineDateFormat";
             if (IsStockLine && Mrp is { } mrp && SellingPrice > mrp) return "Error_PriceAboveMrp";
@@ -534,7 +599,7 @@ public partial class PurchaseEntryWindow : Window
         public PurchaseLineInput ToInput() => new(ProductId, Batch,
             string.IsNullOrWhiteSpace(ManufacturingDate) ? null : DateOnly.ParseExact(InputNormalizer.Normalize(ManufacturingDate), "yyyy-MM-dd", CultureInfo.InvariantCulture),
             string.IsNullOrWhiteSpace(Expiry) ? null : DateOnly.ParseExact(InputNormalizer.Normalize(Expiry), "yyyy-MM-dd", CultureInfo.InvariantCulture),
-            new Quantity(Quantity), new Quantity(FreeQuantity), new Money(Rate), new Money(Discount), new Percent(TaxRate),
+            new Quantity(Quantity), new Quantity(FreeQuantity), new Money(Rate), new Money(Discount), TaxRateId,
             Mrp is null ? null : new Money(Mrp.Value), new Money(SellingPrice))
         { LineKind = LineKind, ExpenseCategoryId = IsExpenseLine ? ExpenseCategoryId : null };
         public static PurchaseEditLine FromInput(PurchaseLineInput line) => new()
@@ -550,7 +615,7 @@ public partial class PurchaseEntryWindow : Window
             FreeQuantity = line.FreeQuantity.Value,
             Rate = line.Rate.Value,
             Discount = line.Discount.Value,
-            TaxRate = line.TaxRate.Value,
+            TaxRateId = line.TaxRateId,
             Mrp = line.Mrp?.Value,
             SellingPrice = line.SellingPrice.Value,
         };

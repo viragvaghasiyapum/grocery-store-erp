@@ -120,6 +120,7 @@ public sealed class UpgradeTests
     [InlineData(33)]
     [InlineData(35)]
     [InlineData(36)]
+    [InlineData(38)]
     public void UpgradeFromAnyEarlierVersion_EndsWithTheSchemaOfANewStore(int version)
     {
         using var fresh = new Store();
@@ -213,6 +214,46 @@ public sealed class UpgradeTests
 
     private static string[] Schema(SqliteConnection db) =>
         [.. db.Query<string>("SELECT type||' '||name||' '||COALESCE(sql,'') FROM sqlite_schema ORDER BY type,name")];
+
+    // Schema 39: every price includes tax. A demo product that excluded it keeps its customer price,
+    // which now includes the tax a bill added, capped at MRP; its lots count it as a price edit.
+    [Theory]
+    [InlineData("REGULAR", 105_000L, 104_000L, 105_000L, 105_000L)]
+    [InlineData("COMPOSITION", 100_000L, 100_000L, 100_000L, 100_000L)]
+    public void Migration39_MakesExcludingProductsInclusive_CappedAtMrp(string mode, long defaultPrice,
+        long cappedLot, long uncappedLot, long noMrpLot)
+    {
+        using var store = new Store();
+        store.Runner.RunTo(38);
+        using (SqliteConnection db = store.Factory.Open())
+            db.Execute("""
+                UPDATE setting SET value=@mode WHERE key='tax.mode';
+                INSERT INTO category(name) VALUES ('Demo');
+                INSERT INTO product(id,sku,name,category_id,uom_id,tax_rate_id,price_includes_tax,
+                    default_selling_price,default_mrp)
+                VALUES (1,'EXCL','Excluded',(SELECT id FROM category WHERE name='Demo'),(SELECT id FROM uom WHERE code='PCS'),
+                        (SELECT id FROM tax_rate WHERE rate_pct=5000),0,100000,110000),
+                       (2,'INCL','Included',(SELECT id FROM category WHERE name='Demo'),(SELECT id FROM uom WHERE code='PCS'),
+                        (SELECT id FROM tax_rate WHERE rate_pct=5000),1,100000,110000);
+                INSERT INTO product_lot(id,product_id,lot_code,received_date,unit_cost,selling_price,mrp,qty_received)
+                VALUES (1,1,'CAPPED','2026-09-01',60000,100000,104000,0),
+                       (2,1,'ROOM','2026-09-01',60000,100000,120000,0),
+                       (3,1,'NO-MRP','2026-09-01',60000,100000,NULL,0),
+                       (4,2,'INCLUDED','2026-09-01',60000,100000,104000,0);
+                """, new { mode });
+
+        store.Runner.Run();
+
+        using SqliteConnection upgraded = store.Factory.Open();
+        upgraded.Query<long>("SELECT price_includes_tax FROM product ORDER BY id").ShouldBe([1L, 1L]);
+        upgraded.ExecuteScalar<long>("SELECT default_selling_price FROM product WHERE id=1").ShouldBe(defaultPrice);
+        upgraded.Query<long>("SELECT selling_price FROM product_lot ORDER BY id")
+            .ShouldBe([cappedLot, uncappedLot, noMrpLot, 100_000L]);
+        // A changed price is a lot edit, so a sale saved with the old price no longer matches the lot.
+        long[] versions = mode == "REGULAR" ? [2L, 2L, 2L, 1L] : [1L, 1L, 1L, 1L];
+        upgraded.Query<long>("SELECT detail_version FROM product_lot ORDER BY id").ShouldBe(versions);
+        Should.Throw<SqliteException>(() => upgraded.Execute("UPDATE product SET price_includes_tax=0 WHERE id=2"));
+    }
 
     [Fact]
     public void BarcodeLotIndex_ServesTheLotDetachAndTheForeignKeyCheck()

@@ -20,6 +20,22 @@ public sealed record LotItem(
 {
     public string OriginKind { get; init; } = "DIRECT";
     public long DetailVersion { get; init; }
+
+    /// <summary>Gets the name of the tax rate the lot was bought at, as it was then.</summary>
+    public string? TaxLabel { get; init; }
+
+    /// <summary>Gets one piece's purchase tax; null for a lot saved before tax snapshots.</summary>
+    public Money? UnitTax { get; init; }
+
+    /// <summary>Gets one piece's purchase price including tax; null for a lot saved before tax snapshots.</summary>
+    public Money? UnitCostInclTax { get; init; }
+
+    /// <summary>Gets one piece's purchase price before tax.</summary>
+    public Money? PurchasePrice => UnitCostInclTax is { } incl && UnitTax is { } tax ? incl - tax : null;
+
+    /// <summary>Gets the tax per piece as shown, so the shown prices add up.</summary>
+    public decimal? UnitTaxShown => UnitCostInclTax is { } incl && PurchasePrice is { } before
+        ? TwoDecimals.Remainder(incl, before) : null;
 }
 
 public sealed record LotDetailsEdit(long LotId, long ExpectedVersion, Money SellingPrice,
@@ -61,12 +77,17 @@ public sealed record LotBulkRow(long Id, string Label, bool Eligible, string? Re
 
 public sealed record LotPage(IReadOnlyList<LotItem> Items, bool HasMore, long? NextId);
 
+/// <summary>A direct or opening lot. The purchase price is one piece's price before tax.</summary>
 public sealed record OpeningStockLine(
     long ProductId,
     Quantity Quantity,
-    Money UnitCost,
+    Money PurchasePrice,
     Money SellingPrice,
     Money? Mrp,
     DateOnly? ExpiryDate,
     string? BatchNumber,
-    DateOnly ReceivedDate);
+    DateOnly ReceivedDate)
+{
+    /// <summary>Gets the tax rate the lot was bought at, or null for the product's rate.</summary>
+    public long? TaxRateId { get; init; }
+}

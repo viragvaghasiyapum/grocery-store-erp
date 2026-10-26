@@ -98,7 +98,8 @@ public sealed class LotQuantities(ISettings settings) : ILotQuantities
 
         List<LotStock> lots = transaction.Connection.Query<LotRow>("""
             SELECT id AS LotId, qty_on_hand AS OnHand, expiry_date AS Expiry,
-                   selling_price AS Price, mrp AS Mrp, unit_cost AS Cost
+                   selling_price AS Price, mrp AS Mrp, unit_cost AS Cost,
+                   unit_tax AS CostTax, unit_cost_incl_tax AS CostInclTax
             FROM product_lot
             WHERE product_id=@productId AND is_active=1 AND qty_on_hand>0
               AND (@blockExpired=0 OR expiry_date IS NULL OR expiry_date>=@asOf)
@@ -134,7 +135,13 @@ public sealed class LotQuantities(ISettings settings) : ILotQuantities
         public long Price { get; init; }
         public long? Mrp { get; init; }
         public long Cost { get; init; }
+        public long? CostTax { get; init; }
+        public long? CostInclTax { get; init; }
         public LotStock ToModel() => new(LotId, Quantity.FromScaled(OnHand), Expiry,
-            Money.FromScaled(Price), Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(Cost));
+            Money.FromScaled(Price), Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(Cost))
+        {
+            CostTax = CostTax is null ? null : Money.FromScaled(CostTax.Value),
+            CostInclTax = CostInclTax is null ? null : Money.FromScaled(CostInclTax.Value),
+        };
     }
 }

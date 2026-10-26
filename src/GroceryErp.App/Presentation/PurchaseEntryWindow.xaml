@@ -43,10 +43,11 @@
         <TextBlock FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="{l:Tr Purchasing_CopyDownHint}" TextWrapping="Wrap"/>
       </StackPanel>
     </Grid>
-    <!-- Lines come only from the search box. Type and expense category are always-visible lists that
-         change the line directly, so their columns never enter the grid's edit mode. -->
+    <!-- Lines come only from the search box. Type, expense category and tax are always-visible lists
+         that change the line directly, so their columns never enter the grid's edit mode. The remove,
+         type and name columns stay in view while the figures scroll sideways. -->
     <DataGrid Style="{StaticResource CatalogGrid}" x:Name="LinesGrid" Grid.Row="3" ItemsSource="{Binding Lines}" AutoGenerateColumns="False"
-              CanUserAddRows="False" CanUserDeleteRows="False" IsReadOnly="False"
+              CanUserAddRows="False" CanUserDeleteRows="False" IsReadOnly="False" FrozenColumnCount="3"
               Margin="0,4,0,0" GridLinesVisibility="All" HeadersVisibility="Column" RowHeight="34" ColumnHeaderHeight="34"
               CurrentCellChanged="LinesGrid_OnCurrentCellChanged" PreparingCellForEdit="LinesGrid_OnPreparingCellForEdit"
               CellEditEnding="LinesGrid_OnCellEditEnding" Binding.SourceUpdated="LinesGrid_OnSourceUpdated"
@@ -99,13 +100,26 @@
         <!-- Figures that change the totals update them while they are typed. -->
         <DataGridTextColumn Width="75" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}"/>
         <DataGridTextColumn Width="72" Header="{l:Tr Purchasing_FreeQty}" Binding="{Binding FreeQuantity, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}"/>
-        <DataGridTextColumn x:Name="RateColumn" Width="110" Header="{l:Tr Purchasing_Rate}" Binding="{Binding Rate, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}"/>
+        <!-- Rate is the figure on the supplier bill; Purchase price is one piece's computed price. -->
+        <DataGridTextColumn x:Name="RateColumn" Width="105" Header="{l:Tr Purchasing_Rate}" Binding="{Binding Rate, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}"/>
         <DataGridTextColumn Width="82" Header="{l:Tr Purchasing_Discount}" Binding="{Binding Discount, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}"/>
-        <DataGridTextColumn Width="60" Header="{l:Tr Purchasing_Gst}" Binding="{Binding TaxRate, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}"/>
-        <DataGridTextColumn Width="65" Header="MRP" Binding="{Binding Mrp, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}" ElementStyle="{StaticResource StockLineText}" EditingElementStyle="{StaticResource StockLineEdit}"/>
-        <DataGridTextColumn Width="75" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}" ElementStyle="{StaticResource StockLineText}" EditingElementStyle="{StaticResource StockLineEdit}"/>
-        <DataGridTextColumn x:Name="CostColumn" Width="95" IsReadOnly="True" Header="{l:Tr Purchasing_CostExGst}" Binding="{Binding LandedCostText}" ElementStyle="{StaticResource StockLineText}"/>
-        <DataGridTextColumn Width="65" IsReadOnly="True" Header="{l:Tr Purchasing_Margin}" Binding="{Binding MarginText}">
+        <DataGridTemplateColumn x:Name="TaxColumn" Width="112" IsReadOnly="True" Header="{l:Tr Purchasing_Gst}">
+          <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate>
+              <ComboBox Margin="2,1" Padding="8,2" MinHeight="0" VerticalAlignment="Center"
+                        ItemsSource="{Binding DataContext.TaxRates, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                        SelectedValuePath="Id" DisplayMemberPath="Name" SelectedValue="{Binding TaxRateId, UpdateSourceTrigger=PropertyChanged}"
+                        AutomationProperties.Name="{l:Tr Purchasing_Gst}"/>
+            </DataTemplate>
+          </DataGridTemplateColumn.CellTemplate>
+        </DataGridTemplateColumn>
+        <DataGridTextColumn Width="70" Header="MRP" Binding="{Binding Mrp, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}" ElementStyle="{StaticResource StockLineText}" EditingElementStyle="{StaticResource StockLineEdit}"/>
+        <DataGridTextColumn Width="92" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice, UpdateSourceTrigger=PropertyChanged, NotifyOnSourceUpdated=True}" ElementStyle="{StaticResource StockLineText}" EditingElementStyle="{StaticResource StockLineEdit}"/>
+        <!-- One piece with its share of other charges: Purchase price + Tax/unit = incl. tax as shown. -->
+        <DataGridTextColumn x:Name="PurchasePriceColumn" Width="100" IsReadOnly="True" Header="{l:Tr Stock_UnitCost}" Binding="{Binding PurchasePriceText}"/>
+        <DataGridTextColumn Width="76" IsReadOnly="True" Header="{l:Tr Stock_UnitTax}" Binding="{Binding UnitTaxText}"/>
+        <DataGridTextColumn Width="118" IsReadOnly="True" Header="{l:Tr Stock_CostInclTax}" Binding="{Binding InclTaxText}"/>
+        <DataGridTextColumn Width="72" IsReadOnly="True" Header="{l:Tr Purchasing_Margin}" Binding="{Binding MarginText}">
           <DataGridTextColumn.ElementStyle>
             <Style TargetType="TextBlock">
               <Style.Triggers><DataTrigger Binding="{Binding MarginNegative}" Value="True"><Setter Property="Foreground" Value="Crimson"/><Setter Property="FontWeight" Value="SemiBold"/></DataTrigger></Style.Triggers>

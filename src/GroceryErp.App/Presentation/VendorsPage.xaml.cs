@@ -77,6 +77,10 @@ public partial class VendorsPage : Page
 
     private sealed record State(string Search, int Status, bool WithBalance);
 
+    /// <summary>Makes the next Vendors page open on active vendors that are owed money.</summary>
+    internal static void RequestBalanceFilter(PageStateStore? store) =>
+        store?.Set(StateKey, new State(string.Empty, 0, true));
+
     private VendorFilter CurrentFilter() => new()
     {
         Query = SearchBox.Text,

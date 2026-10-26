@@ -6,6 +6,7 @@ using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
+using GroceryErp.Inventory;
 using GroceryErp.Inventory.Contracts;
 
 namespace GroceryErp.Expenses;
@@ -239,13 +240,18 @@ public sealed partial class MoneyOutService
             ?? throw new DomainException(ErrorCode.DamageProductDeleted);
         long price = product.SellingPrice ?? damage.UnitCost;
         long? mrp = product.Mrp is { } value && value >= price ? value : null;
+        // The damage saved only the booked cost, so the product's rate as it is now gives the tax.
+        LotTax tax = LotTaxes.FromBooked(transaction, LotTaxes.ProductRate(transaction, damage.ProductId),
+            Money.FromScaled(damage.UnitCost));
         string lotCode = numbers.Next(transaction, DocType.Lot, periods.Today);
         long lotId = transaction.Connection.ExecuteScalar<long>("""
             INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,unit_cost,mrp,
-                selling_price,qty_received,direct_reason)
-            VALUES (@productId,@lotCode,@batch,@today,@expiry,@unitCost,@mrp,@price,@quantity,@reason)
+                selling_price,qty_received,direct_reason,
+                tax_rate_id_snapshot,tax_label_snapshot,tax_rate_pct_snapshot,unit_tax,unit_cost_incl_tax)
+            VALUES (@productId,@lotCode,@batch,@today,@expiry,@unitCost,@mrp,@price,@quantity,@reason,
+                @taxRateId,@taxLabel,@taxRatePct,@unitTax,@unitCostInclTax)
             RETURNING id
-            """, new
+            """, tax.AddTo(new DynamicParameters(new
         {
             productId = damage.ProductId,
             lotCode,
@@ -257,7 +263,7 @@ public sealed partial class MoneyOutService
             price,
             quantity = quantity.Scaled,
             reason = "Damage correction restore: " + reason,
-        }, transaction.Transaction);
+        })), transaction.Transaction);
         long originId = transaction.Connection.ExecuteScalar<long>(
             "SELECT id FROM direct_stock_origin WHERE lot_id=@lotId", new { lotId }, transaction.Transaction);
         stock.Change(transaction, new(periods.Today, damage.ProductId, lotId, LotChangeKind.DirectEntry, quantity));

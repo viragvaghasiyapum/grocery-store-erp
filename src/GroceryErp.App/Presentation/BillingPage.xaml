@@ -67,7 +67,7 @@
             </DataGridTemplateColumn.CellTemplate>
           </DataGridTemplateColumn>
           <DataGridTextColumn Width="76" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
-          <DataGridTextColumn Width="94" Header="{l:Tr Catalog_Price}" Binding="{Binding UnitPrice}"/>
+          <DataGridTextColumn Width="94" Header="{l:Tr Pos_Price}" Binding="{Binding UnitPrice}"/>
           <DataGridTextColumn Width="86" Header="{l:Tr Purchasing_Discount}" Binding="{Binding Discount}"/>
           <DataGridTextColumn Width="102" Header="{l:Tr Purchasing_Total}" Binding="{Binding Total}"/>
         </DataGrid.Columns>

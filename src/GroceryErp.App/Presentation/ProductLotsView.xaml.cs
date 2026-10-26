@@ -307,9 +307,17 @@ public partial class ProductLotsView : UserControl
     private async void AddDirectLot_OnClick(object sender, RoutedEventArgs e)
     {
         IServiceProvider services = ((App)Application.Current).Services;
-        if (new DirectLotWindow(_inventory, _productId, services.GetRequiredService<IClock>())
-        { Owner = Window.GetWindow(this) }.ShowDialog() == true)
-            await AfterWriteAsync();
+        try
+        {
+            // The form offers the active tax rates and starts at the product's.
+            var catalog = services.GetRequiredService<CatalogService>();
+            IReadOnlyList<TaxRateItem> rates = await catalog.GetTaxRatesAsync();
+            long? productRate = (await catalog.GetAsync(_productId)).Product.TaxRateId;
+            if (new DirectLotWindow(_inventory, _productId, services.GetRequiredService<IClock>(), rates, productRate)
+            { Owner = Window.GetWindow(this) }.ShowDialog() == true)
+                await AfterWriteAsync();
+        }
+        catch (Exception exception) { Pager.Status = UserError.Message(exception); }
     }
 
     private async void EditLot_OnClick(object sender, RoutedEventArgs e)

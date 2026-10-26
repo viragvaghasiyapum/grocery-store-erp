@@ -394,11 +394,10 @@ public sealed class SalesTests
             OperationGuard.NewId()), ct);
         posted.Refund.Scaled.ShouldBe(expectedRefund);
         (await fixture.Sales.GetAsync(saleId, ct)).Status.ShouldBe(SaleStatus.Refunded);
-        TabularReport hourly = await new ReportService(fixture.Database, fixture.Settings, fixture.Clock)
-            .GetReportAsync(ReportKind.HourlySales,
-                new(From: fixture.Clock.BusinessDate, To: fixture.Clock.BusinessDate), ct);
-        hourly.Rows.Sum(static row => Convert.ToInt64(row.Values["Revenue"],
-            System.Globalization.CultureInfo.InvariantCulture)).ShouldBe(0L);
+        // The refund includes the bill's round-off, so the day's net sales return to zero.
+        PnlStatement day = await new ReportService(fixture.Database, fixture.Settings, fixture.Clock)
+            .GetPnlAsync(fixture.Clock.BusinessDate, fixture.Clock.BusinessDate, ct);
+        day.NetSales.Scaled.ShouldBe(0L);
     }
 
     [Fact]
@@ -554,7 +553,7 @@ public sealed class SalesTests
             [new(lineId, Quantity.One, true)], OperationGuard.NewId()), ct));
         var reviewed = new ReturnRecreationInput(draft.SuggestedSku, draft.ProductName,
             draft.ProductNameLocal, fixture.CategoryId, fixture.UnitId, fixture.TaxId,
-            "REGULAR", "1006", true, false, false, "SALEABLE", null);
+            "REGULAR", "1006", false, false, "SALEABLE", null);
         CompletedReturn posted = await sales.ReturnAsync(new(saleId,
             fixture.Clock.BusinessDate, "Legacy refund", RefundMode.Cash,
             [new(lineId, Quantity.One, true, reviewed)], OperationGuard.NewId()), ct);
@@ -722,7 +721,7 @@ public sealed class SalesTests
         CancellationToken ct = TestContext.Current.CancellationToken;
         long productId = await fixture.Catalog.CreateAsync(new ProductInput(
             "QUICK-001", "Quick added soap", null, null, fixture.CategoryId, null, fixture.UnitId,
-            "1001", fixture.TaxId, true, false, null, false, null, null,
+            "1001", fixture.TaxId, false, null, false, null, null,
             Quantity.Zero, new Money(118), new Money(120),
             [new("4006381333931", Quantity.One, "EAN13", true)]), ct);
         await fixture.Inventory.ImportOpeningStockAsync(

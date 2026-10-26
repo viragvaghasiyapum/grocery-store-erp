@@ -87,8 +87,6 @@ Captures use synthetic example records. Gujarati screenshots are used where avai
 - [report-a4-band1.en.png](screenshots/report-a4-band1.en.png)
 - [report-a4-band2.en.png](screenshots/report-a4-band2.en.png)
 - [reports-filters.en.png](screenshots/reports-filters.en.png)
-- [reports-hourly.en.png](screenshots/reports-hourly.en.png)
-- [reports-hourly.gu.png](screenshots/reports-hourly.gu.png)
 - [reports-pnl.en.png](screenshots/reports-pnl.en.png)
 - [reports-pnl.narrow.en.png](screenshots/reports-pnl.narrow.en.png)
 - [reports-table.en.png](screenshots/reports-table.en.png)

@@ -37,7 +37,6 @@ public sealed class ReturnRecreationWindow : Window
     // Yes/No choices start empty when the old sale did not save the fact.
     private readonly ComboBox _trackExpiry;
     private readonly ComboBox _isLoose;
-    private readonly CheckBox _includesTax;
     private readonly DatePicker _expiry;
 
     public ReturnRecreationInput? Result { get; private set; }
@@ -71,7 +70,6 @@ public sealed class ReturnRecreationWindow : Window
         _trackExpiry = YesNo(draft.TrackExpiry);
         _isLoose = YesNo(draft.IsLoose);
         _expiry = new DatePicker { SelectedDate = draft.ExpiryDate?.ToDateTime(TimeOnly.MinValue), SelectedDateFormat = DatePickerFormat.Short };
-        _includesTax = new CheckBox { IsChecked = draft.PriceIncludesTax, Content = Tr("Sales_RecreatePricing"), Margin = new Thickness(0, 28, 0, 10) };
 
         _skuField = Field("Sales_RecreateSku", _sku, required: true, "SKU");
         _nameField = Field("Sales_RecreateName", _name, required: true, "product name");
@@ -152,16 +150,15 @@ public sealed class ReturnRecreationWindow : Window
         return field;
     }
 
-    // Two columns in reading order, then the tax-pricing option in the next free cell.
+    // Two columns in reading order. Prices always include tax, so there is no pricing question.
     private void LayOutFields()
     {
         _fields.ColumnDefinitions.Add(new ColumnDefinition());
         _fields.ColumnDefinitions.Add(new ColumnDefinition());
-        int count = _ordered.Count + 1;
-        for (int index = 0; index < count; index++)
+        for (int index = 0; index < _ordered.Count; index++)
         {
             if (index % 2 == 0) _fields.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            UIElement cell = index < _ordered.Count ? _ordered[index] : _includesTax;
+            UIElement cell = _ordered[index];
             Grid.SetRow(cell, index / 2);
             Grid.SetColumn(cell, index % 2);
             _fields.Children.Add(cell);
@@ -190,7 +187,7 @@ public sealed class ReturnRecreationWindow : Window
         DateOnly? expiry = form.Date(_expiryField, _expiry.SelectedDate, required: trackExpiry == 1);
         if (!form.Apply(_fields, _summary)) return;
         Result = new ReturnRecreationInput(sku!, name!, localName, category!.Value, unit!.Value, tax!.Value, mode!, hsn,
-            _includesTax.IsChecked == true, trackExpiry == 1, isLoose == 1, "SALEABLE", expiry);
+            trackExpiry == 1, isLoose == 1, "SALEABLE", expiry);
         DialogResult = true;
     }
 

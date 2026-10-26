@@ -22,7 +22,9 @@ public sealed record OpeningStockImportPreview(IReadOnlyList<OpeningStockImportR
 public sealed class OpeningStockExcelImporter(DbExecutor database, InventoryService inventory, IClock clock)
 {
     private const int MaxImportRows = 50_000;
-    private static readonly string[] Headers = ["SKU*", "Qty*", "Unit cost*", "Selling price*", "MRP", "Expiry", "Batch", "Received date"];
+    // Columns are read by position. The purchase price is before tax; each row takes its product's
+    // tax rate. The selling price and MRP include tax.
+    private static readonly string[] Headers = ["SKU*", "Qty*", "Purchase price*", "Selling price*", "MRP", "Expiry", "Batch", "Received date"];
 
     public static void WriteTemplate(string path)
     {
@@ -100,7 +102,7 @@ public sealed class OpeningStockExcelImporter(DbExecutor database, InventoryServ
             if (sku.Length == 0 && sheet.Row(rowNumber).Cells(1, Headers.Length).All(static cell => cell.IsEmpty())) continue;
             var errors = new List<string>();
             decimal? quantity = Decimal(sheet.Cell(rowNumber, 2), "Qty", errors);
-            decimal? cost = Decimal(sheet.Cell(rowNumber, 3), "Unit cost", errors);
+            decimal? cost = Decimal(sheet.Cell(rowNumber, 3), "Purchase price", errors);
             decimal? price = Decimal(sheet.Cell(rowNumber, 4), "Selling price", errors);
             decimal? mrp = OptionalDecimal(sheet.Cell(rowNumber, 5), "MRP", errors);
             DateOnly? expiry = OptionalDate(sheet.Cell(rowNumber, 6), "Expiry", errors);

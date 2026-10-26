@@ -199,7 +199,7 @@ public sealed class PhaseZeroSmokeTests
             {
                 Directory.CreateDirectory(root);
                 File.WriteAllText(Path.Combine(root, "table-columns.json"),
-                    """{"GroceryErp.App.Presentation.ProductsPage/ProductsGrid/0:DataGridTextColumn:OldTemplate|1:DataGridTextColumn:Sku|2:DataGridTextColumn:OldName|3:DataGridTextColumn:Category|4:DataGridTextColumn:Stock|5:DataGridTextColumn:SellingPrice|6:DataGridTextColumn:Mrp|7:DataGridTextColumn:IsActive":[80,120,200,150,90,90,90,80]}""");
+                    """{"GroceryErp.App.Presentation.ProductsPage/ProductsGrid/0:DataGridTextColumn:OldTemplate|1:DataGridTextColumn:Sku|2:DataGridTextColumn:OldName|3:DataGridTextColumn:Category|4:DataGridTextColumn:Stock|5:DataGridTextColumn:SellingPrice|6:DataGridTextColumn:Mrp|7:DataGridTextColumn:CostInclTax|8:DataGridTextColumn:IsActive":[80,120,200,150,90,90,90,110,80]}""");
                 GroceryErp.App.App application = new();
                 application.InitializeComponent();
                 // WPF queues Application startup on the dispatcher. This test hosts pages
@@ -631,6 +631,11 @@ public sealed class PhaseZeroSmokeTests
                 var productForm = (ProductForm)editor.FindName("Form");
                 ((TextBox)productForm.FindName("PriceBox")).IsVisible.ShouldBeTrue();
                 ((FrameworkElement)productForm.FindName("FirstLotSection")).Visibility.ShouldBe(Visibility.Visible);
+                // Prices always include tax: no setting, a note instead. VerifyPhaseSevenScreens checks
+                // the first lot's tax fields, since loading the rates needs a dispatcher pump.
+                productForm.FindName("PricesIncludeTaxBox").ShouldBeNull();
+                ((TextBlock)productForm.FindName("PricesIncludeTaxNote")).Text.ShouldBe("Selling price and MRP include tax.");
+                VerifyAccessibleNames(editor);
                 editor.Close();
 
                 var productImport = new ProductImportWindow(new ProductExcelImporter(database, new AuditLog(), settings));
@@ -645,7 +650,7 @@ public sealed class PhaseZeroSmokeTests
 
                 var label = new ProductLabelWindow(new ProductDetails(1,
                     new ProductInput("SALT001", "Tata Salt 1 kg", "ટાટા મીઠું 1 kg", "salt",
-                        1, null, 1, "1001", 1, true, false, null, true, null, 7,
+                        1, null, 1, "1001", 1, false, null, true, null, 7,
                         new Quantity(5), new Money(27.5m), new Money(30m),
                         [new ProductBarcodeInput("4006381333931", Quantity.One, "EAN13", true)]), true),
                     "Test printer", "60x40");
@@ -683,10 +688,13 @@ public sealed class PhaseZeroSmokeTests
                 {
                     new VendorItem(1, "Shree Wholesale Traders", "9999999999", null, Money.Zero, true),
                 };
-                ((ComboBox)purchaseEntry.FindName("VendorBox")).SelectedIndex = 0;
                 ((TextBox)purchaseEntry.FindName("InvoiceBox")).Text = "SW-1042";
                 ((DatePicker)purchaseEntry.FindName("InvoiceDateBox")).SelectedDate = new DateTime(2026, 9, 27);
                 ((DatePicker)purchaseEntry.FindName("ReceivedDateBox")).SelectedDate = new DateTime(2026, 9, 28);
+                // The Tax lists offer the active rates; an inactive one is not offered.
+                purchaseEntry.UseTaxRates([new TaxRateItem(1, "GST 0%", 0, true), new TaxRateItem(2, "GST 5%", 5, true),
+                    new TaxRateItem(3, "GST 12%", 12, false)]);
+                purchaseEntry.TaxRates.Select(static rate => rate.Name).ShouldBe(["GST 0%", "GST 5%"]);
                 var purchaseLine = new PurchaseEntryWindow.PurchaseEditLine
                 {
                     ProductId = 1,
@@ -696,11 +704,14 @@ public sealed class PhaseZeroSmokeTests
                     Quantity = 10,
                     FreeQuantity = 1,
                     Rate = 250,
-                    TaxRate = 5,
+                    TaxRateId = 2,
                     Mrp = 350,
                     SellingPrice = 300,
                 };
                 purchaseEntry.Lines.Add(purchaseLine);
+                // Chosen once the bill has a line, so the window does not look up the vendor's last
+                // rate choice: this thread has no dispatcher context for that read to return to.
+                ((ComboBox)purchaseEntry.FindName("VendorBox")).SelectedIndex = 0;
                 ((TextBox)purchaseEntry.FindName("ChargesBox")).Text = "૧૦૦";
                 ((TextBox)purchaseEntry.FindName("BillTotalBox")).Text = "૨૭૨૫";
                 ((TextBlock)purchaseEntry.FindName("DifferenceText")).Text.ShouldBe("0.000");
@@ -718,14 +729,31 @@ public sealed class PhaseZeroSmokeTests
                 expenseColumn.Visibility.ShouldBe(Visibility.Visible);
                 purchaseLine.LineKind = "PRODUCT";
                 expenseColumn.Visibility.ShouldBe(Visibility.Collapsed);
+                // Tax is a list of the rates. One piece costs (2,500 + 100 charges) ÷ 11 = 236.364 before
+                // tax and (2,600 + 125 tax) ÷ 11 = 247.727 with it; shown, 236.36 + 11.37 = 247.73.
+                // The charges carry no tax, so the tax per piece is not 236.36 × 5%.
+                var taxList = Descendants<ComboBox>(entryGrid).Single(box =>
+                    System.Windows.Automation.AutomationProperties.GetName(box) == "Tax");
+                taxList.SelectedValue.ShouldBe(2L);
+                purchaseLine.PurchasePriceText.ShouldBe("236.36");
+                purchaseLine.UnitTaxText.ShouldBe("11.37");
+                purchaseLine.InclTaxText.ShouldBe("247.73");
+                // Regular mode: 300 incl. 5% is 285.71 before tax, against 236.36.
+                purchaseLine.MarginText.ShouldBe("17.3%");
+                entryGrid.FrozenColumnCount.ShouldBe(3);
+                taxList.SelectedValue = 1L;
+                purchaseLine.TaxRateId.ShouldBe(1L);
+                purchaseLine.UnitTaxText.ShouldBe("0.00");
+                ((TextBlock)purchaseEntry.FindName("ComputedText")).Text.ShouldBe("2,600.000");
+                taxList.SelectedValue = 2L;
                 VerifyAccessibleNames(purchaseEntry);
                 Capture(purchaseEntry, "purchase-entry.en.png");
-                // Typed including GST, 10 × 250 plus 100 charges is the 2,600 the bill prints.
+                // Typed including tax, 10 × 250 plus 100 charges is the 2,600 the bill prints.
                 var ratesIncludeTax = (CheckBox)purchaseEntry.FindName("RatesIncludeTaxBox");
                 ratesIncludeTax.IsChecked = true;
                 ((TextBlock)purchaseEntry.FindName("SubtotalText")).Text.ShouldBe("2,380.950");
                 ((TextBlock)purchaseEntry.FindName("ComputedText")).Text.ShouldBe("2,600.000");
-                ((DataGridColumn)purchaseEntry.FindName("RateColumn")).Header.ShouldBe("Rate incl. GST");
+                ((DataGridColumn)purchaseEntry.FindName("RateColumn")).Header.ShouldBe("Rate incl. tax");
                 Capture(purchaseEntry, "purchase-entry-incl-gst.en.png");
                 ratesIncludeTax.IsChecked = false;
                 ((TextBlock)purchaseEntry.FindName("ComputedText")).Text.ShouldBe("2,725.000");
@@ -738,15 +766,15 @@ public sealed class PhaseZeroSmokeTests
                     .ElementAt(1).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 purchaseEntry.Lines.Single().ShouldBeSameAs(purchaseLine);
                 ((TextBlock)purchaseEntry.FindName("ComputedText")).Text.ShouldBe("2,725.000");
-                purchaseLine.ApplyMetadata(new PurchaseLineDefaults(new Money(200), new Percent(5),
-                    new Money(350), new Money(200), null, 30, true));
+                purchaseLine.ApplyMetadata(new PurchaseLineDefaults(new Money(200), 2, new Percent(5),
+                    new Money(350), new Money(200), null, 30));
                 purchaseLine.Expiry = "2026-10-01";
                 purchaseLine.SellingPrice = 200;
                 ((DataGrid)purchaseEntry.FindName("LinesGrid")).Items.Refresh();
                 ((TextBox)purchaseEntry.FindName("ChargesBox")).Text = "101";
                 purchaseLine.MarginNegative.ShouldBeTrue();
                 ((TextBlock)purchaseEntry.FindName("WarningText")).Text.ShouldContain("short expiry");
-                ((TextBlock)purchaseEntry.FindName("WarningText")).Text.ShouldContain("selling below landed cost");
+                ((TextBlock)purchaseEntry.FindName("WarningText")).Text.ShouldContain("selling below cost");
                 ((TextBlock)purchaseEntry.FindName("WarningText")).Text.ShouldContain("rate differs over 10%");
                 Capture(purchaseEntry, "purchase-entry-warnings.en.png");
                 // Enter on a search match adds it as a line; an internal-use product starts as Internal use.
@@ -1109,7 +1137,7 @@ public sealed class PhaseZeroSmokeTests
                 returning.Close();
 
                 var recreation = new ReturnRecreationWindow(new ReturnRecreationDraft(lines[0].Id, "SALT-1",
-                    "Tata Salt 1 kg", "ટાટા મીઠું", null, null, null, null, null, new Percent(5), null, true,
+                    "Tata Salt 1 kg", "ટાટા મીઠું", null, null, null, null, null, new Percent(5), null,
                     null, false, "SALEABLE", null, null, new Money(20), new Money(30), new Money(32),
                     ["category", "unit", "tax rate", "tax mode", "HSN", "expiry tracking"]),
                     new ReturnRecreationOptions([new(1, "Staples")], [new(1, "PCS — Pieces")],
@@ -1119,7 +1147,7 @@ public sealed class PhaseZeroSmokeTests
                 TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 recreation.Close();
                 var guRecreation = new ReturnRecreationWindow(new ReturnRecreationDraft(lines[0].Id, "SALT-1",
-                    "Tata Salt 1 kg", "ટાટા મીઠું", null, null, null, null, null, new Percent(5), null, true,
+                    "Tata Salt 1 kg", "ટાટા મીઠું", null, null, null, null, null, new Percent(5), null,
                     null, false, "SALEABLE", null, null, new Money(20), new Money(30), new Money(32),
                     ["category", "tax mode"]),
                     new ReturnRecreationOptions([new(1, "Staples")], [new(1, "PCS — Pieces")],
@@ -1269,18 +1297,14 @@ public sealed class PhaseZeroSmokeTests
                     reportPicker.SelectedItem!.ToString().ShouldBe(translations["Reports_Kind_SalesRegister"]);
                     PopulateReportCapture(reportsPage, translations);
                     Capture(reportsHost, "reports-table.gu.png");
-                    reportPicker.SelectedIndex = 4;
-                    reportsPage.ShowHourlyReport(HourlySample(translations));
-                    ((TextBlock)reportsPage.FindName("StatusText")).Text = translations.Format("Reports_RowCount", 2);
-                    ((TextBlock)reportsPage.FindName("TotalsText")).Text = translations["Reports_Column_Total"] + ": 90.000";
-                    Capture(reportsHost, "reports-hourly.gu.png");
                     translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                     reportsPage.RefreshLocalizedChoices();
-                    reportPicker.SelectedItem!.ToString().ShouldBe(translations["Reports_Kind_HourlySales"]);
-                    reportsPage.ShowHourlyReport(HourlySample(translations));
-                    ((TextBlock)reportsPage.FindName("StatusText")).Text = translations.Format("Reports_RowCount", 2);
-                    ((TextBlock)reportsPage.FindName("TotalsText")).Text = translations["Reports_Column_Total"] + ": 90.000";
-                    Capture(reportsHost, "reports-hourly.en.png");
+                    // Only the six table reports follow Profit and loss in the picker.
+                    string[] reportKeys = ["Reports_Kind_ProfitAndLoss", "Reports_Kind_SalesRegister", "Reports_Kind_ItemSales",
+                        "Reports_Kind_PurchaseRegister", "Reports_Kind_GstSummary", "Reports_Kind_StockValue",
+                        "Reports_Kind_StockReconciliation"];
+                    ((IEnumerable<object>)reportPicker.ItemsSource).Select(static choice => choice.ToString())
+                        .ShouldBe(reportKeys.Select(key => translations[key]));
                     reportsHost.Close();
 
                     translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
@@ -1581,11 +1605,34 @@ public sealed class PhaseZeroSmokeTests
             }
             long vendor = Run(() => purchasing.CreateVendorAsync(new("Shree Wholesale Traders", null, "9999999999", null, null,
                 null, "Ahmedabad", "Gujarat", "380001", null, null, null, null, 30, Money.Zero, null)));
+            long gst5;
+            using (var connection = factory.Open())
+                gst5 = connection.ExecuteScalar<long>("SELECT id FROM tax_rate WHERE rate_pct=5000");
             long draft = Run(() => purchasing.SaveDraftAsync(null, new PurchaseDraftInput(vendor, "SW-1042",
                 new DateOnly(2026, 10, 20), new DateOnly(2026, 10, 20), null, Money.Zero, null,
                 [new(salt, "SALT-2410", null, new DateOnly(2030, 10, 1), new Quantity(10), Quantity.Zero,
-                    new Money(250), Money.Zero, new Percent(5), new Money(350), new Money(300))])));
+                    new Money(250), Money.Zero, gst5, new Money(350), new Money(300))])));
             PostedPurchase posted = Run(() => purchasing.PostAsync(draft, OperationGuard.NewId()));
+
+            // A new product's first lot has the direct lot form's cost fields, its tax following the
+            // product's rate until another is picked.
+            var editor = new ProductEditorWindow(catalog) { Width = 760, Height = 720, Language = AppLanguage };
+            editor.Show();
+            var productForm = (ProductForm)editor.FindName("Form");
+            var productTax = (ComboBox)productForm.FindName("TaxRateBox");
+            var firstLotTax = (ComboBox)productForm.FindName("FirstLotTaxBox");
+            PumpUntil(() => productTax.Items.Count >= 3 && firstLotTax.Items.Count >= 3);
+            firstLotTax.SelectedValue.ShouldBe(productTax.SelectedValue);
+            productTax.SelectedIndex = 1;
+            firstLotTax.SelectedValue.ShouldBe(productTax.SelectedValue);
+            ((TextBox)productForm.FindName("FirstLotCostBox")).Text = "100";
+            ((TextBox)productForm.FindName("FirstLotUnitTaxBox")).Text.ShouldBe("5.00");
+            ((TextBox)productForm.FindName("FirstLotInclTaxBox")).Text.ShouldBe("105.00");
+            firstLotTax.SelectedIndex = 0;
+            productTax.SelectedIndex = 2;
+            firstLotTax.SelectedIndex.ShouldBe(0);
+            ((TextBox)productForm.FindName("FirstLotUnitTaxBox")).Text.ShouldBe("0.00");
+            editor.Close();
 
             var products = new ProductsPage(catalog, settings, new ProductExcelImporter(database, new AuditLog(), settings));
             var productsHost = new Window { Content = products, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
@@ -1615,6 +1662,14 @@ public sealed class PhaseZeroSmokeTests
             search.Text = "SALT001";
             PumpUntil(() => grid.Items.Count == 2 && ((ProductListItem)grid.Items[0]).Sku == "SALT001");
             ((ProductListItem)grid.Items[1]).Sku.ShouldBe("SALT0011");
+            // Purchase price incl. tax comes from the lot that sells next: 250 + 5% for the bought lot,
+            // nothing for a lot saved without tax values.
+            DataGridColumn inclColumn = grid.Columns.Single(column => Equals(column.Header, translations["Stock_CostInclTax"]));
+            grid.Columns.IndexOf(inclColumn).ShouldBe(grid.Columns.IndexOf(
+                grid.Columns.Single(column => Equals(column.Header, translations["Catalog_Mrp"]))) + 1);
+            grid.UpdateLayout();
+            ((TextBlock)inclColumn.GetCellContent(grid.Items[0])).Text.ShouldBe("262.50");
+            ((TextBlock)inclColumn.GetCellContent(grid.Items[1])).Text.ShouldBe("—");
             search.Text = "Product";
             PumpUntil(() => grid.Items.Count == 8 && next.IsEnabled);
             CaptureRevision(productsHost, "products-search.en.png");
@@ -1728,6 +1783,26 @@ public sealed class PhaseZeroSmokeTests
             var lotsGrid = (DataGrid)lots.FindName("LotsGrid");
             // The opening lot and the posted purchase lot.
             PumpUntil(() => lotsGrid.Items.Count == 2);
+            // The bought lot reads Purchase price + Tax/unit = Purchase price incl. tax, with the rate it
+            // was bought at; the lot saved without tax values shows dashes.
+            LotItem bought = lotsGrid.Items.Cast<LotItem>().Single(lot => lot.BatchNumber == "SALT-2410");
+            LotItem openingLot = lotsGrid.Items.Cast<LotItem>().Single(lot => lot.BatchNumber != "SALT-2410");
+            string LotCell(LotItem lot, string key)
+            {
+                lotsGrid.UpdateLayout();
+                lotsGrid.ScrollIntoView(lot, lotsGrid.Columns.Single(column => Equals(column.Header, translations[key])));
+                lotsGrid.UpdateLayout();
+                return ((TextBlock)lotsGrid.Columns.Single(column => Equals(column.Header, translations[key]))
+                    .GetCellContent(lot)).Text;
+            }
+            LotCell(bought, "Stock_UnitCost").ShouldBe("250.00");
+            LotCell(bought, "Purchasing_Gst").ShouldBe("GST 5%");
+            LotCell(bought, "Stock_UnitTax").ShouldBe("12.50");
+            LotCell(bought, "Stock_CostInclTax").ShouldBe("262.50");
+            LotCell(bought, "Catalog_Price").ShouldBe("300.00");
+            LotCell(openingLot, "Stock_UnitTax").ShouldBe("—");
+            LotCell(openingLot, "Purchasing_Gst").ShouldBe("—");
+            lotsGrid.FrozenColumnCount.ShouldBe(2);
             // The lot actions share the tab row, level with the headers, so the table gains that row.
             var tabActions = (ContentControl)details.FindName("TabActionsHost");
             var lotActions = (FrameworkElement)lots.FindName("ActionBar");
@@ -1916,6 +1991,25 @@ public sealed class PhaseZeroSmokeTests
             PumpUntil(() => billPanel.Visibility == Visibility.Visible && ((DataGrid)salesHistory.FindName("DetailGrid")).Items.Count == 2);
             billPanel.Title.ShouldContain(completedBill.InvoiceNumber);
             billPanel.IsFullWidth.ShouldBeFalse();
+            // A bill line shows its cost side copied from the sold lot, then the sale side from its saved
+            // amounts. Salt was sold from the lot bought at 250 + 5%; the product's own rate is GST 0%.
+            var billLines = (DataGrid)salesHistory.FindName("DetailGrid");
+            SaleLine soldSalt = billLines.Items.Cast<SaleLine>().Single(line => line.ProductName == "Tata Salt 1 kg");
+            SaleLine soldBlack = billLines.Items.Cast<SaleLine>().Single(line => line.ProductName == "Black salt 500 g");
+            string BillCell(SaleLine line, string key)
+            {
+                DataGridColumn column = billLines.Columns.Single(item => Equals(item.Header, translations[key]));
+                billLines.ScrollIntoView(line, column);
+                billLines.UpdateLayout();
+                return ((TextBlock)column.GetCellContent(line)).Text;
+            }
+            BillCell(soldSalt, "Stock_UnitCost").ShouldBe("250.00");
+            BillCell(soldSalt, "Stock_CostInclTax").ShouldBe("262.50");
+            BillCell(soldSalt, "Purchasing_Gst").ShouldBe("GST 0%");
+            BillCell(soldSalt, "Sales_TaxCharged").ShouldBe("0.00");
+            BillCell(soldSalt, "Sales_BeforeTax").ShouldBe(BillCell(soldSalt, "Purchasing_Total"));
+            BillCell(soldBlack, "Stock_UnitCost").ShouldBe("—");
+            billLines.FrozenColumnCount.ShouldBe(1);
             salesHistoryHost.UpdateLayout();
             historyGrid.ActualWidth.ShouldBeGreaterThan(300);
             ((Button)salesHistory.FindName("ViewItemsButton")).Visibility.ShouldBe(Visibility.Collapsed);
@@ -1980,7 +2074,17 @@ public sealed class PhaseZeroSmokeTests
             CaptureForm(new AdvanceFormWindow(moneyOut, clock, staff), "advance-form.en.png");
             CaptureForm(new ExpenseCategoriesWindow(moneyOut), "expense-categories.en.png");
             CaptureForm(new RepeatExpensesWindow(moneyOut, clock, expenseCategories), "repeat-expenses.en.png", fields: false);
-            CaptureForm(new DirectLotWindow(inventory, salt, clock), "direct-lot.en.png");
+            // The direct lot form takes a before-tax purchase price and a tax rate (the product's to
+            // start), and shows the tax per piece and the price including it as they are typed.
+            IReadOnlyList<TaxRateItem> taxRates = Run(() => catalog.GetTaxRatesAsync());
+            var directLot = new DirectLotWindow(inventory, salt, clock, taxRates, taxRates.Single(rate => rate.Rate == 5).Id);
+            ((ComboBox)directLot.FindName("TaxBox")).Items.Count.ShouldBe(taxRates.Count(static rate => rate.IsActive));
+            ((TextBox)directLot.FindName("CostBox")).Text = "81.667";
+            ((TextBox)directLot.FindName("UnitTaxBox")).Text.ShouldBe("4.08");
+            ((TextBox)directLot.FindName("InclTaxBox")).Text.ShouldBe("85.75");
+            ((TextBox)directLot.FindName("CostBox")).Text = "";
+            ((TextBox)directLot.FindName("UnitTaxBox")).Text.ShouldBe("—");
+            CaptureForm(directLot, "direct-lot.en.png");
             IReadOnlyList<LotItem> saltLots = Run(() => inventory.GetLotPageAsync(salt, limit: 10)).Items;
             CaptureForm(new LotBulkDamageWindow(moneyOut, clock, saltLots.Where(static lot => lot.OnHand > Quantity.Zero).ToArray()),
                 "bulk-damage.en.png");
@@ -2273,7 +2377,7 @@ public sealed class PhaseZeroSmokeTests
         string? phase6Directory = Environment.GetEnvironmentVariable("GROCERY_PHASE6_SCREENSHOT_DIR");
         if (phase7Directory is null && phase6Directory is not null && fileName is not ("dashboard.en.png" or "dashboard.gu.png" or
             "dashboard.narrow.en.png" or "dashboard.narrow.gu.png" or "reports-pnl.en.png" or "reports-pnl.narrow.en.png" or
-            "reports-table.en.png" or "reports-table.gu.png" or "reports-hourly.en.png" or "reports-hourly.gu.png")) return;
+            "reports-table.en.png" or "reports-table.gu.png")) return;
         string? phase5Directory = Environment.GetEnvironmentVariable("GROCERY_PHASE5_SCREENSHOT_DIR");
         if (phase6Directory is null && phase5Directory is not null && fileName is not ("expiry.en.png" or "damages.en.png" or
             "expenses.en.png" or "payroll.en.png" or "payroll.gu.png" or "assets.en.png" or "assets.gu.png")) return;
@@ -2397,20 +2501,6 @@ public sealed class PhaseZeroSmokeTests
         line.Points.Add(new Point(trendWidth / 2, 100));
         line.Points.Add(new Point(trendWidth - 8, 36));
         trend.Children.Add(line);
-    }
-
-    private static TabularReport HourlySample(TranslationSource translations)
-    {
-        ReportRow Hour(string day, int hour, int bills, long revenue) => new(new Dictionary<string, object?>
-        {
-            ["Weekday"] = translations[$"Reports_Weekday_{day}"],
-            ["Hour"] = hour,
-            ["Bills"] = bills,
-            ["Revenue"] = revenue,
-        });
-        return new TabularReport(translations["Reports_Kind_HourlySales"], null, [],
-            [Hour("Mon", 9, 2, 30000), Hour("Tue", 14, 4, 90000), Hour("Sat", 18, 1, 50000)],
-            new Dictionary<string, decimal>());
     }
 
     private sealed class ReportClock : IClock

@@ -46,8 +46,7 @@ public sealed partial class SalesService(
         EnsureEditable(transaction, id);
         ProductRow product = transaction.Connection.QuerySingleOrDefault<ProductRow>("""
             SELECT p.name AS Name,p.name_local AS NameLocal,p.hsn_code AS HsnCode,
-                   p.price_includes_tax AS PriceIncludesTax,p.is_active AS IsActive,
-                   p.product_class AS ProductClass,
+                   p.is_active AS IsActive,p.product_class AS ProductClass,
                    u.allow_fraction AS AllowFraction,COALESCE(t.rate_pct,0) AS TaxRate
             FROM product p JOIN uom u ON u.id=p.uom_id
             LEFT JOIN tax_rate t ON t.id=p.tax_rate_id WHERE p.id=@productId
@@ -79,13 +78,15 @@ public sealed partial class SalesService(
                     WHERE id=@lineId
                     """, new { qty = allocation.Quantity.Scaled, barcode = scannedBarcode, lineId }, transaction.Transaction);
             else
+                // Every lot price includes tax. The line copies the lot's purchase-side tax too.
                 transaction.Connection.Execute("""
                     INSERT INTO sale_line(
                         sale_id,line_no,product_id,lot_id,product_name,product_name_local,hsn_code,
                         scanned_barcode,qty,unit_price,mrp,discount,line_discount,tax_rate_pct,
-                        price_includes_tax,taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+                        price_includes_tax,taxable_amount,tax_amount,line_total,unit_cost,cost_amount,
+                        unit_cost_tax,unit_cost_incl_tax)
                     VALUES (@id,@lineNo,@productId,@lotId,@name,@localName,@hsn,@barcode,@qty,@price,
-                        @mrp,0,0,@taxRate,@includesTax,0,0,0,@cost,0)
+                        @mrp,0,0,@taxRate,1,0,0,0,@cost,0,@costTax,@costInclTax)
                     """, new
                 {
                     id,
@@ -100,8 +101,9 @@ public sealed partial class SalesService(
                     price = allocation.Lot.Price.Scaled,
                     mrp = allocation.Lot.Mrp?.Scaled,
                     taxRate = EffectiveTaxRate(product.TaxRate),
-                    includesTax = product.PriceIncludesTax ? 1 : 0,
                     cost = allocation.Lot.Cost.Scaled,
+                    costTax = allocation.Lot.CostTax?.Scaled,
+                    costInclTax = allocation.Lot.CostInclTax?.Scaled,
                 }, transaction.Transaction);
         }
         Reprice(transaction, id);
@@ -170,8 +172,7 @@ public sealed partial class SalesService(
         if (previous.Length == 0) throw new DomainException(ErrorCode.NotFound, productId);
         ProductRow product = transaction.Connection.QuerySingle<ProductRow>("""
             SELECT p.name AS Name,p.name_local AS NameLocal,p.hsn_code AS HsnCode,
-                   p.price_includes_tax AS PriceIncludesTax,p.is_active AS IsActive,
-                   p.product_class AS ProductClass,
+                   p.is_active AS IsActive,p.product_class AS ProductClass,
                    u.allow_fraction AS AllowFraction,COALESCE(t.rate_pct,0) AS TaxRate
             FROM product p JOIN uom u ON u.id=p.uom_id
             LEFT JOIN tax_rate t ON t.id=p.tax_rate_id WHERE p.id=@productId
@@ -209,9 +210,10 @@ public sealed partial class SalesService(
             transaction.Connection.Execute("""
                 INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,product_name_local,
                     hsn_code,scanned_barcode,qty,unit_price,mrp,discount,line_discount,tax_rate_pct,
-                    price_includes_tax,taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+                    price_includes_tax,taxable_amount,tax_amount,line_total,unit_cost,cost_amount,
+                    unit_cost_tax,unit_cost_incl_tax)
                 VALUES (@saleId,@lineNumber,@productId,@lotId,@name,@localName,@hsn,@barcode,
-                    @qty,@price,@mrp,0,@lineDiscount,@taxRate,@includesTax,0,0,0,@cost,0)
+                    @qty,@price,@mrp,0,@lineDiscount,@taxRate,1,0,0,0,@cost,0,@costTax,@costInclTax)
                 """, new
             {
                 saleId,
@@ -227,8 +229,9 @@ public sealed partial class SalesService(
                 mrp = allocation.Lot.Mrp?.Scaled,
                 lineDiscount = discounts[index].Scaled,
                 taxRate = EffectiveTaxRate(product.TaxRate),
-                includesTax = product.PriceIncludesTax ? 1 : 0,
                 cost = allocation.Lot.Cost.Scaled,
+                costTax = allocation.Lot.CostTax?.Scaled,
+                costInclTax = allocation.Lot.CostInclTax?.Scaled,
             }, transaction.Transaction);
         }
         Reprice(transaction, saleId);
@@ -274,8 +277,10 @@ public sealed partial class SalesService(
             transaction.Connection.Execute("DELETE FROM sale_line WHERE id=@lineId", new { lineId }, transaction.Transaction);
         }
         else
+            // The new lot's price includes tax, and its cost-side tax replaces the old lot's.
             transaction.Connection.Execute("""
-                UPDATE sale_line SET lot_id=@lotId,unit_price=@price,mrp=@mrp,unit_cost=@cost
+                UPDATE sale_line SET lot_id=@lotId,unit_price=@price,mrp=@mrp,unit_cost=@cost,
+                    price_includes_tax=1,unit_cost_tax=@costTax,unit_cost_incl_tax=@costInclTax
                 WHERE id=@lineId
                 """, new
             {
@@ -283,6 +288,8 @@ public sealed partial class SalesService(
                 price = selected.Lot.Price.Scaled,
                 mrp = selected.Lot.Mrp?.Scaled,
                 cost = selected.Lot.Cost.Scaled,
+                costTax = selected.Lot.CostTax?.Scaled,
+                costInclTax = selected.Lot.CostInclTax?.Scaled,
                 lineId,
             }, transaction.Transaction);
         Reprice(transaction, saleId);
@@ -298,9 +305,10 @@ public sealed partial class SalesService(
             FROM sale_line WHERE id=@lineId AND sale_id=@saleId
             """, new { lineId, saleId }, transaction.Transaction);
         if (line is null) throw new DomainException(ErrorCode.NotFound, lineId);
+        // A typed price includes tax, as every price does, so it compares directly with MRP.
         if (line.Value.Mrp > 0 && price.Scaled > line.Value.Mrp)
             throw new DomainException(ErrorCode.PriceAboveMrp, price);
-        transaction.Connection.Execute("UPDATE sale_line SET unit_price=@price WHERE id=@lineId",
+        transaction.Connection.Execute("UPDATE sale_line SET unit_price=@price,price_includes_tax=1 WHERE id=@lineId",
             new { price = price.Scaled, lineId }, transaction.Transaction);
         Reprice(transaction, saleId);
         auditLog.Write(transaction, "sale_line", lineId, "PRICE_OVERRIDE", new { saleId, price = price.Scaled });
@@ -404,12 +412,12 @@ public sealed partial class SalesService(
                     .SequenceEqual(accepted))
                 throw new DomainException(ErrorCode.Validation, "The held bill changed. Review it again.");
             RevalidateStock(transaction, saleId);
+            // Resuming takes each lot's current price, which includes tax, and its cost-side tax.
             transaction.Connection.Execute("""
-                UPDATE sale_line SET
-                    unit_price=(SELECT selling_price FROM product_lot WHERE id=sale_line.lot_id),
-                    mrp=(SELECT mrp FROM product_lot WHERE id=sale_line.lot_id),
-                    unit_cost=(SELECT unit_cost FROM product_lot WHERE id=sale_line.lot_id)
-                WHERE sale_id=@saleId
+                UPDATE sale_line SET unit_price=l.selling_price,mrp=l.mrp,unit_cost=l.unit_cost,
+                    price_includes_tax=1,unit_cost_tax=l.unit_tax,unit_cost_incl_tax=l.unit_cost_incl_tax
+                FROM product_lot l
+                WHERE sale_line.sale_id=@saleId AND l.id=sale_line.lot_id
                 """, new { saleId }, transaction.Transaction);
             transaction.Connection.Execute("UPDATE sale SET status='DRAFT' WHERE id=@saleId",
                 new { saleId }, transaction.Transaction);
@@ -565,6 +573,9 @@ public sealed partial class SalesService(
             if (change > Money.Zero && command.Payments.All(static item => item.Mode != PaymentMode.Cash))
                 throw new DomainException(ErrorCode.OverpaymentNonCash, change);
             string invoice = documentNumbers.Next(transaction, DocType.Sale, date);
+            // The tax label is the rate's name now. No label when no tax is charged (Composition or
+            // No-GST); one built from the line's own percent when the rate's percent has changed
+            // since the line was added, so a label never contradicts the tax charged.
             transaction.Connection.Execute("""
                 UPDATE sale_line SET
                     product_sku_snapshot=p.sku,uom_snapshot=u.code,
@@ -575,10 +586,17 @@ public sealed partial class SalesService(
                     batch_no_snapshot=l.batch_no,expiry_date_snapshot=l.expiry_date,
                     lot_version_snapshot=l.detail_version,
                     tax_mode_snapshot=@taxMode,snapshot_provenance='AT_COMPLETION',
-                    legacy_unknown_fields=NULL
+                    legacy_unknown_fields=NULL,
+                    tax_label_snapshot=CASE
+                        WHEN @taxMode<>'REGULAR' THEN NULL
+                        WHEN t.rate_pct=sale_line.tax_rate_pct THEN t.name
+                        WHEN t.id IS NOT NULL OR sale_line.tax_rate_pct<>0 THEN
+                            'Tax '||rtrim(rtrim(printf('%.3f',sale_line.tax_rate_pct/1000.0),'0'),'.')||'%'
+                        END
                 FROM product_lot l JOIN product p ON p.id=l.product_id
                 JOIN uom u ON u.id=p.uom_id
                 JOIN category c ON c.id=p.category_id
+                LEFT JOIN tax_rate t ON t.id=p.tax_rate_id
                 WHERE sale_line.sale_id=@saleId AND l.id=sale_line.lot_id
                 """, new { saleId = command.SaleId, taxMode = settings.Current.TaxMode }, transaction.Transaction);
             // Every P&L and history value is on the line above before any lot changes.
@@ -727,7 +745,7 @@ public sealed partial class SalesService(
                     tax_rate_id_snapshot,track_expiry_snapshot,is_loose_snapshot,
                     lot_version_snapshot,tax_mode_snapshot,price_includes_tax_snapshot,tax_rate_pct_snapshot,
                     mrp_snapshot,unit_price_snapshot,unit_cost_snapshot,discount_snapshot,
-                    snapshot_provenance,legacy_unknown_fields)
+                    snapshot_provenance,legacy_unknown_fields,tax_label_snapshot)
                 SELECT @returnId,sl.id,@qty,@taxable,@tax,@refund,@cost,@resellable,
                     sl.product_id,sl.lot_id,sl.product_sku_snapshot,sl.product_name,
                     sl.product_name_local,sl.uom_snapshot,sl.product_class_snapshot,
@@ -737,7 +755,7 @@ public sealed partial class SalesService(
                     sl.lot_version_snapshot,sl.tax_mode_snapshot,sl.price_includes_tax,
                     sl.tax_rate_pct,sl.mrp,sl.unit_price,sl.unit_cost,
                     @discount,
-                    'SALE_LINE_COPY',sl.legacy_unknown_fields
+                    'SALE_LINE_COPY',sl.legacy_unknown_fields,sl.tax_label_snapshot
                 FROM sale_line sl WHERE sl.id=@lineId RETURNING id
                 """, new
             {
@@ -1182,7 +1200,8 @@ public sealed partial class SalesService(
     {
         LotRow row = transaction.Connection.QuerySingleOrDefault<LotRow>("""
             SELECT id AS LotId,qty_on_hand AS OnHand,expiry_date AS Expiry,selling_price AS Price,
-                   mrp AS Mrp,unit_cost AS Cost,is_active AS IsActive FROM product_lot
+                   mrp AS Mrp,unit_cost AS Cost,is_active AS IsActive,
+                   unit_tax AS CostTax,unit_cost_incl_tax AS CostInclTax FROM product_lot
             WHERE id=@lotId AND product_id=@productId
             """, new { lotId, productId }, transaction.Transaction)
             ?? throw new DomainException(ErrorCode.LotProductMismatch, lotId, productId);
@@ -1193,7 +1212,11 @@ public sealed partial class SalesService(
         if (quantity > available)
             throw new DomainException(ErrorCode.InsufficientStock, quantity - available);
         return new(new(row.LotId, Quantity.FromScaled(row.OnHand), row.Expiry, Money.FromScaled(row.Price),
-            row.Mrp is null ? null : Money.FromScaled(row.Mrp.Value), Money.FromScaled(row.Cost)), quantity);
+            row.Mrp is null ? null : Money.FromScaled(row.Mrp.Value), Money.FromScaled(row.Cost))
+        {
+            CostTax = row.CostTax is null ? null : Money.FromScaled(row.CostTax.Value),
+            CostInclTax = row.CostInclTax is null ? null : Money.FromScaled(row.CostInclTax.Value),
+        }, quantity);
     }
 
     private void RevalidateStock(DbTx transaction, long saleId)
@@ -1243,7 +1266,9 @@ public sealed partial class SalesService(
                    sl.line_discount AS LineDiscount,
                    sl.tax_rate_pct AS TaxRatePct,sl.taxable_amount AS TaxableAmount,
                    sl.tax_amount AS TaxAmount,sl.line_total AS LineTotal,sl.unit_cost AS UnitCost,
-                   sl.cost_amount AS CostAmount,sl.scanned_barcode AS ScannedBarcode
+                   sl.cost_amount AS CostAmount,sl.scanned_barcode AS ScannedBarcode,
+                   sl.tax_label_snapshot AS TaxLabel,sl.unit_cost_tax AS UnitCostTax,
+                   sl.unit_cost_incl_tax AS UnitCostInclTax
             FROM sale_line sl LEFT JOIN product_lot l ON l.id=sl.lot_id
             WHERE sl.sale_id=@saleId ORDER BY sl.line_no
             """, new { saleId }).Select(static row => row.ToModel()).ToArray();
@@ -1388,10 +1413,10 @@ public sealed partial class SalesService(
         _ => throw new InvalidOperationException($"Unknown sale status '{status}'."),
     };
 
-    private sealed class ProductRow { public string Name { get; init; } = ""; public string? NameLocal { get; init; } public string? HsnCode { get; init; } public bool PriceIncludesTax { get; init; } public bool IsActive { get; init; } public bool AllowFraction { get; init; } public long TaxRate { get; init; } public string ProductClass { get; init; } = "SALEABLE"; }
+    private sealed class ProductRow { public string Name { get; init; } = ""; public string? NameLocal { get; init; } public string? HsnCode { get; init; } public bool IsActive { get; init; } public bool AllowFraction { get; init; } public long TaxRate { get; init; } public string ProductClass { get; init; } = "SALEABLE"; }
     private sealed class DbLineRow { public long Id { get; init; } public long ProductId { get; init; } public long LotId { get; init; } public long Quantity { get; init; } public long UnitPrice { get; init; } public long? Mrp { get; init; } public long LineDiscount { get; init; } public long TaxRate { get; init; } public bool PriceIncludesTax { get; init; } public long UnitCost { get; init; } }
     private sealed class HeaderRow { public long Id { get; init; } public string? InvoiceNo { get; init; } public string SaleDate { get; init; } = ""; public string Status { get; init; } = ""; public long BillDiscount { get; init; } public long GrossTotal { get; init; } public long DiscountTotal { get; init; } public long TaxableTotal { get; init; } public long TaxTotal { get; init; } public long RoundOff { get; init; } public long GrandTotal { get; init; } public long CostTotal { get; init; } public long ChangeReturned { get; init; } }
-    private sealed class LotRow { public long LotId { get; init; } public long OnHand { get; init; } public DateOnly? Expiry { get; init; } public long Price { get; init; } public long? Mrp { get; init; } public long Cost { get; init; } public bool IsActive { get; init; } }
+    private sealed class LotRow { public long LotId { get; init; } public long OnHand { get; init; } public DateOnly? Expiry { get; init; } public long Price { get; init; } public long? Mrp { get; init; } public long Cost { get; init; } public bool IsActive { get; init; } public long? CostTax { get; init; } public long? CostInclTax { get; init; } }
     private sealed class LineCheckRow { public long ProductId { get; init; } public long OnHand { get; init; } public bool AllowFraction { get; init; } }
     private sealed class StockRow { public long ProductId { get; init; } public long Quantity { get; init; } public long OnHand { get; init; } public DateOnly? Expiry { get; init; } public bool IsActive { get; init; } }
     private sealed class HeldRow { public long Id { get; init; } public DateTime CreatedAt { get; init; } public string? Label { get; init; } public int ItemCount { get; init; } public long Total { get; init; } }
@@ -1438,6 +1463,9 @@ public sealed partial class SalesService(
         public long UnitCost { get; init; }
         public long CostAmount { get; init; }
         public string? ScannedBarcode { get; init; }
+        public string? TaxLabel { get; init; }
+        public long? UnitCostTax { get; init; }
+        public long? UnitCostInclTax { get; init; }
         public SaleLine ToModel() => new(Id, LineNo, ProductId, LotId, ProductName, ProductNameLocal,
             BatchNumber, ExpiryDate, Quantity.FromScaled(Qty), Money.FromScaled(UnitPrice),
             Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(Discount),
@@ -1451,6 +1479,9 @@ public sealed partial class SalesService(
             LotCode = LotCode,
             SnapshotProvenance = SnapshotProvenance,
             LegacyUnknownFields = LegacyUnknownFields,
+            TaxLabel = TaxLabel,
+            UnitCostTax = UnitCostTax is null ? null : Money.FromScaled(UnitCostTax.Value),
+            UnitCostInclTax = UnitCostInclTax is null ? null : Money.FromScaled(UnitCostInclTax.Value),
         };
     }
 }

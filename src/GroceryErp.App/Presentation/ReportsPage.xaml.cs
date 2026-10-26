@@ -6,7 +6,6 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
 using System.Windows.Xps.Packaging;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
@@ -20,7 +19,6 @@ namespace GroceryErp.App.Presentation;
 public partial class ReportsPage : Page
 {
     private static readonly CultureInfo NumberCulture = CultureInfo.GetCultureInfo("en-IN");
-    private static readonly string[] Weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     private readonly ReportService _reports;
     private readonly ReportOutputService _output;
     private readonly IClock _clock;
@@ -34,7 +32,6 @@ public partial class ReportsPage : Page
     private readonly bool _loadOnShow;
     private int _refreshVersion;
     private CancellationTokenSource? _refreshCancellation;
-    private bool _expiryStatusChoices;
     private CancellationTokenSource? _exportCancellation;
     private bool _previewOpen;
 
@@ -168,12 +165,9 @@ public partial class ReportsPage : Page
             ReportKind kind = ((ReportChoice)ReportPicker.SelectedItem).Kind!.Value;
             string? status = ((FilterChoice?)StatusPicker.SelectedItem)?.Code;
             string? payment = ((FilterChoice?)PaymentPicker.SelectedItem)?.Code;
-            if (!int.TryParse(SlowDaysFilter.Text, NumberStyles.None, CultureInfo.InvariantCulture, out int slowDays) || slowDays is < 1 or > 3650)
-                throw new ArgumentException(TranslationSource.Instance["Reports_InvalidFilter"]);
             TabularReport report2 = await _reports.GetReportAsync(kind, new(From: from, To: to,
                 ProductId: ParseId(ProductFilter.Text), VendorId: ParseId(VendorFilter.Text),
-                AssetId: ParseId(AssetFilter.Text), Status: status, PaymentMode: payment,
-                Entity: Clean(EntityFilter.Text), Action: Clean(ActionFilter.Text), SlowMoverDays: slowDays,
+                Status: status, PaymentMode: payment,
                 Limit: 500, IncludeExpired: IncludeExpiredCheck.IsChecked == true,
                 MismatchesOnly: MismatchesCheck.IsChecked == true),
                 cancellation.Token);
@@ -183,15 +177,7 @@ public partial class ReportsPage : Page
             timing.Bind(() => ReportGrid.ItemsSource = _currentReport.Rows.Select(row => new DisplayRow(_currentReport.Columns, row)).ToList());
             PnlPanel.Visibility = Visibility.Collapsed;
             PnlStatusBadge.Visibility = Visibility.Collapsed;
-            if (kind == ReportKind.HourlySales)
-            {
-                ShowHourlyReport(_currentReport);
-            }
-            else
-            {
-                HourlyPanel.Visibility = Visibility.Collapsed;
-                ReportGrid.Visibility = Visibility.Visible;
-            }
+            ReportGrid.Visibility = Visibility.Visible;
             string rows = _currentReport.IsTruncated
                 ? TranslationSource.Instance.Format("Reports_TruncatedRows", _currentReport.Rows.Count)
                 : TranslationSource.Instance.Format("Reports_RowCount", _currentReport.Rows.Count);
@@ -205,7 +191,6 @@ public partial class ReportsPage : Page
             if (version != _refreshVersion) return;
             ReportGrid.ItemsSource = null;
             PnlGrid.ItemsSource = null;
-            HourlyPanel.Visibility = Visibility.Collapsed;
             TotalsText.Text = "";
             StatusText.Text = UserError.Message(exception);
         }
@@ -220,7 +205,6 @@ public partial class ReportsPage : Page
     {
         PnlStatusText.Text = _output.PnlStatusText(report);
         PnlStatusBadge.Visibility = Visibility.Visible;
-        HourlyPanel.Visibility = Visibility.Collapsed;
         List<PnlLayoutRow> visible = VisibleRows(report);
         if (MonthsCheck.IsChecked == true)
         {
@@ -373,64 +357,6 @@ public partial class ReportsPage : Page
         }
     }
 
-    public void ShowHourlyReport(TabularReport report)
-    {
-        ArgumentNullException.ThrowIfNull(report);
-        PnlPanel.Visibility = Visibility.Collapsed;
-        PnlStatusBadge.Visibility = Visibility.Collapsed;
-        ReportGrid.Visibility = Visibility.Collapsed;
-        HourlyPanel.Visibility = Visibility.Visible;
-        HourlyGrid.Children.Clear();
-        AddHourlyCell("", Brushes.Transparent, false);
-        for (int hour = 0; hour < 24; hour++)
-            AddHourlyCell(hour.ToString("00", CultureInfo.InvariantCulture), Brushes.Transparent, false);
-        var values = report.Rows.ToDictionary(row =>
-            (Convert.ToString(row.Values["Weekday"], CultureInfo.InvariantCulture) ?? "",
-                Convert.ToInt32(row.Values["Hour"], CultureInfo.InvariantCulture)));
-        long maximum = report.Rows.Select(row => Convert.ToInt64(row.Values["Revenue"], CultureInfo.InvariantCulture))
-            .DefaultIfEmpty(0).Max();
-        foreach (string dayCode in Weekdays)
-        {
-            string day = TranslationSource.Instance[$"Reports_Weekday_{dayCode}"];
-            AddHourlyCell(day, Brushes.Transparent, false);
-            for (int hour = 0; hour < 24; hour++)
-            {
-                values.TryGetValue((day, hour), out ReportRow? row);
-                long revenue = row is null ? 0 : Convert.ToInt64(row.Values["Revenue"], CultureInfo.InvariantCulture);
-                int bills = row is null ? 0 : Convert.ToInt32(row.Values["Bills"], CultureInfo.InvariantCulture);
-                double strength = maximum <= 0 ? 0 : Math.Clamp((double)revenue / maximum, 0, 1);
-                byte red = (byte)(242 - 138 * strength);
-                byte green = (byte)(247 - 99 * strength);
-                byte blue = (byte)(252 - 19 * strength);
-                string tooltip = TranslationSource.Instance.Format("Reports_HourlyCell", day,
-                    hour.ToString("00", CultureInfo.InvariantCulture), bills, Fx3.FromScaled(revenue));
-                AddHourlyCell(bills == 0 ? "" : bills.ToString(CultureInfo.InvariantCulture),
-                    new SolidColorBrush(Color.FromRgb(red, green, blue)), true, tooltip);
-            }
-        }
-    }
-
-    private void AddHourlyCell(string label, Brush background, bool data, string? tooltip = null)
-    {
-        var border = new Border
-        {
-            Margin = new Thickness(1),
-            Height = 27,
-            Background = background,
-            BorderBrush = Brushes.LightGray,
-            BorderThickness = new Thickness(0.5),
-            ToolTip = tooltip,
-        };
-        border.Child = new TextBlock
-        {
-            Text = label,
-            TextAlignment = TextAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            FontWeight = data ? FontWeights.Normal : FontWeights.SemiBold,
-        };
-        HourlyGrid.Children.Add(border);
-    }
-
     private async void Refresh_OnClick(object sender, RoutedEventArgs e) => await RefreshAsync();
 
     private async void ReportPicker_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -446,13 +372,6 @@ public partial class ReportsPage : Page
         ReportKind? kind = choice.Kind;
         bool pnl = kind is null;
         bool sales = kind == ReportKind.SalesRegister;
-        bool expiry = kind == ReportKind.Expiry;
-        if (_expiryStatusChoices != expiry)
-        {
-            _expiryStatusChoices = expiry;
-            StatusPicker.ItemsSource = expiry ? ExpiryStatusChoices() : SalesStatusChoices();
-            StatusPicker.SelectedIndex = 0;
-        }
         bool custom = SelectedScope == PnlScope.Custom;
         PnlPeriodControls.Visibility = pnl ? Visibility.Visible : Visibility.Collapsed;
         PnlPeriodPicker.Visibility = pnl && !custom ? Visibility.Visible : Visibility.Collapsed;
@@ -463,27 +382,20 @@ public partial class ReportsPage : Page
         // Only filters the selected report uses are shown; the section hides when none apply.
         var filters = new (FrameworkElement Panel, bool Applies)[]
         {
-            (StatusFilterPanel, sales || expiry),
+            (StatusFilterPanel, sales),
             (PaymentFilterPanel, sales),
             (ProductFilterPanel, kind is ReportKind.ItemSales or ReportKind.StockReconciliation),
-            (VendorFilterPanel, kind is ReportKind.VendorPayables or ReportKind.PurchaseRegister),
-            (AssetFilterPanel, kind == ReportKind.AssetSchedule),
-            (SlowDaysFilterPanel, kind == ReportKind.SlowMovers),
-            (AuditFilterPanel, kind == ReportKind.AuditLog),
+            (VendorFilterPanel, kind == ReportKind.PurchaseRegister),
         };
         foreach ((FrameworkElement panel, bool applies) in filters)
             panel.Visibility = applies ? Visibility.Visible : Visibility.Collapsed;
         bool more = !pnl && filters.Any(static filter => filter.Applies);
         MoreFiltersToggle.Visibility = more ? Visibility.Visible : Visibility.Collapsed;
         MoreFiltersPanel.Visibility = more && MoreFiltersToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-        StatusPicker.IsEnabled = sales || expiry;
+        StatusPicker.IsEnabled = sales;
         PaymentPicker.IsEnabled = sales;
         ProductFilter.IsEnabled = kind is ReportKind.ItemSales or ReportKind.StockReconciliation;
-        VendorFilter.IsEnabled = kind is ReportKind.VendorPayables or ReportKind.PurchaseRegister;
-        AssetFilter.IsEnabled = kind == ReportKind.AssetSchedule;
-        SlowDaysFilter.IsEnabled = kind == ReportKind.SlowMovers;
-        EntityFilter.IsEnabled = kind == ReportKind.AuditLog;
-        ActionFilter.IsEnabled = kind == ReportKind.AuditLog;
+        VendorFilter.IsEnabled = kind == ReportKind.PurchaseRegister;
         IncludeExpiredCheck.Visibility = kind == ReportKind.StockValue ? Visibility.Visible : Visibility.Collapsed;
         MismatchesCheck.Visibility = kind == ReportKind.StockReconciliation ? Visibility.Visible : Visibility.Collapsed;
         PnlCsvButton.IsEnabled = pnl;
@@ -514,14 +426,6 @@ public partial class ReportsPage : Page
         new(null, "Reports_AllStatuses"),
         new("COMPLETED", "Reports_StatusCompleted"),
         new("VOID", "Reports_StatusVoid"),
-    ];
-
-    private static FilterChoice[] ExpiryStatusChoices() =>
-    [
-        new(null, "Reports_AllStatuses"),
-        new("EXPIRED", "Reports_StatusExpired"),
-        new("CRITICAL", "Reports_StatusCritical"),
-        new("SOON", "Reports_StatusSoon"),
     ];
 
     private static List<ReportChoice> ReportChoices() =>
@@ -563,7 +467,7 @@ public partial class ReportsPage : Page
             RebuildPnlPeriods(period);
             PeriodPicker.ItemsSource = Enum.GetValues<PnlPeriodKind>().Select(kind => new PeriodChoice(kind)).ToList();
             PeriodPicker.SelectedIndex = periodIndex;
-            StatusPicker.ItemsSource = _expiryStatusChoices ? ExpiryStatusChoices() : SalesStatusChoices();
+            StatusPicker.ItemsSource = SalesStatusChoices();
             SelectChoice(StatusPicker, status);
             PaymentPicker.ItemsSource = PaymentChoices();
             SelectChoice(PaymentPicker, payment);
@@ -679,15 +583,11 @@ public partial class ReportsPage : Page
                 ? DateOnly.FromDateTime(fromDate) : _clock.BusinessDate;
             DateOnly to = ToPicker.SelectedDate is { } toDate
                 ? DateOnly.FromDateTime(toDate) : _clock.BusinessDate;
-            if (!int.TryParse(SlowDaysFilter.Text, NumberStyles.None, CultureInfo.InvariantCulture,
-                out int slowDays)) throw new ArgumentException(TranslationSource.Instance["Reports_InvalidFilter"]);
             var filter = new ReportFilter(From: from, To: to,
-                ProductId: ParseId(ProductFilter.Text),
-                VendorId: ParseId(VendorFilter.Text), AssetId: ParseId(AssetFilter.Text),
+                ProductId: ParseId(ProductFilter.Text), VendorId: ParseId(VendorFilter.Text),
                 Status: ((FilterChoice?)StatusPicker.SelectedItem)?.Code,
                 PaymentMode: ((FilterChoice?)PaymentPicker.SelectedItem)?.Code,
-                Entity: Clean(EntityFilter.Text), Action: Clean(ActionFilter.Text),
-                SlowMoverDays: slowDays, IncludeExpired: IncludeExpiredCheck.IsChecked == true,
+                IncludeExpired: IncludeExpiredCheck.IsChecked == true,
                 MismatchesOnly: MismatchesCheck.IsChecked == true);
             var progress = new Progress<long>(count =>
                 StatusText.Text = TranslationSource.Instance.Format("Reports_ExportedRows", count));
@@ -799,7 +699,6 @@ public partial class ReportsPage : Page
         if (long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out long id) && id > 0) return id;
         throw new ArgumentException(TranslationSource.Instance["Reports_InvalidFilter"]);
     }
-    private static string? Clean(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private sealed record PnlDisplayRow(PnlLayoutRow Row, string Label, string Amount, bool IsBold);
 

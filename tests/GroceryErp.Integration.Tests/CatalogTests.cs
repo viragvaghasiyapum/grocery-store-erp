@@ -709,7 +709,7 @@ public sealed class CatalogTests
 
         public ProductInput Product(string name, string aliases) => new(
             $"P{Guid.NewGuid():N}"[..20], name, null, aliases, CategoryId, null, UnitId, "1001", TaxRateId,
-            true, false, null, true, null, null, Quantity.Zero, new Money(50), new Money(60), []);
+            false, null, true, null, null, Quantity.Zero, new Money(50), new Money(60), []);
 
         public void Dispose()
         {

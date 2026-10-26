@@ -51,6 +51,7 @@ public sealed partial class InventoryService(
                        l.unit_cost AS UnitCost,l.mrp AS Mrp,l.selling_price AS SellingPrice,
                        l.qty_received AS Received,l.qty_on_hand AS OnHand,l.is_active AS IsActive,
                        l.origin_kind AS OriginKind,l.detail_version AS DetailVersion,
+                       l.tax_label_snapshot AS TaxLabel,l.unit_tax AS UnitTax,l.unit_cost_incl_tax AS UnitCostInclTax,
                        {{ExpiryBucketSql}} AS ExpiryBucketCode
                 FROM visible page JOIN product_lot l ON l.id=page.id JOIN product p ON p.id=l.product_id
                 JOIN category c ON c.id=p.category_id LEFT JOIN category pc ON pc.id=c.parent_id
@@ -173,7 +174,8 @@ public sealed partial class InventoryService(
                    l.batch_no AS BatchNumber,l.received_date AS ReceivedDate,l.expiry_date AS ExpiryDate,
                    l.unit_cost AS UnitCost,l.mrp AS Mrp,l.selling_price AS SellingPrice,
                    l.qty_received AS Received,l.qty_on_hand AS OnHand,l.is_active AS IsActive,
-                   l.detail_version AS DetailVersion,
+                   l.detail_version AS DetailVersion,l.origin_kind AS OriginKind,
+                   l.tax_label_snapshot AS TaxLabel,l.unit_tax AS UnitTax,l.unit_cost_incl_tax AS UnitCostInclTax,
                    {{ExpiryBucketSql}} AS ExpiryBucketCode
             FROM product_lot l JOIN product p ON p.id=l.product_id
             JOIN category c ON c.id=p.category_id LEFT JOIN category pc ON pc.id=c.parent_id
@@ -197,25 +199,28 @@ public sealed partial class InventoryService(
             ValidateProductQuantity(product, line.Quantity, line.ExpiryDate);
             if (line.Mrp is not null && line.SellingPrice > line.Mrp.Value)
                 throw new DomainException(ErrorCode.PriceAboveMrp);
+            LotTax tax = OpeningTax(transaction, line);
             string lotCode = numbers.Next(transaction, DocType.Lot, line.ReceivedDate);
             long id = transaction.Connection.ExecuteScalar<long>("""
                 INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,
-                    unit_cost,mrp,selling_price,qty_received,direct_reason)
+                    unit_cost,mrp,selling_price,qty_received,direct_reason,
+                    tax_rate_id_snapshot,tax_label_snapshot,tax_rate_pct_snapshot,unit_tax,unit_cost_incl_tax)
                 VALUES (@ProductId,@lotCode,@BatchNumber,@receivedDate,@expiryDate,
-                    @unitCost,@mrp,@sellingPrice,@quantity,@note) RETURNING id
-                """, new
+                    @unitCost,@mrp,@sellingPrice,@quantity,@note,
+                    @taxRateId,@taxLabel,@taxRatePct,@unitTax,@unitCostInclTax) RETURNING id
+                """, tax.AddTo(new DynamicParameters(new
             {
                 line.ProductId,
                 lotCode,
                 BatchNumber = batch,
                 receivedDate = Format(line.ReceivedDate),
                 expiryDate = line.ExpiryDate is null ? null : Format(line.ExpiryDate.Value),
-                unitCost = line.UnitCost.Scaled,
+                unitCost = tax.Cost.Booked.Scaled,
                 mrp = line.Mrp?.Scaled,
                 sellingPrice = line.SellingPrice.Scaled,
                 quantity = line.Quantity.Scaled,
                 note
-            }, transaction.Transaction);
+            })), transaction.Transaction);
             long originId = transaction.Connection.ExecuteScalar<long>(
                 "SELECT id FROM direct_stock_origin WHERE lot_id=@id", new { id }, transaction.Transaction);
             stock.Change(transaction, new(line.ReceivedDate, line.ProductId, id, LotChangeKind.DirectEntry, line.Quantity));
@@ -261,24 +266,27 @@ public sealed partial class InventoryService(
                 ValidateProductQuantity(product, line.Quantity, line.ExpiryDate);
                 if (line.Mrp is not null && line.SellingPrice > line.Mrp.Value)
                     throw new DomainException(ErrorCode.PriceAboveMrp);
+                LotTax tax = OpeningTax(transaction, line);
                 string lotCode = numbers.Next(transaction, DocType.Lot, line.ReceivedDate);
                 long lotId = transaction.Connection.ExecuteScalar<long>("""
                     INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,unit_cost,mrp,
-                                            selling_price,qty_received)
-                    VALUES (@ProductId,@lotCode,@BatchNumber,@ReceivedDate,@ExpiryDate,@UnitCost,@Mrp,@SellingPrice,@Quantity)
+                                            selling_price,qty_received,tax_rate_id_snapshot,tax_label_snapshot,
+                                            tax_rate_pct_snapshot,unit_tax,unit_cost_incl_tax)
+                    VALUES (@ProductId,@lotCode,@BatchNumber,@ReceivedDate,@ExpiryDate,@UnitCost,@Mrp,@SellingPrice,@Quantity,
+                            @taxRateId,@taxLabel,@taxRatePct,@unitTax,@unitCostInclTax)
                     RETURNING id
-                    """, new
+                    """, tax.AddTo(new DynamicParameters(new
                 {
                     line.ProductId,
                     lotCode,
                     line.BatchNumber,
                     ReceivedDate = Format(line.ReceivedDate),
                     ExpiryDate = line.ExpiryDate is null ? null : Format(line.ExpiryDate.Value),
-                    UnitCost = line.UnitCost.Scaled,
+                    UnitCost = tax.Cost.Booked.Scaled,
                     Mrp = line.Mrp?.Scaled,
                     SellingPrice = line.SellingPrice.Scaled,
                     Quantity = line.Quantity.Scaled,
-                }, transaction.Transaction);
+                })), transaction.Transaction);
                 stock.Change(transaction, new(line.ReceivedDate, line.ProductId, lotId, LotChangeKind.Opening, line.Quantity));
                 firstLot = firstLot == 0 ? lotId : firstLot;
                 changed.Add(line.ProductId);
@@ -301,6 +309,13 @@ public sealed partial class InventoryService(
         throw new DomainException(ErrorCode.Validation, "This lot changed since it was loaded. Refresh it and try again.");
     }
 
+    // The typed purchase price is before tax. A chosen rate must be active; without one the lot
+    // takes the product's rate as it is now.
+    private static LotTax OpeningTax(DbTx transaction, OpeningStockLine line) =>
+        LotTaxes.FromBeforeTax(transaction, line.TaxRateId is { } chosen
+            ? LotTaxes.Rate(transaction, chosen, activeOnly: true)
+            : LotTaxes.ProductRate(transaction, line.ProductId), line.PurchasePrice);
+
     private static ProductRule LoadProductRule(DbTx transaction, long productId) =>
         transaction.Connection.QuerySingleOrDefault<ProductRule>("""
             SELECT p.track_expiry AS TrackExpiry,u.allow_fraction AS AllowFraction
@@ -310,7 +325,7 @@ public sealed partial class InventoryService(
 
     private static void ValidateOpening(OpeningStockLine line)
     {
-        if (line.ProductId <= 0 || line.Quantity <= Quantity.Zero || line.UnitCost < Money.Zero ||
+        if (line.ProductId <= 0 || line.Quantity <= Quantity.Zero || line.PurchasePrice < Money.Zero ||
             line.SellingPrice < Money.Zero || line.ReceivedDate == default)
             throw new DomainException(ErrorCode.Validation, "Invalid opening-stock row.");
         if (line.ExpiryDate is not null && line.ExpiryDate < line.ReceivedDate)
@@ -339,6 +354,6 @@ public sealed partial class InventoryService(
 
     private static string Format(DateOnly date) => date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
-    private sealed class LotRow { public long Id { get; init; } public long ProductId { get; init; } public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public string? BatchNumber { get; init; } public DateOnly ReceivedDate { get; init; } public DateOnly? ExpiryDate { get; init; } public long UnitCost { get; init; } public long? Mrp { get; init; } public long SellingPrice { get; init; } public long Received { get; init; } public long OnHand { get; init; } public bool IsActive { get; init; } public string ExpiryBucketCode { get; init; } = "NONE"; public string OriginKind { get; init; } = "DIRECT"; public long DetailVersion { get; init; } public LotItem ToModel() => new(Id, ProductId, ProductName, LotCode, BatchNumber, ReceivedDate, ExpiryDate, Money.FromScaled(UnitCost), Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(SellingPrice), Quantity.FromScaled(Received), Quantity.FromScaled(OnHand), IsActive, ExpiryBucketCode) { OriginKind = OriginKind, DetailVersion = DetailVersion }; }
+    private sealed class LotRow { public long Id { get; init; } public long ProductId { get; init; } public string ProductName { get; init; } = ""; public string LotCode { get; init; } = ""; public string? BatchNumber { get; init; } public DateOnly ReceivedDate { get; init; } public DateOnly? ExpiryDate { get; init; } public long UnitCost { get; init; } public long? Mrp { get; init; } public long SellingPrice { get; init; } public long Received { get; init; } public long OnHand { get; init; } public bool IsActive { get; init; } public string ExpiryBucketCode { get; init; } = "NONE"; public string OriginKind { get; init; } = "DIRECT"; public long DetailVersion { get; init; } public string? TaxLabel { get; init; } public long? UnitTax { get; init; } public long? UnitCostInclTax { get; init; } public LotItem ToModel() => new(Id, ProductId, ProductName, LotCode, BatchNumber, ReceivedDate, ExpiryDate, Money.FromScaled(UnitCost), Mrp is null ? null : Money.FromScaled(Mrp.Value), Money.FromScaled(SellingPrice), Quantity.FromScaled(Received), Quantity.FromScaled(OnHand), IsActive, ExpiryBucketCode) { OriginKind = OriginKind, DetailVersion = DetailVersion, TaxLabel = TaxLabel, UnitTax = UnitTax is null ? null : Money.FromScaled(UnitTax.Value), UnitCostInclTax = UnitCostInclTax is null ? null : Money.FromScaled(UnitCostInclTax.Value) }; }
     private sealed class ProductRule { public bool TrackExpiry { get; init; } public bool AllowFraction { get; init; } }
 }

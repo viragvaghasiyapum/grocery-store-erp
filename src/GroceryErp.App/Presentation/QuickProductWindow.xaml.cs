@@ -57,7 +57,7 @@ public partial class QuickProductWindow : Window
             string symbology = _barcode.Length switch { 8 => "EAN8", 12 => "UPCA", 13 => "EAN13", _ => "CODE128" };
             SavedProductId = await _catalog.CreateAsync(new ProductInput(
                 sku!, name!, null, null, categoryId!.Value, null, unitId!.Value,
-                hsn, taxId, true, false, null, false, null, null,
+                hsn, taxId, false, null, false, null, null,
                 Quantity.Zero, price, mrp,
                 [new ProductBarcodeInput(_barcode, Quantity.One, symbology, true)]));
             DialogResult = true;

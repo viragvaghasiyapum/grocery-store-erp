@@ -83,7 +83,7 @@ internal sealed class PhaseNineProfile(AppPaths paths, SqliteConnectionFactory f
             long draft = await purchasing.SaveDraftAsync(null, new PurchaseDraftInput(fixture.Vendor,
                 "P9-" + Guid.NewGuid().ToString("N")[..12], Today, Today, null, Money.Zero, "Phase 9 profile",
                 [new PurchaseLineInput(fixture.HotProduct, "P9-BATCH", Today.AddMonths(-1), Today.AddMonths(9),
-                    new Quantity(10), Quantity.Zero, new Money(10), Money.Zero, new Percent(5), new Money(25), new Money(20))]));
+                    new Quantity(10), Quantity.Zero, new Money(10), Money.Zero, fixture.TaxRate, new Money(25), new Money(20))]));
             return (await purchasing.PostAsync(draft, OperationGuard.NewId())).Id;
         }
         var operations = new (string Name, Func<Task<int>> Run)[]
@@ -142,7 +142,7 @@ internal sealed class PhaseNineProfile(AppPaths paths, SqliteConnectionFactory f
                 long draft = await Untimed(() => purchasing.SaveDraftAsync(null, new PurchaseDraftInput(fixture.Vendor,
                     "P9-" + Guid.NewGuid().ToString("N")[..12], Today, Today, null, Money.Zero, "Phase 9 profile",
                     [new PurchaseLineInput(fixture.HotProduct, "P9-BATCH", Today.AddMonths(-1), Today.AddMonths(9),
-                        new Quantity(10), Quantity.Zero, new Money(10), Money.Zero, new Percent(5), new Money(25), new Money(20))])));
+                        new Quantity(10), Quantity.Zero, new Money(10), Money.Zero, fixture.TaxRate, new Money(25), new Money(20))])));
                 await purchasing.PostAsync(draft, OperationGuard.NewId());
                 return 1;
             }),
@@ -268,10 +268,14 @@ internal sealed class PhaseNineProfile(AppPaths paths, SqliteConnectionFactory f
             for (int index = 0; index < 128; index++)
             {
                 decimal quantity = index == 0 ? 1000 : 100;
+                // Bought at the product's rate, saved on the lot as every lot writer saves it.
                 long lot = tx.Connection.ExecuteScalar<long>("""
-                    INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,unit_cost,selling_price,qty_received)
-                    VALUES (@product,@code,'P9-BATCH',@received,'2027-10-18',1000,2000,@receivedScaled) RETURNING id
-                    """, new { product, code = $"P9-L-{suffix}-{index:D3}", received = Today.AddDays(-index).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,unit_cost,selling_price,qty_received,
+                      tax_rate_id_snapshot,tax_label_snapshot,tax_rate_pct_snapshot,unit_tax,unit_cost_incl_tax)
+                    SELECT @product,@code,'P9-BATCH',@received,'2027-10-18',1000,2000,@receivedScaled,
+                      t.id,t.name,t.rate_pct,(1000*t.rate_pct+50000)/100000,1000+(1000*t.rate_pct+50000)/100000
+                    FROM tax_rate t WHERE t.id=@tax RETURNING id
+                    """, new { product, tax, code = $"P9-L-{suffix}-{index:D3}", received = Today.AddDays(-index).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                         receivedScaled = new Quantity(quantity).Scaled },
                     tx.Transaction);
                 lots.Change(tx, new(Today, product, lot, LotChangeKind.DirectEntry, new Quantity(quantity)));
@@ -291,8 +295,10 @@ internal sealed class PhaseNineProfile(AppPaths paths, SqliteConnectionFactory f
         string local = connection.ExecuteScalar<string>("""
             SELECT name_local FROM product WHERE name_local IS NOT NULL AND length(name_local)>=3 ORDER BY id LIMIT 1 OFFSET 300
             """) ?? "ખાંડ";
+        long gst5 = connection.ExecuteScalar<long>(
+            "SELECT id FROM tax_rate WHERE rate_pct=5000 AND is_active=1 ORDER BY id LIMIT 1");
         return new Fixture(hot, damageLot, damageProduct, vendor, busiest, sku, barcode,
-            name.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0], local.Split(' ')[0]);
+            name.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0], local.Split(' ')[0], gst5);
     }
 
     private async Task<OperationProfile> MeasureAsync(string name, Func<Task<int>> run, int iterations)
@@ -507,7 +513,7 @@ internal sealed class PhaseNineProfile(AppPaths paths, SqliteConnectionFactory f
         sorted[(int)Math.Ceiling(fraction * sorted.Length) - 1];
 
     private sealed record Fixture(long HotProduct, long DamageLot, long DamageProduct, long Vendor, long BusiestProduct,
-        string Sku, string Barcode, string NameWord, string LocalWord);
+        string Sku, string Barcode, string NameWord, string LocalWord, long TaxRate);
 
     internal sealed record OperationProfile(string Name, int Samples, double P50, double P95, double P99, double Max,
         int Rows, long AllocatedBytesPerCall, double GcPauseMilliseconds, int Gen0Collections, int Gen1Collections,

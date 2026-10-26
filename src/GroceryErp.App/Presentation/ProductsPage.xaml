@@ -124,8 +124,10 @@
             </DataTemplate.Triggers>
             </DataTemplate></DataGridTemplateColumn.CellTemplate>
           </DataGridTemplateColumn>
-          <DataGridTextColumn Width="90" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}"/>
-          <DataGridTextColumn Width="105" Header="{l:Tr Catalog_Mrp}" Binding="{Binding Mrp}"/>
+          <!-- Selling price, MRP and purchase price incl. tax come from the lot that sells next. -->
+          <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice, Converter={StaticResource Amount}}"/>
+          <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Mrp}" Binding="{Binding Mrp, Converter={StaticResource Amount}}"/>
+          <DataGridTextColumn Width="125" Header="{l:Tr Stock_CostInclTax}" Binding="{Binding CostInclTax, Converter={StaticResource Amount}}"/>
           <DataGridTemplateColumn Width="70" Header="{l:Tr Catalog_Active}">
             <DataGridTemplateColumn.CellTemplate><DataTemplate>
               <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center"

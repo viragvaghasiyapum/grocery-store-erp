@@ -154,7 +154,7 @@
   <data name="Catalog_NameLocal" xml:space="preserve"><value>Gujarati name</value></data>
   <data name="Catalog_Category" xml:space="preserve"><value>Category</value></data>
   <data name="Catalog_Stock" xml:space="preserve"><value>Stock</value></data>
-  <data name="Catalog_Price" xml:space="preserve"><value>Price</value></data>
+  <data name="Catalog_Price" xml:space="preserve"><value>Selling price</value></data>
   <data name="Catalog_Active" xml:space="preserve"><value>Active</value></data>
   <data name="Catalog_Count" xml:space="preserve"><value>Products: {0}</value></data>
   <data name="Error_NotFound" xml:space="preserve"><value>The requested item was not found.</value></data>
@@ -184,12 +184,11 @@
   <data name="Catalog_Brand" xml:space="preserve"><value>Brand</value></data>
   <data name="Catalog_Unit" xml:space="preserve"><value>Unit</value></data>
   <data name="Catalog_Hsn" xml:space="preserve"><value>HSN code</value></data>
-  <data name="Catalog_TaxRate" xml:space="preserve"><value>GST rate</value></data>
+  <data name="Catalog_TaxRate" xml:space="preserve"><value>Tax rate</value></data>
   <data name="Catalog_ReorderLevel" xml:space="preserve"><value>Reorder level</value></data>
   <data name="Catalog_SellingPrice" xml:space="preserve"><value>Default selling price</value></data>
   <data name="Catalog_Mrp" xml:space="preserve"><value>Default MRP</value></data>
   <data name="Catalog_ShelfLife" xml:space="preserve"><value>Shelf life (days)</value></data>
-  <data name="Catalog_PricesIncludeTax" xml:space="preserve"><value>Prices include tax</value></data>
   <data name="Catalog_TrackExpiry" xml:space="preserve"><value>Track expiry</value></data>
   <data name="Catalog_Loose" xml:space="preserve"><value>Loose product</value></data>
   <data name="Catalog_Plu" xml:space="preserve"><value>Scale PLU code</value></data>
@@ -263,7 +262,7 @@
   <data name="Stock_Batch" xml:space="preserve"><value>Batch</value></data>
   <data name="Stock_Expiry" xml:space="preserve"><value>Expiry</value></data>
   <data name="Stock_OnHand" xml:space="preserve"><value>On hand</value></data>
-  <data name="Stock_UnitCost" xml:space="preserve"><value>Unit cost</value></data>
+  <data name="Stock_UnitCost" xml:space="preserve"><value>Purchase price</value></data>
   <data name="Stock_Refresh" xml:space="preserve"><value>Refresh</value></data>
   <data name="Error_InsufficientStock" xml:space="preserve"><value>There is not enough stock in the available lots.</value></data>
   <data name="Error_NoLotForProduct" xml:space="preserve"><value>This product has no stock lot.</value></data>
@@ -303,7 +302,7 @@
   <data name="Purchasing_FreeQty" xml:space="preserve"><value>Free qty</value></data>
   <data name="Purchasing_Rate" xml:space="preserve"><value>Rate</value></data>
   <data name="Purchasing_Discount" xml:space="preserve"><value>Discount</value></data>
-  <data name="Purchasing_Gst" xml:space="preserve"><value>GST %</value></data>
+  <data name="Purchasing_Gst" xml:space="preserve"><value>Tax</value></data>
   <data name="Purchasing_OtherCharges" xml:space="preserve"><value>Other charges</value></data>
   <data name="Purchasing_BillTotal" xml:space="preserve"><value>Vendor bill total</value></data>
   <data name="Purchasing_SaveDraft" xml:space="preserve"><value>Save draft</value></data>
@@ -314,14 +313,13 @@
   <data name="Purchasing_NoProduct" xml:space="preserve"><value>No matching product was found.</value></data>
   <data name="Purchasing_MatchesFound" xml:space="preserve"><value>{0} products found. Choose one from the list under the search box.</value></data>
   <data name="Purchasing_MfgDate" xml:space="preserve"><value>Mfg date</value></data>
-  <data name="Purchasing_Landed" xml:space="preserve"><value>Landed / unit</value></data>
   <data name="Purchasing_Margin" xml:space="preserve"><value>Margin %</value></data>
   <data name="Purchasing_RoundOff" xml:space="preserve"><value>Round off</value></data>
   <data name="Purchasing_WarningShortExpiry" xml:space="preserve"><value>{0}: short expiry</value></data>
-  <data name="Purchasing_WarningBelowCost" xml:space="preserve"><value>{0}: selling below landed cost</value></data>
+  <data name="Purchasing_WarningBelowCost" xml:space="preserve"><value>{0}: selling below cost</value></data>
   <data name="Purchasing_WarningRateChanged" xml:space="preserve"><value>{0}: rate differs over 10% from last purchase</value></data>
   <data name="Purchasing_Subtotal" xml:space="preserve"><value>Subtotal</value></data>
-  <data name="Purchasing_TaxTotal" xml:space="preserve"><value>GST</value></data>
+  <data name="Purchasing_TaxTotal" xml:space="preserve"><value>Tax</value></data>
   <data name="Purchasing_ComputedTotal" xml:space="preserve"><value>Calculated total</value></data>
   <data name="Purchasing_Difference" xml:space="preserve"><value>Bill difference</value></data>
   <data name="Purchasing_Post" xml:space="preserve"><value>Post</value></data>
@@ -360,7 +358,7 @@
   <data name="Pos_QuickRequired" xml:space="preserve"><value>Selling price, MRP, and tax rate are required for quick add.</value></data>
   <data name="Pos_OpeningQuantityRequired" xml:space="preserve"><value>Enter an opening quantity when cost or expiry is supplied.</value></data>
   <data name="Pos_OpeningQuantityInvalid" xml:space="preserve"><value>Enter an opening quantity greater than zero.</value></data>
-  <data name="Pos_OpeningCostInvalid" xml:space="preserve"><value>Enter a valid nonnegative unit cost.</value></data>
+  <data name="Pos_OpeningCostInvalid" xml:space="preserve"><value>Enter a purchase price of 0 or more.</value></data>
   <data name="Pos_OpeningExpiryInvalid" xml:space="preserve"><value>Enter expiry as YYYY-MM-DD.</value></data>
   <data name="Pos_SaveOpeningStock" xml:space="preserve"><value>Save opening stock</value></data>
   <data name="Pos_ProductSavedNoStock" xml:space="preserve"><value>Product saved. Add stock before selling it.</value></data>
@@ -513,7 +511,7 @@
   <data name="Reports_ComparePrevious" xml:space="preserve"><value>Compare previous period</value></data>
   <data name="Reports_PnlExplanation" xml:space="preserve"><value>Purchases first become stock. Only the cost of items sold reaches profit and loss; unsold purchases remain in the stock value report.</value></data>
   <data name="Reports_PnlCutMonthNote" xml:space="preserve"><value>For a custom range that cuts through a month, salary and depreciation appear only when the range includes that month's final day.</value></data>
-  <data name="Pnl_Head_Sales" xml:space="preserve"><value>Sales (net of GST)</value></data>
+  <data name="Pnl_Head_Sales" xml:space="preserve"><value>Sales (net of tax)</value></data>
   <data name="Pnl_Head_SalesReturns" xml:space="preserve"><value>Sales returns</value></data>
   <data name="Pnl_Head_RoundOff" xml:space="preserve"><value>Round off</value></data>
   <data name="Pnl_Head_Cogs" xml:space="preserve"><value>Cost of goods sold</value></data>
@@ -524,10 +522,6 @@
   <data name="Pnl_Head_AssetDisposal" xml:space="preserve"><value>Asset disposal gain/(loss)</value></data>
   <data name="Reports_FilterProduct" xml:space="preserve"><value>Product ID</value></data>
   <data name="Reports_FilterVendor" xml:space="preserve"><value>Vendor ID</value></data>
-  <data name="Reports_FilterAsset" xml:space="preserve"><value>Asset ID for schedule</value></data>
-  <data name="Reports_FilterSlowDays" xml:space="preserve"><value>Slow-mover days</value></data>
-  <data name="Reports_FilterEntity" xml:space="preserve"><value>Audit entity</value></data>
-  <data name="Reports_FilterAction" xml:space="preserve"><value>Audit action</value></data>
   <data name="Settings_Update_CheckFolder" xml:space="preserve"><value>Update from USB</value></data>
   <data name="Settings_Update_SelectFolder" xml:space="preserve"><value>Select the Releases folder on the USB drive</value></data>
   <data name="Settings_Update_None" xml:space="preserve"><value>No newer version was found in this folder.</value></data>
@@ -748,11 +742,6 @@
   <data name="Stock_BlockSelected" xml:space="preserve"><value>Block selected</value></data>
   <data name="Stock_UnblockSelected" xml:space="preserve"><value>Unblock selected</value></data>
   <data name="Stock_SourceDoc_Purchase" xml:space="preserve"><value>Purchase</value></data>
-  <data name="Stock_SourceDoc_Sale" xml:space="preserve"><value>Sale</value></data>
-  <data name="Stock_SourceDoc_Return" xml:space="preserve"><value>Sale return</value></data>
-  <data name="Stock_SourceDoc_Damage" xml:space="preserve"><value>Damage</value></data>
-  <data name="Stock_SourceDoc_Opening" xml:space="preserve"><value>Opening stock</value></data>
-  <data name="Stock_SourceDoc_Adjustment" xml:space="preserve"><value>Stock adjustment</value></data>
   <data name="Sales_LastScan" xml:space="preserve"><value>Last: {0} · Stock {1} · MRP ₹{2}</value></data>
   <data name="Sales_HeldChip" xml:space="preserve"><value>Held #{0}</value></data>
   <data name="Sales_PrinterReady" xml:space="preserve"><value>Receipt printer ready</value></data>
@@ -769,76 +758,12 @@
   <data name="Setup_ModeRaster" xml:space="preserve"><value>Raster (English and Gujarati)</value></data>
   <data name="Setup_ModeText" xml:space="preserve"><value>Text (English only)</value></data>
   <data name="App_ActionFailed" xml:space="preserve"><value>Could not complete the action. Check the details and try again. The error was logged.</value></data>
-  <data name="Reports_Action_CREATE" xml:space="preserve"><value>Created</value></data>
-  <data name="Reports_Action_UPDATE" xml:space="preserve"><value>Updated</value></data>
-  <data name="Reports_Action_DELETE" xml:space="preserve"><value>Deleted</value></data>
-  <data name="Reports_Action_ARCHIVE" xml:space="preserve"><value>Archived</value></data>
-  <data name="Reports_Action_RESTORE" xml:space="preserve"><value>Restored</value></data>
-  <data name="Reports_Action_POST" xml:space="preserve"><value>Posted</value></data>
-  <data name="Reports_Action_CANCEL" xml:space="preserve"><value>Cancelled</value></data>
-  <data name="Reports_Action_VOID" xml:space="preserve"><value>Voided</value></data>
-  <data name="Reports_Action_IMPORT" xml:space="preserve"><value>Imported</value></data>
-  <data name="Reports_Action_CREATE_DRAFT" xml:space="preserve"><value>Draft created</value></data>
-  <data name="Reports_Action_UPDATE_DRAFT" xml:space="preserve"><value>Draft updated</value></data>
-  <data name="Reports_Action_IMPORT_CREATE" xml:space="preserve"><value>Created by import</value></data>
-  <data name="Reports_Action_IMPORT_UPDATE" xml:space="preserve"><value>Updated by import</value></data>
-  <data name="Reports_Action_BARCODE_ADD" xml:space="preserve"><value>Barcode added</value></data>
-  <data name="Reports_Action_BULK_CATEGORY" xml:space="preserve"><value>Category changed in bulk</value></data>
-  <data name="Reports_Action_BULK_TAX_RATE" xml:space="preserve"><value>Tax rate changed in bulk</value></data>
-  <data name="Reports_Action_ADJUST" xml:space="preserve"><value>Adjusted</value></data>
-  <data name="Reports_Action_PRICE_CHANGE" xml:space="preserve"><value>Price changed</value></data>
-  <data name="Reports_Action_PRICE_OVERRIDE" xml:space="preserve"><value>Price overridden</value></data>
-  <data name="Reports_Action_BLOCK" xml:space="preserve"><value>Blocked</value></data>
-  <data name="Reports_Action_UNBLOCK" xml:space="preserve"><value>Unblocked</value></data>
-  <data name="Reports_Action_REFRESH_LOTS" xml:space="preserve"><value>Lots refreshed</value></data>
-  <data name="Reports_Action_REBUILD" xml:space="preserve"><value>Rebuilt</value></data>
-  <data name="Reports_Action_POST_DUE" xml:space="preserve"><value>Due depreciation posted</value></data>
-  <data name="Reports_Action_DISPOSE" xml:space="preserve"><value>Disposed</value></data>
-  <data name="Reports_Action_OTHER" xml:space="preserve"><value>Other</value></data>
-  <data name="Reports_Action_PASSWORD_CHANGE" xml:space="preserve"><value>Password changed</value></data>
-  <data name="Reports_Action_CLOCK_WARNING_OVERRIDE" xml:space="preserve"><value>Clock warning overridden</value></data>
-  <data name="Reports_Action_INTEGRITY_CHECK" xml:space="preserve"><value>Integrity checked</value></data>
-  <data name="Reports_Action_RETURN" xml:space="preserve"><value>Returned</value></data>
-  <data name="Reports_Action_COMPLETE" xml:space="preserve"><value>Completed</value></data>
-  <data name="Reports_Action_HOLD" xml:space="preserve"><value>Held</value></data>
-  <data name="Reports_Action_RESUME" xml:space="preserve"><value>Resumed</value></data>
-  <data name="Reports_Action_PAY" xml:space="preserve"><value>Paid</value></data>
-  <data name="Reports_Entity_app_user" xml:space="preserve"><value>User</value></data>
-  <data name="Reports_Entity_setting" xml:space="preserve"><value>Setting</value></data>
-  <data name="Reports_Entity_clock" xml:space="preserve"><value>Clock</value></data>
-  <data name="Reports_Entity_maintenance" xml:space="preserve"><value>Maintenance</value></data>
-  <data name="Reports_Entity_category" xml:space="preserve"><value>Category</value></data>
-  <data name="Reports_Entity_brand" xml:space="preserve"><value>Brand</value></data>
-  <data name="Reports_Entity_uom" xml:space="preserve"><value>Unit</value></data>
-  <data name="Reports_Entity_tax_rate" xml:space="preserve"><value>Tax rate</value></data>
-  <data name="Reports_Entity_product" xml:space="preserve"><value>Product</value></data>
-  <data name="Reports_Entity_product_lot" xml:space="preserve"><value>Product lot</value></data>
-  <data name="Reports_Entity_product_import" xml:space="preserve"><value>Product import</value></data>
-  <data name="Reports_Entity_vendor" xml:space="preserve"><value>Vendor</value></data>
-  <data name="Reports_Entity_purchase" xml:space="preserve"><value>Purchase</value></data>
-  <data name="Reports_Entity_vendor_payment" xml:space="preserve"><value>Vendor payment</value></data>
-  <data name="Reports_Entity_vendor_return" xml:space="preserve"><value>Vendor return</value></data>
-  <data name="Reports_Entity_stock_cache" xml:space="preserve"><value>Stock cache</value></data>
-  <data name="Reports_Entity_opening_stock" xml:space="preserve"><value>Opening stock</value></data>
-  <data name="Reports_Entity_stock_count" xml:space="preserve"><value>Stock count</value></data>
-  <data name="Reports_Entity_sale_line" xml:space="preserve"><value>Sale line</value></data>
-  <data name="Reports_Entity_customer" xml:space="preserve"><value>Customer</value></data>
-  <data name="Reports_Entity_sale" xml:space="preserve"><value>Sale</value></data>
-  <data name="Reports_Entity_damage" xml:space="preserve"><value>Damage</value></data>
-  <data name="Reports_Entity_expense_category" xml:space="preserve"><value>Expense category</value></data>
-  <data name="Reports_Entity_expense" xml:space="preserve"><value>Expense</value></data>
-  <data name="Reports_Entity_employee" xml:space="preserve"><value>Employee</value></data>
-  <data name="Reports_Entity_salary_run" xml:space="preserve"><value>Salary run</value></data>
-  <data name="Reports_Entity_salary_payment" xml:space="preserve"><value>Salary payment</value></data>
-  <data name="Reports_Entity_asset" xml:space="preserve"><value>Asset</value></data>
-  <data name="Reports_Entity_asset_depreciation" xml:space="preserve"><value>Asset depreciation</value></data>
-  <data name="Reports_Entity_restore" xml:space="preserve"><value>Restore</value></data>
   <data name="Purchasing_VendorReturn" xml:space="preserve"><value>Vendor return</value></data>
   <data name="Purchasing_VendorReturns" xml:space="preserve"><value>Vendor returns</value></data>
   <data name="Purchasing_CreditNumber" xml:space="preserve"><value>Vendor credit note no.</value></data>
-  <data name="Purchasing_ReturnHint" xml:space="preserve"><value>Enter a return quantity for each lot. Credit and GST are suggested from the purchase; adjust them to match the supplier credit note.</value></data>
-  <data name="Purchasing_CreditBeforeTax" xml:space="preserve"><value>Credit before GST</value></data>
-  <data name="Purchasing_TaxCredit" xml:space="preserve"><value>GST credit</value></data>
+  <data name="Purchasing_ReturnHint" xml:space="preserve"><value>Enter a return quantity for each lot. Credit and tax are suggested from the purchase; adjust them to match the supplier credit note.</value></data>
+  <data name="Purchasing_CreditBeforeTax" xml:space="preserve"><value>Credit before tax</value></data>
+  <data name="Purchasing_TaxCredit" xml:space="preserve"><value>Tax credit</value></data>
   <data name="Purchasing_PostReturn" xml:space="preserve"><value>Post return</value></data>
   <data name="Purchasing_NoReturnableLots" xml:space="preserve"><value>No stock from this purchase is available to return.</value></data>
   <data name="Purchasing_ReturnTotal" xml:space="preserve"><value>{0} lots · credit ₹{1}</value></data>
@@ -847,7 +772,6 @@
   <data name="Purchasing_ReturnConfirm" xml:space="preserve"><value>Post the return of {0} lots for credit ₹{1}? Stock and vendor balance will change.</value></data>
   <data name="Purchasing_ReturnPosted" xml:space="preserve"><value>Vendor return {0} posted.</value></data>
   <data name="Pnl_Head_VendorReturnVariance" xml:space="preserve"><value>Vendor return variance</value></data>
-  <data name="Stock_SourceDoc_VendorReturn" xml:space="preserve"><value>Vendor return</value></data>
   <data name="Reports_Report" xml:space="preserve"><value>Report</value></data>
   <data name="Reports_Period" xml:space="preserve"><value>Period</value></data>
   <data name="Reports_From" xml:space="preserve"><value>From</value></data>
@@ -865,103 +789,41 @@
   <data name="Reports_Kind_ProfitAndLoss" xml:space="preserve"><value>Profit and loss</value></data>
   <data name="Reports_Kind_SalesRegister" xml:space="preserve"><value>Sales register</value></data>
   <data name="Reports_Kind_ItemSales" xml:space="preserve"><value>Item-wise sales</value></data>
-  <data name="Reports_Kind_CategorySales" xml:space="preserve"><value>Category-wise sales and margin</value></data>
-  <data name="Reports_Kind_HourlySales" xml:space="preserve"><value>Hourly sales</value></data>
   <data name="Reports_Kind_StockValue" xml:space="preserve"><value>Current unsold stock</value></data>
-  <data name="Reports_Kind_LowStock" xml:space="preserve"><value>Low stock and reorder</value></data>
-  <data name="Reports_Kind_SlowMovers" xml:space="preserve"><value>Slow movers</value></data>
-  <data name="Reports_Kind_Expiry" xml:space="preserve"><value>Expiry</value></data>
-  <data name="Reports_Kind_Damages" xml:space="preserve"><value>Damages</value></data>
-  <data name="Reports_Kind_Expenses" xml:space="preserve"><value>Expenses by category</value></data>
-  <data name="Reports_Kind_SalaryRegister" xml:space="preserve"><value>Salary register</value></data>
-  <data name="Reports_Kind_AssetRegister" xml:space="preserve"><value>Asset register</value></data>
-  <data name="Reports_Kind_VendorPayables" xml:space="preserve"><value>Vendor payables</value></data>
   <data name="Reports_Kind_PurchaseRegister" xml:space="preserve"><value>Purchase register</value></data>
   <data name="Reports_Kind_GstSummary" xml:space="preserve"><value>GST summary</value></data>
-  <data name="Reports_Kind_AuditLog" xml:space="preserve"><value>Audit log</value></data>
-  <data name="Reports_Kind_AssetSchedule" xml:space="preserve"><value>Asset depreciation schedule</value></data>
-  <data name="Reports_Column_AccumulatedDepreciation" xml:space="preserve"><value>Accumulated depreciation</value></data>
-  <data name="Reports_Column_Action" xml:space="preserve"><value>Action</value></data>
-  <data name="Reports_Column_Amount" xml:space="preserve"><value>Amount</value></data>
-  <data name="Reports_Column_Asset" xml:space="preserve"><value>Asset</value></data>
-  <data name="Reports_Column_AverageDailySales" xml:space="preserve"><value>30-day average/day</value></data>
-  <data name="Reports_Column_BalanceDue" xml:space="preserve"><value>Balance due</value></data>
-  <data name="Reports_Column_Batch" xml:space="preserve"><value>Batch</value></data>
-  <data name="Reports_Column_Bills" xml:space="preserve"><value>Bills</value></data>
-  <data name="Reports_Column_BookValue" xml:space="preserve"><value>Book value</value></data>
   <data name="Reports_Column_Category" xml:space="preserve"><value>Category</value></data>
   <data name="Reports_Column_Cost" xml:space="preserve"><value>Cost</value></data>
   <data name="Reports_Column_CostValue" xml:space="preserve"><value>Cost value</value></data>
   <data name="Reports_Column_Date" xml:space="preserve"><value>Date</value></data>
-  <data name="Reports_Column_DaysLeft" xml:space="preserve"><value>Days left</value></data>
-  <data name="Reports_Column_Details" xml:space="preserve"><value>Details</value></data>
   <data name="Reports_Column_Direction" xml:space="preserve"><value>Direction</value></data>
   <data name="Reports_Column_Discount" xml:space="preserve"><value>Discount</value></data>
-  <data name="Reports_Column_DisposalValue" xml:space="preserve"><value>Disposal value</value></data>
-  <data name="Reports_Column_DisposedDate" xml:space="preserve"><value>Disposed</value></data>
   <data name="Reports_Column_Document" xml:space="preserve"><value>Document</value></data>
-  <data name="Reports_Column_Employee" xml:space="preserve"><value>Employee</value></data>
-  <data name="Reports_Column_Entity" xml:space="preserve"><value>Entity</value></data>
-  <data name="Reports_Column_EntityId" xml:space="preserve"><value>Entity ID</value></data>
-  <data name="Reports_Column_Entries" xml:space="preserve"><value>Entries</value></data>
-  <data name="Reports_Column_Expiry" xml:space="preserve"><value>Expiry</value></data>
   <data name="Reports_Column_Gstin" xml:space="preserve"><value>GSTIN</value></data>
-  <data name="Reports_Column_Hour" xml:space="preserve"><value>Hour</value></data>
   <data name="Reports_Column_Hsn" xml:space="preserve"><value>HSN / vendor GSTIN</value></data>
-  <data name="Reports_Column_InUseFrom" xml:space="preserve"><value>In use</value></data>
   <data name="Reports_Column_Invoice" xml:space="preserve"><value>Invoice</value></data>
   <data name="Reports_Column_Items" xml:space="preserve"><value>Items</value></data>
-  <data name="Reports_Column_LastSold" xml:space="preserve"><value>Last sold</value></data>
   <data name="Reports_Column_LocalName" xml:space="preserve"><value>Local name</value></data>
   <data name="Reports_Column_Lot" xml:space="preserve"><value>Lot</value></data>
   <data name="Reports_Column_Margin" xml:space="preserve"><value>Margin</value></data>
   <data name="Reports_Column_MarginPercent" xml:space="preserve"><value>Margin %</value></data>
-  <data name="Reports_Column_Method" xml:space="preserve"><value>Method</value></data>
-  <data name="Reports_Column_Month" xml:space="preserve"><value>Month</value></data>
   <data name="Reports_Column_MrpValue" xml:space="preserve"><value>MRP value</value></data>
-  <data name="Reports_Column_Note" xml:space="preserve"><value>Note</value></data>
-  <data name="Reports_Column_OpeningBalance" xml:space="preserve"><value>Opening balance</value></data>
-  <data name="Reports_Column_Other" xml:space="preserve"><value>Other</value></data>
   <data name="Reports_Column_OtherCharges" xml:space="preserve"><value>Other charges</value></data>
   <data name="Reports_Column_PaymentMode" xml:space="preserve"><value>Payment mode</value></data>
-  <data name="Reports_Column_Payments" xml:space="preserve"><value>Payments</value></data>
-  <data name="Reports_Column_Phone" xml:space="preserve"><value>Phone</value></data>
-  <data name="Reports_Column_PreviousMargin" xml:space="preserve"><value>Previous margin</value></data>
-  <data name="Reports_Column_PreviousRevenue" xml:space="preserve"><value>Previous revenue</value></data>
   <data name="Reports_Column_Product" xml:space="preserve"><value>Product</value></data>
-  <data name="Reports_Column_PurchaseDate" xml:space="preserve"><value>Purchased</value></data>
-  <data name="Reports_Column_Purchases" xml:space="preserve"><value>Purchases</value></data>
   <data name="Reports_Column_Quantity" xml:space="preserve"><value>Quantity</value></data>
   <data name="Reports_Column_Rate" xml:space="preserve"><value>Rate %</value></data>
-  <data name="Reports_Column_Reason" xml:space="preserve"><value>Reason</value></data>
-  <data name="Reports_Column_Recovered" xml:space="preserve"><value>Recovered</value></data>
-  <data name="Reports_Column_ReferenceId" xml:space="preserve"><value>Reference</value></data>
-  <data name="Reports_Column_ReferenceType" xml:space="preserve"><value>Reference type</value></data>
-  <data name="Reports_Column_ReorderLevel" xml:space="preserve"><value>Reorder level</value></data>
   <data name="Reports_Column_Revenue" xml:space="preserve"><value>Revenue</value></data>
-  <data name="Reports_Column_Role" xml:space="preserve"><value>Role</value></data>
   <data name="Reports_Column_RoundOff" xml:space="preserve"><value>Round off</value></data>
-  <data name="Reports_Column_Salary" xml:space="preserve"><value>Salary</value></data>
   <data name="Reports_Column_SellingValue" xml:space="preserve"><value>Selling value</value></data>
   <data name="Reports_Column_Sku" xml:space="preserve"><value>SKU</value></data>
   <data name="Reports_Column_Status" xml:space="preserve"><value>Status</value></data>
   <data name="Reports_Column_Subtotal" xml:space="preserve"><value>Subtotal</value></data>
-  <data name="Reports_Column_SuggestedOrder" xml:space="preserve"><value>Suggested order</value></data>
   <data name="Reports_Column_Tax" xml:space="preserve"><value>Tax</value></data>
   <data name="Reports_Column_Taxable" xml:space="preserve"><value>Taxable value</value></data>
-  <data name="Reports_Column_Timestamp" xml:space="preserve"><value>Timestamp</value></data>
   <data name="Reports_Column_Total" xml:space="preserve"><value>Total</value></data>
-  <data name="Reports_Column_Type" xml:space="preserve"><value>Type</value></data>
-  <data name="Reports_Column_UnitCost" xml:space="preserve"><value>Unit cost</value></data>
-  <data name="Reports_Column_Value" xml:space="preserve"><value>Value tied up</value></data>
   <data name="Reports_Column_Vendor" xml:space="preserve"><value>Vendor</value></data>
   <data name="Reports_Column_VendorInvoice" xml:space="preserve"><value>Vendor invoice</value></data>
-  <data name="Reports_Column_Weekday" xml:space="preserve"><value>Weekday</value></data>
-  <data name="Reports_Column_Label" xml:space="preserve"><value>Particulars</value></data>
-  <data name="Reports_Column_Opening" xml:space="preserve"><value>Opening value</value></data>
-  <data name="Reports_Column_Closing" xml:space="preserve"><value>Closing value</value></data>
-  <data name="Reports_Column_Depreciation" xml:space="preserve"><value>Depreciation</value></data>
-  <data name="Reports_Column_Period" xml:space="preserve"><value>Period</value></data>
   <data name="Reports_PnlSummary" xml:space="preserve"><value>Gross profit ₹{0:N3} ({1:N3}%) · Net profit ₹{2:N3} ({3:N3}%)</value></data>
   <data name="Reports_PreviousNet" xml:space="preserve"><value> · Previous ₹{0:N3}</value></data>
   <data name="Reports_Section_Income" xml:space="preserve"><value>Income</value></data>
@@ -995,30 +857,13 @@
   <data name="Reports_PaymentUpi" xml:space="preserve"><value>UPI</value></data>
   <data name="Reports_PaymentCard" xml:space="preserve"><value>Card</value></data>
   <data name="Reports_PaymentOther" xml:space="preserve"><value>Other</value></data>
-  <data name="Reports_StatusExpired" xml:space="preserve"><value>Expired</value></data>
-  <data name="Reports_StatusCritical" xml:space="preserve"><value>Critical</value></data>
-  <data name="Reports_StatusSoon" xml:space="preserve"><value>Soon</value></data>
   <data name="Dashboard_ExpiredCount" xml:space="preserve"><value>{0} expired</value></data>
   <data name="Dashboard_CriticalCount" xml:space="preserve"><value>{0} critical</value></data>
   <data name="Dashboard_SoonCount" xml:space="preserve"><value>{0} soon</value></data>
   <data name="Dashboard_LowStockCount" xml:space="preserve"><value>{0} low stock</value></data>
-  <data name="Reports_Value_POSTED" xml:space="preserve"><value>Posted</value></data>
-  <data name="Reports_Value_PROJECTED" xml:space="preserve"><value>Projected</value></data>
   <data name="Reports_Value_OUTWARD" xml:space="preserve"><value>Outward</value></data>
   <data name="Reports_Value_INWARD" xml:space="preserve"><value>Inward</value></data>
-  <data name="Reports_Value_SLM" xml:space="preserve"><value>Straight line</value></data>
-  <data name="Reports_Value_WDV" xml:space="preserve"><value>Written down value</value></data>
   <data name="Reports_Subtotal" xml:space="preserve"><value>Subtotal</value></data>
-  <data name="Reports_Column_Returns" xml:space="preserve"><value>Supplier credits</value></data>
-  <data name="Reports_HourlyHint" xml:space="preserve"><value>Darker cells show higher revenue. The number in each cell is the bill count; hover for sales.</value></data>
-  <data name="Reports_HourlyCell" xml:space="preserve"><value>{0} {1}:00 · {2} bills · ₹{3:N3}</value></data>
-  <data name="Reports_Weekday_Mon" xml:space="preserve"><value>Mon</value></data>
-  <data name="Reports_Weekday_Tue" xml:space="preserve"><value>Tue</value></data>
-  <data name="Reports_Weekday_Wed" xml:space="preserve"><value>Wed</value></data>
-  <data name="Reports_Weekday_Thu" xml:space="preserve"><value>Thu</value></data>
-  <data name="Reports_Weekday_Fri" xml:space="preserve"><value>Fri</value></data>
-  <data name="Reports_Weekday_Sat" xml:space="preserve"><value>Sat</value></data>
-  <data name="Reports_Weekday_Sun" xml:space="preserve"><value>Sun</value></data>
   <data name="Common_RowsPerPage" xml:space="preserve"><value>Rows per page</value></data>
   <data name="Selection_ThisPage" xml:space="preserve"><value>Select this page</value></data>
   <data name="Selection_AllMatching" xml:space="preserve"><value>Select all matching results</value></data>
@@ -1083,7 +928,7 @@
   <data name="Stock_DamagePreview" xml:space="preserve"><value>{0} lots · {1} units · {2} cost value</value></data>
   <data name="MoneyOut_DamageDate" xml:space="preserve"><value>Damage date</value></data>
   <data name="Stock_EditDetails" xml:space="preserve"><value>Edit price and expiry</value></data>
-  <data name="Stock_LotDamageContext" xml:space="preserve"><value>{0} — {1} · {2} available · {3} unit cost</value></data>
+  <data name="Stock_LotDamageContext" xml:space="preserve"><value>{0} — {1} · {2} available · purchase price {3}</value></data>
   <data name="Stock_DamageQuantityRange" xml:space="preserve"><value>Damage quantity must be within the available lot quantity.</value></data>
   <data name="Stock_BulkDamageQuantityRange" xml:space="preserve"><value>Each damage quantity must be within its lot's available quantity.</value></data>
   <data name="Stock_DeleteHasStock" xml:space="preserve"><value>This lot still has stock.</value></data>
@@ -1092,7 +937,8 @@
   <data name="Catalog_BulkNoneEligible" xml:space="preserve"><value>No selected products are eligible for this action.</value></data>
   <data name="Reports_IncludeExpired" xml:space="preserve"><value>Include expired stock</value></data>
   <data name="Sales_RecreateTitle" xml:space="preserve"><value>Review return product and lot</value></data>
-  <data name="Sales_RecreateIntro" xml:space="preserve"><value>{0} | Original GST {1}%&#10;Complete the missing historical details before receiving this return. The original invoice and refund stay unchanged.</value></data>
+  <data name="Sales_RecreateIntro" xml:space="preserve"><value>{0} | Original tax {1}%
+Complete the missing historical details before receiving this return. The original invoice and refund stay unchanged.</value></data>
   <data name="Sales_RecreateSku" xml:space="preserve"><value>SKU</value></data>
   <data name="Sales_RecreateName" xml:space="preserve"><value>Product name</value></data>
   <data name="Sales_RecreateLocalName" xml:space="preserve"><value>Local name</value></data>
@@ -1101,7 +947,6 @@
   <data name="Sales_RecreateTax" xml:space="preserve"><value>Tax rate</value></data>
   <data name="Sales_RecreateTaxMode" xml:space="preserve"><value>Tax mode</value></data>
   <data name="Sales_RecreateHsn" xml:space="preserve"><value>HSN</value></data>
-  <data name="Sales_RecreatePricing" xml:space="preserve"><value>Selling price includes tax</value></data>
   <data name="Sales_RecreateTrackExpiry" xml:space="preserve"><value>Track expiry</value></data>
   <data name="Sales_RecreateFractional" xml:space="preserve"><value>Fractional quantity</value></data>
   <data name="Sales_RecreateLotExpiry" xml:space="preserve"><value>Lot expiry date</value></data>
@@ -1153,7 +998,6 @@
   <data name="Reports_Column_Available" xml:space="preserve"><value>Available</value></data>
   <data name="Reports_Column_Difference" xml:space="preserve"><value>Difference</value></data>
   <data name="Reports_Value_DIRECT" xml:space="preserve"><value>Direct entry</value></data>
-  <data name="Reports_Value_MISMATCH" xml:space="preserve"><value>Difference</value></data>
   <data name="Pnl_Head_Expenses" xml:space="preserve"><value>Expenses</value></data>
   <data name="MoneyOut_History" xml:space="preserve"><value>History</value></data>
   <data name="MoneyOut_Edit" xml:space="preserve"><value>Edit</value></data>
@@ -1279,7 +1123,7 @@
   <data name="Catalog_SelectProduct" xml:space="preserve"><value>Select product</value></data>
   <data name="Catalog_SetCategory" xml:space="preserve"><value>Set category…</value></data>
   <data name="Catalog_SetProductClass" xml:space="preserve"><value>Set product type…</value></data>
-  <data name="Catalog_SetTaxRate" xml:space="preserve"><value>Set GST rate…</value></data>
+  <data name="Catalog_SetTaxRate" xml:space="preserve"><value>Set tax rate…</value></data>
   <data name="Catalog_StatusFilter" xml:space="preserve"><value>Product status</value></data>
   <data name="Catalog_StockSummary" xml:space="preserve"><value>In stock: {0} {1} · FEFO price ₹{2}</value></data>
   <data name="Catalog_StockSummaryNoPrice" xml:space="preserve"><value>In stock: {0} {1}</value></data>
@@ -1327,13 +1171,11 @@
   <data name="Purchasing_AnyLineType" xml:space="preserve"><value>Any line type</value></data>
   <data name="Purchasing_AnyStatus" xml:space="preserve"><value>Any status</value></data>
   <data name="Purchasing_CopyDownHint" xml:space="preserve"><value>Ctrl+D copies the cell above (never the line type or product). Ctrl+Delete removes the line. Ctrl+S saves the draft.</value></data>
-  <data name="Purchasing_CostExGst" xml:space="preserve"><value>Cost ex GST</value></data>
-  <data name="Purchasing_CostInclGst" xml:space="preserve"><value>Cost incl. GST</value></data>
   <data name="Purchasing_ProductChoices" xml:space="preserve"><value>Matching products</value></data>
   <data name="Purchasing_RateBasis" xml:space="preserve"><value>Bill rates</value></data>
-  <data name="Purchasing_RateInclGst" xml:space="preserve"><value>Rate incl. GST</value></data>
-  <data name="Purchasing_RatesIncludeGst" xml:space="preserve"><value>Include GST</value></data>
-  <data name="Purchasing_RatesIncludeGstHint" xml:space="preserve"><value>Tick when the supplier bill prints rates and discounts including GST. Type them as printed; the GST part of each line is worked out for you. The next bill from this vendor starts the same way.</value></data>
+  <data name="Purchasing_RateInclGst" xml:space="preserve"><value>Rate incl. tax</value></data>
+  <data name="Purchasing_RatesIncludeGst" xml:space="preserve"><value>Include tax</value></data>
+  <data name="Purchasing_RatesIncludeGstHint" xml:space="preserve"><value>Tick when the supplier bill prints rates and discounts including tax. Type them as printed; the tax part of each line is worked out for you. The next bill from this vendor starts the same way.</value></data>
   <data name="Purchasing_RemoveLine" xml:space="preserve"><value>Remove line</value></data>
   <data name="Purchasing_RemoveLineHint" xml:space="preserve"><value>Remove this line (Ctrl+Delete)</value></data>
   <data name="Purchasing_Count" xml:space="preserve"><value>Purchases: {0}</value></data>
@@ -1368,12 +1210,12 @@
   <data name="Stock_LotFilterSearch" xml:space="preserve"><value>Batch no. or lot code</value></data>
   <data name="Stock_LotStatusFilter" xml:space="preserve"><value>Lot status</value></data>
   <data name="Stock_LotsEmpty" xml:space="preserve"><value>No lots match these filters. Add a direct lot or clear the filters.</value></data>
-  <data name="Stock_MaxPrice" xml:space="preserve"><value>Highest price</value></data>
-  <data name="Stock_MinPrice" xml:space="preserve"><value>Lowest price</value></data>
+  <data name="Stock_MaxPrice" xml:space="preserve"><value>Highest selling price</value></data>
+  <data name="Stock_MinPrice" xml:space="preserve"><value>Lowest selling price</value></data>
   <data name="Stock_Origin_CUSTOMER_RETURN" xml:space="preserve"><value>Customer return</value></data>
   <data name="Stock_Origin_DIRECT" xml:space="preserve"><value>Direct entry</value></data>
   <data name="Stock_Origin_PURCHASE_LINE" xml:space="preserve"><value>Purchase</value></data>
-  <data name="Stock_PriceBetween" xml:space="preserve"><value>Price</value></data>
+  <data name="Stock_PriceBetween" xml:space="preserve"><value>Selling price</value></data>
   <data name="Purchasing_GstinHint" xml:space="preserve"><value>GSTIN has 15 characters.</value></data>
   <data name="Purchasing_ModeCheque" xml:space="preserve"><value>Cheque</value></data>
   <data name="Purchasing_PanLength" xml:space="preserve"><value>PAN has 10 characters.</value></data>
@@ -1447,4 +1289,13 @@
   <data name="Common_FullWidth" xml:space="preserve"><value>Use the full width</value></data>
   <data name="Common_BesideList" xml:space="preserve"><value>Show beside the list</value></data>
   <data name="Purchasing_DraftDetail" xml:space="preserve"><value>This purchase is a draft. Open it to add lines, save or post it.</value></data>
+  <data name="Pos_Price" xml:space="preserve"><value>Price</value></data>
+  <data name="Stock_UnitTax" xml:space="preserve"><value>Tax/unit</value></data>
+  <data name="Stock_CostInclTax" xml:space="preserve"><value>Purchase price incl. tax</value></data>
+  <data name="Sales_BeforeTax" xml:space="preserve"><value>Before tax</value></data>
+  <data name="Sales_TaxCharged" xml:space="preserve"><value>Tax charged</value></data>
+  <data name="Catalog_PricesIncludeTaxNote" xml:space="preserve"><value>Selling price and MRP include tax.</value></data>
+  <data name="Purchasing_TaxRateRequired" xml:space="preserve"><value>choose a tax rate</value></data>
+  <data name="Purchasing_CostValue" xml:space="preserve"><value>Cost value</value></data>
+  <data name="Stock_PurchasePriceHint" xml:space="preserve"><value>Before tax, for one piece.</value></data>
 </root>

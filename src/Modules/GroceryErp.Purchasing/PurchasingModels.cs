@@ -22,6 +22,11 @@ public sealed record VendorInput(
 
 public sealed record VendorItem(long Id, string Name, string? Phone, string? Gstin, Money BalanceDue, bool IsActive);
 
+/// <summary>
+/// One purchase line as typed. <see cref="TaxRateId"/> is the tax rate chosen for the line; the
+/// purchase saves its percent and name from <c>tax_rate</c> when the draft is saved and again when
+/// it is posted. The selling price and MRP include tax.
+/// </summary>
 public sealed record PurchaseLineInput(
     long ProductId,
     string? BatchNumber,
@@ -31,7 +36,7 @@ public sealed record PurchaseLineInput(
     Quantity FreeQuantity,
     Money Rate,
     Money Discount,
-    Percent TaxRate,
+    long? TaxRateId,
     Money? Mrp,
     Money SellingPrice)
 {
@@ -39,13 +44,13 @@ public sealed record PurchaseLineInput(
     public long? ExpenseCategoryId { get; init; }
 
     /// <summary>
-    /// Converts a line typed from a bill whose rate and discount include GST into the before-GST
+    /// Converts a line typed from a bill whose rate and discount include tax into the before-tax
     /// rate and discount the purchase stores. The discount never exceeds the converted line value.
     /// </summary>
-    public PurchaseLineInput ExcludingTax()
+    public PurchaseLineInput ExcludingTax(Percent taxRate)
     {
-        Money rate = Tax.FromInclusive(Rate, TaxRate).Taxable;
-        Money discount = Tax.FromInclusive(Discount, TaxRate).Taxable;
+        Money rate = Tax.FromInclusive(Rate, taxRate).Taxable;
+        Money discount = Tax.FromInclusive(Discount, taxRate).Taxable;
         Money gross = rate * Quantity;
         return this with { Rate = rate, Discount = discount > gross ? gross : discount };
     }
@@ -70,8 +75,9 @@ public sealed record PurchaseDraftInput(
 
 public sealed record PurchaseDraft(long Id, PurchaseDraftInput Input);
 
-public sealed record PurchaseLineDefaults(Money? LastRate, Percent TaxRate, Money? Mrp,
-    Money? SellingPrice, DateOnly? SuggestedExpiry, int ExpiryAlertDays, bool PriceIncludesTax);
+/// <summary>A new line's starting values: the product's tax rate (ID and percent) and the vendor's last before-tax rate.</summary>
+public sealed record PurchaseLineDefaults(Money? LastRate, long? TaxRateId, Percent TaxRate, Money? Mrp,
+    Money? SellingPrice, DateOnly? SuggestedExpiry, int ExpiryAlertDays);
 
 public sealed record PurchaseTotals(
     Money Subtotal,
@@ -97,6 +103,22 @@ public sealed record PurchaseInvoiceLine(int LineNumber, string Sku, string Prod
     public string? ExpenseCategoryName { get; init; }
     public string? SnapshotProvenance { get; init; }
     public string? LegacyUnknownFields { get; init; }
+
+    /// <summary>Gets the tax rate's name as it was when the line was posted.</summary>
+    public string? TaxLabel { get; init; }
+
+    /// <summary>Gets one piece's tax; null for a line posted before tax snapshots.</summary>
+    public Money? UnitTax { get; init; }
+
+    /// <summary>Gets one piece's purchase price including tax and its share of other charges.</summary>
+    public Money? UnitCostInclTax { get; init; }
+
+    /// <summary>Gets one piece's purchase price before tax, with its share of other charges.</summary>
+    public Money? PurchasePrice => UnitCostInclTax is { } incl && UnitTax is { } tax ? incl - tax : null;
+
+    /// <summary>Gets the tax per piece as shown, so the shown prices add up.</summary>
+    public decimal? UnitTaxShown => UnitCostInclTax is { } incl && PurchasePrice is { } before
+        ? TwoDecimals.Remainder(incl, before) : null;
 }
 
 public sealed record PurchaseInvoice(long Id, string? DocumentNumber, string VendorName,

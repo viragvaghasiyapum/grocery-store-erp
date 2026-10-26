@@ -43,7 +43,7 @@ public sealed class ReportsTests
     }
 
     [Fact]
-    public async Task LowStockDailyQuantity_TracksCompletedSalesAndVoids()
+    public void SaleProductDay_TracksCompletedSalesReturnsAndVoids()
     {
         using var fixture = new ReportFixture();
         fixture.SeedGoldenScenario();
@@ -73,10 +73,6 @@ public sealed class ReportsTests
         AssertSourceParity();
         connection.QuerySingle<long>("SELECT qty FROM sale_product_day WHERE product_id=1 AND day='2026-09-10'")
             .ShouldBe(3000L);
-        TabularReport report = await fixture.Reports.GetReportAsync(ReportKind.LowStock,
-            new(To: new(2026, 9, 27), Limit: 10), TestContext.Current.CancellationToken);
-        report.Rows.Single(row => (string)row.Values["Sku"]! == "RICE")
-            .Values["AverageDailySales"].ShouldBe(100L);
 
         connection.Execute("""
             INSERT INTO sale_return(return_no,sale_id,return_date,refund_mode,taxable_total,
@@ -250,38 +246,6 @@ public sealed class ReportsTests
     }
 
     [Fact]
-    public async Task AssetScheduleCsv_ExportsAllPeriodsBeyondInteractiveLimit()
-    {
-        using var fixture = new ReportFixture();
-        fixture.SeedGoldenScenario();
-        var filter = new ReportFilter(From: new(2026, 1, 1), To: new(2070, 12, 31), AssetId: 1);
-        TabularReport preview = await fixture.Reports.GetReportAsync(ReportKind.AssetSchedule,
-            filter, TestContext.Current.CancellationToken);
-        preview.Rows.Count.ShouldBe(500);
-        preview.IsTruncated.ShouldBeTrue();
-
-        string path = Path.Combine(fixture.Root, "asset-full.csv");
-        long count = await fixture.Reports.ExportCsvAsync(ReportKind.AssetSchedule, filter, path,
-            cancellationToken: TestContext.Current.CancellationToken);
-        count.ShouldBe(532);
-        string[] lines = await File.ReadAllLinesAsync(path, TestContext.Current.CancellationToken);
-        lines.Length.ShouldBe(534);
-        lines[2].ShouldContain("2026-09");
-        lines[^1].ShouldContain("2070-12");
-        foreach (int index in new[] { 0, 499 })
-        {
-            string[] cells = lines[index + 2].Split(',');
-            cells[0].Trim('"').ShouldBe(preview.Rows[index].Values["Period"]);
-            foreach ((string key, int column) in new[] { ("Opening", 2), ("Depreciation", 3), ("Closing", 4) })
-            {
-                decimal csvValue = decimal.Parse(cells[column], System.Globalization.CultureInfo.InvariantCulture);
-                long scaled = Convert.ToInt64(preview.Rows[index].Values[key], System.Globalization.CultureInfo.InvariantCulture);
-                csvValue.ShouldBe(Money.FromScaled(scaled).Value);
-            }
-        }
-        Directory.GetFiles(fixture.Root, "*.partial").ShouldBeEmpty();
-    }
-    [Fact]
     public async Task PnlAggregate_MatchesEntryViewForFullAndPartialMonths()
     {
         using var fixture = new ReportFixture();
@@ -374,50 +338,6 @@ public sealed class ReportsTests
                 .ToDictionary(cell => cell.Key, cell => cell.Amount);
             observed.ShouldBe(expected, ignoreOrder: true);
         }
-    }
-
-    [Fact]
-    public async Task StockReports_PageBeforeHistoryLookupAndKeepLastSoldCorrect()
-    {
-        using var fixture = new ReportFixture();
-        fixture.SeedGoldenScenario();
-        using (var connection = fixture.Factory.Open())
-            connection.Execute("""
-                UPDATE product SET reorder_level=2000 WHERE sku='RICE';
-                INSERT INTO sale(sale_date,status) VALUES ('2026-09-10','DRAFT');
-                INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,
-                    taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
-                VALUES (2,1,1,1,'Rice',1000,100000,100000,0,100000,100000,100000);
-                UPDATE sale SET invoice_no='S-RECENT',status='COMPLETED',line_count=1,
-                    taxable_total=100000,grand_total=100000,cost_total=100000 WHERE id=2;
-                INSERT INTO product(sku,name,category_id,uom_id,reorder_level)
-                VALUES ('MILK','Milk',1,(SELECT id FROM uom LIMIT 1),2000),
-                       ('NEVER','Never sold',1,(SELECT id FROM uom LIMIT 1),2000);
-                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,selling_price,qty_received,qty_on_hand)
-                VALUES (2,'L2','2026-01-01',100000,120000,1000,1000),
-                       (3,'L3','2026-01-01',100000,120000,1000,1000);
-                INSERT INTO sale(sale_date,status) VALUES ('2026-01-01','DRAFT');
-                INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,
-                    taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
-                VALUES (3,1,2,2,'Milk',1000,100000,100000,0,100000,100000,100000);
-                UPDATE sale SET invoice_no='S-OLD',status='COMPLETED',line_count=1,
-                    taxable_total=100000,grand_total=100000,cost_total=100000 WHERE id=3;
-                """);
-        TabularReport low = await fixture.Reports.GetReportAsync(ReportKind.LowStock,
-            new(To: new(2026, 9, 27), Limit: 2), TestContext.Current.CancellationToken);
-        low.Rows.Select(row => row.Values["Sku"]).ShouldBe(["MILK", "NEVER"], ignoreOrder: false);
-        low.IsTruncated.ShouldBeTrue();
-        TabularReport slow = await fixture.Reports.GetReportAsync(ReportKind.SlowMovers,
-            new(To: new(2026, 9, 27), SlowMoverDays: 90, Limit: 10), TestContext.Current.CancellationToken);
-        slow.Rows.Select(row => row.Values["Sku"]).ShouldBe(["MILK", "NEVER"], ignoreOrder: true);
-        slow.Rows.Single(row => (string)row.Values["Sku"]! == "MILK").Values["LastSold"].ShouldBe("2026-01-01");
-        slow.Rows.Single(row => (string)row.Values["Sku"]! == "NEVER").Values["LastSold"].ShouldBeNull();
-        using (var connection = fixture.Factory.Open())
-            connection.Execute("UPDATE sale SET status='VOID',void_reason='Correction' WHERE id=2");
-        TabularReport afterVoid = await fixture.Reports.GetReportAsync(ReportKind.SlowMovers,
-            new(To: new(2026, 9, 27), SlowMoverDays: 90, Limit: 10), TestContext.Current.CancellationToken);
-        afterVoid.Rows.Single(row => (string)row.Values["Sku"]! == "RICE").Values["LastSold"].ShouldBeNull();
-        afterVoid.Rows.Single(row => (string)row.Values["Sku"]! == "MILK").Values["LastSold"].ShouldBe("2026-01-01");
     }
 
     [Fact]
@@ -563,10 +483,6 @@ public sealed class ReportsTests
         PnlMatrix matrix = await fixture.Reports.GetPnlMatrixAsync(new(2026, 9, 1), new(2026, 9, 30), TestContext.Current.CancellationToken);
         TabularReport sales = await fixture.Reports.GetReportAsync(ReportKind.SalesRegister,
             new(From: new(2026, 9, 1), To: new(2026, 9, 30)), TestContext.Current.CancellationToken);
-        TabularReport salaries = await fixture.Reports.GetReportAsync(ReportKind.SalaryRegister,
-            new(From: new(2026, 9, 1), To: new(2026, 9, 30)), TestContext.Current.CancellationToken);
-        TabularReport assetSchedule = await fixture.Reports.GetReportAsync(ReportKind.AssetSchedule,
-            new(From: new(2026, 9, 1), To: new(2026, 12, 31), AssetId: 1), TestContext.Current.CancellationToken);
 
         statement.NetSales.Value.ShouldBe(900m);
         statement.GrossProfit.Value.ShouldBe(360m);
@@ -578,10 +494,6 @@ public sealed class ReportsTests
         matrix.Rows.Single(static row => row.HeadCode == "NET_PROFIT").Total.Value.ShouldBe(265m);
         matrix.Rows.Single(static row => row.HeadCode == "GROSS_PROFIT").Months[0].Value.ShouldBe(360m);
         sales.Rows.Count.ShouldBe(1);
-        salaries.Columns.ShouldContain(static column => column.Key == "2026-09");
-        salaries.Rows.Count.ShouldBe(1);
-        assetSchedule.Rows.Count.ShouldBe(4);
-        assetSchedule.Rows[^1].Values["Status"].ShouldBe("PROJECTED");
         string pnlPath = Path.Combine(fixture.Root, "pnl.xlsx");
         fixture.Output.ExportPnlExcel(statement, pnlPath);
         using var pnlWorkbook = new XLWorkbook(pnlPath);
@@ -632,13 +544,9 @@ public sealed class ReportsTests
         var filter = new ReportFilter(From: new(2026, 9, 1), To: new(2026, 9, 27), Limit: 100);
         TabularReport projected = await fixture.Reports.GetReportAsync(ReportKind.ItemSales, filter,
             TestContext.Current.CancellationToken);
-        TabularReport projectedCategories = await fixture.Reports.GetReportAsync(ReportKind.CategorySales, filter,
-            TestContext.Current.CancellationToken);
         using (var connection = fixture.Factory.Open())
             connection.Execute("DELETE FROM dashboard_top_window");
         TabularReport source = await fixture.Reports.GetReportAsync(ReportKind.ItemSales, filter,
-            TestContext.Current.CancellationToken);
-        TabularReport sourceCategories = await fixture.Reports.GetReportAsync(ReportKind.CategorySales, filter,
             TestContext.Current.CancellationToken);
         System.Text.Json.JsonSerializer.Serialize(projected.Rows).ShouldBe(
             System.Text.Json.JsonSerializer.Serialize(source.Rows));
@@ -655,9 +563,6 @@ public sealed class ReportsTests
             filter with { ProductId = selectedProduct }, selectedCsv,
             cancellationToken: TestContext.Current.CancellationToken)).ShouldBe(1);
         File.ReadLines(selectedCsv).Count().ShouldBe(4);
-        System.Text.Json.JsonSerializer.Serialize(projectedCategories.Rows).ShouldBe(
-            System.Text.Json.JsonSerializer.Serialize(sourceCategories.Rows));
-        projectedCategories.Totals.ShouldBe(sourceCategories.Totals);
         projected.Rows[0].Values["Product"].ShouldBe("New rice");
         Convert.ToInt64(projected.Rows[0].Values["Revenue"], System.Globalization.CultureInfo.InvariantCulture)
             .ShouldBe(75000);
@@ -805,41 +710,6 @@ public sealed class ReportsTests
     }
 
     [Fact]
-    public async Task HourlySales_GroupsCompletedBillsAndLocalizesWeekdays()
-    {
-        using var fixture = new ReportFixture();
-        using (var connection = fixture.Factory.Open())
-            connection.Execute("""
-                INSERT INTO sale(sale_date,status) VALUES ('2026-09-14','DRAFT'),('2026-09-14','DRAFT');
-                UPDATE sale SET status='COMPLETED',invoice_no='H-'||id,
-                    completed_at='2026-09-14 09:30:00',taxable_total=45000,grand_total=45000 WHERE id IN (1,2);
-                """);
-        TranslationSource translations = TranslationSource.Instance;
-        var original = translations.UiCulture;
-        try
-        {
-            translations.UiCulture = System.Globalization.CultureInfo.GetCultureInfo("gu-IN");
-            var service = new ReportService(fixture.Database, fixture.Settings,
-                new FixedClock(new DateOnly(2026, 9, 14)), translations);
-            TabularReport report = await service.GetReportAsync(ReportKind.HourlySales,
-                new(From: new(2026, 9, 14), To: new(2026, 9, 14)), TestContext.Current.CancellationToken);
-
-            ReportRow row = report.Rows.Single();
-            row.Values["Weekday"].ShouldBe(translations["Reports_Weekday_Mon"]);
-            row.Values["Hour"].ShouldBe(9L);
-            row.Values["Bills"].ShouldBe(2L);
-            row.Values["Revenue"].ShouldBe(90000L);
-            using (var connection = fixture.Factory.Open())
-                connection.Execute("UPDATE sale SET status='VOID',void_reason='Correction' WHERE id=1");
-            TabularReport afterVoid = await service.GetReportAsync(ReportKind.HourlySales,
-                new(From: new(2026, 9, 14), To: new(2026, 9, 14)), TestContext.Current.CancellationToken);
-            afterVoid.Rows.Single().Values["Bills"].ShouldBe(1L);
-            afterVoid.Rows.Single().Values["Revenue"].ShouldBe(45000L);
-        }
-        finally { translations.UiCulture = original; }
-    }
-
-    [Fact]
     public async Task GstSummary_IncludesReturnsWhenOriginalSaleIsOutsidePeriod()
     {
         using var fixture = new ReportFixture();
@@ -874,9 +744,6 @@ public sealed class ReportsTests
         ReportRow item = items.Rows.First(row => row.Values.GetValueOrDefault("Sku")?.ToString() == "RICE");
         item.Values["Quantity"].ShouldBe(-1000L);
         item.Values["Revenue"].ShouldBe(-100000L);
-        TabularReport categories = await fixture.Reports.GetReportAsync(ReportKind.CategorySales,
-            new(From: new(2026, 10, 1), To: new(2026, 10, 31)), TestContext.Current.CancellationToken);
-        categories.Rows.Single().Values["Revenue"].ShouldBe(-100000L);
     }
 
     [Fact]
@@ -942,10 +809,15 @@ public sealed class ReportsTests
         inward.Values["Hsn"].ShouldBe("24ABCDE1234F1Z5");
         inward.Values["Taxable"].ShouldBe(-40000L);
         inward.Values["Tax"].ShouldBe(-2000L);
-        TabularReport payables = await fixture.Reports.GetReportAsync(ReportKind.VendorPayables,
-            new(To: new(2026, 10, 31)), TestContext.Current.CancellationToken);
-        payables.Rows.Single().Values["Returns"].ShouldBe(42000L);
-        payables.Rows.Single().Values["BalanceDue"].ShouldBe(63000L);
+        using (var connection = fixture.Factory.Open())
+        {
+            var balance = connection.QuerySingle<(long Returns, long BalanceDue)>("""
+                SELECT t.returns,b.balance_due FROM vendor_balance_total t
+                JOIN v_vendor_balance b ON b.vendor_id=t.vendor_id
+                """);
+            balance.Returns.ShouldBe(42000L);
+            balance.BalanceDue.ShouldBe(63000L);
+        }
     }
 
     [Fact]
@@ -977,49 +849,11 @@ public sealed class ReportsTests
             sheet.Cell(1, 1).GetString().ShouldBe(translations["Reports_Kind_ProfitAndLoss"]);
             sheet.RowsUsed().Select(static row => row.Cell(1).GetString())
                 .ShouldContain(translations["Reports_Section_GrossProfit"]);
-
-            using (var connection = fixture.Factory.Open())
-                connection.Execute("""
-                    INSERT INTO audit_log(at,entity,entity_id,action,changes)
-                    VALUES ('2026-09-15 12:00:00','product',1,'CREATE','{}')
-                    """);
-            TabularReport audit = await service.GetReportAsync(ReportKind.AuditLog,
-                new(From: new(2026, 9, 1), To: new(2026, 9, 30)), TestContext.Current.CancellationToken);
-            audit.Rows.Single().Values["Action"].ShouldBe(translations["Reports_Action_CREATE"]);
-            audit.Rows.Single().Values["Entity"].ShouldBe(translations["Reports_Entity_product"]);
         }
         finally
         {
             translations.UiCulture = original;
         }
-    }
-
-    [Fact]
-    public async Task CategoryComparison_IncludesCategoriesWithOnlyPreviousPeriodSales()
-    {
-        using var fixture = new ReportFixture();
-        fixture.SeedGoldenScenario();
-        using (var connection = fixture.Factory.Open())
-            connection.Execute("""
-                INSERT INTO category(name) VALUES ('Dairy');
-                INSERT INTO product(sku,name,category_id,uom_id)
-                VALUES ('MILK','Milk',2,(SELECT id FROM uom ORDER BY id LIMIT 1));
-                INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,selling_price,qty_received)
-                VALUES (2,'MILK-LOT','2026-09-01',60000,100000,1000);
-                INSERT INTO sale(sale_date,status) VALUES ('2026-09-15','DRAFT');
-                INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,
-                    taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
-                VALUES (2,1,2,2,'Milk',1000,100000,100000,0,100000,60000,60000);
-                UPDATE sale SET invoice_no='S2',status='COMPLETED',line_count=1,
-                    taxable_total=100000,grand_total=100000,cost_total=60000 WHERE id=2;
-                """);
-
-        TabularReport report = await fixture.Reports.GetReportAsync(ReportKind.CategorySales,
-            new(From: new(2026, 10, 1), To: new(2026, 10, 31)), TestContext.Current.CancellationToken);
-
-        ReportRow dairy = report.Rows.Single(row => (string)row.Values["Category"]! == "Dairy");
-        dairy.Values["Revenue"].ShouldBe(0L);
-        dairy.Values["PreviousRevenue"].ShouldBe(100000L);
     }
 
     [Fact]

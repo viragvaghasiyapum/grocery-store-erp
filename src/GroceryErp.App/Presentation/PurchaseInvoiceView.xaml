@@ -19,14 +19,17 @@
         <DataGridTextColumn Width="95" Header="{l:Tr Stock_Expiry}" Binding="{Binding ExpiryDate, StringFormat=dd MMM yyyy}"/>
         <DataGridTextColumn Width="75" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
         <DataGridTextColumn Width="75" Header="{l:Tr Purchasing_FreeQty}" Binding="{Binding FreeQuantity}"/>
-        <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_Rate}" Binding="{Binding Rate}"/>
-        <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_Discount}" Binding="{Binding Discount}"/>
-        <DataGridTextColumn Width="70" Header="{l:Tr Purchasing_Gst}" Binding="{Binding TaxRate}"/>
-        <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_TaxTotal}" Binding="{Binding TaxAmount}"/>
-        <DataGridTextColumn Width="90" Header="{l:Tr Purchasing_ComputedTotal}" Binding="{Binding LineTotal}"/>
-        <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_Landed}" Binding="{Binding LandedUnitCost}"/>
-        <DataGridTextColumn Width="75" Header="MRP" Binding="{Binding Mrp}"/>
-        <DataGridTextColumn Width="85" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice}"/>
+        <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_Rate}" Binding="{Binding Rate, Converter={StaticResource Amount}}"/>
+        <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_Discount}" Binding="{Binding Discount, Converter={StaticResource Amount}}"/>
+        <DataGridTextColumn Width="82" Header="{l:Tr Purchasing_Gst}" Binding="{Binding TaxLabel, TargetNullValue=—}"/>
+        <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_TaxTotal}" Binding="{Binding TaxAmount, Converter={StaticResource Amount}}"/>
+        <DataGridTextColumn Width="95" Header="{l:Tr Purchasing_ComputedTotal}" Binding="{Binding LineTotal, Converter={StaticResource Amount}}"/>
+        <!-- One piece, with its share of other charges: Purchase price + Tax/unit = incl. tax as shown. -->
+        <DataGridTextColumn Width="100" Header="{l:Tr Stock_UnitCost}" Binding="{Binding PurchasePrice, Converter={StaticResource Amount}}"/>
+        <DataGridTextColumn Width="76" Header="{l:Tr Stock_UnitTax}" Binding="{Binding UnitTaxShown, Converter={StaticResource Amount}}"/>
+        <DataGridTextColumn Width="118" Header="{l:Tr Stock_CostInclTax}" Binding="{Binding UnitCostInclTax, Converter={StaticResource Amount}}"/>
+        <DataGridTextColumn Width="75" Header="MRP" Binding="{Binding Mrp, Converter={StaticResource Amount}}"/>
+        <DataGridTextColumn Width="92" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice, Converter={StaticResource Amount}}"/>
       </DataGrid.Columns>
     </DataGrid>
     <!-- A draft has no saved lines to show; it is finished in the purchase form. -->

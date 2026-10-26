@@ -7,6 +7,7 @@ using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
+using GroceryErp.Inventory;
 using GroceryErp.Inventory.Contracts;
 
 namespace GroceryErp.Catalog;
@@ -67,7 +68,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
                 SELECT id AS Id, sku AS Sku, name AS Name, name_local AS NameLocal,
                        search_terms AS SearchTerms, category_id AS CategoryId, brand_id AS BrandId,
                        uom_id AS UomId, hsn_code AS HsnCode, tax_rate_id AS TaxRateId,
-                       price_includes_tax AS PriceIncludesTax, is_loose AS IsLoose, plu_code AS PluCode,
+                       is_loose AS IsLoose, plu_code AS PluCode,
                        track_expiry AS TrackExpiry, default_shelf_life_days AS DefaultShelfLifeDays,
                        expiry_alert_days AS ExpiryAlertDays, reorder_level AS ReorderLevel,
                        default_selling_price AS DefaultSellingPrice, default_mrp AS DefaultMrp,
@@ -83,7 +84,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
                     barcode.Barcode, Quantity.FromScaled(barcode.PackQuantity), barcode.Symbology, barcode.IsPrimary, barcode.Source)).ToList();
             return new ProductDetails(row.Id, new ProductInput(
                 row.Sku, row.Name, row.NameLocal, row.SearchTerms, row.CategoryId, row.BrandId,
-                row.UomId, row.HsnCode, row.TaxRateId, row.PriceIncludesTax, row.IsLoose, row.PluCode,
+                row.UomId, row.HsnCode, row.TaxRateId, row.IsLoose, row.PluCode,
                 row.TrackExpiry, row.DefaultShelfLifeDays, row.ExpiryAlertDays,
                 Quantity.FromScaled(row.ReorderLevel),
                 row.DefaultSellingPrice is null ? null : Money.FromScaled(row.DefaultSellingPrice.Value),
@@ -242,7 +243,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
     {
         ArgumentNullException.ThrowIfNull(lot);
         ValidatedProduct product = Validate(input);
-        if (lot.Quantity <= Quantity.Zero || lot.UnitCost < Money.Zero ||
+        if (lot.Quantity <= Quantity.Zero || lot.PurchasePrice < Money.Zero ||
             lot.SellingPrice < Money.Zero || lot.Mrp < Money.Zero ||
             lot.Mrp is not null && lot.SellingPrice > lot.Mrp.Value ||
             input.TrackExpiry && lot.ExpiryDate is null ||
@@ -262,25 +263,31 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
                 !lot.Quantity.IsWhole)
                 throw new DomainException(ErrorCode.FractionalQtyNotAllowed);
             long productId = CreateProduct(transaction, product);
+            // The first lot is bought at the product's rate unless another active rate was chosen.
+            LotTax tax = LotTaxes.FromBeforeTax(transaction, lot.TaxRateId is { } chosen
+                ? LotTaxes.Rate(transaction, chosen, activeOnly: true)
+                : LotTaxes.Rate(transaction, input.TaxRateId), lot.PurchasePrice);
             string lotCode = numbers.Next(transaction, DocType.Lot, lot.ReceivedDate);
             long lotId = transaction.Connection.ExecuteScalar<long>("""
                 INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,
-                    unit_cost,mrp,selling_price,qty_received,direct_reason)
-                VALUES (@productId,@lotCode,@batch,@date,@expiry,@cost,@mrp,@price,@quantity,@reason)
+                    unit_cost,mrp,selling_price,qty_received,direct_reason,
+                    tax_rate_id_snapshot,tax_label_snapshot,tax_rate_pct_snapshot,unit_tax,unit_cost_incl_tax)
+                VALUES (@productId,@lotCode,@batch,@date,@expiry,@cost,@mrp,@price,@quantity,@reason,
+                    @taxRateId,@taxLabel,@taxRatePct,@unitTax,@unitCostInclTax)
                 RETURNING id
-                """, new
+                """, tax.AddTo(new DynamicParameters(new
             {
                 productId,
                 lotCode,
                 batch = lot.BatchNumber?.Trim(),
                 date = lot.ReceivedDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
                 expiry = lot.ExpiryDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                cost = lot.UnitCost.Scaled,
+                cost = tax.Cost.Booked.Scaled,
                 mrp = lot.Mrp?.Scaled,
                 price = lot.SellingPrice.Scaled,
                 quantity = lot.Quantity.Scaled,
                 reason = lot.Reason.Trim()
-            }, transaction.Transaction);
+            })), transaction.Transaction);
             long originId = transaction.Connection.ExecuteScalar<long>(
                 "SELECT id FROM direct_stock_origin WHERE lot_id=@lotId", new { lotId }, transaction.Transaction);
             stock.Change(transaction, new(lot.ReceivedDate, productId, lotId, LotChangeKind.DirectEntry, lot.Quantity));
@@ -292,17 +299,18 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
         return id;
     }
 
+    // Every selling price and MRP includes tax, so price_includes_tax keeps its default of 1.
     private long CreateProduct(DbTx transaction, ValidatedProduct product)
     {
         long id = transaction.Connection.ExecuteScalar<long>("""
                 INSERT INTO product(
                     sku, name, name_local, search_terms, category_id, brand_id, uom_id, hsn_code,
-                    tax_rate_id, price_includes_tax, is_loose, plu_code, track_expiry,
+                    tax_rate_id, is_loose, plu_code, track_expiry,
                     default_shelf_life_days, expiry_alert_days, reorder_level,
                     default_selling_price, default_mrp, product_class)
                 VALUES (
                     @Sku, @Name, @NameLocal, @SearchTerms, @CategoryId, @BrandId, @UomId, @HsnCode,
-                    @TaxRateId, @PriceIncludesTax, @IsLoose, @PluCode, @TrackExpiry,
+                    @TaxRateId, @IsLoose, @PluCode, @TrackExpiry,
                     @DefaultShelfLifeDays, @ExpiryAlertDays, @ReorderLevel,
                     @DefaultSellingPrice, @DefaultMrp, @ProductClass)
                 RETURNING id
@@ -367,7 +375,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
                 UPDATE product SET
                     sku=@Sku, name=@Name, name_local=@NameLocal, search_terms=@SearchTerms,
                     category_id=@CategoryId, brand_id=@BrandId, uom_id=@UomId, hsn_code=@HsnCode,
-                    tax_rate_id=@TaxRateId, price_includes_tax=@PriceIncludesTax, is_loose=@IsLoose,
+                    tax_rate_id=@TaxRateId, is_loose=@IsLoose,
                     plu_code=@PluCode, track_expiry=@TrackExpiry,
                     default_shelf_life_days=@DefaultShelfLifeDays, expiry_alert_days=@ExpiryAlertDays,
                     reorder_level=@ReorderLevel, default_selling_price=@DefaultSellingPrice,
@@ -386,7 +394,6 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
                 product.UomId,
                 product.HsnCode,
                 product.TaxRateId,
-                product.PriceIncludesTax,
                 product.IsLoose,
                 product.PluCode,
                 product.TrackExpiry,
@@ -558,7 +565,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
         return new(
             sku, name, CatalogText.Optional(input.NameLocal, 120), CatalogText.Optional(input.SearchTerms, 500),
             input.CategoryId, input.BrandId, input.UomId, hsn, input.TaxRateId,
-            input.PriceIncludesTax ? 1 : 0, input.IsLoose ? 1 : 0, CatalogText.Optional(input.PluCode, 30),
+            input.IsLoose ? 1 : 0, CatalogText.Optional(input.PluCode, 30),
             input.TrackExpiry ? 1 : 0, input.DefaultShelfLifeDays, input.ExpiryAlertDays,
             input.ReorderLevel.Scaled, input.DefaultSellingPrice?.Scaled, input.DefaultMrp?.Scaled,
             input.ProductClass, barcodes);
@@ -614,7 +621,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
     private sealed record ValidatedBarcode(string Barcode, long PackQuantity, string Symbology, bool IsPrimary, string Source);
     private sealed record ValidatedProduct(
         string Sku, string Name, string? NameLocal, string? SearchTerms, long CategoryId, long? BrandId,
-        long UomId, string? HsnCode, long? TaxRateId, int PriceIncludesTax, int IsLoose, string? PluCode,
+        long UomId, string? HsnCode, long? TaxRateId, int IsLoose, string? PluCode,
         int TrackExpiry, int? DefaultShelfLifeDays, int? ExpiryAlertDays, long ReorderLevel,
         long? DefaultSellingPrice, long? DefaultMrp, string ProductClass,
         IReadOnlyCollection<ValidatedBarcode> Barcodes);
@@ -648,7 +655,6 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
         public long UomId { get; init; }
         public string? HsnCode { get; init; }
         public long? TaxRateId { get; init; }
-        public bool PriceIncludesTax { get; init; }
         public bool IsLoose { get; init; }
         public string? PluCode { get; init; }
         public bool TrackExpiry { get; init; }

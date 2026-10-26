@@ -283,7 +283,7 @@ public sealed partial class ReportService
 
     private string HeadLabel(string code, string? categoryName) => code switch
     {
-        "SALES" => Text("Pnl_Head_Sales", "Sales (net of GST)"),
+        "SALES" => Text("Pnl_Head_Sales", "Sales (net of tax)"),
         "SALES_RETURNS" => Text("Pnl_Head_SalesReturns", "Sales returns"),
         "ROUND_OFF" => Text("Pnl_Head_RoundOff", "Round off"),
         "COGS" => Text("Pnl_Head_Cogs", "Cost of goods sold"),

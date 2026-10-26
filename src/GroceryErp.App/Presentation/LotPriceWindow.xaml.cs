@@ -17,7 +17,7 @@ public partial class LotPriceWindow : Window
         _inventory = inventory;
         _lot = lot;
         ExpiryBox.SelectedDate = lot.ExpiryDate?.ToDateTime(TimeOnly.MinValue);
-        LotText.Text = TranslationSource.Instance.Format("Stock_LotDamageContext", lot.ProductName, lot.LotCode, lot.OnHand, lot.UnitCost);
+        LotText.Text = TranslationSource.Instance.Format("Stock_LotDamageContext", lot.ProductName, lot.LotCode, lot.OnHand, lot.PurchasePrice ?? lot.UnitCost);
         PriceBox.Text = lot.SellingPrice.Value.ToString("0.###", TranslationSource.FormatCulture);
         MrpBox.Text = lot.Mrp?.Value.ToString("0.###", TranslationSource.FormatCulture) ?? "";
         Loaded += (_, _) => PriceField.FocusInput();

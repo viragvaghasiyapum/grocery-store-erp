@@ -56,12 +56,6 @@
     <StackPanel x:Name="PaymentFilterPanel" Orientation="Horizontal"><TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_Payment}"/><ComboBox x:Name="PaymentPicker" Width="130" Margin="0,0,12,6" SelectionChanged="FilterPicker_OnSelectionChanged" AutomationProperties.Name="{l:Tr Reports_Payment}"/></StackPanel>
     <StackPanel x:Name="ProductFilterPanel" Orientation="Horizontal"><TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterProduct}"/><TextBox x:Name="ProductFilter" Width="90" Margin="0,0,12,6" AutomationProperties.Name="{l:Tr Reports_FilterProduct}"/></StackPanel>
     <StackPanel x:Name="VendorFilterPanel" Orientation="Horizontal"><TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterVendor}"/><TextBox x:Name="VendorFilter" Width="90" Margin="0,0,12,6" AutomationProperties.Name="{l:Tr Reports_FilterVendor}"/></StackPanel>
-    <StackPanel x:Name="AssetFilterPanel" Orientation="Horizontal"><TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterAsset}"/><TextBox x:Name="AssetFilter" Width="90" Margin="0,0,12,6" AutomationProperties.Name="{l:Tr Reports_FilterAsset}"/></StackPanel>
-    <StackPanel x:Name="SlowDaysFilterPanel" Orientation="Horizontal"><TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterSlowDays}"/><TextBox x:Name="SlowDaysFilter" Width="70" Margin="0,0,12,6" Text="90" AutomationProperties.Name="{l:Tr Reports_FilterSlowDays}"/></StackPanel>
-    <StackPanel x:Name="AuditFilterPanel" Orientation="Horizontal">
-     <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterEntity}"/><TextBox x:Name="EntityFilter" Width="110" Margin="0,0,12,6" AutomationProperties.Name="{l:Tr Reports_FilterEntity}"/>
-     <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterAction}"/><TextBox x:Name="ActionFilter" Width="110" Margin="0,0,12,6" AutomationProperties.Name="{l:Tr Reports_FilterAction}"/>
-    </StackPanel>
   </WrapPanel>
   <Border Grid.Row="3" Padding="6" CornerRadius="8" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"><Grid>
    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
@@ -90,12 +84,6 @@
     </DataGrid>
     <TextBlock x:Name="PnlTotals" Grid.Row="1" Margin="0,8,0,0" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"/>
    </Grid>
-   <ScrollViewer x:Name="HourlyPanel" Grid.Row="1" Visibility="Collapsed" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-    <StackPanel>
-     <TextBlock Text="{l:Tr Reports_HourlyHint}" Margin="4,2,4,12" TextWrapping="Wrap"/>
-     <UniformGrid x:Name="HourlyGrid" Columns="25" MinWidth="1000"/>
-    </StackPanel>
-   </ScrollViewer>
   </Grid></Border>
  </Grid>
 </Page>

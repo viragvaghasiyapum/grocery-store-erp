@@ -107,7 +107,7 @@ public sealed class StockInTests
             FreeQuantity = Quantity.Zero,
             Rate = new Money(50),
             Discount = Money.Zero,
-            TaxRate = Percent.Zero,
+            TaxRateId = fixture.ZeroTaxRateId,
             LineKind = "EXPENSE",
             ExpenseCategoryId = expenseCategory,
         };
@@ -382,12 +382,14 @@ public sealed class StockInTests
             new(new Quantity(5), Quantity.Zero, new Money(100), Money.Zero, new Money(25)),
         ];
 
-        IReadOnlyList<Money> regular = LandedCost.Compute(lines, new Money(300), taxIsCost: false);
+        List<Money> regular = LandedCost.Compute(lines, new Money(300), taxIsCost: false)
+            .Select(static unit => unit.Booked).ToList();
         regular[0].ShouldBe(new Money(250));
         regular[1].ShouldBe(new Money(110));
         regular.Sum(static value => value.Scaled).ShouldBe(360000L);
 
-        IReadOnlyList<Money> composition = LandedCost.Compute(lines, new Money(300), taxIsCost: true);
+        List<Money> composition = LandedCost.Compute(lines, new Money(300), taxIsCost: true)
+            .Select(static unit => unit.Booked).ToList();
         composition[0].ShouldBe(new Money(261.364m));
         composition[1].ShouldBe(new Money(115));
     }
@@ -602,13 +604,13 @@ public sealed class StockInTests
         // 1.001 including 5% is 0.953 before GST, so ten units are worth 9.53; the full discount
         // of 10.01 converts to 9.533 and is capped at the line value.
         PurchaseLineInput line = new PurchaseLineInput(1, null, null, null, new Quantity(10), Quantity.Zero,
-            new Money(1.001m), new Money(10.01m), new Percent(5), null, Money.Zero).ExcludingTax();
+            new Money(1.001m), new Money(10.01m), 2, null, Money.Zero).ExcludingTax(new Percent(5));
         line.Rate.ShouldBe(new Money(0.953m));
         line.Discount.ShouldBe(new Money(9.53m));
 
         PurchaseLineInput untaxed = new(1, null, null, null, Quantity.One, Quantity.Zero,
-            new Money(99), new Money(9), Percent.Zero, null, Money.Zero);
-        untaxed.ExcludingTax().ShouldBe(untaxed);
+            new Money(99), new Money(9), 1, null, Money.Zero);
+        untaxed.ExcludingTax(Percent.Zero).ShouldBe(untaxed);
     }
 
     [Fact]
@@ -904,6 +906,8 @@ public sealed class StockInTests
             long category = connection.ExecuteScalar<long>("INSERT INTO category(name) VALUES ('Food') RETURNING id");
             long unit = connection.ExecuteScalar<long>("SELECT id FROM uom WHERE code='PCS'");
             long tax = connection.ExecuteScalar<long>("SELECT id FROM tax_rate WHERE rate_pct=5000");
+            TaxRateId = tax;
+            ZeroTaxRateId = connection.ExecuteScalar<long>("SELECT id FROM tax_rate WHERE rate_pct=0");
             ProductId = connection.ExecuteScalar<long>("""
                 INSERT INTO product(sku,name,category_id,uom_id,tax_rate_id,track_expiry,default_selling_price,default_mrp)
                 VALUES ('PH3-001','Phase Three Product',@category,@unit,@tax,1,300000,350000) RETURNING id
@@ -925,6 +929,12 @@ public sealed class StockInTests
         public long ProductId { get; }
         public long VendorId { get; }
 
+        /// <summary>Gets the GST 5% rate, the product's.</summary>
+        public long TaxRateId { get; }
+
+        /// <summary>Gets the GST 0% rate.</summary>
+        public long ZeroTaxRateId { get; }
+
         // A reviewed physical count of one lot; a deficit becomes a categorized damage document.
         public Task<long> CountAsync(long lotId, Quantity counted, string reason, CancellationToken ct) =>
             Database.WriteAsync(tx =>
@@ -938,7 +948,7 @@ public sealed class StockInTests
         public PurchaseDraftInput Purchase(string invoice = "INV-1") => new(
             VendorId, invoice, Date, Date, new Money(2725), new Money(100), null,
             [new(ProductId, "BATCH", Date.AddMonths(-1), Date.AddMonths(6), new Quantity(10), Quantity.One,
-                new Money(250), Money.Zero, new Percent(5), new Money(350), new Money(300))]);
+                new Money(250), Money.Zero, TaxRateId, new Money(350), new Money(300))]);
 
         public void Dispose()
         {

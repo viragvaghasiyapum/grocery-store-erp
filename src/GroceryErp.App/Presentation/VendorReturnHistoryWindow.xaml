@@ -14,7 +14,7 @@
         <DataGridTextColumn Header="{l:Tr Purchasing_Grn}" Binding="{Binding DocumentNumber}" Width="150"/>
         <DataGridTextColumn Header="{l:Tr Purchasing_Received}" Binding="{Binding Date, StringFormat=dd MMM yyyy}" Width="125"/>
         <DataGridTextColumn Header="{l:Tr Purchasing_Total}" Binding="{Binding CreditTotal}" Width="125"/>
-        <DataGridTextColumn Header="{l:Tr Purchasing_Landed}" Binding="{Binding CostTotal}" Width="125"/>
+        <DataGridTextColumn Header="{l:Tr Purchasing_CostValue}" Binding="{Binding CostTotal}" Width="125"/>
         <DataGridCheckBoxColumn Header="{l:Tr Purchasing_ReturnCancelled}" Binding="{Binding IsCancelled}" Width="120"/>
         <DataGridTextColumn Header="{l:Tr Purchasing_ReturnCancelledDate}" Binding="{Binding CancellationDate, StringFormat=dd MMM yyyy}" Width="125"/>
       </DataGrid.Columns>

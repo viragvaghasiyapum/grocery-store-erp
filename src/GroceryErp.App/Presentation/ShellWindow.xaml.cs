@@ -239,6 +239,7 @@ public partial class ShellWindow : FluentWindow
     }
     internal void OpenReports() => RootNavigation.Navigate(typeof(ReportsPage));
     internal void OpenProducts() => RootNavigation.Navigate(typeof(ProductsPage));
+    internal void OpenVendors() => RootNavigation.Navigate(typeof(VendorsPage));
     internal void OpenSettings() => RootNavigation.Navigate(typeof(SettingsPage));
     internal void ShowMaintenanceWarning() => MaintenanceWarning.Visibility = Visibility.Visible;
 

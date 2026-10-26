@@ -43,7 +43,14 @@ public sealed record LotChange(DateOnly Date, long ProductId, long LotId, LotCha
 public sealed record DamageStockCorrection(DateOnly Date, long ProductId, long LotId, Quantity Quantity,
     Money UnitCost, long DamageCorrectionId, string? Reason);
 
-public sealed record LotStock(long LotId, Quantity OnHand, DateOnly? Expiry, Money Price, Money? Mrp, Money Cost);
+public sealed record LotStock(long LotId, Quantity OnHand, DateOnly? Expiry, Money Price, Money? Mrp, Money Cost)
+{
+    /// <summary>Gets one piece's purchase tax saved on the lot; null for a lot saved before tax snapshots.</summary>
+    public Money? CostTax { get; init; }
+
+    /// <summary>Gets one piece's purchase price including tax saved on the lot.</summary>
+    public Money? CostInclTax { get; init; }
+}
 
 public sealed record LotAllocation(LotStock Lot, Quantity Quantity);
 

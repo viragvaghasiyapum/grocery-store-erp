@@ -21,7 +21,7 @@ using GroceryErp.Reports;
 using GroceryErp.Sales;
 
 if (args.Length < 1)
-    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase9-profile|phase9-export|phase3-purchase-read|phase7-filters|phase1-schema-audit|phase1-rollback|refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|phase6-reports|phase6-matrix|phase6-category-index|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|phase5-label-failure|phase5-live-write|phase5-return-reconcile|phase5-sales-read|phase5-count-read|phase5-fixture-align|phase5-direct-audit|phase5-direct-crash|phase5-direct-crash-check|phase6-annual|rebuild-pnl-days|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-projection|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
+    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase9-profile|phase9-export|phase3-purchase-read|phase7-filters|phase1-schema-audit|phase1-rollback|refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|phase6-reports|phase6-matrix|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|phase5-label-failure|phase5-live-write|phase5-return-reconcile|phase5-sales-read|phase5-count-read|phase5-fixture-align|phase5-direct-audit|phase5-direct-crash|phase5-direct-crash-check|phase6-annual|rebuild-pnl-days|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
 
 string root = Path.GetFullPath(args[0]);
 string mode = args.Length > 1 ? args[1] : "read";
@@ -398,10 +398,11 @@ switch (mode)
                 """, new { sku = "PH5-C-" + suffix, category, uom }, tx.Transaction);
             for (int index = 0; index < 128; index++)
             {
+                // The product has no tax rate, so its lots carry no tax and cost what they book.
                 long lotId = tx.Connection.ExecuteScalar<long>("""
                     INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,
-                      unit_cost,selling_price,qty_received)
-                    VALUES (@id,@code,'CASHIER-BATCH','2026-10-18','2027-10-18',1000,2000,1000)
+                      unit_cost,selling_price,qty_received,tax_rate_pct_snapshot,unit_tax,unit_cost_incl_tax)
+                    VALUES (@id,@code,'CASHIER-BATCH','2026-10-18','2027-10-18',1000,2000,1000,0,0,1000)
                     RETURNING id
                     """, new { id, code = "PH5-C-L-" + suffix + "-" + index.ToString("D3", System.Globalization.CultureInfo.InvariantCulture) },
                     tx.Transaction);
@@ -633,124 +634,6 @@ switch (mode)
         if (mismatches != 0) throw new InvalidDataException("The Low Stock daily projection differs from completed sale lines.");
         break;
     }
-    case "phase6-low-stock-cold":
-    {
-        await Measure("report-LowStock-broad", () => reports.GetReportAsync(ReportKind.LowStock,
-            new ReportFilter(To: end, Limit: 100)), static report => report.Rows.Count);
-        CapturePlan("low-stock-report", ReportDefinitions.All[ReportKind.LowStock].Sql,
-            new { to = "2026-09-26", Limit = 101 });
-        break;
-    }
-    case "phase6-low-stock-trial":
-    case "phase6-low-stock-cover-trial":
-    case "phase6-low-stock-day-trial":
-    {
-        if (mode == "phase6-low-stock-cover-trial")
-        {
-            using var setup = factory.Open();
-            long started = Stopwatch.GetTimestamp();
-            setup.Execute("CREATE INDEX IF NOT EXISTS ix_sale_line_product_cover ON sale_line(product_id,sale_id,qty)", commandTimeout: 300);
-            Console.WriteLine($"LOW-STOCK covering-index-build: {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0} ms");
-        }
-        if (mode == "phase6-low-stock-day-trial")
-        {
-            using var setup = factory.Open();
-            long started = Stopwatch.GetTimestamp();
-            setup.Execute("""
-                CREATE TABLE IF NOT EXISTS sale_product_day (
-                    product_id INTEGER NOT NULL, day TEXT NOT NULL,
-                    entries INTEGER NOT NULL, qty INTEGER NOT NULL,
-                    PRIMARY KEY(product_id,day)
-                ) WITHOUT ROWID, STRICT;
-                INSERT INTO sale_product_day(product_id,day,entries,qty)
-                SELECT sl.product_id,s.sale_date,COUNT(*),SUM(sl.qty)
-                FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
-                WHERE s.status='COMPLETED'
-                GROUP BY sl.product_id,s.sale_date;
-                """, commandTimeout: 300);
-            Console.WriteLine($"LOW-STOCK daily-build: {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0} ms, rows={setup.ExecuteScalar<long>("SELECT COUNT(*) FROM sale_product_day")}");
-        }
-        const string page = """
-            WITH page AS MATERIALIZED (
-                SELECT p.id,p.name FROM product_stock_total t JOIN product p ON p.id=t.product_id
-                WHERE p.is_active=1 AND t.is_low=1 ORDER BY p.name LIMIT 101
-            )
-            """;
-        var variants = new List<(string Name, string Sql)>
-        {
-            ("current", page + """
-                SELECT page.id,COALESCE((SELECT SUM(sl.qty)/30 FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
-                    WHERE sl.product_id=page.id AND s.status='COMPLETED'
-                    AND s.sale_date BETWEEN date(@to,'-29 day') AND @to),0) AS average
-                FROM page ORDER BY page.name
-                """),
-            ("date-first", page + """
-                , recent AS MATERIALIZED (
-                    SELECT sl.product_id,SUM(sl.qty)/30 AS average
-                    FROM sale s INDEXED BY ix_sale_date_id
-                    CROSS JOIN sale_line sl ON sl.sale_id=s.id
-                    JOIN page ON page.id=sl.product_id
-                    WHERE s.status='COMPLETED' AND s.sale_date BETWEEN date(@to,'-29 day') AND @to
-                    GROUP BY sl.product_id
-                )
-                SELECT page.id,COALESCE(recent.average,0) AS average FROM page
-                LEFT JOIN recent ON recent.product_id=page.id ORDER BY page.name
-                """),
-            ("date-all", page + """
-                , recent AS MATERIALIZED (
-                    SELECT sl.product_id,SUM(sl.qty)/30 AS average
-                    FROM sale s INDEXED BY ix_sale_date_id
-                    CROSS JOIN sale_line sl ON sl.sale_id=s.id
-                    WHERE s.status='COMPLETED' AND s.sale_date BETWEEN date(@to,'-29 day') AND @to
-                    GROUP BY sl.product_id
-                )
-                SELECT page.id,COALESCE(recent.average,0) AS average FROM page
-                LEFT JOIN recent ON recent.product_id=page.id ORDER BY page.name
-                """),
-        };
-        using var connection = factory.Open();
-        if (connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='ix_sale_line_product_cover'") != 0)
-            variants.Insert(1, ("cover", page + """
-                SELECT page.id,COALESCE((SELECT SUM(sl.qty)/30 FROM sale_line sl INDEXED BY ix_sale_line_product_cover JOIN sale s ON s.id=sl.sale_id
-                    WHERE sl.product_id=page.id AND s.status='COMPLETED'
-                    AND s.sale_date BETWEEN date(@to,'-29 day') AND @to),0) AS average
-                FROM page ORDER BY page.name
-                """));
-        if (connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sale_product_day'") != 0)
-            variants.Insert(1, ("day", page + """
-                SELECT page.id,COALESCE((SELECT SUM(d.qty)/30 FROM sale_product_day d
-                    WHERE d.product_id=page.id AND d.day BETWEEN date(@to,'-29 day') AND @to),0) AS average
-                FROM page ORDER BY page.name
-                """));
-        List<(long id,long average)>? expected = null;
-        foreach (var variant in variants)
-        {
-            for (int i = 0; i < 3; i++)
-            {
-                long started = Stopwatch.GetTimestamp();
-                var rows = connection.Query<(long id,long average)>(variant.Sql,new { to = "2026-09-26" }).ToList();
-                if (expected is null) expected = rows;
-                else if (!expected.SequenceEqual(rows)) throw new InvalidDataException(variant.Name + " changed the Low Stock rows.");
-                Console.WriteLine($"LOW-STOCK {variant.Name} {i}: {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0} ms, rows={rows.Count}");
-            }
-            CapturePlan("low-stock-" + variant.Name, variant.Sql,new { to = "2026-09-26" });
-        }
-        for (int i = 0; i < 3; i++)
-        {
-            long started = Stopwatch.GetTimestamp();
-            var rows = connection.Query(ReportDefinitions.All[ReportKind.LowStock].Sql,
-                new { to = "2026-09-26", Limit = 101 }).ToList();
-            Console.WriteLine($"LOW-STOCK exact-sql {i}: {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0} ms, rows={rows.Count}");
-        }
-        for (int i = 0; i < 3; i++)
-        {
-            long started = Stopwatch.GetTimestamp();
-            var stockReport = await reports.GetReportAsync(ReportKind.LowStock,
-                new ReportFilter(To: end, Limit: 100));
-            Console.WriteLine($"LOW-STOCK service {i}: {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0} ms, rows={stockReport.Rows.Count}");
-        }
-        break;
-    }
     case "phase6-last-parity":
     {
         await Measure("last-sale-source-parity", () => Task.Run(() =>
@@ -771,9 +654,6 @@ switch (mode)
             if (mismatches != 0) throw new InvalidDataException($"{mismatches} last-sale products differ from source.");
             return 0;
         }), static value => value);
-        for (int i = 0; i < 8; i++)
-            await Measure("slow-movers", () => reports.GetReportAsync(ReportKind.SlowMovers,
-                new ReportFilter(To: end, SlowMoverDays: 90, Limit: 100)), static report => report.Rows.Count);
         break;
     }
     case "phase6-summary-parity":
@@ -782,15 +662,12 @@ switch (mode)
                  { ("month", monthStart, end), ("fiscal", fiscalStart, end),
                    ("partial", new DateOnly(2026, 9, 3), new DateOnly(2026, 9, 17)) })
         {
-            int days = to.DayNumber - from.DayNumber + 1;
-            DateOnly priorTo = from.AddDays(-1);
             var parameters = new {
                 from = from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                to = to.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                previousFrom = priorTo.AddDays(1 - days).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                previousTo = priorTo.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), Limit = 1001
+                to = to.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), Limit = 1001
             };
-            foreach (ReportKind kind in new[] { ReportKind.CategorySales, ReportKind.GstSummary, ReportKind.HourlySales })
+            // The GST summary is the one report left that reads the sale_report_day projection.
+            const ReportKind kind = ReportKind.GstSummary;
             {
                 List<Dictionary<string, string>> source = [];
                 await Measure($"source-{kind}-{label}", () => Task.Run(() =>
@@ -810,14 +687,9 @@ switch (mode)
                     static pair => pair.Key,
                     static pair => Convert.ToString(pair.Value, System.Globalization.CultureInfo.InvariantCulture) ?? ""))
                     .ToList();
-                static string Key(Dictionary<string, string> row, ReportKind kind) => kind switch
-                {
-                    ReportKind.CategorySales => row["Category"],
-                    ReportKind.HourlySales => row["Weekday"] + "|" + row["Hour"],
-                    _ => row["Direction"] + "|" + row["Hsn"] + "|" + row["Rate"]
-                };
-                var expectedByKey = source.ToDictionary(row => Key(row, kind));
-                var actualByKey = actual.ToDictionary(row => Key(row, kind));
+                static string Key(Dictionary<string, string> row) => row["Direction"] + "|" + row["Hsn"] + "|" + row["Rate"];
+                var expectedByKey = source.ToDictionary(Key);
+                var actualByKey = actual.ToDictionary(Key);
                 if (expectedByKey.Count != actualByKey.Count || expectedByKey.Any(pair =>
                     !actualByKey.TryGetValue(pair.Key, out Dictionary<string, string>? found) ||
                     pair.Value.Any(cell => !found.TryGetValue(cell.Key, out string? value) || value != cell.Value)))
@@ -1787,29 +1659,6 @@ switch (mode)
         }
         break;
     }
-    case "phase6-category-index":
-    {
-        async Task<TabularReport> FiscalCategory() => await reports.GetReportAsync(
-            ReportKind.CategorySales, new ReportFilter(From: fiscalStart, To: end, Limit: 100));
-        for (int repeat = 0; repeat < 3; repeat++)
-            await Measure("category-before", FiscalCategory, static report => report.Rows.Count);
-        long bytesBefore = new FileInfo(paths.DatabaseFile).Length;
-        await Measure("create-category-covering-index", () => Task.Run(() =>
-        {
-            using var connection = factory.Open();
-            connection.Execute("""
-                CREATE INDEX ix_sale_line_report_cover
-                ON sale_line(sale_id,product_id,qty,taxable_amount,cost_amount)
-                """);
-            connection.Execute("PRAGMA optimize");
-            connection.Execute("PRAGMA wal_checkpoint(TRUNCATE)");
-            return 1;
-        }), static value => value);
-        Console.WriteLine($"CATEGORY_INDEX_MAIN_GROWTH_BYTES {new FileInfo(paths.DatabaseFile).Length - bytesBefore}");
-        for (int repeat = 0; repeat < 3; repeat++)
-            await Measure("category-after", FiscalCategory, static report => report.Rows.Count);
-        break;
-    }
     case "phase6-matrix":
     {
         const string sourceSql = """
@@ -1869,11 +1718,8 @@ switch (mode)
                         To: end,
                         ProductId: selective ? productId : null,
                         VendorId: selective ? 1 : null,
-                        AssetId: kind == ReportKind.AssetSchedule ? 1 : null,
                         Status: selective ? "COMPLETED" : null,
                         PaymentMode: selective ? "CASH" : null,
-                        Entity: selective ? "product" : null,
-                        Action: selective ? "IMPORT" : null,
                         Limit: 100);
                     return (await reports.GetReportAsync(kind, filter)).Rows.Count;
                 }))).ToArray();
@@ -2568,8 +2414,9 @@ switch (mode)
                 VALUES (@sku,'Phase 7 cashier product',@category,@uom) RETURNING id
                 """, new { sku = "PH7-C-" + suffix, category, uom }, tx.Transaction);
             long lotId = tx.Connection.ExecuteScalar<long>("""
-                INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,unit_cost,selling_price,qty_received)
-                VALUES (@id,@code,'CASHIER','2026-09-01','2027-09-01',1000,2000,1000000) RETURNING id
+                INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,unit_cost,selling_price,qty_received,
+                  tax_rate_pct_snapshot,unit_tax,unit_cost_incl_tax)
+                VALUES (@id,@code,'CASHIER','2026-09-01','2027-09-01',1000,2000,1000000,0,0,1000) RETURNING id
                 """, new { id, code = "PH7-C-L-" + suffix }, tx.Transaction);
             ledger.Change(tx, new(clock.BusinessDate, id, lotId,
                 GroceryErp.Inventory.Contracts.LotChangeKind.DirectEntry, new Quantity(1000)));
@@ -2670,11 +2517,15 @@ switch (mode)
                 VALUES (@sku,'Phase 5 deleted product',@category,@unit,@tax,'1006',1,0,0,2000)
                 RETURNING id
                 """, new { sku = "PH5-R-" + suffix, category, unit, tax }, tx.Transaction);
+            // The lot is bought at the product's rate (the first, GST 0%), so it has no tax per piece.
             long lot = tx.Connection.ExecuteScalar<long>("""
                 INSERT INTO product_lot(product_id,lot_code,received_date,unit_cost,
-                  selling_price,qty_received)
-                VALUES (@product,@code,'2026-09-01',1000,2000,1000) RETURNING id
-                """, new { product, code = "PH5-R-L-" + suffix }, tx.Transaction);
+                  selling_price,qty_received,tax_rate_id_snapshot,tax_label_snapshot,tax_rate_pct_snapshot,
+                  unit_tax,unit_cost_incl_tax)
+                SELECT @product,@code,'2026-09-01',1000,2000,1000,t.id,t.name,t.rate_pct,
+                  (1000*t.rate_pct+50000)/100000,1000+(1000*t.rate_pct+50000)/100000
+                FROM tax_rate t WHERE t.id=@tax RETURNING id
+                """, new { product, code = "PH5-R-L-" + suffix, tax }, tx.Transaction);
             ledger.Change(tx, new(returnClock.BusinessDate, product, lot,
                 GroceryErp.Inventory.Contracts.LotChangeKind.DirectEntry, Quantity.One));
             return (product, lot);
@@ -2866,37 +2717,28 @@ switch (mode)
                 throw new InvalidDataException($"Expiry badge differs: source {sourceExpiry}, indexed {indexedExpiry}.");
             Console.WriteLine("EXPIRY_BADGE_DRIFT 0");
         }
-        foreach (ReportKind kind in new[] { ReportKind.ItemSales, ReportKind.CategorySales,
-                     ReportKind.GstSummary, ReportKind.VendorPayables, ReportKind.SalaryRegister,
-                     ReportKind.AssetSchedule })
+        foreach (ReportKind kind in new[] { ReportKind.ItemSales, ReportKind.GstSummary })
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             await Measure("phase3-report-" + kind, () => reports.GetReportAsync(kind,
-                new ReportFilter(From: monthStart, To: end, AssetId: 1, Limit: 100), timeout.Token),
+                new ReportFilter(From: monthStart, To: end, Limit: 100), timeout.Token),
                 static x => x.Rows.Count);
         }
-        DateOnly priorTo = monthStart.AddDays(-1);
-        DateOnly priorFrom = priorTo.AddDays(monthStart.DayNumber - end.DayNumber);
-        foreach (ReportKind kind in new[] { ReportKind.ItemSales, ReportKind.CategorySales })
+        async Task<int> SourceRows() => await Task.Run(() =>
         {
-            async Task<int> SourceRows() => await Task.Run(() =>
+            using var connection = factory.Open();
+            return connection.Query(ReportDefinitions.All[ReportKind.ItemSales].Sql, new
             {
-                using var connection = factory.Open();
-                return connection.Query(ReportDefinitions.All[kind].Sql, new
-                {
-                    from = monthStart.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                    to = end.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                    previousFrom = priorFrom.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                    previousTo = priorTo.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                    ProductId = (long?)null, Limit = 101,
-                }).Count();
-            });
-            for (int repeat = 0; repeat < 3; repeat++)
-            {
-                await Measure("phase3-source-" + kind, SourceRows, static x => x);
-                await Measure("phase3-window-" + kind, () => reports.GetReportAsync(kind,
-                    new ReportFilter(From: monthStart, To: end, Limit: 100)), static x => x.Rows.Count);
-            }
+                from = monthStart.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                to = end.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                ProductId = (long?)null, Limit = 101,
+            }).Count();
+        });
+        for (int repeat = 0; repeat < 3; repeat++)
+        {
+            await Measure("phase3-source-" + ReportKind.ItemSales, SourceRows, static x => x);
+            await Measure("phase3-window-" + ReportKind.ItemSales, () => reports.GetReportAsync(ReportKind.ItemSales,
+                new ReportFilter(From: monthStart, To: end, Limit: 100)), static x => x.Rows.Count);
         }
         break;
     }
@@ -2911,8 +2753,6 @@ switch (mode)
         await Measure("assets-first-page", () => assets.GetAssetPageAsync(), static x => x.Items.Count);
         await Measure("pnl-month", () => reports.GetPnlAsync(monthStart, end), static x => x.Income.Count + x.CostOfGoodsSold.Count + x.Expenses.Count);
         await Measure("pnl-fiscal", () => reports.GetPnlAsync(fiscalStart, end), static x => x.Income.Count + x.CostOfGoodsSold.Count + x.Expenses.Count);
-        await Measure("salary-matrix-100", () => reports.GetReportAsync(ReportKind.SalaryRegister,
-            new ReportFilter(From: new DateOnly(2025, 10, 1), To: end, Limit: 100)), static x => x.Rows.Count);
         await Measure("dashboard", () => reports.GetDashboardAsync(), static _ => 1);
         await Measure("stock-projection-mismatches", () => Task.Run(() =>
         {
@@ -2976,14 +2816,6 @@ switch (mode)
         }, static _ => 1);
         break;
     }
-    case "gap-projection":
-        await Measure("salary-matrix-five-year-limit-100", () => reports.GetReportAsync(
-            ReportKind.SalaryRegister, new ReportFilter(From: new DateOnly(2024, 1, 1), To: new DateOnly(2028, 12, 31), Limit: 100)),
-            static x => x.Rows.Count * x.Columns.Count);
-        await Measure("asset-schedule-through-2040-limit-100", () => reports.GetReportAsync(
-            ReportKind.AssetSchedule, new ReportFilter(From: new DateOnly(2025, 1, 1), To: new DateOnly(2040, 12, 31),
-                AssetId: 1, Limit: 100)), static x => x.Rows.Count);
-        break;
     case "product-preview":
     case "product-import":
     case "product-import-overlap":
@@ -3328,17 +3160,10 @@ switch (mode)
         await Measure("expenses-year", () => moneyOut.GetExpensesAsync(end.AddYears(-1), end), static x => x.Count);
         await Measure("employees-all", () => moneyOut.GetEmployeesAsync(includeInactive: true), static x => x.Count);
         await Measure("salary-register-year", () => moneyOut.GetSalaryRegisterAsync(new YearMonth(2025, 10), new YearMonth(2026, 9)), static x => x.Count);
-        await Measure("salary-matrix-year", () => reports.GetReportAsync(ReportKind.SalaryRegister, new ReportFilter(From: end.AddYears(-1), To: end, Limit: 100)), static x => x.Rows.Count);
-        await Measure("asset-schedule-year", () => reports.GetReportAsync(ReportKind.AssetSchedule, new ReportFilter(From: end.AddYears(-1), To: end, AssetId: 1, Limit: 100)), static x => x.Rows.Count);
-        await Measure("report-asset-register", () => reports.GetReportAsync(ReportKind.AssetRegister, new ReportFilter(To: end, Limit: 5000)), static x => x.Rows.Count);
-        await Measure("report-salary-matrix-uncapped", () => reports.GetReportAsync(ReportKind.SalaryRegister, new ReportFilter(From: new DateOnly(2025, 1, 1), To: new DateOnly(2025, 12, 31), Limit: 100)), static x => x.Rows.Count);
 
         await Measure("report-sales-status-payment", () => reports.GetReportAsync(ReportKind.SalesRegister, new ReportFilter(From: fiscalStart, To: end, Status: "COMPLETED", PaymentMode: "UPI", Limit: 100)), static x => x.Rows.Count);
         await Measure("report-item-product", () => reports.GetReportAsync(ReportKind.ItemSales, new ReportFilter(From: fiscalStart, To: end, ProductId: 1, Limit: 100)), static x => x.Rows.Count);
-        await Measure("report-expiry-bucket", () => reports.GetReportAsync(ReportKind.Expiry, new ReportFilter(Status: "EXPIRED", Limit: 100)), static x => x.Rows.Count);
-        await Measure("report-payables-vendor", () => reports.GetReportAsync(ReportKind.VendorPayables, new ReportFilter(VendorId: 1, Limit: 100)), static x => x.Rows.Count);
         await Measure("report-purchases-vendor", () => reports.GetReportAsync(ReportKind.PurchaseRegister, new ReportFilter(From: fiscalStart, To: end, VendorId: 1, Limit: 100)), static x => x.Rows.Count);
-        await Measure("report-audit-filter", () => reports.GetReportAsync(ReportKind.AuditLog, new ReportFilter(From: fiscalStart, To: end, Entity: "product", Action: "IMPORT", Limit: 100)), static x => x.Rows.Count);
 
         using (var connection = factory.Open())
         {
@@ -3631,8 +3456,7 @@ switch (mode)
         await Measure("dashboard", () => reports.GetDashboardAsync(), static _ => 1);
         foreach (ReportKind kind in Enum.GetValues<ReportKind>())
         {
-            var filter = new ReportFilter(From: monthStart, To: end,
-                AssetId: kind == ReportKind.AssetSchedule ? 1 : null, Limit: 100);
+            var filter = new ReportFilter(From: monthStart, To: end, Limit: 100);
             await Measure("report-" + kind, () => reports.GetReportAsync(kind, filter), static x => x.Rows.Count);
         }
         break;
@@ -3717,11 +3541,14 @@ switch (mode)
     case "feature-write":
     {
         long purchaseId = 0;
+        long gst5;
+        using (var connection = factory.Open())
+            gst5 = connection.ExecuteScalar<long>("SELECT id FROM tax_rate WHERE rate_pct=5000 AND is_active=1 ORDER BY id LIMIT 1");
         await Measure("purchase-save-draft", async () => purchaseId = await purchasing.SaveDraftAsync(null,
             new PurchaseDraftInput(1, "AUDIT-FULL-PURCHASE-001", end, end, null, Money.Zero,
                 "Scale audit purchase", [new PurchaseLineInput(1, "AUDIT-BATCH-001", end.AddMonths(-1),
                     end.AddMonths(9), new Quantity(10), Quantity.Zero, new Money(250), Money.Zero,
-                    new Percent(5), new Money(350), new Money(300))])), static _ => 1);
+                    gst5, new Money(350), new Money(300))])), static _ => 1);
         if (purchaseId != 0)
             await Measure("purchase-post", () => purchasing.PostAsync(purchaseId, OperationGuard.NewId()), static _ => 1);
 

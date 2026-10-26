@@ -1,6 +1,6 @@
 # Revised Grocery ERP implementation plan
 
-Status: implementation sequence and dated execution record, updated 25 October 2026. This plan is the **single source of truth for the revised product behavior, phase scope, ordering, and acceptance gates**. It combines `revised plan.md` with the decisions made in the discussion. The phase sections describe intended behavior; the execution records below state what has been implemented and verified. When supporting notes, legacy plans, guides, or checklists disagree, update them to match this file rather than treating them as a second contract. Shipped SQL migrations remain the record of the currently implemented database schema.
+Status: implementation sequence and dated execution record, updated 26 October 2026. This plan is the **single source of truth for the revised product behavior, phase scope, ordering, and acceptance gates**. It combines `revised plan.md` with the decisions made in the discussion. The phase sections describe intended behavior; the execution records below state what has been implemented and verified. When supporting notes, legacy plans, guides, or checklists disagree, update them to match this file rather than treating them as a second contract. Shipped SQL migrations remain the record of the currently implemented database schema.
 
 Phase 0 execution record (18 October 2026): the [completion audit](docs/phase0/completion-audit.md) tracks each exit item; the [supporting evidence](docs/phase0/README.md) contains the dependency inventory, behavior/removal matrix, test matrix, verified fixture/backup, schema-25 to schema-28 disposable migration, integrity baseline, rollback procedure and measurements. These files document and test this plan; they do not change its rules. Phase 0 is **not signed off**: operator/project-owner review, target-migration time and peak-disk rehearsal, and target-schema adversarial fixtures remain open. Schema-28 business behavior at that stage remained ledger-backed. A WPF navigation run passed on the disposable full-size store, but its measured working-set peak exceeded the candidate reference-PC gate.
 
@@ -151,6 +151,55 @@ Detail panel (25 October 2026): **implemented and locally verified; no schema ch
 
 Local evidence: the UI smoke test opens each panel on real data. It checks Products beside the list with working arrows, a posted purchase at full width with its line and panel actions, the switch to side by side being remembered and the list's column widths unchanged afterwards, the vendor ledger at full width, a completed bill beside the Sales History list, and Money out's panel text. Localization checks cover the five new strings. Still required: the owner's check of the panels on the target PC and native Gujarati review of the new strings and guide text.
 
+Reports trimmed (25 October 2026): **implemented and locally verified; no schema change (still 38).** Reviewing the Reports list, the owner kept seven reports and removed the other twelve, the audit log included. This is the recorded decision that §12 requires before sales, tax, vendor or operational reports are removed.
+
+- **Kept.** Profit and loss, Sales register, Item-wise sales, Purchase register, GST summary, Current unsold stock and Purchased vs used reconciliation.
+- **Removed.** Category-wise sales, Hourly sales heatmap, Low stock and reorder, Slow movers, Expiry, Damages, Expenses by category, Salary register, Asset register, Asset depreciation schedule, Vendor payables and Audit log. Their SQL, their filters (asset, slow-mover days, expiry status, audit entity and action), the heatmap view and the 154 strings per language that only they used went with them. The records themselves stay on their screens: low stock and expiry are Products filters, balances due are in Vendors, damages, expenses and salaries are Money out tabs, the asset schedule is on Assets, and P&L still carries every head. The audit log is still written; it no longer has a screen.
+- **Dashboard.** **Low stock** opens Products filtered to low stock, and **Payables** opens Vendors with **With balance due** ticked, the way the expiry tiles already open Products.
+- **Left in place.** The trigger-maintained `sale_hour_day`, `sale_hour_return_day`, `sale_product_day`, `sale_product_return_day` and `sale_product_last` projections no longer have a reader. Dropping them and their triggers needs a migration and is not part of this change. `ReportDefinitions` keeps the GST summary's source-line SQL because ScaleAudit's `phase6-summary-parity` compares the projection against it.
+
+Local evidence: 268 automated tests ran; 266 passed and the two opt-in journeys were skipped; `dotnet format --verify-no-changes` passed and ScaleAudit builds. Tests that only exercised removed reports were deleted (asset-schedule CSV, low-stock and slow-mover paging, hourly grouping, category comparison). Tests that also checked kept behaviour keep those checks: the vendor-credit test reads the vendor balance directly, and the full-refund test checks that the day's P&L net sales return to zero. The UI smoke test checks that the picker lists exactly the seven reports. ScaleAudit drops its low-stock trial, category-index and gap-projection modes. The Gujarati guide's new sentences need native review, and the dashboard tiles' new destinations were not clicked through in the running app.
+
+Tax decisions (agreed 25 October 2026, implemented 26 October 2026): **implemented and locally verified on production schema 39.** Section 15 records the decisions: purchase price, tax per piece and purchase price including tax on purchase lines, lots and sale lines; tax labels saved on every record; every selling price and MRP including tax, with the product's "Prices include tax" setting removed; and "Tax" in place of "GST" in general wording. When implementation started the owner made four choices, and §15 now matches them:
+
+- **Margin %** in purchase entry is measured the way P/L books it: on the selling price before tax in Regular mode, and on the selling price against the purchase price including tax in Composition and No-GST modes, where bills charge no tax.
+- **A count surplus** copies the counted lot's cost and saved tax. Only a lot saved before schema 39 falls back to the product's current rate.
+- **Two decimals** apply to every money column of the tables §15.3 changes, not only to the new columns.
+- **The opening-stock import** reads a before-tax purchase price and applies each product's tax rate. It has no tax column.
+
+What changed:
+
+- **Saved per piece.** Migration 39 adds the columns in §15.4. `LandedCost.Compute` returns each purchase line's purchase price, tax, price including tax and booked cost. `LotTaxes` (`Inventory/LotTax.cs`) works out the same four values for direct lots, first lots, opening stock, count surpluses and recreated lots. Triggers reject inconsistent values on a new lot and any later change to a lot's cost or tax. Booked cost is unchanged, so P/L, COGS, stock value and the GST summary read the same figures as before.
+- **Prices include tax.** The product setting is gone, and a trigger rejects `price_includes_tax <> 1`. On demo and test stores, migration 39 converts each product that excluded tax. In Regular mode its default and lot selling prices gain the tax a bill used to add, capped at MRP, and the lot counts this as a price edit. In Composition and No-GST stores, which charged no tax, the prices stay. Bills held across the upgrade keep the price they were added at.
+- **Screens.** Purchase entry's Tax column is a drop-down of the tax rates. Purchase price, Tax/unit, Purchase price incl. tax and Margin % update while values are typed. The posted purchase panel, Product → Lots, Sales History's bill lines, the Products list, the product form, the direct lot form and the vendor return form follow §15.3. Each row adds up at two decimals, because Tax/unit is shown as the displayed price including tax minus the displayed purchase price.
+- **Wording.** §15.6 is applied in English and Gujarati. The screenshot pass found three strings that still used the old terms, and they now follow decision 12. The lot price and damage dialogs show "purchase price": the lot's before-tax price, or its booked cost for a lot saved before schema 39. The Unknown barcode error for an invalid cost names the purchase price. The purchase warning says "selling below cost" instead of "landed cost".
+- **Update estimate.** Migration 39 has its own rate in the update window's estimate, 22 s per GiB (measured below).
+
+Local evidence: 292 automated tests ran; 290 passed and the two opt-in journeys were skipped. `dotnet format --verify-no-changes` passed, and ScaleAudit and DataGen build. New core tests pin the worked example (81.667 + 3.958 = 85.625), check that the booked cost equals the old landed cost in every tax mode, and check that tax equals the price including tax minus the price before it over generated lines. New integration tests cover:
+
+- a posted line and its lot saving the label and per-piece tax, and keeping them after the rate is renamed or its percent changed;
+- inactive rates, drafts saved before schema 39, and rates typed including tax;
+- the vendor return copying the purchase line's label;
+- every lot writer, and the lot triggers;
+- a sale line copying its lot's tax, again when its lot changes, and keeping the label saved at completion;
+- a label built from the line's own percent after the rate's percent changed;
+- the MRP cap on every price, held lines saved excluding tax, and return recreation;
+- COGS, P/L and the GST summary staying on the booked cost.
+
+Upgrade tests convert a tax-exclusive product in Regular and in Composition mode, and every upgrade still ends with exactly a new store's schema. The UI smoke test covers the purchase drop-down and its columns adding up, Lots, Sales History's lines, the Products column and the product form, in English and Gujarati at 1366×768. It exposed two faults in the test itself, and both are fixed. The product-form check had run the shell's queued Dashboard navigation, which has no app host in the test. The purchase-entry check had picked the vendor before the bill had a line, so the vendor lookup resumed on a thread with no dispatcher and crashed the test host. Twenty-three guide screenshots were regenerated.
+
+On the full-size store, schema 38 (commit 25c63b1) and schema 39 were compared in three alternating rounds. Each run took a fresh copy of the Phase 9 store (schema 36; 47,010 products, 223,272 lots, 871,876 sales, 5,193,017 sale lines, 1.81 GB), migrated it with its own build and ran ScaleAudit `phase9-profile`:
+
+| Measure | Schema 38 | Schema 39 |
+|---|---|---|
+| Products page p95 | 0.91–1.00 ms | 0.54–0.97 ms |
+| Busiest product's Lots page p95 | 0.61–0.70 ms | 0.66–1.16 ms |
+| Bills per run | 300, no errors | 300, no errors |
+
+The differences are within run-to-run noise. On the schema-39 copy, after the profile writes, all ten store checks passed. Migration 39 took 11.1–13.1 s with the file in the OS cache (schema 38's steps took 0.5 s) and 37 s from a cold disk. SQLite checks every row of a table with CHECK constraints when a column is added, and `sale_line` gets three columns. The production store starts empty, so only demo and test stores pay this. The evidence is under `artifacts/data/revision-tax-rehearsal`, and the screenshots under `artifacts/data/revision-tax-ui`.
+
+There is no remaining code or fixture work for §15. Still required: native Gujarati review of the new and changed strings and guide text, the owner's check of the new columns on the shop PC, and the packaged operator journey, which was not re-run.
+
 ## 1. Product contract and precedence
 
 The decisions and acceptance criteria in this file supersede older statements in `revised plan.md`, `implementation.md`, `PLANS.md`, and supporting Phase 0 notes wherever they disagree. Preserve the offline, single-user Windows application, three-decimal fixed-point values, bilingual UI, durable transactions, backups, and existing payment, tax, and printing guarantees.
@@ -170,6 +219,7 @@ The decisions and acceptance criteria in this file supersede older statements in
 | Periods | Calendar year: 1 January–31 December, editable through 7 January, locked from 8 January. Fiscal year: 1 April–31 March, editable through 7 April, locked from 8 April. Apply both independently. Save final totals and head/category/month breakdowns for each locked year. |
 | Corrections | Remove the “recalculate year” choice from assets, damages, expenses, and payroll. While both annual periods containing an original date are open, an edit can correct that original date and refresh open reports. Once either annual period is locked, retain the original and post a correction dated in an open current period. Asset and employee terms use effective dates for future calculations. |
 | Reports | Keep monthly, calendar-year, and fiscal-year P/L; current unsold stock with include/exclude expired toggle; and a purchased/direct-origin versus sold, returned, damaged, internally used, vendor-returned, and available quantity reconciliation. |
+| Tax and prices | Every selling price and MRP includes tax. Purchase lines, lots and sale lines save their tax label and per-piece tax when created; P/L keeps the booked cost. See §15 (agreed 25 October 2026, implemented on schema 39 on 26 October 2026). |
 
 Definitions: “untouched purchase” means no effective quantity-consuming or other dependent document has ever used any lot from the purchase; current quantity equaling received quantity is insufficient. “Locked” is derived from business date, not from whether a scheduled close job happened to run. Seven-day buffer means the seven dates immediately after year end are included.
 
@@ -394,3 +444,142 @@ Remove a feature only after its replacement path and regression tests pass. This
 Implement in order: Phase 0 contract and baseline → Phase 1 independent snapshots → Phase 2 direct stock engine on an isolated fixture → Phases 3–5 business documents → one verified stock-write cutover → Phase 6 reports/locks → Phase 7 UI → Phase 8 code/schema removal → Phase 9 scale and release. Phase 7 design mockups and query profiling can start earlier, but old screens stay available until replacement workflows pass. Do not compact the live database before the last movement dependency is gone.
 
 The revision is complete only when a shop operator can create products/lots, buy, sell, refund, damage, return to vendor, correct money-out records, filter/search and perform reviewed bulk work through the simplified UI; annual reports obey both locks; historical documents survive master deletion; no stock-movement records are written or stored in the live schema; and the full-size target-PC performance, memory, backup, and recovery gates pass.
+
+## 15. Tax decisions and improvisations
+
+Status: **agreed with the owner on 25 October 2026; implemented on schema 39 on 26 October 2026** (see the tax decisions execution record at the top, which also lists the four choices the owner made when implementation started; this section has been updated to match them). Planned as one change on schema 39. The shop is a regular GST store and the production store will start empty, so this plan neither preserves nor backfills old documents; demo and test stores only need to upgrade cleanly. The owner's aim is peace of mind: every purchase line, lot and sale line shows its purchase price, its tax and its purchase price including tax, and each row adds up on screen.
+
+### 15.1 Decisions
+
+| # | Decision | Reason |
+|---|---|---|
+| 1 | Show the **purchase price including tax** of one piece on purchase lines, lots, sale lines and the Products list. It is for viewing only. | The owner wants to see what a piece really cost. |
+| 2 | **P/L does not change.** COGS, stock value and the GST summary keep the booked cost: before tax in Regular mode, including tax in Composition and No-GST modes, as today. | A regular shop claims purchase tax back as input credit, so counting it as cost would understate profit by all purchase tax (bought at ₹100 + 5%, sold at ₹120 + 5%: the real profit is ₹20, not ₹15). Composition and No-GST costs already include it. |
+| 3 | Purchase lines and lots show four fields: **Purchase price · Tax · Tax/unit · Purchase price incl. tax**. | The tax amount per piece, not the rate, makes each row add up. A rate cannot reproduce the total because other charges are not taxed (§15.2). |
+| 4 | **One Tax column** shows the tax rate's name, such as "GST 5%". There is no separate rate column and no new "tax type" field. | The name already holds the rate; `tax_rate` already has a name and a percent. |
+| 5 | **The tax label is saved on every line and lot** when it is created. Renaming a tax rate or changing its percent affects products and new records only. | Old records keep what they were saved with, as tax percentages on lines already do. |
+| 6 | Sale lines show the cost side (**Purchase price · Purchase price incl. tax**) and the sale side (**Tax · Before tax · Tax charged · Total**), with Qty and Selling price. The sale side uses the line's saved amounts. | Each side adds up on its own. The saved amounts are exact, enforced by `CHECK (line_total = taxable_amount + tax_amount)`, and used by the GST summary; per-unit figures get fractions when a discount applies. |
+| 7 | **Every selling price and MRP includes tax.** The product setting "Prices include tax" is removed. | A retail grocery sells at shelf and pack prices, and MRP includes all taxes by law. Today every MRP check (`CHECK (selling_price <= mrp)` on lots, `SalesService.SetLinePriceAsync`, purchase entry, direct lots and both importers) compares the raw price with MRP, so a product set to exclude tax could be sold above MRP (₹100 + 5% = ₹105 against an MRP of ₹104). With one meaning, those checks are correct. When a tax rate changes, the customer price stays and only the tax inside it changes; repricing is the owner's choice. |
+| 8 | **No second selling price is stored.** A lot keeps one selling price, including tax; the before-tax figure is shown, not stored. | Two stored prices could disagree by rounding. |
+| 9 | Per-piece tax values are **saved when a lot or line is created**, not looked up from other tables. | They are snapshots, like the unit cost a sale line already saves. Speed was not the reason: on the 1.5-lakh-lot demo store, working the value out from the purchase line added 0.012 ms to a 100-lot page, 0.3 ms to a 100-product page and 21 ms to a read of every lot. |
+| 10 | The **Products list** gets a **Purchase price incl. tax** column, taken from the lot that sells next, which is the lot its Selling price and MRP already come from. It shows "—" when there is no stock. The Basics tab is unchanged. | A product has no cost of its own, only its lots do; the row stays consistent with its Selling price and MRP. |
+| 11 | **Purchase entry's tax column becomes a drop-down of the tax rates**, defaulting to the product's rate. **Rate** stays the figure typed from the supplier bill; **Purchase price** is the computed per-piece figure. | Every line then gets a real label. |
+| 12 | **Wording:** "Tax" replaces "GST" in general labels. GSTIN, CGST/SGST on the receipt, the Regular GST / Composition setting and the GST summary keep "GST". On the owner's screens "Unit cost" becomes **Purchase price** and "Price" becomes **Selling price**; the Billing screen (bill lines and lot picker) and the printed receipt keep **Price**. | Column headings are fixed translated text over rows that may carry different taxes; the specific tax comes from each row's label. GST-law terms are named by the law. |
+| 13 | **Database column names do not change.** | Renaming `unit_cost` alone touches about 150 places in 31 code files, plus triggers and reports, with no visible gain; lots and purchase lines already say `selling_price`. |
+| 14 | Returns need no new calculation. Customer return lines already save their own before-tax, tax, refund and cost amounts as a share of the original sale line, and vendor return lines their credit and tax credit; each also saves the label copied from its source line. | Returns are never repriced at today's rates. |
+
+Superseded during the discussion: locking a "prices include tax" flag on each lot (replaced by decision 7), working the values out at display time (replaced by decision 9), and moving **Other charges** out of the collapsed "Notes and charges" section of purchase entry (the owner declined).
+
+### 15.2 Definitions and worked example
+
+For one purchase line, where *units* = quantity + free quantity:
+
+- **Purchase price** = (quantity × rate − discount + the line's share of other charges) ÷ units.
+- **Purchase price incl. tax** = (quantity × rate − discount + share of other charges + line tax) ÷ units.
+- **Tax/unit** = Purchase price incl. tax − Purchase price, so the three saved values add up exactly at three decimals.
+- **Booked cost** (`purchase_line.landed_unit_cost`, `product_lot.unit_cost`, `sale_line.unit_cost`) = Purchase price in Regular mode and Purchase price incl. tax otherwise. These are the values the app books today.
+- Tax is charged on the goods (quantity × rate − discount). **Other charges** are spread across the bill's lines by value, taken exactly as typed, and get no tax; if the transporter charged GST, the operator types the charge including it.
+
+| Example line | Amount |
+|---|---|
+| 10 pieces at ₹100, less ₹50 discount | ₹950.00 |
+| GST 5% on ₹950 | ₹47.50 |
+| Share of ₹60 freight on a two-line bill | ₹30.00 |
+| Paid for the line | ₹1,027.50 for 10 + 2 free = 12 pieces |
+| Purchase price | 980 ÷ 12 = 81.667 |
+| Purchase price incl. tax | 1,027.50 ÷ 12 = 85.625 |
+| Tax/unit | 85.625 − 81.667 = 3.958 |
+
+On screen this reads 81.67 + 3.96 = 85.63. Multiplying 81.67 by 1.05 gives 85.75, which is wrong because it taxes the freight.
+
+Display rules:
+
+- Money shows two decimals in every money column of the tables §15.3 changes, so a row reads consistently. In a row that shows A + B = C, B is displayed as the displayed C minus the displayed A, so the row adds up on screen; saved three-decimal values and every report are unchanged.
+- The label is the tax rate's name at the time the record was saved. A sale line on which no tax is charged (Composition or No-GST mode) shows "—". If a sale line's tax rate no longer has the percent the line was charged at, the label is built from the line's own percent ("Tax 5%"), so a label never contradicts the tax charged.
+- Records saved before schema 39, and lots whose new values are empty, show "—" in the new columns.
+
+### 15.3 Screens
+
+| Screen | Change |
+|---|---|
+| Purchase entry | From Rate onward: Rate · Discount · **Tax** (drop-down) · MRP · **Selling price** · **Purchase price** · **Tax/unit** · **Purchase price incl. tax** · Margin %, updating as values are typed, in every tax mode (the Cost ex/incl. GST header switch goes). Margin % is measured as P/L books it: in Regular mode (selling price before tax − purchase price) ÷ selling price before tax, using the line's tax rate; in Composition and No-GST modes, where bills charge no tax, (selling price − purchase price incl. tax) ÷ selling price. The schema-38 **Bill rates: Include tax** switch stays. The name columns stay frozen when the grid scrolls sideways at 1366×768. |
+| Posted purchase (detail panel) | **Tax** shows the label instead of GST %; the line's tax total stays; "Landed / unit" becomes **Purchase price · Tax/unit · Purchase price incl. tax**. |
+| Product → Lots | Selling price · MRP · **Purchase price · Tax · Tax/unit · Purchase price incl. tax** · Source · Received. |
+| Sales History → bill lines | Qty · **Selling price** · **Purchase price · Purchase price incl. tax** │ **Tax · Before tax · Tax charged** · Total, with the name columns frozen. |
+| Products list | **Purchase price incl. tax** after MRP. |
+| Product form | "Prices include tax" is removed; a note under Selling price and MRP says they include tax. "GST rate" becomes **Tax rate**. The optional first lot gets the same cost fields as the direct lot form. |
+| Direct lot form | **Purchase price** (before tax) and a **Tax** picker defaulting to the product's rate, with read-only Tax/unit and Purchase price incl. tax. |
+| Vendor return form | Wording only: Credit before tax, Tax credit. |
+| Billing, printed receipt, Reports, P/L, GST summary | Unchanged, apart from the shared wording in §15.6. |
+
+### 15.4 Schema 39
+
+Add root `039_tax_snapshots.sql` and its `EmbeddedResource` line in `GroceryErp.Data.csproj`, set `MigrationRunner.LatestVersion` to 39, and give the update window's estimate a per-step rate for it.
+
+| Table | New columns | Rules |
+|---|---|---|
+| `purchase_line` | `tax_rate_id` (live link; the draft's choice), `tax_label_snapshot`, `landed_unit_tax`, `landed_unit_cost_incl_tax` | Set at draft save and again at post. The existing whole-row lock covers them once posted. |
+| `product_lot` | `tax_rate_id_snapshot`, `tax_label_snapshot`, `tax_rate_pct_snapshot`, `unit_tax`, `unit_cost_incl_tax` | The lot's purchase-side tax. An insert trigger rejects inconsistent values: `unit_tax` ≥ 0, and `unit_cost` must equal `unit_cost_incl_tax − unit_tax` or `unit_cost_incl_tax`. An update trigger rejects any change to them; a lot's cost is never edited after creation. Every service writer sets all five; empty means saved before schema 39, which keeps the 37 raw lot inserts in 12 test files and the tools working. |
+| `sale_line` | `tax_label_snapshot`, `unit_cost_tax`, `unit_cost_incl_tax` | The cost side is copied from the lot when the line is added or its lot changes; the label is saved at completion. The existing completed-sale lock covers them. |
+| `sale_return_line` | `tax_label_snapshot` | Copied from the sale line; covered by the posted-return lock. |
+| `vendor_return_line` | `tax_label_snapshot` | Copied from the purchase line; covered by its lock. |
+| `product` | — | A trigger rejects `price_includes_tax <> 1` on insert and update. The column stays because shipped migrations and saved sale lines name it. |
+
+No document is backfilled: posted purchase lines and completed sales reject updates, and the production store starts empty. For demo and test stores only, the script converts each product that excluded tax: its default selling price and its lots' selling prices become price × (1 + rate), capped at MRP, and its flag becomes 1; the lot version trigger counts that as a price edit. `sale_line.price_includes_tax` keeps its meaning on lines already saved, so bills held across the upgrade still price correctly; new lines always save 1. No index is added: the Products list reads one more column of the next-to-sell lot it already fetches.
+
+### 15.5 Implementation order
+
+1. **Core.** `LandedCost.Compute` returns per line a `PurchaseUnitCost(BeforeTax, Tax, InclTax, Booked)`, with `Tax = InclTax − BeforeTax` and `Booked` equal to today's result. One helper derives the same four values for a lot without a purchase line, from a before-tax cost (or, for a count surplus or recreated lot, its saved booked cost), the tax rate and the tax mode. `PricingEngine` keeps `CartLineInput.PriceIncludesTax` for held bills; new lines pass true.
+2. **Migration 39** as in §15.4.
+3. **Purchasing.** `PurchaseLineInput.TaxRate` (a typed percent) becomes `TaxRateId`. The service resolves the percent and label from `tax_rate` on draft save and again at post, refusing an inactive rate as a new choice. Posting writes the new line columns and copies them to the lot (`PurchasingService.cs:330–394`). `PurchaseLineDefaults` returns the product's `TaxRateId` and drops `PriceIncludesTax`. `PurchaseInvoiceLine` adds the label, tax per unit and price incl. tax. A vendor return line copies the label. A draft saved before schema 39 has no rate ID: reopening it picks the single active rate with its percent, or the operator chooses one before saving.
+4. **Other lot writers.** Direct lot (`InventoryService.CreateDirectLotAsync`, `InventoryService.cs:202`), and the product's first lot (`CatalogService.cs:267`) take a tax rate (default: the product's) and a before-tax purchase price; the opening-stock import (`InventoryService.cs:266`) takes a before-tax purchase price at each product's rate, and its template's "Unit cost*" column becomes "Purchase price*" (columns are read by position, so old templates still work). A count surplus (`DirectStockEngine.cs:108`) copies the counted lot's cost and saved tax, falling back to the product's current rate only for a lot saved before schema 39. A damage correction that recreates a deleted lot (`MoneyOutService.Corrections.cs:244`) applies the product's current rate to its saved cost. `LotItem` and the lot reads add the new fields.
+5. **Sales.** Adding a line (`SalesService.cs:86`, `:212`) saves `price_includes_tax = 1` and copies the lot's cost-side tax; changing its lot (`:278`) copies it again; completion (`:573`) saves the label; a return line (`:727`) copies it. Return recreation (`SalesService.ReturnRecreation.cs`) creates the product as tax-inclusive, converts a line saved as "excludes tax" to an inclusive price capped at MRP, and takes the label and cost-side tax from the sale line; the legacy review form (`ReturnRecreationWindow`) stops asking about the setting. The Sales History line read adds the new fields.
+6. **Catalog.** Remove `PriceIncludesTax` from the product input, detail and writes. The product list SQL (`ListSql` in `CatalogService.Search.cs`) adds the next-to-sell lot's `unit_cost_incl_tax`. The drop-downs use `GetTaxRatesAsync`.
+7. **UI.** The screens in §15.3. The purchase Tax column uses the same drop-down cell as the Type column. Billing and its lot picker get their own **Price** key so the shared `Catalog_Price` can become Selling price. New controls get accessible names.
+8. **Wording** as in §15.6, English and Gujarati together.
+9. **Tools.** DataGen and ScaleAudit (`Program.cs:2514`, `PhaseNineProfile.cs:261` and their lot inserts) write tax-inclusive products and the new lot columns. Build ScaleAudit, which is outside the solution.
+10. **Documents.** Both user guides (§4 Products, lots and stock; §5 Purchases and vendors; §9 Sales History) and their screenshots, this plan's dated execution record, and the CLAUDE.md status line.
+
+### 15.6 Wording changes
+
+Values change; keys keep their names unless stated.
+
+| Key | Now | Becomes |
+|---|---|---|
+| `Catalog_TaxRate` | GST rate | Tax rate |
+| `Catalog_SetTaxRate` | Set GST rate… | Set tax rate… |
+| `Purchasing_Gst` | GST % | Tax |
+| `Purchasing_TaxTotal` | GST | Tax |
+| `Purchasing_RateInclGst` | Rate incl. GST | Rate incl. tax |
+| `Purchasing_RatesIncludeGst`, `Purchasing_RatesIncludeGstHint` | Include GST; "…including GST…" | Include tax; "…including tax…" |
+| `Purchasing_CreditBeforeTax` | Credit before GST | Credit before tax |
+| `Purchasing_TaxCredit` | GST credit | Tax credit |
+| `Purchasing_ReturnHint` | "…Credit and GST…" | "…Credit and tax…" |
+| `Sales_RecreateIntro` | "…Original GST {1}%…" | "…Original tax {1}%…" |
+| `Pnl_Head_Sales` | Sales (net of GST) | Sales (net of tax) |
+| `Stock_UnitCost` | Unit cost | Purchase price |
+| `Stock_LotDamageContext`, `Pos_OpeningCostInvalid` | "…{3} unit cost"; "Enter a valid nonnegative unit cost." | "…purchase price {3}"; "Enter a purchase price of 0 or more." |
+| `Purchasing_WarningBelowCost` | "{0}: selling below landed cost" | "{0}: selling below cost" |
+| `Catalog_Price` | Price | Selling price |
+| `Stock_PriceBetween`, `Stock_MinPrice`, `Stock_MaxPrice` | Price; Lowest price; Highest price | Selling price; Lowest selling price; Highest selling price |
+| `Purchasing_CostExGst`, `Purchasing_CostInclGst`, `Purchasing_Landed`, `Catalog_PricesIncludeTax` | | Removed |
+| New keys | | Billing **Price**; **Tax/unit**; **Purchase price incl. tax**; **Before tax**; **Tax charged**; the product form's note that prices include tax |
+
+Unchanged: `Setup_Gstin`, `Setup_TaxRegular`, `Setup_ErrorGstinInvalid`, `Receipt_Gst`, `Receipt_Gstin`, `Receipt_Cgst`, `Receipt_Sgst`, `Reports_Kind_GstSummary`, `Reports_Column_Gstin`, `Reports_Column_Hsn`, `Purchasing_VendorSearch` and `Purchasing_GstinHint`. Changed and new Gujarati values are marked `MT – needs review`, and `LocalizationTests` keeps both files' keys and placeholders identical.
+
+### 15.7 Tests
+
+- **Core:** the worked example gives exactly 81.667, 3.958 and 85.625; Booked equals today's landed cost in every tax mode; Tax = InclTax − BeforeTax with free quantity, zero tax, no other charges and uneven charge shares.
+- **Purchasing:** a draft with a tax rate reopens with it; posting saves the label and per-piece values on the line and its lot; renaming a rate or changing its percent afterwards leaves both unchanged and affects only new drafts; an inactive rate is refused; a pre-39 draft is matched or must be chosen; a vendor return copies the label.
+- **Lots:** each writer (purchase, direct lot, first lot, opening import, count surplus, customer-return recreation, damage-correction recreation) saves consistent values; the triggers reject inconsistent or changed values.
+- **Sales:** a line copies its lot's cost-side tax and copies it again when the lot changes; completion saves the label and a later rename does not change it; Composition and No-GST bills show no label and zero tax; a return line copies the label.
+- **Prices:** the product trigger rejects `price_includes_tax = 0`; a selling price above MRP is refused on lots, purchase lines, price overrides and imports; migration 39 converts a demo product that excluded tax and caps it at MRP. `SalesTests` cases built on tax-exclusive products move to held draft lines or are removed.
+- **Unchanged money:** on the same data, bill COGS, P/L days and the GST summary equal the values before the change.
+- **Migration:** the existing upgrade tests from old schemas still end with exactly a new store's schema at `MigrationRunner.LatestVersion`.
+- **UI smoke:** purchase entry (the drop-down, the new columns adding up), Lots, Sales History lines, the Products column and the product form without the setting, in English and Gujarati at 1366×768, with accessible names.
+
+### 15.8 Exit
+
+Every new purchase line, lot and sale line saves its tax label and per-piece tax, and each displayed row adds up at two decimals. No product can exclude tax and no selling price can exceed MRP. P/L, the GST summary and stock value are unchanged on the same data. The Products list and Lots pages stay within their existing read budgets on the full-size store; measure the Products page p95. The release build, `dotnet format`, the test suite and the ScaleAudit build pass, and both user guides describe the new columns. Native Gujarati review of the new strings and the owner's check of the screens remain human gates.
+
+Not in scope: renaming database columns, more than one tax on a line (such as a cess), tax on other charges, and any change to the receipt, Reports, P/L or GST summary.

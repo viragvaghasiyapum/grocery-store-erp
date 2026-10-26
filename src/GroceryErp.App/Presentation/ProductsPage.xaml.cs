@@ -112,6 +112,10 @@ public partial class ProductsPage : Page
     internal static void RequestExpiryFilter(PageStateStore? store, bool expired) =>
         store?.Set(StateKey, new State(string.Empty, 0, 0, 0, 0, expired ? 1 : 2, 0, 0, false, false, false, false));
 
+    /// <summary>Makes the next Products page open on active products below their reorder level.</summary>
+    internal static void RequestLowStockFilter(PageStateStore? store) =>
+        store?.Set(StateKey, new State(string.Empty, 0, 0, 0, 2, 0, 0, 0, false, false, false, false));
+
     private State CaptureState() => new(SearchBox.Text ?? string.Empty, ClassFilter.SelectedIndex, StatusFilter.SelectedIndex,
         CategoryFilter.SelectedValue as long? ?? 0, StockFilter.SelectedIndex, ExpiryFilter.SelectedIndex,
         BrandFilter.SelectedValue as long? ?? 0, VendorFilter.SelectedValue as long? ?? 0,

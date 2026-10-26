@@ -153,20 +153,26 @@ public partial class DashboardPage : Page
     private void Tile_OnClick(object sender, RoutedEventArgs e)
     {
         if (_summary is null || sender is not Button { Tag: string tag }) return;
-        // Expiry tiles open Products, where the lots can be written off or marked down.
-        if (tag is "EXPIRED" or "CRITICAL" or "SOON")
+        // Expiry and low-stock tiles open Products, where the lots can be written off or reordered;
+        // Payables opens the vendors that are owed money, with their ledgers.
+        if (tag is "EXPIRED" or "CRITICAL" or "SOON" or "LowStock")
         {
-            ProductsPage.RequestExpiryFilter(PageStateStore.Current, expired: tag == "EXPIRED");
+            if (tag == "LowStock") ProductsPage.RequestLowStockFilter(PageStateStore.Current);
+            else ProductsPage.RequestExpiryFilter(PageStateStore.Current, expired: tag == "EXPIRED");
             if (Window.GetWindow(this) is ShellWindow shell) shell.OpenProducts();
+            return;
+        }
+        if (tag == "Payables")
+        {
+            VendorsPage.RequestBalanceFilter(PageStateStore.Current);
+            if (Window.GetWindow(this) is ShellWindow shell) shell.OpenVendors();
             return;
         }
         DateOnly today = _summary.AsOf;
         (ReportKind kind, DateOnly from) = tag switch
         {
             "Stock" => (ReportKind.StockValue, today),
-            "Payables" => (ReportKind.VendorPayables, today),
             "Month" => (ReportKind.SalesRegister, new DateOnly(today.Year, today.Month, 1)),
-            "LowStock" => (ReportKind.LowStock, today),
             _ => (ReportKind.SalesRegister, today),
         };
         OpenReport(kind, from, today);
