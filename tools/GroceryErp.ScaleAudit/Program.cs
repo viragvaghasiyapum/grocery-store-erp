@@ -304,7 +304,7 @@ switch (mode)
         long product = check.ExecuteScalar<long>("""
             SELECT product_id FROM product_lot GROUP BY product_id ORDER BY COUNT(*) DESC LIMIT 1
             """);
-        var counts = new DirectStockCountService(database, new DirectStockEngine(), periods);
+        var counts = new DirectStockCountService(database, new DirectStockEngine(numbers), periods);
         DirectCountLotPage? page = null;
         for (int index = 0; index < 100; index++)
         {
@@ -3560,7 +3560,7 @@ switch (mode)
             (long onHand, long version) = tx.Connection.QuerySingle<(long, long)>(
                 "SELECT qty_on_hand,quantity_version FROM product_lot WHERE id=@adjustmentLot",
                 new { adjustmentLot }, tx.Transaction);
-            new DirectStockEngine().ReviewCount(tx, adjustmentLot, version, onHand, onHand - 1000, end,
+            new DirectStockEngine(numbers).ReviewCount(tx, adjustmentLot, version, onHand, onHand - 1000, end,
                 "Scale audit count", OperationGuard.NewId());
             return 1;
         }), static x => x);

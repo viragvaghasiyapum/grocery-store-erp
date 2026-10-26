@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -274,15 +275,20 @@ public partial class App : Application
                 await releaseNotesService.MarkSeenAsync(releaseNotes.Version);
             }
             _maintenanceCancellation = new CancellationTokenSource();
-            _maintenanceTask = RunMaintenanceWhenIdleAsync(shell, maintenance,
-                _host.Services.GetRequiredService<AssetService>(),
-                _host.Services.GetRequiredService<AnnualCloseService>(), _maintenanceCancellation.Token);
+            AssetService assets = _host.Services.GetRequiredService<AssetService>();
+            AnnualCloseService annualClose = _host.Services.GetRequiredService<AnnualCloseService>();
+            _maintenanceTask = RunMaintenanceWhenIdleAsync(shell.IsIdleFor,
+            [
+                token => assets.PostDueDepreciationAsync(token),
+                token => annualClose.EnsureFinalizedAsync(token),
+                token => maintenance.RunAfterShellAsync(token),
+            ], _maintenanceCancellation.Token);
             _ = _maintenanceTask.ContinueWith(
                 task =>
                 {
-                    if (!task.IsFaulted) return;
-                    Log.Error(task.Exception, "Background startup maintenance failed");
-                    shell.ShowMaintenanceWarning();
+                    if (task.Exception is not { } failure) return;
+                    Log.Error(failure, "Background startup maintenance failed");
+                    shell.ShowMaintenanceWarning(LotDifferencesOnly(failure));
                 },
                 TaskScheduler.FromCurrentSynchronizationContext());
         }
@@ -447,27 +453,34 @@ public partial class App : Application
             catch (OperationCanceledException) { }
     }
 
-    private static async Task RunMaintenanceWhenIdleAsync(ShellWindow shell, MaintenanceService maintenance,
-        AssetService assets, AnnualCloseService annualClose, CancellationToken cancellationToken)
+    // Each step runs once per session, whatever another step found: a failed weekly check
+    // never holds back due depreciation or a year's close. Failures are reported together
+    // after the last step.
+    internal static async Task RunMaintenanceWhenIdleAsync(Func<TimeSpan, bool> isIdleFor,
+        IReadOnlyList<Func<CancellationToken, Task>> steps, CancellationToken cancellationToken)
     {
         TimeSpan idleWindow = TimeSpan.FromMinutes(10);
-        while (true)
+        List<Exception> failures = [];
+        int next = 0;
+        while (next < steps.Count)
         {
-            while (!shell.IsIdleFor(idleWindow))
+            while (!isIdleFor(idleWindow))
                 await Task.Delay(TimeSpan.FromSeconds(15), cancellationToken);
             using var workCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             Task activityMonitor = MonitorActivityAsync();
             try
             {
-                await maintenance.RunAfterShellAsync(workCancellation.Token);
-                await assets.PostDueDepreciationAsync(workCancellation.Token);
-                await annualClose.EnsureFinalizedAsync(workCancellation.Token);
-                return;
+                for (; next < steps.Count; next++)
+                    try { await steps[next](workCancellation.Token); }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                        failures.Add(exception);
+                    }
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                // A customer returned during a large integrity read. Resume at
-                // the next idle window; completed backups remain usable.
+                // A customer returned during a large integrity read. The interrupted step
+                // resumes at the next idle window; finished steps are not repeated.
             }
             finally
             {
@@ -481,10 +494,23 @@ public partial class App : Application
                 while (!workCancellation.IsCancellationRequested)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(2), workCancellation.Token);
-                    if (!shell.IsIdleFor(idleWindow)) workCancellation.Cancel();
+                    if (!isIdleFor(idleWindow)) workCancellation.Cancel();
                 }
             }
         }
+        if (failures.Count > 0) throw new AggregateException(failures);
+    }
+
+    // When lots differing from their documents is all maintenance found, the warning names
+    // them and opens their list; anything else gets the general safety-check warning.
+    internal static int? LotDifferencesOnly(AggregateException failure)
+    {
+        ArgumentNullException.ThrowIfNull(failure);
+        ReadOnlyCollection<Exception> inner = failure.Flatten().InnerExceptions;
+        return inner.Count > 0 && inner.All(static exception =>
+                exception is DomainException { Code: ErrorCode.LotsDifferFromDocuments })
+            ? Convert.ToInt32(((DomainException)inner[0]).Arguments[0], CultureInfo.InvariantCulture)
+            : null;
     }
 
     internal void SkipCloseBackup() => _skipCloseBackup = true;

@@ -88,10 +88,20 @@ public sealed class MaintenanceService(
     // At most this many differing lots are kept for the reconciliation report.
     private const int RecordedLotIssues = 200;
 
+    private sealed record WeeklyFindings(List<LotSourceMismatch> LotIssues, int DifferingLots,
+        IReadOnlyList<string> InvalidYears, string? PnlDrift)
+    {
+        public bool Clean => DifferingLots == 0 && InvalidYears.Count == 0 && PnlDrift is null;
+    }
+
+    // A damaged file stops the check, which stays due. Anything else the check finds is
+    // recorded with the run, so the full lot check waits a week again instead of
+    // rereading all sale history at every launch; maintenance then fails so the finding
+    // is logged and shown.
     private async Task RunWeeklyIntegrityChecksAsync(CancellationToken cancellationToken)
     {
         using var timing = PerformanceMetrics.TrackMaintenance("weekly-integrity");
-        (List<LotSourceMismatch> lotIssues, int differingLots) = await database.ReadAsync(connection =>
+        WeeklyFindings findings = await database.ReadAsync(connection =>
         {
             string integrity = connection.ExecuteScalar<string>("PRAGMA integrity_check;") ?? "";
             if (!string.Equals(integrity, "ok", StringComparison.OrdinalIgnoreCase))
@@ -106,16 +116,11 @@ public sealed class MaintenanceService(
                 if (issues.Count < RecordedLotIssues) issues.Add(mismatch);
                 count++;
             }
-            if (AnnualCloseService.VerifyAll(connection) is [var invalidYear, ..])
-                throw new DomainException(ErrorCode.AnnualReportInvalid, invalidYear);
-            if (PnlReconciliation.CheckOpenDays(connection, clock.BusinessDate, cancellationToken)
-                    .FirstOrDefault() is { } drift)
-                throw new DomainException(ErrorCode.BackupInvalid, $"P&L day {drift} differs from its sales and returns");
-            return (issues, count);
+            return new WeeklyFindings(issues, count, AnnualCloseService.VerifyAll(connection),
+                PnlReconciliation.CheckOpenDays(connection, clock.BusinessDate, cancellationToken).FirstOrDefault());
         }, cancellationToken).ConfigureAwait(false);
 
-        // The full lot check is kept even when it finds differences, so the report can
-        // list them; maintenance still fails afterwards so the difference is logged.
+        // The full lot check is kept even when it finds differences, so the report can list them.
         await database.WriteAsync(transaction =>
         {
             string date = clock.BusinessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -123,18 +128,16 @@ public sealed class MaintenanceService(
             transaction.Connection.Execute("""
                 INSERT INTO lot_source_issue(lot_id,product_id,actual,expected,found_on)
                 VALUES (@LotId,@ProductId,@Actual,@Expected,@date)
-                """, lotIssues.Select(issue => new { issue.LotId, issue.ProductId, issue.Actual, issue.Expected, date }),
+                """, findings.LotIssues.Select(issue => new { issue.LotId, issue.ProductId, issue.Actual, issue.Expected, date }),
                 transaction.Transaction);
             transaction.Connection.Execute("""
                 INSERT INTO setting(key,value) VALUES ('maintenance.lot_check_last_run',@date)
                 ON CONFLICT(key) DO UPDATE SET value=excluded.value;
                 INSERT INTO setting(key,value) VALUES ('maintenance.lot_check_differences',@count)
                 ON CONFLICT(key) DO UPDATE SET value=excluded.value;
-                """, new { date, count = differingLots.ToString(CultureInfo.InvariantCulture) }, transaction.Transaction);
+                """, new { date, count = findings.DifferingLots.ToString(CultureInfo.InvariantCulture) },
+                transaction.Transaction);
         }, cancellationToken).ConfigureAwait(false);
-        if (lotIssues.Count > 0)
-            throw new DomainException(ErrorCode.BackupInvalid,
-                $"{differingLots} lots differ from their source documents, first lot {lotIssues[0].LotId}");
 
         await database.WriteAsync(transaction =>
         {
@@ -159,8 +162,22 @@ public sealed class MaintenanceService(
                 ; INSERT INTO setting(key,value) VALUES ('maintenance.recovery_pending','0')
                 ON CONFLICT(key) DO UPDATE SET value='0'
                 """, new { date }, transaction.Transaction);
-            auditLog.Write(transaction, "maintenance", 0, "INTEGRITY_CHECK", new { date, result = "ok" });
+            auditLog.Write(transaction, "maintenance", 0, "INTEGRITY_CHECK", new
+            {
+                date,
+                result = findings.Clean ? "ok" : "differences",
+                differingLots = findings.DifferingLots,
+                invalidYears = findings.InvalidYears,
+                pnlDrift = findings.PnlDrift,
+            });
         }, cancellationToken).ConfigureAwait(false);
+
+        if (findings.InvalidYears is [var invalidYear, ..])
+            throw new DomainException(ErrorCode.AnnualReportInvalid, invalidYear);
+        if (findings.PnlDrift is { } drift)
+            throw new DomainException(ErrorCode.BackupInvalid, $"P&L day {drift} differs from its sales and returns");
+        if (findings.DifferingLots > 0)
+            throw new DomainException(ErrorCode.LotsDifferFromDocuments, findings.DifferingLots);
     }
 
     public void Shutdown()

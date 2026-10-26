@@ -54,7 +54,7 @@ internal sealed class PhaseNineProfile(AppPaths paths, SqliteConnectionFactory f
         var catalog = new CatalogService(database, audit, settings, _clock);
         var reports = new ReportService(database, settings, _clock);
         var scans = new ScanResolver(database);
-        var counts = new DirectStockCountService(database, new DirectStockEngine(), periods);
+        var counts = new DirectStockCountService(database, new DirectStockEngine(numbers), periods);
         Fixture fixture = await PrepareAsync(lots);
 
         // Every operation the plan names, each a closure that leaves the store consistent. Work an

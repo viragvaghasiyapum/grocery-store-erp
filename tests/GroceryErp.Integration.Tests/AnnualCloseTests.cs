@@ -197,6 +197,16 @@ public sealed class AnnualCloseTests
 
         connection.Execute("UPDATE pnl_day SET return_rounding=return_rounding+1 WHERE day='2026-09-12'");
         PnlReconciliation.CheckOpenDays(connection, fixture.Clock.BusinessDate, ct).ShouldBe(["2026-09-12"]);
+
+        // Weekly maintenance reports the drifting day, and records the run with it.
+        var maintenance = new MaintenanceService(fixture.Paths, fixture.Factory, fixture.Database,
+            new GroceryErp.Data.Backup.BackupService(fixture.Paths, fixture.Factory, fixture.Clock, fixture.Settings),
+            fixture.Clock, new AuditLog());
+        (await Should.ThrowAsync<DomainException>(() => maintenance.RunAfterShellAsync(ct))).Code
+            .ShouldBe(ErrorCode.BackupInvalid);
+        connection.ExecuteScalar<string>("SELECT changes FROM audit_log WHERE action='INTEGRITY_CHECK'")!
+            .ShouldContain("\"pnlDrift\":\"2026-09-12\"");
+        await maintenance.RunAfterShellAsync(ct);
     }
 
     [Fact]
@@ -239,13 +249,22 @@ public sealed class AnnualCloseTests
         ((long)newest.Rows[1].Values["Difference"]!).ShouldBe(1000);
         newest.Summary.ShouldBe("2 lots shown, newest first; 1 differ from their documents.");
 
-        // Weekly maintenance checks every lot, records the difference and still fails.
+        // Weekly maintenance checks every lot, records the difference and the run, and still
+        // fails so the difference is logged and shown; the next launch does not check again.
         var backups = new GroceryErp.Data.Backup.BackupService(fixture.Paths, fixture.Factory, fixture.Clock, fixture.Settings);
         var maintenance = new MaintenanceService(fixture.Paths, fixture.Factory, fixture.Database, backups, fixture.Clock,
             new AuditLog());
-        (await Should.ThrowAsync<DomainException>(() => maintenance.RunAfterShellAsync(ct))).Code
-            .ShouldBe(ErrorCode.BackupInvalid);
+        DomainException found = await Should.ThrowAsync<DomainException>(() => maintenance.RunAfterShellAsync(ct));
+        found.Code.ShouldBe(ErrorCode.LotsDifferFromDocuments);
+        found.Arguments.ShouldBe([1]);
         connection.ExecuteScalar<long>("SELECT lot_id FROM lot_source_issue").ShouldBe(expired);
+        connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key='maintenance.integrity_last_run'")
+            .ShouldBe("2026-10-23");
+        connection.ExecuteScalar<string>("""
+            SELECT changes FROM audit_log WHERE entity='maintenance' AND action='INTEGRITY_CHECK'
+            """)!.ShouldContain("\"differingLots\":1");
+        await maintenance.RunAfterShellAsync(ct);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE action='INTEGRITY_CHECK'").ShouldBe(1);
         TabularReport mismatches = await fixture.Reports.GetReportAsync(ReportKind.StockReconciliation,
             new(MismatchesOnly: true), ct);
         mismatches.Rows.Single().Values["Lot"].ShouldBe("L-OLD");

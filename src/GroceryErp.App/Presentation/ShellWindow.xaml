@@ -72,9 +72,10 @@
             Padding="16,10" Background="{x:Static SystemColors.InfoBrush}"
             BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
       <DockPanel LastChildFill="True">
-        <Button DockPanel.Dock="Right" Margin="12,0,0,0" Click="BackupStatus_OnClick"
-                Content="{l:Tr Settings_Title}"/>
-        <TextBlock VerticalAlignment="Center" Foreground="{x:Static SystemColors.InfoTextBrush}"
+        <Button x:Name="MaintenanceWarningAction" DockPanel.Dock="Right" Margin="12,0,0,0"
+                Click="MaintenanceWarningAction_OnClick" Content="{l:Tr Settings_Title}"/>
+        <TextBlock x:Name="MaintenanceWarningText" VerticalAlignment="Center"
+                   Foreground="{x:Static SystemColors.InfoTextBrush}"
                    Text="{l:Tr Startup_MaintenanceFailed}" TextWrapping="Wrap"/>
       </DockPanel>
     </Border>

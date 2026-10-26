@@ -31,11 +31,13 @@ internal static class ReportDefinitions
         WHERE qty_on_hand>0 AND expiry_date IS NOT NULL AND expiry_date<@stockAsOf
         """;
 
-    public const string GstSummaryFromDay = """
-        SELECT 'OUTWARD' AS Direction,hsn AS Hsn,rate AS Rate,
-               SUM(revenue) AS Taxable,SUM(tax) AS Tax
-        FROM sale_report_day WHERE day BETWEEN @from AND @to GROUP BY hsn,rate
-        UNION ALL
+    // Inward tax comes from source documents in both forms of the GST summary. A vendor return
+    // reduces it on its return date and its cancellation adds it back on the cancellation date. The
+    // purchase line is the return's snapshot, because the returned lot may since have been deleted.
+    // CROSS JOIN keeps the cancellations' date index as the outer loop: left to choose, SQLite walked
+    // every return through each vendor (170-210 ms for any period with 20,000 returns, 0.04 ms for a
+    // month and 2 ms for a fiscal year with the index).
+    private const string InwardGst = """
         SELECT 'INWARD',Hsn,Rate,SUM(Taxable),SUM(Tax)
         FROM (
           SELECT COALESCE(v.gstin,'') AS Hsn,pl.tax_rate_pct AS Rate,
@@ -45,11 +47,24 @@ internal static class ReportDefinitions
           WHERE p.status='POSTED' AND p.received_date BETWEEN @from AND @to
           UNION ALL
           SELECT COALESCE(v.gstin,''),pl.tax_rate_pct,-vrl.credit_before_tax,-vrl.tax_credit
-          FROM vendor_return_line vrl JOIN vendor_return vr ON vr.id=vrl.vendor_return_id
-          JOIN vendor v ON v.id=vr.vendor_id JOIN product_lot l ON l.id=vrl.lot_id
-          JOIN purchase_line pl ON pl.id=l.purchase_line_id
+          FROM vendor_return vr JOIN vendor_return_line vrl ON vrl.vendor_return_id=vr.id
+          JOIN vendor v ON v.id=vr.vendor_id JOIN purchase_line pl ON pl.id=vrl.purchase_line_id_snapshot
           WHERE vr.return_date BETWEEN @from AND @to
+          UNION ALL
+          SELECT COALESCE(v.gstin,''),pl.tax_rate_pct,vrl.credit_before_tax,vrl.tax_credit
+          FROM vendor_return_cancellation c CROSS JOIN vendor_return vr ON vr.id=c.vendor_return_id
+          JOIN vendor_return_line vrl ON vrl.vendor_return_id=vr.id
+          JOIN vendor v ON v.id=vr.vendor_id JOIN purchase_line pl ON pl.id=vrl.purchase_line_id_snapshot
+          WHERE c.cancellation_date BETWEEN @from AND @to
         ) inward_lines GROUP BY Hsn,Rate
+        """;
+
+    public const string GstSummaryFromDay = $"""
+        SELECT 'OUTWARD' AS Direction,hsn AS Hsn,rate AS Rate,
+               SUM(revenue) AS Taxable,SUM(tax) AS Tax
+        FROM sale_report_day WHERE day BETWEEN @from AND @to GROUP BY hsn,rate
+        UNION ALL
+        {InwardGst}
         ORDER BY Direction,Hsn,Rate LIMIT @Limit
         """;
 
@@ -183,7 +198,7 @@ internal static class ReportDefinitions
 
             // ReportService reads outward tax from GstSummaryFromDay; this source-line form is the
             // reference ScaleAudit's summary-parity check compares that projection against.
-            [ReportKind.GstSummary] = new("GST summary (accountant)", true, """
+            [ReportKind.GstSummary] = new("GST summary (accountant)", true, $"""
                 SELECT 'OUTWARD' AS Direction, Hsn, Rate, SUM(Taxable) AS Taxable, SUM(Tax) AS Tax
                 FROM (
                   SELECT COALESCE(sl.hsn_code,'') AS Hsn,sl.tax_rate_pct AS Rate,
@@ -198,20 +213,7 @@ internal static class ReportDefinitions
                   WHERE r.return_date BETWEEN @from AND @to
                 ) outward_lines GROUP BY Hsn,Rate
                 UNION ALL
-                SELECT 'INWARD',Hsn,Rate,SUM(Taxable),SUM(Tax)
-                FROM (
-                  SELECT COALESCE(v.gstin,'') AS Hsn,pl.tax_rate_pct AS Rate,
-                         CAST(ROUND(pl.qty*pl.unit_cost/1000.0) AS INTEGER)-pl.discount AS Taxable,
-                         pl.tax_amount AS Tax
-                  FROM purchase_line pl JOIN purchase p ON p.id=pl.purchase_id JOIN vendor v ON v.id=p.vendor_id
-                  WHERE p.status='POSTED' AND p.received_date BETWEEN @from AND @to
-                  UNION ALL
-                  SELECT COALESCE(v.gstin,''),pl.tax_rate_pct,-vrl.credit_before_tax,-vrl.tax_credit
-                  FROM vendor_return_line vrl JOIN vendor_return vr ON vr.id=vrl.vendor_return_id
-                  JOIN vendor v ON v.id=vr.vendor_id JOIN product_lot l ON l.id=vrl.lot_id
-                  JOIN purchase_line pl ON pl.id=l.purchase_line_id
-                  WHERE vr.return_date BETWEEN @from AND @to
-                ) inward_lines GROUP BY Hsn,Rate
+                {InwardGst}
                 ORDER BY Direction,Hsn,Rate LIMIT @Limit
                 """, [T("Direction", "Direction"), T("Hsn", "HSN / vendor GSTIN"), P("Rate", "GST rate"), M("Taxable", "Taxable value"), M("Tax", "Tax")]),
         };

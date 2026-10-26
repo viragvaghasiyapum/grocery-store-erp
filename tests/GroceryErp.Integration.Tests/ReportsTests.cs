@@ -798,8 +798,8 @@ public sealed class ReportsTests
                     tax_mode,credit_before_tax,tax_credit,credit_total,cost_total)
                 VALUES ('VR1',1,1,'2026-10-02','CREDIT-1','Short dated','REGULAR',40000,2000,42000,40000);
                 INSERT INTO vendor_return_line(vendor_return_id,product_id,lot_id,qty,credit_before_tax,
-                    tax_credit,cost_value)
-                VALUES (1,1,2,400,40000,2000,40000);
+                    tax_credit,cost_value,purchase_line_id_snapshot)
+                VALUES (1,1,2,400,40000,2000,40000,1);
                 """);
 
         TabularReport report = await fixture.Reports.GetReportAsync(ReportKind.GstSummary,

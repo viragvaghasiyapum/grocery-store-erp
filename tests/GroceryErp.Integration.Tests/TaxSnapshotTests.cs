@@ -222,7 +222,7 @@ public sealed class TaxSnapshotTests
             SELECT COUNT(*) FROM product_lot WHERE unit_tax IS NULL OR unit_tax<0
                OR (unit_cost<>unit_cost_incl_tax-unit_tax AND unit_cost<>unit_cost_incl_tax)
             """).ShouldBe(0L);
-        await fixture.Database.WriteAsync(tx => new DirectStockEngine().CheckAll(tx).ToArray().ShouldBeEmpty(), ct);
+        await fixture.Database.WriteAsync(tx => LotSourceReconciliation.CheckAll(tx.Connection, tx.Transaction).ToArray().ShouldBeEmpty(), ct);
     }
 
     [Fact]
@@ -543,8 +543,8 @@ public sealed class TaxSnapshotTests
             {
                 (long onHand, long version) = tx.Connection.QuerySingle<(long, long)>(
                     "SELECT qty_on_hand,quantity_version FROM product_lot WHERE id=@lotId", new { lotId }, tx.Transaction);
-                return new DirectStockEngine().ReviewCount(tx, lotId, version, onHand, onHand + surplus.Scaled,
-                    Today, "Recount", OperationGuard.NewId());
+                return new DirectStockEngine(new DocNumberService(Settings)).ReviewCount(tx, lotId, version, onHand,
+                    onHand + surplus.Scaled, Today, "Recount", OperationGuard.NewId());
             }, ct);
 
         public void Dispose()

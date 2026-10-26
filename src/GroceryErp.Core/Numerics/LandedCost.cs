@@ -8,11 +8,24 @@ public sealed record PurchaseCostLine(Quantity Quantity, Quantity FreeQuantity, 
 /// </summary>
 public sealed record PurchaseUnitCost(Money BeforeTax, Money Tax, Money InclTax, Money Booked);
 
+/// <summary>
+/// A purchase line's per-piece prices and the exact amount the whole line books: goods after
+/// discount plus its share of other charges, plus its tax when tax is cost. The rounded per-piece
+/// cost times the pieces can differ from it by a few paise.
+/// </summary>
+public sealed record PurchaseLineCost(PurchaseUnitCost Unit, Money Booked);
+
 public static class LandedCost
 {
+    public static IReadOnlyList<PurchaseUnitCost> Compute(
+        IReadOnlyList<PurchaseCostLine> lines,
+        Money otherCharges,
+        bool taxIsCost) =>
+        ComputeLines(lines, otherCharges, taxIsCost).Select(static line => line.Unit).ToArray();
+
     // Tax is charged on the goods only; other charges are spread by goods value and never taxed.
     // Tax per piece is the difference of the two saved prices, so each row adds up exactly.
-    public static IReadOnlyList<PurchaseUnitCost> Compute(
+    public static IReadOnlyList<PurchaseLineCost> ComputeLines(
         IReadOnlyList<PurchaseCostLine> lines,
         Money otherCharges,
         bool taxIsCost)
@@ -36,9 +49,13 @@ public static class LandedCost
         return lines.Select((line, index) =>
         {
             Quantity units = line.Quantity + line.FreeQuantity;
-            Money beforeTax = (bases[index] + shares[index]).DivideBy(units);
-            Money inclTax = (bases[index] + shares[index] + line.TaxAmount).DivideBy(units);
-            return new PurchaseUnitCost(beforeTax, inclTax - beforeTax, inclTax, taxIsCost ? inclTax : beforeTax);
+            Money lineBeforeTax = bases[index] + shares[index];
+            Money lineInclTax = lineBeforeTax + line.TaxAmount;
+            Money beforeTax = lineBeforeTax.DivideBy(units);
+            Money inclTax = lineInclTax.DivideBy(units);
+            return new PurchaseLineCost(
+                new PurchaseUnitCost(beforeTax, inclTax - beforeTax, inclTax, taxIsCost ? inclTax : beforeTax),
+                taxIsCost ? lineInclTax : lineBeforeTax);
         }).ToArray();
     }
 

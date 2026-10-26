@@ -38,7 +38,7 @@ public sealed class MoneyOutTests
             db.ExecuteScalar<string>("SELECT source_kind FROM stock_correction WHERE lot_id=@id",
                 new { id = fixture.LotId }).ShouldBe("DAMAGE_CORRECTION");
         }
-        await fixture.Database.WriteAsync(tx => new DirectStockEngine().CheckAll(tx)
+        await fixture.Database.WriteAsync(tx => LotSourceReconciliation.CheckAll(tx.Connection, tx.Transaction)
             .ToArray().ShouldBeEmpty(), ct);
     }
 
@@ -102,7 +102,7 @@ public sealed class MoneyOutTests
         connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = fixture.LotId }).ShouldBe(10000L);
         connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='DAMAGES'").ShouldBe(0L);
         (await fixture.MoneyOut.GetDamagesAsync(fixture.Today, fixture.Today, ct)).Single().Status.ShouldBe("VOID");
-        await fixture.Database.WriteAsync(tx => new DirectStockEngine().CheckAll(tx).ToArray().ShouldBeEmpty(), ct);
+        await fixture.Database.WriteAsync(tx => LotSourceReconciliation.CheckAll(tx.Connection, tx.Transaction).ToArray().ShouldBeEmpty(), ct);
     }
 
     [Fact]
@@ -172,7 +172,7 @@ public sealed class MoneyOutTests
             FROM product_lot WHERE id=@restored
             """, new { restored }).ShouldBe((product, 4000L, 50000L, "DIRECT"));
         connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='DAMAGES'").ShouldBe(300_000L);
-        await fixture.Database.WriteAsync(tx => new DirectStockEngine().CheckAll(tx).ToArray().ShouldBeEmpty(), ct);
+        await fixture.Database.WriteAsync(tx => LotSourceReconciliation.CheckAll(tx.Connection, tx.Transaction).ToArray().ShouldBeEmpty(), ct);
     }
 
     [Fact]

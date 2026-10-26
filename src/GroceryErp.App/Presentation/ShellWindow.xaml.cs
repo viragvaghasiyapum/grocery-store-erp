@@ -11,6 +11,7 @@ using GroceryErp.Data.Security;
 using GroceryErp.Data.Services;
 using GroceryErp.Expenses;
 using GroceryErp.Localization;
+using GroceryErp.Reports;
 using GroceryErp.Sales;
 using GroceryErp.UI.Common.Modularity;
 using Microsoft.Win32;
@@ -31,11 +32,14 @@ public partial class ShellWindow : FluentWindow
     private readonly UsbUpdateService? _updates;
     private readonly BackupService? _backups;
     private readonly ReceiptPrinter? _printer;
+    private readonly ReportNavigationState? _reportNavigation;
     private readonly DispatcherTimer _deviceTimer = new() { Interval = TimeSpan.FromSeconds(15) };
     private readonly Dictionary<NavigationViewItem, string> _moduleNavigation = [];
     private readonly InfoBadge _expiryInfoBadge = new() { Value = "0", Visibility = Visibility.Collapsed };
     private DateTime _lastActivity;
     private DateTime? _lastScan;
+    // Lots differing from their documents, when that is all the last maintenance found.
+    private int? _lotDifferences;
     private PrinterState _printerState = PrinterState.Checking;
     private bool _checkingPrinter;
 
@@ -50,7 +54,8 @@ public partial class ShellWindow : FluentWindow
         UsbUpdateService? updates = null,
         BackupService? backups = null,
         IReadOnlyList<IModule>? modules = null,
-        ReceiptPrinter? printer = null)
+        ReceiptPrinter? printer = null,
+        ReportNavigationState? reportNavigation = null)
     {
         InitializeComponent();
         foreach (NavItem item in (modules ?? App.CreateModules()).SelectMany(static module => module.Navigation)
@@ -74,6 +79,7 @@ public partial class ShellWindow : FluentWindow
         _updates = updates;
         _backups = backups;
         _printer = printer;
+        _reportNavigation = reportNavigation;
         _deviceTimer.Tick += async (_, _) =>
         {
             RenderScannerStatus();
@@ -123,6 +129,7 @@ public partial class ShellWindow : FluentWindow
             RefreshBackupStatus();
             RenderPrinterStatus();
             RenderScannerStatus();
+            RenderMaintenanceWarning();
             foreach ((NavigationViewItem view, string key) in _moduleNavigation)
             {
                 view.Content = TranslationSource.Instance[key];
@@ -241,7 +248,33 @@ public partial class ShellWindow : FluentWindow
     internal void OpenProducts() => RootNavigation.Navigate(typeof(ProductsPage));
     internal void OpenVendors() => RootNavigation.Navigate(typeof(VendorsPage));
     internal void OpenSettings() => RootNavigation.Navigate(typeof(SettingsPage));
-    internal void ShowMaintenanceWarning() => MaintenanceWarning.Visibility = Visibility.Visible;
+    internal void ShowMaintenanceWarning(int? lotDifferences = null)
+    {
+        _lotDifferences = lotDifferences;
+        RenderMaintenanceWarning();
+        MaintenanceWarning.Visibility = Visibility.Visible;
+    }
+
+    // The general warning keeps its bound text and opens Settings; differing lots are named
+    // and their action opens the reconciliation's recorded differences.
+    private void RenderMaintenanceWarning()
+    {
+        if (_lotDifferences is not { } count) return;
+        MaintenanceWarningText.Text = TranslationSource.Instance.Format("Error_LotsDifferFromDocuments", count);
+        MaintenanceWarningAction.Content = TranslationSource.Instance["Startup_ShowLotDifferences"];
+    }
+
+    private void MaintenanceWarningAction_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_lotDifferences is null || _reportNavigation is null)
+        {
+            OpenSettings();
+            return;
+        }
+        DateOnly today = _clock?.BusinessDate ?? App.BusinessDate;
+        _reportNavigation.Open(ReportKind.StockReconciliation, today, today, mismatchesOnly: true);
+        OpenReports();
+    }
 
     private async void Update_OnClick(object sender, RoutedEventArgs e)
     {

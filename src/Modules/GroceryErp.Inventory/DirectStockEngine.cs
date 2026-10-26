@@ -23,7 +23,7 @@ public interface IDirectStockEngine
 // Reviewed physical counts and source reconciliation. Every other quantity change is
 // written by its own document through LotQuantities.
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822", Justification = "Instance methods implement the stock engine contract.")]
-public sealed class DirectStockEngine : IDirectStockEngine
+public sealed class DirectStockEngine(DocNumberService numbers) : IDirectStockEngine
 {
     // One reviewed physical count is one short transaction. A surplus starts a
     // distinct direct-origin lot; a deficit is a categorized damage document.
@@ -89,19 +89,20 @@ public sealed class DirectStockEngine : IDirectStockEngine
         string date = businessDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         if (delta < 0)
         {
+            string document = numbers.Next(tx, DocType.Damage, businessDate);
             sourceId = tx.Connection.ExecuteScalar<long>("""
-                INSERT INTO damage(damage_date,product_id,lot_id,qty,unit_cost,cost_value,reason,notes,
+                INSERT INTO damage(doc_no,damage_date,product_id,lot_id,qty,unit_cost,cost_value,reason,notes,
                     product_name_snapshot,product_sku_snapshot,product_name_local_snapshot,uom_snapshot,
                     product_class_snapshot,lot_code_snapshot,batch_no_snapshot,expiry_date_snapshot,
                     snapshot_provenance)
-                SELECT @date,p.id,l.id,@quantity,l.unit_cost,
+                SELECT @document,@date,p.id,l.id,@quantity,l.unit_cost,
                        CAST(ROUND(@quantity*l.unit_cost/1000.0) AS INTEGER),@damageCategory,@reason,
                        p.name,p.sku,p.name_local,u.code,p.product_class,l.lot_code,l.batch_no,
                        l.expiry_date,'AT_POST'
                 FROM product_lot l JOIN product p ON p.id=l.product_id JOIN uom u ON u.id=p.uom_id
                 WHERE l.id=@lotId
                 RETURNING id
-                """, new { date, lotId, quantity = -delta, reason, damageCategory }, tx.Transaction);
+                """, new { document, date, lotId, quantity = -delta, reason, damageCategory }, tx.Transaction);
             Change(tx, lotId, delta, expectedVersion);
             CheckAffected(tx, [lotId]);
             kind = "DAMAGE";
@@ -125,7 +126,7 @@ public sealed class DirectStockEngine : IDirectStockEngine
                 """, tax.AddTo(new DynamicParameters(new
             {
                 productId = lot.ProductId,
-                code = "RC-" + operationId,
+                code = numbers.Next(tx, DocType.Lot, businessDate),
                 batch = lot.Batch,
                 date,
                 expiry = lot.Expiry,

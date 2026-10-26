@@ -16,8 +16,6 @@ namespace GroceryErp.Integration.Tests;
 
 public sealed class DirectStockEngineTests
 {
-    private static readonly DirectStockEngine Engine = new();
-
     [Fact]
     public void LedgerUpgrade_CarriesHistoryForward_ThenRemovesTheLedger()
     {
@@ -95,7 +93,7 @@ public sealed class DirectStockEngineTests
         await settings.LoadAsync(ct);
         var clock = new FixedClock(new DateTime(2026, 10, 18, 12, 0, 0));
         var periods = new PeriodGuard(settings, clock);
-        var countService = new DirectStockCountService(fixture.Database, Engine, periods);
+        var countService = new DirectStockCountService(fixture.Database, fixture.Engine, periods);
         var sales = new SalesService(fixture.Database, new LotQuantities(settings),
             new DocNumberService(settings), periods, settings, new AuditLog(), clock);
         long saleId = await sales.AddProductAsync(null, fixture.Product, Quantity.One,
@@ -116,7 +114,7 @@ public sealed class DirectStockEngineTests
             new { lot = fixture.Lot }).ShouldBe("Direct stock");
         db.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@lot",
             new { lot = fixture.Lot }).ShouldBe(8000);
-        await fixture.Database.WriteAsync(tx => Engine.CheckAll(tx).ShouldBeEmpty(), ct);
+        await fixture.Database.WriteAsync(tx => fixture.Engine.CheckAll(tx).ShouldBeEmpty(), ct);
     }
 
     private sealed class FixedClock(DateTime now) : IClock
@@ -137,7 +135,7 @@ public sealed class DirectStockEngineTests
         }, ct);
         using var settings = new SettingsService(fixture.Database, fixture.Paths, new AuditLog());
         await settings.LoadAsync(ct);
-        var counts = new DirectStockCountService(fixture.Database, Engine,
+        var counts = new DirectStockCountService(fixture.Database, fixture.Engine,
             new PeriodGuard(settings, new FixedClock(new DateTime(2026, 10, 18, 12, 0, 0))));
         DirectCountLotPage first = await counts.GetPageAsync([fixture.Product], limit: 50, cancellationToken: ct);
         first.Items.Count.ShouldBe(50);
@@ -150,7 +148,7 @@ public sealed class DirectStockEngineTests
         second.Items.Count.ShouldBe(2);
         second.HasMore.ShouldBeFalse();
         second.Items.All(lot => lot.LotId <= first.MaxLotId).ShouldBeTrue();
-        await fixture.Database.WriteAsync(tx => Engine.CheckAll(tx).ShouldBeEmpty(), ct);
+        await fixture.Database.WriteAsync(tx => fixture.Engine.CheckAll(tx).ShouldBeEmpty(), ct);
     }
 
     [Fact]
@@ -160,28 +158,33 @@ public sealed class DirectStockEngineTests
         CancellationToken ct = TestContext.Current.CancellationToken;
         string countOp = OperationGuard.NewId();
         await Should.ThrowAsync<DomainException>(async () => await fixture.Database.WriteAsync(tx =>
-            Engine.ReviewCount(tx, fixture.Lot, 99, 10000, 9000,
+            fixture.Engine.ReviewCount(tx, fixture.Lot, 99, 10000, 9000,
                 new DateOnly(2026, 10, 18), "Counted shelf", countOp), ct));
         long version = fixture.Version();
         long damageId = await fixture.Database.WriteAsync(tx =>
-            Engine.ReviewCount(tx, fixture.Lot, version, 10000, 9000,
+            fixture.Engine.ReviewCount(tx, fixture.Lot, version, 10000, 9000,
                 new DateOnly(2026, 10, 18), "Counted shelf", countOp), ct);
         damageId.ShouldBeGreaterThan(0);
         (await fixture.Database.WriteAsync(tx =>
-            Engine.ReviewCount(tx, fixture.Lot, version, 10000, 9000,
+            fixture.Engine.ReviewCount(tx, fixture.Lot, version, 10000, 9000,
                 new DateOnly(2026, 10, 18), "Counted shelf", countOp), ct)).ShouldBe(damageId);
         await Should.ThrowAsync<DomainException>(() => fixture.Database.WriteAsync(tx =>
-            Engine.ReviewCount(tx, fixture.Lot, version, 10000, 8000,
+            fixture.Engine.ReviewCount(tx, fixture.Lot, version, 10000, 8000,
                 new DateOnly(2026, 10, 18), "Counted shelf", countOp), ct));
         await Should.ThrowAsync<DomainException>(() => fixture.Database.WriteAsync(tx =>
-            Engine.ReviewCount(tx, fixture.Lot, version, 10000, 9000,
+            fixture.Engine.ReviewCount(tx, fixture.Lot, version, 10000, 9000,
                 new DateOnly(2026, 10, 18), "Counted shelf", countOp, "LOST"), ct));
         long surplusLot = await fixture.Database.WriteAsync(tx =>
-            Engine.ReviewCount(tx, fixture.Lot, fixture.Version(), 9000, 11000,
+            fixture.Engine.ReviewCount(tx, fixture.Lot, fixture.Version(), 9000, 11000,
                 new DateOnly(2026, 10, 18), "Back room count", OperationGuard.NewId()), ct);
         surplusLot.ShouldNotBe(fixture.Lot);
         using (var db = fixture.Factory.Open())
         {
+            // A count's documents are numbered like any other, and a replay takes no new number.
+            db.ExecuteScalar<string>("SELECT doc_no FROM damage WHERE id=@damageId", new { damageId })
+                .ShouldBe("D2627-000001");
+            db.ExecuteScalar<string>("SELECT lot_code FROM product_lot WHERE id=@surplusLot", new { surplusLot })
+                .ShouldBe("L000001");
             db.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = fixture.Lot })
                 .ShouldBe(9000);
             db.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = surplusLot })
@@ -190,7 +193,7 @@ public sealed class DirectStockEngineTests
                 new { id = fixture.Product }).ShouldBe(11000);
         }
         await Should.ThrowAsync<DomainException>(async () => await fixture.Database.WriteAsync(tx =>
-            Engine.ReviewCountBatch(tx,
+            fixture.Engine.ReviewCountBatch(tx,
             [
                 new(fixture.Lot, fixture.Version(), 9000, 8000, new DateOnly(2026, 10, 18),
                     "Batch count", OperationGuard.NewId()),
@@ -204,7 +207,7 @@ public sealed class DirectStockEngineTests
             db.ExecuteScalar<long>("SELECT COUNT(*) FROM damage WHERE lot_id=@id", new { id = fixture.Lot })
                 .ShouldBe(1);
         }
-        await fixture.Database.WriteAsync(tx => Engine.CheckAll(tx).ShouldBeEmpty(), ct);
+        await fixture.Database.WriteAsync(tx => fixture.Engine.CheckAll(tx).ShouldBeEmpty(), ct);
     }
 
     [Fact]
@@ -218,11 +221,11 @@ public sealed class DirectStockEngineTests
             new GroceryErp.Core.Time.SystemClock(settings), settings);
         Task<BackupInfo> backupTask = Task.Run(() => backup.Create("manual", ct), ct);
         await fixture.Database.WriteAsync(tx =>
-            Engine.ReviewCount(tx, fixture.Lot, fixture.Version(), 10000, 9000,
+            fixture.Engine.ReviewCount(tx, fixture.Lot, fixture.Version(), 10000, 9000,
                 new DateOnly(2026, 10, 18), "Concurrent backup count", OperationGuard.NewId()), ct);
         BackupInfo created = await backupTask;
         BackupService.Verify(created.Path, ct).SchemaVersion.ShouldBe(MigrationRunner.LatestVersion);
-        await fixture.Database.WriteAsync(tx => Engine.CheckAll(tx).ShouldBeEmpty(), ct);
+        await fixture.Database.WriteAsync(tx => fixture.Engine.CheckAll(tx).ShouldBeEmpty(), ct);
     }
 
     [Fact]
@@ -264,7 +267,7 @@ public sealed class DirectStockEngineTests
             connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@lot",
                 new { lot = fixture.Lot }).ShouldBe(10000);
         }
-        await fixture.Database.WriteAsync(tx => Engine.CheckAll(tx).ShouldBeEmpty(), ct);
+        await fixture.Database.WriteAsync(tx => fixture.Engine.CheckAll(tx).ShouldBeEmpty(), ct);
     }
 
     private sealed class Fixture : IDisposable
@@ -274,6 +277,7 @@ public sealed class DirectStockEngineTests
         public SqliteConnectionFactory Factory { get; }
         public DbExecutor Database { get; }
         public AppPaths Paths { get; }
+        public DirectStockEngine Engine { get; }
         public long Product { get; }
         public long Lot { get; }
 
@@ -283,7 +287,9 @@ public sealed class DirectStockEngineTests
             Factory = new SqliteConnectionFactory(Paths);
             new MigrationRunner(Factory, NullMigrationBackup.Instance).Run();
             Database = new DbExecutor(Factory);
-            _ledger = new LotQuantities(new SettingsService(Database, Paths, new AuditLog()));
+            var settings = new SettingsService(Database, Paths, new AuditLog());
+            _ledger = new LotQuantities(settings);
+            Engine = new DirectStockEngine(new DocNumberService(settings));
             using var db = Factory.Open();
             long category = db.ExecuteScalar<long>("INSERT INTO category(name) VALUES ('Test') RETURNING id");
             long uom = db.ExecuteScalar<long>("SELECT id FROM uom WHERE code='PCS'");

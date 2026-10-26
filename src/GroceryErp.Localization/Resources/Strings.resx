@@ -141,6 +141,7 @@
   <data name="Startup_RestoreFailed" xml:space="preserve"><value>The restored database could not start safely. Undo the restore and put the previous database back?</value></data>
   <data name="Startup_Failed" xml:space="preserve"><value>Hare Krushna could not start. Details were written to the log.</value></data>
   <data name="Startup_MaintenanceFailed" xml:space="preserve"><value>A background safety check failed. Check the log and verify a backup before continuing.</value></data>
+  <data name="Startup_ShowLotDifferences" xml:space="preserve"><value>Show differences</value></data>
   <data name="Startup_PrintReview" xml:space="preserve"><value>Saved print jobs need review. Check the printed paper, then open Billing and press Ctrl+P to review each job before retrying.</value></data>
   <data name="Catalog_Navigation" xml:space="preserve"><value>Products</value></data>
   <data name="Catalog_Title" xml:space="preserve"><value>Products</value></data>
@@ -339,7 +340,7 @@
   <data name="Purchasing_CancelPurchase" xml:space="preserve"><value>Void purchase</value></data>
   <data name="Purchasing_ViewInvoice" xml:space="preserve"><value>View invoice</value></data>
   <data name="Purchasing_CancelConfirm" xml:space="preserve"><value>Cancel this purchase and reverse its untouched stock?</value></data>
-  <data name="Purchasing_CancelBlocked" xml:space="preserve"><value>This purchase has stock movements after receipt, so it cannot be cancelled. Use a stock adjustment for a correction; vendor returns are not yet available.</value></data>
+  <data name="Purchasing_CancelBlocked" xml:space="preserve"><value>Stock from this purchase was used, so it cannot be voided. Use a vendor return to send back what is left.</value></data>
   <data name="Stock_Source" xml:space="preserve"><value>Source</value></data>
   <data name="Stock_OpeningTemplate" xml:space="preserve"><value>Save opening template</value></data>
   <data name="Stock_TemplateSaved" xml:space="preserve"><value>Opening-stock template saved.</value></data>
@@ -957,7 +958,9 @@ Complete the missing historical details before receiving this return. The origin
   <data name="Error_EntryVoided" xml:space="preserve"><value>This entry is void and cannot be changed.</value></data>
   <data name="Error_EffectiveMonthClosed" xml:space="preserve"><value>A change can start no earlier than {0}, the first month whose calendar and fiscal years are both open.</value></data>
   <data name="Error_AssetTermsFinalized" xml:space="preserve"><value>Cost and in-use date are fixed because depreciation of a finalized year is posted. Rate, method and salvage can change from {0}.</value></data>
-  <data name="Error_DamageProductDeleted" xml:space="preserve"><value>The damaged product was deleted. Add the product again before restoring these units.</value></data>
+  <data name="Error_DamageProductDeleted" xml:space="preserve"><value>These units cannot be restored: the original product was not found or has been deleted.</value></data>
+  <data name="Error_VendorReturnProductDeleted" xml:space="preserve"><value>This return cannot be cancelled: the original product was not found or has been deleted.</value></data>
+  <data name="Error_LotsDifferFromDocuments" xml:space="preserve"><value>The weekly stock check found {0} lots whose quantity differs from their documents.</value></data>
   <data name="Reports_PnlScope" xml:space="preserve"><value>P&amp;L period type</value></data>
   <data name="Reports_PnlScope_Month" xml:space="preserve"><value>Month</value></data>
   <data name="Reports_PnlScope_CalendarYear" xml:space="preserve"><value>Calendar year</value></data>
@@ -1096,6 +1099,7 @@ Complete the missing historical details before receiving this return. The origin
   <data name="Bulk_Reason_NotExpired" xml:space="preserve"><value>No longer expired with stock</value></data>
   <data name="Bulk_Reason_NotPosted" xml:space="preserve"><value>Not a posted purchase</value></data>
   <data name="Bulk_Reason_PurchaseTouched" xml:space="preserve"><value>Stock from this purchase was used; only a partial return is possible</value></data>
+  <data name="Bulk_Reason_PurchasePeriodLocked" xml:space="preserve"><value>Received in a locked year; use a vendor return instead</value></data>
   <data name="Catalog_ActiveOnly" xml:space="preserve"><value>Active</value></data>
   <data name="Catalog_AllBrands" xml:space="preserve"><value>All brands</value></data>
   <data name="Catalog_AllCategories" xml:space="preserve"><value>All categories</value></data>

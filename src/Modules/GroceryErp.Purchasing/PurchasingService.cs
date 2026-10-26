@@ -380,7 +380,8 @@ public sealed partial class PurchasingService(
                 }, transaction.Transaction);
                 if (row.LineKind == "EXPENSE")
                 {
-                    long amount = (line.Unit.Booked * (Quantity.FromScaled(row.Quantity) + Quantity.FromScaled(row.FreeQuantity))).Scaled;
+                    // The line's exact amount: the rounded piece price times the pieces can lose paise.
+                    long amount = line.Booked.Scaled;
                     if (amount <= 0) throw new DomainException(ErrorCode.Validation, "Expense line amount must be positive.");
                     int expenseInserted = transaction.Connection.Execute("""
                         INSERT INTO expense(expense_date,category_id,amount,mode,paid_to,reference,notes,purchase_line_id)
@@ -477,6 +478,9 @@ public sealed partial class PurchasingService(
             if (header is null) throw new DomainException(ErrorCode.NotFound, "purchase", purchaseId);
             if (header.Status != "POSTED") throw new DomainException(ErrorCode.PurchaseFinalized, purchaseId);
             periods.EnsureOpen(transaction, cancellationDate);
+            // A void treats the purchase as a mistake and takes it out of its own date's reports,
+            // so that date must still be open; a locked year's purchase takes a vendor return.
+            periods.EnsureOpen(transaction, header.ReceivedDate);
             List<CancelLotRow> lots = VoidLots(transaction.Connection, purchaseId, transaction.Transaction);
             if (!IsUntouched(transaction.Connection, purchaseId, lots, transaction.Transaction))
                 throw new DomainException(ErrorCode.CancelNotAllowed, purchaseId);
@@ -842,6 +846,8 @@ public sealed partial class PurchasingService(
         return result;
     }
 
+    // The units go back into the lot they left. If that lot was deleted at zero, they start a new
+    // direct lot instead, which needs the product to still exist.
     public async Task CancelVendorReturnAsync(long returnId, DateOnly date, string reason,
         string operationId, CancellationToken cancellationToken = default)
     {
@@ -851,8 +857,8 @@ public sealed partial class PurchasingService(
         {
             OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.VendorReturnCancel);
             if (replay is not null) return;
-            var source = transaction.Connection.QuerySingleOrDefault<(long Id, DateOnly ReturnDate)>(
-                "SELECT id AS Id,return_date AS ReturnDate FROM vendor_return WHERE id=@returnId",
+            var source = transaction.Connection.QuerySingleOrDefault<(long Id, string DocumentNumber)>(
+                "SELECT id AS Id,doc_no AS DocumentNumber FROM vendor_return WHERE id=@returnId",
                 new { returnId }, transaction.Transaction);
             if (source.Id == 0) throw new DomainException(ErrorCode.NotFound, "vendor return", returnId);
             if (transaction.Connection.ExecuteScalar<long>(
@@ -863,26 +869,84 @@ public sealed partial class PurchasingService(
                 return;
             }
             periods.EnsureOpen(transaction, date);
-            var lines = transaction.Connection.Query<(long LotId, long ProductId, long Quantity, long UnitCost)>("""
-                SELECT lot_id AS LotId,product_id AS ProductId,qty AS Quantity,
-                       unit_cost_snapshot AS UnitCost
-                FROM vendor_return_line WHERE vendor_return_id=@returnId
+            var lines = transaction.Connection.Query<(long Id, long LotId, long ProductId, long Quantity, bool LotExists)>("""
+                SELECT vrl.id AS Id,vrl.lot_id AS LotId,vrl.product_id AS ProductId,vrl.qty AS Quantity,
+                       EXISTS(SELECT 1 FROM product_lot l WHERE l.id=vrl.lot_id AND l.product_id=vrl.product_id) AS LotExists
+                FROM vendor_return_line vrl WHERE vrl.vendor_return_id=@returnId
                 """, new { returnId }, transaction.Transaction).ToList();
+            var restoredLots = new List<long>();
             foreach (var line in lines)
             {
-                stock.Change(transaction, new(date, line.ProductId, line.LotId, LotChangeKind.VendorReturnCancel,
-                    Quantity.FromScaled(line.Quantity)));
+                if (line.LotExists)
+                    stock.Change(transaction, new(date, line.ProductId, line.LotId, LotChangeKind.VendorReturnCancel,
+                        Quantity.FromScaled(line.Quantity)));
+                else
+                    restoredLots.Add(RecreateReturnedLot(transaction, line.Id, date,
+                        $"Vendor return {source.DocumentNumber} cancelled: {cleanReason}"));
                 changedProducts.Add(line.ProductId);
             }
             transaction.Connection.Execute("""
                 INSERT INTO vendor_return_cancellation(vendor_return_id,operation_id,cancellation_date,reason)
                 VALUES (@returnId,@operationId,@date,@cleanReason)
                 """, new { returnId, operationId, date = Format(date), cleanReason }, transaction.Transaction);
-            audit.Write(transaction, "vendor_return", returnId, "CANCEL", new { cleanReason });
+            audit.Write(transaction, "vendor_return", returnId, "CANCEL", new { cleanReason, restoredLots });
             OperationGuard.Complete(transaction, operationId, "vendor_return", returnId);
         }, cancellationToken);
         if (changedProducts.Count > 0)
             WeakReferenceMessenger.Default.Send(new StockChangedMessage(changedProducts.ToArray()));
+    }
+
+    // A new lot carries what the return took out: its unit cost, batch and expiry. The purchase line
+    // gives the tax, mfg date and prices; it gives the tax per piece only when its cost is the same
+    // (a line saved before tax snapshots derives it from that cost and the line's rate).
+    private long RecreateReturnedLot(DbTx transaction, long returnLineId, DateOnly date, string reason)
+    {
+        ReturnedLotRow lot = transaction.Connection.QuerySingleOrDefault<ReturnedLotRow>("""
+            SELECT p.id AS ProductId,vr.vendor_id AS VendorId,vrl.qty AS Quantity,
+                   COALESCE(vrl.unit_cost_snapshot,pl.landed_unit_cost) AS UnitCost,
+                   vrl.batch_no_snapshot AS BatchNumber,pl.mfg_date AS ManufacturingDate,
+                   vrl.expiry_date_snapshot AS ExpiryDate,pl.selling_price AS SellingPrice,pl.mrp AS Mrp,
+                   pl.tax_rate_id AS TaxRateId,pl.tax_label_snapshot AS TaxLabel,pl.tax_rate_pct AS TaxRatePct,
+                   pl.landed_unit_cost AS LineUnitCost,pl.landed_unit_tax AS LineUnitTax,
+                   pl.landed_unit_cost_incl_tax AS LineUnitCostInclTax
+            FROM vendor_return_line vrl JOIN vendor_return vr ON vr.id=vrl.vendor_return_id
+            JOIN purchase_line pl ON pl.id=vrl.purchase_line_id_snapshot
+            LEFT JOIN product p ON p.id=vrl.product_id
+            WHERE vrl.id=@returnLineId
+            """, new { returnLineId }, transaction.Transaction)
+            ?? throw new DomainException(ErrorCode.NotFound, "vendor return line", returnLineId);
+        if (lot.ProductId is not { } productId) throw new DomainException(ErrorCode.VendorReturnProductDeleted);
+        var rate = new TaxRateSnapshot(lot.TaxRateId, lot.TaxLabel, Percent.FromScaled(lot.TaxRatePct));
+        LotTax tax = lot.LineUnitCost == lot.UnitCost && lot.LineUnitTax is { } unitTax &&
+            lot.LineUnitCostInclTax is { } inclTax
+            ? new LotTax(rate, new PurchaseUnitCost(Money.FromScaled(inclTax - unitTax), Money.FromScaled(unitTax),
+                Money.FromScaled(inclTax), Money.FromScaled(lot.UnitCost)))
+            : LotTaxes.FromBooked(transaction, rate, Money.FromScaled(lot.UnitCost));
+        long lotId = transaction.Connection.ExecuteScalar<long>("""
+            INSERT INTO product_lot(product_id,lot_code,batch_no,vendor_id,received_date,mfg_date,expiry_date,
+                unit_cost,mrp,selling_price,qty_received,direct_reason,
+                tax_rate_id_snapshot,tax_label_snapshot,tax_rate_pct_snapshot,unit_tax,unit_cost_incl_tax)
+            VALUES (@productId,@lotCode,@BatchNumber,@VendorId,@date,@ManufacturingDate,@ExpiryDate,
+                @UnitCost,@Mrp,@SellingPrice,@Quantity,@reason,
+                @taxRateId,@taxLabel,@taxRatePct,@unitTax,@unitCostInclTax)
+            RETURNING id
+            """, tax.AddTo(new DynamicParameters(new
+        {
+            productId,
+            lotCode = numbers.Next(transaction, DocType.Lot, date),
+            lot.BatchNumber,
+            lot.VendorId,
+            date = Format(date),
+            lot.ManufacturingDate,
+            lot.ExpiryDate,
+            lot.UnitCost,
+            lot.Mrp,
+            lot.SellingPrice,
+            lot.Quantity,
+            reason,
+        })), transaction.Transaction);
+        stock.Change(transaction, new(date, productId, lotId, LotChangeKind.DirectEntry, Quantity.FromScaled(lot.Quantity)));
+        return lotId;
     }
 
     public async Task<long> ConsumeInternalAsync(long lotId, Quantity quantity, DateOnly date,
@@ -1108,10 +1172,10 @@ public sealed partial class PurchasingService(
         }
     }
 
-    // One line as saved: its before-tax figures, its rate, tax on the goods and its per-piece prices
-    // with its share of other charges.
+    // One line as saved: its before-tax figures, its rate, tax on the goods, its per-piece prices
+    // with its share of other charges, and the exact amount the whole line books.
     private sealed record PricedPurchaseLine(PurchaseLineInput Line, TaxRateSnapshot Rate, Money Taxable,
-        Money Tax, PurchaseUnitCost Unit);
+        Money Tax, PurchaseUnitCost Unit, Money Booked);
 
     private PricedPurchaseLine[] PriceLines(List<(PurchaseLineInput Line, TaxRateSnapshot Rate)> lines,
         Money otherCharges)
@@ -1126,10 +1190,10 @@ public sealed partial class PurchasingService(
             taxes[index] = Tax.FromExclusive(taxable[index], lines[index].Rate.Rate).Tax;
             costLines.Add(new(line.Quantity, line.FreeQuantity, line.Rate, line.Discount, taxes[index]));
         }
-        IReadOnlyList<PurchaseUnitCost> units = LandedCost.Compute(costLines, otherCharges,
+        IReadOnlyList<PurchaseLineCost> costs = LandedCost.ComputeLines(costLines, otherCharges,
             !string.Equals(settings.Current.TaxMode, "REGULAR", StringComparison.Ordinal));
         return lines.Select((line, index) => new PricedPurchaseLine(line.Line, line.Rate, taxable[index],
-            taxes[index], units[index])).ToArray();
+            taxes[index], costs[index].Unit, costs[index].Booked)).ToArray();
     }
 
     // A line saved before it had a tax rate takes the only active rate with its percent; otherwise
@@ -1303,6 +1367,24 @@ public sealed partial class PurchasingService(
             Money.FromScaled(OriginalBeforeTax), Money.FromScaled(OriginalTax),
             Money.FromScaled(CreditedBeforeTax), Money.FromScaled(CreditedTax),
             Money.FromScaled(UnitCost), AllowFraction, Quantity.FromScaled(Returned));
+    }
+    private sealed class ReturnedLotRow
+    {
+        public long? ProductId { get; init; }
+        public long VendorId { get; init; }
+        public long Quantity { get; init; }
+        public long UnitCost { get; init; }
+        public string? BatchNumber { get; init; }
+        public string? ManufacturingDate { get; init; }
+        public string? ExpiryDate { get; init; }
+        public long SellingPrice { get; init; }
+        public long? Mrp { get; init; }
+        public long? TaxRateId { get; init; }
+        public string? TaxLabel { get; init; }
+        public long TaxRatePct { get; init; }
+        public long LineUnitCost { get; init; }
+        public long? LineUnitTax { get; init; }
+        public long? LineUnitCostInclTax { get; init; }
     }
     private sealed class VendorReturnPostedRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public long CreditTotal { get; init; } public long CostTotal { get; init; } }
     private sealed class VendorReturnHistoryRow { public long Id { get; init; } public string DocumentNumber { get; init; } = ""; public DateOnly Date { get; init; } public long CreditTotal { get; init; } public long CostTotal { get; init; } public DateOnly? CancellationDate { get; init; } public VendorReturnHistoryItem ToModel() => new(Id, DocumentNumber, Date, Money.FromScaled(CreditTotal), Money.FromScaled(CostTotal), CancellationDate is not null, CancellationDate); }

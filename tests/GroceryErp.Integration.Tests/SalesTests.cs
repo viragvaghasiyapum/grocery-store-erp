@@ -6,6 +6,7 @@ using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
+using GroceryErp.Expenses;
 using GroceryErp.Inventory;
 using GroceryErp.Inventory.Contracts;
 using GroceryErp.Reports;
@@ -366,7 +367,7 @@ public sealed class SalesTests
         (await fixture.Sales.GetHistoryActivityAsync(saleId, ct)).Returns.Single()
             .DispositionCode.ShouldBe("RETURN_DAMAGED");
         await fixture.Database.WriteAsync(tx =>
-            new DirectStockEngine().CheckAll(tx).ToArray().ShouldBeEmpty(), ct);
+            LotSourceReconciliation.CheckAll(tx.Connection, tx.Transaction).ToArray().ShouldBeEmpty(), ct);
     }
 
     [Theory]
@@ -475,7 +476,7 @@ public sealed class SalesTests
         })
             .ShouldBe(0L);
         await fixture.Database.WriteAsync(tx =>
-            new DirectStockEngine().CheckAll(tx).ToArray().ShouldBeEmpty(), ct);
+            LotSourceReconciliation.CheckAll(tx.Connection, tx.Transaction).ToArray().ShouldBeEmpty(), ct);
     }
 
     [Fact]
@@ -605,7 +606,7 @@ public sealed class SalesTests
                 SELECT amount FROM v_pnl_entry WHERE head_code='STOCK_ADJUSTMENT'
                 """).ShouldBe(-70000L);
         }
-        await fixture.Database.WriteAsync(tx => new DirectStockEngine().CheckAll(tx)
+        await fixture.Database.WriteAsync(tx => LotSourceReconciliation.CheckAll(tx.Connection, tx.Transaction)
             .ToArray().ShouldBeEmpty(), ct);
     }
 
@@ -694,7 +695,7 @@ public sealed class SalesTests
         (await fixture.Sales.GetReceiptAsync(saleId, duplicate: true, cancellationToken: ct))
             .GrandTotal.ShouldBe(draft.Totals.GrandTotal);
         await fixture.Database.WriteAsync(tx =>
-            new DirectStockEngine().CheckAll(tx).ToArray().ShouldBeEmpty(), ct);
+            LotSourceReconciliation.CheckAll(tx.Connection, tx.Transaction).ToArray().ShouldBeEmpty(), ct);
     }
 
     [Fact]
@@ -755,6 +756,52 @@ public sealed class SalesTests
         returnable.Single().Remaining.ShouldBe(Quantity.One);
         summary = await fixture.Sales.GetDayEndAsync(fixture.Clock.BusinessDate, ct);
         summary.CashExpected.ShouldBe(new Money(118));
+    }
+
+    [Fact]
+    public async Task DayEnd_CountsEachCashExpenseAtItsCurrentValues()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        var moneyOut = new MoneyOutService(fixture.Database, new LotQuantities(fixture.Settings),
+            new DocNumberService(fixture.Settings), new PeriodGuard(fixture.Settings, fixture.Clock), new AuditLog());
+        DateOnly today = fixture.Clock.BusinessDate;
+        DateOnly yesterday = today.AddDays(-1);
+        long category = (await moneyOut.GetExpenseCategoriesAsync(cancellationToken: ct))[0].Id;
+        async Task<ExpenseItem> Record(DateOnly date, decimal amount, string mode)
+        {
+            long id = await moneyOut.RecordExpenseAsync(new(date, category, new Money(amount), mode, null, null, null),
+                OperationGuard.NewId(), ct);
+            return (await moneyOut.GetExpensesAsync(date, date, ct)).Single(item => item.Id == id);
+        }
+        Task Correct(ExpenseItem item, ExpenseInput replacement) =>
+            moneyOut.CorrectExpenseAsync(item, replacement, "Entered wrongly", OperationGuard.NewId(), ct);
+        ExpenseInput Same(ExpenseItem item) => new(item.Date, item.CategoryId, item.Amount, item.Mode, null, null, null);
+
+        long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, new Quantity(2), cancellationToken: ct);
+        await fixture.Sales.CompleteAsync(new(saleId, [new(PaymentMode.Cash, new Money(250))], OperationGuard.NewId()), ct);
+        await moneyOut.VoidExpenseAsync(await Record(today, 100, "CASH"), "Duplicate", OperationGuard.NewId(), ct);
+        ExpenseItem lowered = await Record(today, 200, "CASH");
+        await Correct(lowered, Same(lowered) with { Amount = new Money(150) });
+        ExpenseItem paidByUpi = await Record(today, 50, "CASH");
+        await Correct(paidByUpi, Same(paidByUpi) with { Mode = "UPI" });
+        ExpenseItem paidInCash = await Record(today, 70, "UPI");
+        await Correct(paidInCash, Same(paidInCash) with { Mode = "CASH" });
+        ExpenseItem movedAway = await Record(today, 30, "CASH");
+        await Correct(movedAway, Same(movedAway) with { Date = yesterday });
+        ExpenseItem movedHere = await Record(yesterday, 25, "CASH");
+        await Correct(movedHere, Same(movedHere) with { Date = today });
+        ExpenseItem twice = await Record(today, 40, "CASH");
+        await Correct(twice, Same(twice) with { Amount = new Money(45) });
+        twice = (await moneyOut.GetExpensesAsync(today, today, ct)).Single(item => item.Id == twice.Id);
+        await Correct(twice, Same(twice) with { Amount = new Money(35) });
+        await Record(today, 10, "CASH");
+
+        // 150 lowered + 70 paid in cash + 25 moved here + 35 after two edits + 10 untouched.
+        DayEndSummary summary = await fixture.Sales.GetDayEndAsync(today, ct);
+        summary.CashExpenses.ShouldBe(new Money(290));
+        summary.CashExpected.ShouldBe(new Money(236 - 290));
+        (await fixture.Sales.GetDayEndAsync(yesterday, ct)).CashExpenses.ShouldBe(new Money(30));
     }
 
     [Fact]
@@ -878,6 +925,52 @@ public sealed class SalesTests
 
         await fixture.Sales.ResumeReviewedAsync(await fixture.Sales.GetHeldBillReviewAsync(saleId, ct), ct);
         (await fixture.Sales.GetAsync(saleId, ct)).Lines.Single().UnitPrice.ShouldBe(new Money(110));
+    }
+
+    [Fact]
+    public async Task HeldBill_CompletedOnALaterDay_IsDatedNumberedAndCountedOnThatDay()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        // Held on the fiscal year's last day and completed on the next, so the number shows the series.
+        SalesService started = fixture.ServiceAt(new DateTime(2027, 3, 31, 21, 0, 0));
+        SalesService nextDay = fixture.ServiceAt(new DateTime(2027, 4, 1, 9, 0, 0));
+        long saleId = await started.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
+        await started.HoldAsync(saleId, "Pickup", ct);
+
+        await nextDay.ResumeAsync(saleId, ct);
+        (await nextDay.GetAsync(saleId, ct)).SaleDate.ShouldBe(new DateOnly(2027, 4, 1));
+        CompletedSale completed = await nextDay.CompleteAsync(new(saleId,
+            [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+
+        completed.InvoiceNumber.ShouldBe("S2728-000001");
+        (await nextDay.GetAsync(saleId, ct)).SaleDate.ShouldBe(new DateOnly(2027, 4, 1));
+        (await nextDay.GetDayEndAsync(new DateOnly(2027, 4, 1), ct)).BillCount.ShouldBe(1);
+        (await nextDay.GetDayEndAsync(new DateOnly(2027, 3, 31), ct)).BillCount.ShouldBe(0);
+        using var connection = fixture.Factory.Open();
+        connection.Query<string>("SELECT day FROM pnl_day WHERE bills>0").ShouldBe(["2027-04-01"]);
+        connection.Query<string>("SELECT day FROM sale_report_day").Distinct().ShouldBe(["2027-04-01"]);
+        await nextDay.VoidAsync(saleId, "Wrong item", OperationGuard.NewId(), ct);
+    }
+
+    [Fact]
+    public async Task HeldOrOpenBill_FromBeforeAYearLock_CompletesOnTheOpenBusinessDate()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        SalesService started = fixture.ServiceAt(new DateTime(2026, 12, 31, 20, 0, 0));
+        SalesService locked = fixture.ServiceAt(new DateTime(2027, 1, 9, 10, 0, 0));
+        long heldId = await started.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
+        await started.HoldAsync(heldId, "Pickup", ct);
+        long openId = await started.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
+
+        await locked.ResumeAsync(heldId, ct);
+        await locked.CompleteAsync(new(heldId, [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+        await locked.CompleteAsync(new(openId, [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+
+        (await locked.GetAsync(heldId, ct)).SaleDate.ShouldBe(new DateOnly(2027, 1, 9));
+        (await locked.GetAsync(openId, ct)).SaleDate.ShouldBe(new DateOnly(2027, 1, 9));
+        (await locked.GetDayEndAsync(new DateOnly(2027, 1, 9), ct)).BillCount.ShouldBe(2);
     }
 
     [Fact]

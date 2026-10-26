@@ -141,6 +141,7 @@
   <data name="Startup_RestoreFailed" xml:space="preserve"><value>પુનઃસ્થાપિત ડેટાબેઝ સુરક્ષિત રીતે શરૂ થઈ શક્યો નથી. પુનઃસ્થાપન રદ કરીને અગાઉનો ડેટાબેઝ પાછો મૂકવો છે?</value><comment>MT - needs review</comment></data>
   <data name="Startup_Failed" xml:space="preserve"><value>ગ્રોસરી ERP શરૂ થઈ શક્યું નથી. વિગતો લૉગમાં લખવામાં આવી છે.</value><comment>MT - needs review</comment></data>
   <data name="Startup_MaintenanceFailed" xml:space="preserve"><value>પાછળ ચાલી રહેલી સુરક્ષા તપાસ નિષ્ફળ ગઈ. આગળ વધતા પહેલાં લૉગ તપાસો અને બેકઅપ ચકાસો.</value><comment>MT - needs review</comment></data>
+  <data name="Startup_ShowLotDifferences" xml:space="preserve"><value>તફાવત બતાવો</value><comment>MT – needs review</comment></data>
   <data name="Startup_PrintReview" xml:space="preserve"><value>સાચવેલાં પ્રિન્ટ કામ તપાસવા જરૂરી છે. છપાયેલું કાગળ તપાસો, પછી બિલિંગ ખોલી દરેક કામ ફરી છાપતા પહેલાં તેની સમીક્ષા કરવા Ctrl+P દબાવો.</value><comment>MT - needs review</comment></data>
   <data name="Catalog_Navigation" xml:space="preserve"><value>ઉત્પાદનો</value><comment>MT - needs review</comment></data>
   <data name="Catalog_Title" xml:space="preserve"><value>ઉત્પાદનો</value><comment>MT - needs review</comment></data>
@@ -339,7 +340,7 @@
   <data name="Purchasing_CancelPurchase" xml:space="preserve"><value>ખરીદી રદ કરો</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_ViewInvoice" xml:space="preserve"><value>ઇન્વૉઇસ જુઓ</value></data>
   <data name="Purchasing_CancelConfirm" xml:space="preserve"><value>આ ખરીદી રદ કરીને બાકી રહેલો અસ્પર્શિત સ્ટોક પાછો ફેરવવો છે?</value><comment>MT - needs review</comment></data>
-  <data name="Purchasing_CancelBlocked" xml:space="preserve"><value>આ ખરીદી પછી સ્ટોકમાં હિલચાલ થઈ છે, તેથી તેને રદ કરી શકાતી નથી. સુધારા માટે સ્ટોક એડજસ્ટમેન્ટ વાપરો; વિક્રેતાને પરત કરવાની સુવિધા હજુ ઉપલબ્ધ નથી.</value><comment>MT - needs review</comment></data>
+  <data name="Purchasing_CancelBlocked" xml:space="preserve"><value>આ ખરીદીનો સ્ટોક વપરાયો છે, તેથી તે રદ થઈ શકતી નથી. બાકી રહેલો માલ પાછો મોકલવા વિક્રેતાને પરત વાપરો.</value><comment>MT – needs review</comment></data>
   <data name="Stock_Source" xml:space="preserve"><value>સ્ત્રોત</value><comment>MT - needs review</comment></data>
   <data name="Stock_OpeningTemplate" xml:space="preserve"><value>શરૂઆતનું નમૂનું સાચવો</value><comment>MT - needs review</comment></data>
   <data name="Stock_TemplateSaved" xml:space="preserve"><value>શરૂઆતના સ્ટોકનું નમૂનું સાચવ્યું.</value><comment>MT - needs review</comment></data>
@@ -957,7 +958,9 @@
   <data name="Error_EntryVoided" xml:space="preserve"><value>આ નોંધ રદ થયેલી છે અને બદલી શકાતી નથી.</value><comment>MT - needs review</comment></data>
   <data name="Error_EffectiveMonthClosed" xml:space="preserve"><value>ફેરફાર {0} પહેલાં શરૂ થઈ શકે નહીં; તે પહેલો મહિનો છે જેનું કેલેન્ડર અને નાણાકીય બંને વર્ષ ખુલ્લા છે.</value><comment>MT - needs review</comment></data>
   <data name="Error_AssetTermsFinalized" xml:space="preserve"><value>અંતિમ થયેલા વર્ષનો ઘસારો પોસ્ટ થયો હોવાથી કિંમત અને ઉપયોગ શરૂ તારીખ બદલી શકાતી નથી. દર, પદ્ધતિ અને ભંગાર મૂલ્ય {0} થી બદલી શકાય.</value><comment>MT - needs review</comment></data>
-  <data name="Error_DamageProductDeleted" xml:space="preserve"><value>નુકસાન થયેલી પ્રોડક્ટ કાઢી નાખવામાં આવી છે. આ એકમો પાછા ઉમેરતાં પહેલાં પ્રોડક્ટ ફરી ઉમેરો.</value><comment>MT - needs review</comment></data>
+  <data name="Error_DamageProductDeleted" xml:space="preserve"><value>આ એકમો પાછા ઉમેરી શકાતા નથી: મૂળ પ્રોડક્ટ મળી નથી અથવા કાઢી નાખવામાં આવી છે.</value><comment>MT – needs review</comment></data>
+  <data name="Error_VendorReturnProductDeleted" xml:space="preserve"><value>આ પરત રદ કરી શકાતું નથી: મૂળ પ્રોડક્ટ મળી નથી અથવા કાઢી નાખવામાં આવી છે.</value><comment>MT – needs review</comment></data>
+  <data name="Error_LotsDifferFromDocuments" xml:space="preserve"><value>સાપ્તાહિક સ્ટોક તપાસમાં {0} બેચ મળી જેનો જથ્થો તેના દસ્તાવેજોથી અલગ છે.</value><comment>MT – needs review</comment></data>
   <data name="Reports_PnlScope" xml:space="preserve"><value>નફો-નુકસાન સમયગાળાનો પ્રકાર</value><comment>MT - needs review</comment></data>
   <data name="Reports_PnlScope_Month" xml:space="preserve"><value>મહિનો</value><comment>MT - needs review</comment></data>
   <data name="Reports_PnlScope_CalendarYear" xml:space="preserve"><value>કેલેન્ડર વર્ષ</value><comment>MT - needs review</comment></data>
@@ -1096,6 +1099,7 @@
   <data name="Bulk_Reason_NotExpired" xml:space="preserve"><value>હવે સ્ટોક સાથે સમાપ્ત નથી</value><comment>MT - needs review</comment></data>
   <data name="Bulk_Reason_NotPosted" xml:space="preserve"><value>નોંધાયેલી ખરીદી નથી</value><comment>MT - needs review</comment></data>
   <data name="Bulk_Reason_PurchaseTouched" xml:space="preserve"><value>આ ખરીદીનો સ્ટોક વપરાયો છે; ફક્ત આંશિક પરત શક્ય છે</value><comment>MT - needs review</comment></data>
+  <data name="Bulk_Reason_PurchasePeriodLocked" xml:space="preserve"><value>લોક થયેલા વર્ષમાં મળેલી ખરીદી; તેના બદલે વિક્રેતાને પરત વાપરો</value><comment>MT – needs review</comment></data>
   <data name="Catalog_ActiveOnly" xml:space="preserve"><value>સક્રિય</value><comment>MT - needs review</comment></data>
   <data name="Catalog_AllBrands" xml:space="preserve"><value>બધી બ્રાન્ડ</value><comment>MT - needs review</comment></data>
   <data name="Catalog_AllCategories" xml:space="preserve"><value>બધી શ્રેણીઓ</value><comment>MT - needs review</comment></data>

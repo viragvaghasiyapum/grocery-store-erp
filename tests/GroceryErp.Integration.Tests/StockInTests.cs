@@ -8,6 +8,7 @@ using GroceryErp.Data.Services;
 using GroceryErp.Inventory;
 using GroceryErp.Inventory.Contracts;
 using GroceryErp.Purchasing;
+using GroceryErp.Reports;
 using GroceryErp.Sales;
 using Shouldly;
 using Xunit;
@@ -51,7 +52,7 @@ public sealed class StockInTests
             db.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id",
                 new { id = posted.LotIds.Single() }).ShouldBe(11000L);
         }
-        await fixture.Database.WriteAsync(tx => new DirectStockEngine().CheckAll(tx)
+        await fixture.Database.WriteAsync(tx => LotSourceReconciliation.CheckAll(tx.Connection, tx.Transaction)
             .ToArray().ShouldBeEmpty(), ct);
     }
 
@@ -141,6 +142,44 @@ public sealed class StockInTests
     }
 
     [Fact]
+    public async Task PurchaseExpenseLine_BooksTheLineAmountNotTheRoundedPiecePrice()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long category;
+        using (var db = fixture.Factory.Open())
+            category = db.ExecuteScalar<long>("INSERT INTO expense_category(name) VALUES ('Packing') RETURNING id");
+        // 1,000 at 1.000 less 0.001 is 999.999, and the other charges add 0.455. One piece rounds to 1.000.
+        PurchaseLineInput line = fixture.Purchase().Lines.Single() with
+        {
+            Quantity = new Quantity(1000),
+            FreeQuantity = Quantity.Zero,
+            Rate = new Money(1),
+            Discount = new Money(0.001m),
+            TaxRateId = fixture.ZeroTaxRateId,
+            LineKind = "EXPENSE",
+            ExpenseCategoryId = category,
+        };
+        PurchaseDraftInput bill = fixture.Purchase() with { VendorBillTotal = null, OtherCharges = new Money(0.455m) };
+        long regular = await fixture.Purchasing.SaveDraftAsync(null,
+            bill with { VendorInvoiceNumber = "EXP-EXACT", Lines = [line] }, ct);
+        await fixture.Purchasing.PostAsync(regular, OperationGuard.NewId(), ct);
+        // Without input credit the tax is cost too: 5% of 999.999 is 50.000.
+        await fixture.Settings.SaveAsync(new Dictionary<string, string> { ["tax.mode"] = "COMPOSITION" }, ct);
+        long composition = await fixture.Purchasing.SaveDraftAsync(null,
+            bill with { VendorInvoiceNumber = "EXP-EXACT-TAX", Lines = [line with { TaxRateId = fixture.TaxRateId }] }, ct);
+        await fixture.Purchasing.PostAsync(composition, OperationGuard.NewId(), ct);
+
+        using var verify = fixture.Factory.Open();
+        verify.Query<long>("""
+            SELECT e.amount FROM expense e JOIN purchase_line pl ON pl.id=e.purchase_line_id ORDER BY pl.purchase_id
+            """).ShouldBe([1_000_454L, 1_050_454L]);
+        await fixture.Purchasing.CancelAsync(regular, fixture.Date, OperationGuard.NewId(), ct);
+        verify.ExecuteScalar<long>("SELECT amount FROM purchase_expense_reversal WHERE purchase_id=@regular",
+            new { regular }).ShouldBe(1_000_454L);
+    }
+
+    [Fact]
     public async Task VendorReturnCancellation_RestoresLotAndBalanceOnce()
     {
         using var fixture = new StockInFixture();
@@ -163,6 +202,183 @@ public sealed class StockInTests
         LotSourceReconciliation.CheckLot(db, null, purchase.LotIds[0]).ShouldBeNull();
         db.ExecuteScalar<long>("SELECT COALESCE(SUM(amount),0) FROM v_pnl_entry WHERE head_code='VENDOR_RETURN_VARIANCE'").ShouldBe(0);
         (await fixture.Purchasing.GetVendorReturnLotsAsync(purchaseId, ct)).Single().AlreadyReturned.ShouldBe(Quantity.Zero);
+    }
+
+    [Fact]
+    public async Task GstSummary_NetsVendorReturnsAgainstCancellations_AndKeepsThemAfterTheLotIsDeleted()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        var reports = new ReportService(fixture.Database, fixture.Settings, new FixedClock(fixture.Date));
+        long purchaseId = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("GST-RET"), ct);
+        long lotId = (await fixture.Purchasing.PostAsync(purchaseId, OperationGuard.NewId(), ct)).LotIds.Single();
+        var october = new DateOnly(2026, 10, 2);
+
+        // Cancelled in the month it was made, a return leaves only the purchase: 10 × 250 at 5%.
+        PostedVendorReturn sameMonth = await ReturnAsync("GST-CN-1", Quantity.One, 200, 10);
+        await fixture.Purchasing.CancelVendorReturnAsync(sameMonth.Id, fixture.Date, "Credit refused",
+            OperationGuard.NewId(), ct);
+        (await InwardAsync(fixture.Date)).ShouldBe((2_500_000L, 125_000L));
+
+        // Cancelled the next month, it stays in September and is added back in October.
+        PostedVendorReturn nextMonth = await ReturnAsync("GST-CN-2", Quantity.One, 200, 10);
+        await fixture.Purchasing.CancelVendorReturnAsync(nextMonth.Id, october, "Credit refused",
+            OperationGuard.NewId(), ct);
+        (await InwardAsync(fixture.Date)).ShouldBe((2_300_000L, 115_000L));
+        (await InwardAsync(october)).ShouldBe((200_000L, 10_000L));
+
+        // A full return leaves the lot at zero; deleting the lot keeps the return in the summary.
+        await ReturnAsync("GST-CN-3", new Quantity(11), 400, 20);
+        await fixture.DeleteZeroLotAsync(lotId, ct);
+        (await InwardAsync(fixture.Date)).ShouldBe((1_900_000L, 95_000L));
+
+        Task<PostedVendorReturn> ReturnAsync(string credit, Quantity quantity, decimal beforeTax, decimal tax) =>
+            fixture.Purchasing.PostVendorReturnAsync(new(purchaseId, fixture.Date, credit, "Surplus",
+                [new(lotId, quantity, new Money(beforeTax), new Money(tax))]), OperationGuard.NewId(), ct);
+
+        async Task<(long Taxable, long Tax)> InwardAsync(DateOnly day)
+        {
+            var month = new DateOnly(day.Year, day.Month, 1);
+            TabularReport report = await reports.GetReportAsync(ReportKind.GstSummary,
+                new(From: month, To: month.AddMonths(1).AddDays(-1)), ct);
+            ReportRow inward = report.Rows.Single(row => (string)row.Values["Direction"]! == "INWARD");
+            inward.Values["Hsn"].ShouldBe("24ABCDE1234F1Z5");
+            return ((long)inward.Values["Taxable"]!, (long)inward.Values["Tax"]!);
+        }
+    }
+
+    // Owner ruling, 26 Oct 2026: a void means the purchase was entered by mistake, so it leaves
+    // every period's GST summary; goods sent back are a vendor return, dated on its own date.
+    [Fact]
+    public async Task GstSummary_LeavesOutAVoidedPurchase_EvenInTheMonthItWasReceived()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        var reports = new ReportService(fixture.Database, fixture.Settings, new FixedClock(fixture.Date));
+        long kept = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("GST-KEPT"), ct);
+        await fixture.Purchasing.PostAsync(kept, OperationGuard.NewId(), ct);
+        long voided = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("GST-VOID"), ct);
+        await fixture.Purchasing.PostAsync(voided, OperationGuard.NewId(), ct);
+
+        await fixture.Purchasing.CancelAsync(voided, new DateOnly(2026, 10, 2), OperationGuard.NewId(), ct);
+
+        foreach (DateOnly month in new[] { new DateOnly(2026, 9, 1), new DateOnly(2026, 10, 1) })
+        {
+            TabularReport report = await reports.GetReportAsync(ReportKind.GstSummary,
+                new(From: month, To: month.AddMonths(1).AddDays(-1)), ct);
+            ReportRow[] inward = report.Rows.Where(row => (string)row.Values["Direction"]! == "INWARD").ToArray();
+            if (month.Month == 9)
+                inward.Single().Values["Tax"].ShouldBe(125_000L);
+            else
+                inward.ShouldBeEmpty();
+        }
+    }
+
+    // Like a sale void, a purchase void erases the purchase from its own date, so that date must
+    // still be open. A purchase from a locked year is corrected with a dated vendor return instead.
+    [Fact]
+    public async Task PurchaseVoid_IsRefusedWhenThePurchaseIsInALockedYear_AndAVendorReturnStillWorks()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long purchaseId = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("LOCKED-VOID"), ct);
+        long lotId = (await fixture.Purchasing.PostAsync(purchaseId, OperationGuard.NewId(), ct)).LotIds.Single();
+        // On 10 April 2027 both years holding 26 September 2026 are locked: CY 2026 and FY 2026-27.
+        var today = new DateOnly(2027, 4, 10);
+        var later = new PurchasingService(fixture.Database, fixture.Ledger, new DocNumberService(fixture.Settings),
+            new PeriodGuard(fixture.Settings, new FixedClock(today)), fixture.Settings, new AuditLog());
+
+        PurchasingBulkRow preview = (await later.PreviewVoidAsync([purchaseId], ct)).Single();
+        preview.Eligible.ShouldBeFalse();
+        preview.ReasonKey.ShouldBe("Bulk_Reason_PurchasePeriodLocked");
+        (await Should.ThrowAsync<DomainException>(() => later.CancelAsync(purchaseId, today, OperationGuard.NewId(), ct)))
+            .Code.ShouldBe(ErrorCode.PeriodLocked);
+        (await later.RunVoidBatchAsync([purchaseId], today, BulkBatch.OperationId(OperationGuard.NewId(), 0), ct))
+            .ShouldBe([new BulkItemResult(purchaseId, BulkItemOutcome.NotEligible, "Bulk_Reason_PurchasePeriodLocked")]);
+
+        await later.PostVendorReturnAsync(new(purchaseId, today, "LOCKED-CN", "Entered twice",
+            [new(lotId, new Quantity(11), new Money(2500), new Money(125))]), OperationGuard.NewId(), ct);
+        using var db = fixture.Factory.Open();
+        db.ExecuteScalar<string>("SELECT status FROM purchase WHERE id=@purchaseId", new { purchaseId }).ShouldBe("POSTED");
+        db.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@lotId", new { lotId }).ShouldBe(0L);
+    }
+
+    [Fact]
+    public async Task VendorReturnCancellation_AfterItsLotWasDeleted_RestoresTheUnitsInANewLot()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long purchaseId = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("PH3-GONE"), ct);
+        long lotId = (await fixture.Purchasing.PostAsync(purchaseId, OperationGuard.NewId(), ct)).LotIds.Single();
+        PostedVendorReturn returned = await fixture.Purchasing.PostVendorReturnAsync(new(purchaseId, fixture.Date,
+            "PH3-CN-ALL", "Recalled", [new(lotId, new Quantity(11), new Money(400), new Money(20))]),
+            OperationGuard.NewId(), ct);
+        await fixture.DeleteZeroLotAsync(lotId, ct);
+
+        string operation = OperationGuard.NewId();
+        await fixture.Purchasing.CancelVendorReturnAsync(returned.Id, fixture.Date, "Credit refused", operation, ct);
+        await fixture.Purchasing.CancelVendorReturnAsync(returned.Id, fixture.Date, "Credit refused", operation, ct);
+        await fixture.Purchasing.CancelVendorReturnAsync(returned.Id, fixture.Date, "Repeated request",
+            OperationGuard.NewId(), ct);
+
+        using var db = fixture.Factory.Open();
+        // One new direct lot holds the units, with the deleted lot's cost, tax, batch, expiry and prices.
+        db.ExecuteScalar<long>("""
+            SELECT COUNT(*) FROM product_lot l JOIN purchase_line pl ON pl.purchase_id=@purchaseId
+            WHERE l.product_id=@productId AND l.purchase_line_id IS NULL AND l.origin_kind='DIRECT'
+              AND l.lot_code='L000002' AND l.received_date=@date AND l.vendor_id=@vendorId
+              AND l.qty_received=11000 AND l.qty_on_hand=11000
+              AND l.unit_cost=pl.landed_unit_cost AND l.unit_tax=pl.landed_unit_tax
+              AND l.unit_cost_incl_tax=pl.landed_unit_cost_incl_tax
+              AND l.tax_rate_id_snapshot=pl.tax_rate_id AND l.tax_label_snapshot=pl.tax_label_snapshot
+              AND l.tax_rate_pct_snapshot=pl.tax_rate_pct AND l.batch_no=pl.batch_no
+              AND l.mfg_date=pl.mfg_date AND l.expiry_date=pl.expiry_date
+              AND l.selling_price=pl.selling_price AND l.mrp=pl.mrp
+            """, new
+        {
+            purchaseId,
+            productId = fixture.ProductId,
+            vendorId = fixture.VendorId,
+            date = fixture.Date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+        }).ShouldBe(1L);
+        db.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot WHERE product_id=@id", new { id = fixture.ProductId })
+            .ShouldBe(1L);
+        db.ExecuteScalar<string>("""
+            SELECT o.reason FROM direct_stock_origin o JOIN product_lot l ON l.id=o.lot_id WHERE l.lot_code='L000002'
+            """).ShouldBe($"Vendor return {returned.DocumentNumber} cancelled: Credit refused");
+        db.ExecuteScalar<long>("SELECT COUNT(*) FROM vendor_return_cancellation").ShouldBe(1L);
+        db.ExecuteScalar<long>("SELECT balance_due FROM v_vendor_balance WHERE vendor_id=@id",
+            new { id = fixture.VendorId }).ShouldBe(2825000L);
+        db.ExecuteScalar<long>("SELECT quantity FROM product_stock_total WHERE product_id=@id",
+            new { id = fixture.ProductId }).ShouldBe(11000L);
+        db.ExecuteScalar<long>("SELECT COALESCE(SUM(amount),0) FROM v_pnl_entry WHERE head_code='VENDOR_RETURN_VARIANCE'")
+            .ShouldBe(0L);
+        LotSourceReconciliation.CheckAll(db, null, cancellationToken: ct).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task VendorReturnCancellation_OfADeletedProduct_IsRefusedWithItsOwnReason()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long purchaseId = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("PH3-DELETED"), ct);
+        long lotId = (await fixture.Purchasing.PostAsync(purchaseId, OperationGuard.NewId(), ct)).LotIds.Single();
+        PostedVendorReturn returned = await fixture.Purchasing.PostVendorReturnAsync(new(purchaseId, fixture.Date,
+            "PH3-CN-DEL", "Discontinued", [new(lotId, new Quantity(11), new Money(400), new Money(20))]),
+            OperationGuard.NewId(), ct);
+        var catalog = new CatalogService(fixture.Database, new AuditLog(), fixture.Settings, new SystemClock(fixture.Settings));
+        (await catalog.RemoveAsync(fixture.ProductId, ct)).ShouldBe(ProductRemoval.Deleted);
+
+        DomainException refused = await Should.ThrowAsync<DomainException>(() =>
+            fixture.Purchasing.CancelVendorReturnAsync(returned.Id, fixture.Date, "Credit refused",
+                OperationGuard.NewId(), ct));
+
+        refused.Code.ShouldBe(ErrorCode.VendorReturnProductDeleted);
+        using var db = fixture.Factory.Open();
+        db.ExecuteScalar<long>("SELECT COUNT(*) FROM vendor_return_cancellation").ShouldBe(0L);
+        db.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot").ShouldBe(0L);
+        db.ExecuteScalar<long>("SELECT balance_due FROM v_vendor_balance WHERE vendor_id=@id",
+            new { id = fixture.VendorId }).ShouldBe(2405000L);
     }
 
     [Fact]
@@ -941,9 +1157,18 @@ public sealed class StockInTests
             {
                 (long onHand, long version) = tx.Connection.QuerySingle<(long, long)>(
                     "SELECT qty_on_hand,quantity_version FROM product_lot WHERE id=@lotId", new { lotId }, tx.Transaction);
-                return new DirectStockEngine().ReviewCount(tx, lotId, version, onHand, counted.Scaled, Date,
-                    reason, OperationGuard.NewId());
+                return new DirectStockEngine(new DocNumberService(Settings)).ReviewCount(tx, lotId, version, onHand,
+                    counted.Scaled, Date, reason, OperationGuard.NewId());
             }, ct);
+
+        public async Task DeleteZeroLotAsync(long lotId, CancellationToken ct)
+        {
+            long version;
+            using (var connection = Factory.Open())
+                version = connection.ExecuteScalar<long>(
+                    "SELECT detail_version FROM product_lot WHERE id=@lotId", new { lotId });
+            await Inventory.DeleteZeroLotAsync(lotId, version, ct);
+        }
 
         public PurchaseDraftInput Purchase(string invoice = "INV-1") => new(
             VendorId, invoice, Date, Date, new Money(2725), new Money(100), null,

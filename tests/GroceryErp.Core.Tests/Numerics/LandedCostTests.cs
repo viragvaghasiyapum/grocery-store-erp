@@ -60,6 +60,25 @@ public sealed class LandedCostTests
     }
 
     [Fact]
+    public void LineBooked_IsTheLineAmountBeforeThePiecePriceIsRounded()
+    {
+        // 1,000 at 1.000 less 0.001 is 999.999, and the line takes all 0.455 of other charges.
+        // One piece rounds to 1.000, so the pieces add up to 1,000.000 rather than 1,000.454.
+        PurchaseCostLine line = new(new Quantity(1000), Quantity.Zero, new Money(1), new Money(0.001m), new Money(50));
+
+        PurchaseLineCost regular = LandedCost.ComputeLines([line], new Money(0.455m), taxIsCost: false).Single();
+        regular.Booked.ShouldBe(new Money(1000.454m));
+        (regular.Unit.Booked * line.Quantity).ShouldBe(new Money(1000));
+        LandedCost.ComputeLines([line], new Money(0.455m), taxIsCost: true).Single().Booked
+            .ShouldBe(new Money(1050.454m));
+
+        PurchaseCostLine[] lines = [WorkedLine, EvenLine];
+        IReadOnlyList<PurchaseLineCost> worked = LandedCost.ComputeLines(lines, new Money(60), taxIsCost: false);
+        worked.Select(static cost => cost.Unit).ShouldBe(LandedCost.Compute(lines, new Money(60), taxIsCost: false));
+        worked.Select(static cost => cost.Booked).ShouldBe([new Money(980), new Money(980)]);
+    }
+
+    [Fact]
     public void Property_TaxIsTheDifferenceOfTheTwoPrices()
     {
         var random = new Random(3915);
@@ -78,10 +97,12 @@ public sealed class LandedCostTests
             // Uneven shares, or no other charges at all.
             Money charges = random.Next(4) == 0 ? Money.Zero : Money.FromScaled(random.NextInt64(1, 10_000_000));
             bool taxIsCost = random.Next(2) == 0;
-            IReadOnlyList<PurchaseUnitCost> units = LandedCost.Compute(lines, charges, taxIsCost);
+            IReadOnlyList<PurchaseLineCost> costs = LandedCost.ComputeLines(lines, charges, taxIsCost);
             for (int index = 0; index < lines.Length; index++)
             {
-                PurchaseUnitCost unit = units[index];
+                PurchaseUnitCost unit = costs[index].Unit;
+                // The piece price is the line amount spread over the pieces, rounded once.
+                costs[index].Booked.DivideBy(lines[index].Quantity + lines[index].FreeQuantity).ShouldBe(unit.Booked);
                 (unit.InclTax - unit.BeforeTax).ShouldBe(unit.Tax);
                 unit.Tax.ShouldBeGreaterThanOrEqualTo(Money.Zero);
                 unit.Booked.ShouldBe(taxIsCost ? unit.InclTax : unit.BeforeTax);

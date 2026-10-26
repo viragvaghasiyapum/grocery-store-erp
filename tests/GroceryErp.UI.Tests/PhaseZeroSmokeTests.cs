@@ -791,7 +791,7 @@ public sealed class PhaseZeroSmokeTests
                 purchaseEntry.Close();
 
                 var directCount = new DirectCountReviewWindow(
-                    new DirectStockCountService(database, new DirectStockEngine(), new PeriodGuard(settings, new SystemClock(settings))),
+                    new DirectStockCountService(database, new DirectStockEngine(new DocNumberService(settings)), new PeriodGuard(settings, new SystemClock(settings))),
                     [1], new SystemClock(settings), loadOnShow: false);
                 ((DataGrid)directCount.FindName("CountGrid")).ItemsSource = new object[]
                 {

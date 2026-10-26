@@ -419,8 +419,9 @@ public sealed partial class SalesService(
                 FROM product_lot l
                 WHERE sale_line.sale_id=@saleId AND l.id=sale_line.lot_id
                 """, new { saleId }, transaction.Transaction);
-            transaction.Connection.Execute("UPDATE sale SET status='DRAFT' WHERE id=@saleId",
-                new { saleId }, transaction.Transaction);
+            // A resumed bill belongs to the day it is resumed on, like a new one.
+            transaction.Connection.Execute("UPDATE sale SET status='DRAFT',sale_date=@date WHERE id=@saleId",
+                new { date = DateText(clock.BusinessDate), saleId }, transaction.Transaction);
             Reprice(transaction, saleId);
         }, cancellationToken);
 
@@ -562,8 +563,14 @@ public sealed partial class SalesService(
                 throw new DomainException(ErrorCode.PaymentShort);
             HeaderRow sale = GetHeader(transaction, command.SaleId);
             if (sale.Status is not ("DRAFT" or "HELD")) throw new DomainException(ErrorCode.SaleFinalized);
-            DateOnly date = ParseDate(sale.SaleDate);
+            // A bill is dated, numbered and counted on the day it is completed, even when it was
+            // started or held earlier. It is re-dated while still open, in its own update, so the
+            // completed-sale triggers never see a date change and recalculate history.
+            DateOnly date = clock.BusinessDate;
             periodGuard.EnsureOpen(transaction, date);
+            if (ParseDate(sale.SaleDate) != date)
+                transaction.Connection.Execute("UPDATE sale SET sale_date=@date WHERE id=@saleId",
+                    new { date = DateText(date), saleId = command.SaleId }, transaction.Transaction);
             RevalidateStock(transaction, command.SaleId);
             PricedBill bill = Reprice(transaction, command.SaleId);
             if (bill.Lines.Count == 0) throw new DomainException(ErrorCode.EmptyBill);
@@ -1055,8 +1062,18 @@ public sealed partial class SalesService(
             long cashRefunds = connection.ExecuteScalar<long>("""
                 SELECT COALESCE(SUM(refund_total),0) FROM sale_return WHERE return_date=@day AND refund_mode='CASH'
                 """, new { day });
+            // An expense counts at its current values: its newest correction or, when never
+            // corrected, the original row. A void is a correction to zero. Purchase expense
+            // lines are never cash, so their reversals need no branch.
             long cashExpenses = connection.ExecuteScalar<long>("""
-                SELECT COALESCE(SUM(amount),0) FROM expense WHERE expense_date=@day AND mode='CASH'
+                SELECT COALESCE(SUM(amount),0) FROM (
+                  SELECT e.amount FROM expense e
+                  WHERE e.expense_date=@day AND e.mode='CASH'
+                    AND NOT EXISTS(SELECT 1 FROM expense_correction c WHERE c.expense_id=e.id)
+                  UNION ALL
+                  SELECT c.new_amount FROM expense_correction c
+                  WHERE c.new_date=@day AND c.new_mode='CASH'
+                    AND c.id=(SELECT MAX(id) FROM expense_correction x WHERE x.expense_id=c.expense_id))
                 """, new { day });
             long cashChange = connection.ExecuteScalar<long>("""
                 SELECT COALESCE(SUM(change_returned),0) FROM sale

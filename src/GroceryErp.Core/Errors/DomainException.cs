@@ -10,7 +10,8 @@ public enum ErrorCode
     VoidNotAllowed, CancelNotAllowed, DatabaseNewerThanApp, ClockBehindLastBill,
     WrongPassword, BackupInvalid, StockCountReviewChanged, DatabaseBusy, DiskFull, DatabaseCorrupt,
     RestoreRecovered, DatabaseIo, AnnualReportInvalid, EntryChanged, EntryVoided, EffectiveMonthClosed,
-    AssetTermsFinalized, DamageProductDeleted, CompactionFailed
+    AssetTermsFinalized, DamageProductDeleted, CompactionFailed, VendorReturnProductDeleted,
+    LotsDifferFromDocuments
 }
 
 public sealed class DomainException(ErrorCode code, params object[] arguments) : Exception(code.ToString())

@@ -105,6 +105,7 @@ public partial class ReportsPage : Page
                 SelectChoice(StatusPicker, request.Status);
                 SelectChoice(PaymentPicker, request.PaymentMode);
                 ProductFilter.Text = request.ProductId?.ToString(CultureInfo.InvariantCulture) ?? "";
+                MismatchesCheck.IsChecked = request.MismatchesOnly;
                 _suppressRefresh = false;
             }
             RefreshLocalizedChoices();

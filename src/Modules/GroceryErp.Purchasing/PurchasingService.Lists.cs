@@ -84,6 +84,8 @@ public sealed partial class PurchasingService
                 foreach (PurchaseVoidRow row in connection.Query<PurchaseVoidRow>(PurchaseVoidSql, new { ids = chunk }))
                     headers[row.Id] = row;
             var rows = new List<PurchasingBulkRow>(ids.Length);
+            // Selected purchases share few received dates, so each date's period is read once.
+            var openDates = new Dictionary<DateOnly, bool>();
             foreach (long id in ids)
             {
                 if (!headers.TryGetValue(id, out PurchaseVoidRow? header))
@@ -91,7 +93,10 @@ public sealed partial class PurchasingService
                     rows.Add(new PurchasingBulkRow(id, string.Empty, false, "Bulk_Missing", Money.Zero));
                     continue;
                 }
+                if (!openDates.TryGetValue(header.ReceivedDate, out bool open))
+                    openDates[header.ReceivedDate] = open = periods.IsOpen(connection, null, header.ReceivedDate);
                 string? reason = header.Status != "POSTED" ? "Bulk_Reason_NotPosted"
+                    : !open ? "Bulk_Reason_PurchasePeriodLocked"
                     : IsUntouched(connection, id, VoidLots(connection, id)) ? null : "Bulk_Reason_PurchaseTouched";
                 rows.Add(new PurchasingBulkRow(id, header.Label, reason is null, reason, Money.FromScaled(header.GrandTotal)));
             }
@@ -116,18 +121,24 @@ public sealed partial class PurchasingService
             foreach (long id in ids)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                string? status = tx.Connection.QuerySingleOrDefault<string>(
-                    "SELECT status FROM purchase WHERE id=@id", new { id }, tx.Transaction);
-                if (status is null)
+                var header = tx.Connection.QuerySingleOrDefault<(string Status, DateOnly ReceivedDate)?>(
+                    "SELECT status AS Status,received_date AS ReceivedDate FROM purchase WHERE id=@id",
+                    new { id }, tx.Transaction);
+                if (header is not { } purchase)
                 {
                     outcome.Add(new BulkItemResult(id, BulkItemOutcome.Missing, "Bulk_Missing"));
                     continue;
                 }
-                List<CancelLotRow> lots = VoidLots(tx.Connection, id, tx.Transaction);
-                if (status != "POSTED" || !IsUntouched(tx.Connection, id, lots, tx.Transaction))
+                if (purchase.Status != "POSTED" || !periods.IsOpen(tx.Connection, tx.Transaction, purchase.ReceivedDate))
                 {
                     outcome.Add(new BulkItemResult(id, BulkItemOutcome.NotEligible,
-                        status != "POSTED" ? "Bulk_Reason_NotPosted" : "Bulk_Reason_PurchaseTouched"));
+                        purchase.Status != "POSTED" ? "Bulk_Reason_NotPosted" : "Bulk_Reason_PurchasePeriodLocked"));
+                    continue;
+                }
+                List<CancelLotRow> lots = VoidLots(tx.Connection, id, tx.Transaction);
+                if (!IsUntouched(tx.Connection, id, lots, tx.Transaction))
+                {
+                    outcome.Add(new BulkItemResult(id, BulkItemOutcome.NotEligible, "Bulk_Reason_PurchaseTouched"));
                     continue;
                 }
                 ApplyVoid(tx, id, date, lots, products);
@@ -359,7 +370,7 @@ public sealed partial class PurchasingService
     }
 
     private const string PurchaseVoidSql = """
-        SELECT p.id AS Id,p.status AS Status,p.grand_total AS GrandTotal,
+        SELECT p.id AS Id,p.status AS Status,p.grand_total AS GrandTotal,p.received_date AS ReceivedDate,
                COALESCE(p.doc_no,'-') || ' · ' || COALESCE(p.vendor_name_snapshot,v.name,'') AS Label
         FROM purchase p LEFT JOIN vendor v ON v.id=p.vendor_id WHERE p.id IN @ids
         """;
@@ -369,6 +380,7 @@ public sealed partial class PurchasingService
         public long Id { get; init; }
         public string Status { get; init; } = string.Empty;
         public long GrandTotal { get; init; }
+        public DateOnly ReceivedDate { get; init; }
         public string Label { get; init; } = string.Empty;
     }
 }

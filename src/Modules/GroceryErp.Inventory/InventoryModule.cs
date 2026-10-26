@@ -22,7 +22,8 @@ public sealed class InventoryModule : IModule
         services.AddSingleton<ILotQuantities>(static provider => provider.GetRequiredService<LotQuantities>());
         services.AddSingleton<InventoryService>();
         services.AddSingleton(static provider => new DirectStockCountService(
-            provider.GetRequiredService<DbExecutor>(), new DirectStockEngine(),
+            provider.GetRequiredService<DbExecutor>(),
+            new DirectStockEngine(provider.GetRequiredService<DocNumberService>()),
             provider.GetRequiredService<PeriodGuard>()));
         services.AddSingleton<OpeningStockExcelImporter>();
     }
