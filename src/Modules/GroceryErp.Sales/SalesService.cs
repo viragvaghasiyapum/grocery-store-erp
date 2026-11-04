@@ -786,7 +786,7 @@ public sealed partial class SalesService(
                     throw new DomainException(ErrorCode.ExpiredLot, currentExpiry);
                 (long restockProductId, long restockLotId) = reuse ? (original.ProductId, original.LotId)
                     : CreateReturnLot(transaction, original.Id, returnLineId, requested.Quantity,
-                        command.ReturnDate, requested.Recreation);
+                        command.ReturnDate, requested.Restore);
                 transaction.Connection.Execute("""
                     UPDATE sale_return_line SET restock_lot_id=@restockLotId,
                         restock_product_id_snapshot=@restockProductId,

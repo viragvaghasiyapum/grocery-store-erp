@@ -303,6 +303,7 @@ public sealed partial class CatalogService
                COALESCE(l.mrp,p.default_mrp) AS MrpScaled,
                l.unit_cost_incl_tax AS CostInclTaxScaled,
                p.is_loose AS IsLoose, p.is_active AS IsActive, p.product_class AS ProductClass,
+               p.track_expiry AS TrackExpiry,
                EXISTS(SELECT 1 FROM product_barcode pb WHERE pb.product_id=p.id AND pb.lot_id IS NULL) AS HasBarcode,
                EXISTS(SELECT 1 FROM product_lot ex WHERE ex.product_id=p.id AND ex.qty_on_hand>0
                       AND ex.expiry_date<@expiryToday) AS HasExpiredStock

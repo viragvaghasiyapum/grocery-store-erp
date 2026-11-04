@@ -480,31 +480,32 @@ public sealed class SalesTests
     }
 
     [Fact]
-    public async Task CompletedSale_SavesFieldsNeededForReviewedReturnRecreation()
+    public async Task ReturnRestoreDraft_IsOfferedOnlyOnceTheSoldProductIsDeleted_WithTheSavedDetails()
     {
         using var fixture = new SalesFixture();
         CancellationToken ct = TestContext.Current.CancellationToken;
-        using (var db = fixture.Factory.Open())
-        {
-            db.Execute("UPDATE product_lot SET expiry_date='2026-12-31' WHERE id=@id",
-                new { id = fixture.LotId });
-            db.Execute("UPDATE product SET hsn_code='1001' WHERE id=@id", new { id = fixture.ProductId });
-        }
-        long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One,
-            cancellationToken: ct);
-        await fixture.Sales.CompleteAsync(new(saleId, [new(PaymentMode.Cash, new Money(118))],
-            OperationGuard.NewId()), ct);
-        long saleLineId;
-        using (var db = fixture.Factory.Open())
-            saleLineId = db.ExecuteScalar<long>("SELECT id FROM sale_line WHERE sale_id=@saleId",
-                new { saleId });
-        ReturnRecreationDraft draft = await fixture.Sales.GetReturnRecreationDraftAsync(saleLineId, ct);
+        (long saleId, long lineId, long productId) = await fixture.SellThenDeleteAsync("RESTORE-1", new Quantity(2),
+            expiry: new DateOnly(2026, 12, 31), deleteProduct: false, ct);
+        (await fixture.Sales.GetReturnRestoreDraftAsync(lineId, Quantity.One, ct)).ShouldBeNull();
+        (await fixture.Catalog.RemoveAsync(productId, ct)).ShouldBe(ProductRemoval.Deleted);
+
+        RestoreDraft draft = (await fixture.Sales.GetReturnRestoreDraftAsync(lineId, Quantity.One, ct))!;
+        draft.Key.ShouldBe(lineId);
+        draft.DocumentNumber.ShouldBe((await fixture.Sales.GetAsync(saleId, ct)).InvoiceNumber);
+        draft.ProductName.ShouldBe("Restore item");
+        draft.SuggestedSku.ShouldBe("RESTORE-1");
         draft.CategoryId.ShouldBe(fixture.CategoryId);
         draft.UnitId.ShouldBe(fixture.UnitId);
+        draft.UnitCode.ShouldBe("PCS");
         draft.TaxRateId.ShouldBe(fixture.TaxId);
+        draft.HsnCode.ShouldBe("1006");
+        draft.TrackExpiry.ShouldBe(true);
+        draft.ProductClass.ShouldBe("SALEABLE");
         draft.ExpiryDate.ShouldBe(new DateOnly(2026, 12, 31));
-        draft.MissingFields.ShouldBeEmpty();
-        draft.SuggestedSku.ShouldNotBe("SALE-001");
+        draft.Quantity.ShouldBe(Quantity.One);
+        draft.UnitCost.ShouldBe(new Money(70));
+        draft.SellingPrice.ShouldBe(new Money(118));
+        draft.Mrp.ShouldBe(new Money(120));
     }
 
     [Fact]
@@ -546,24 +547,104 @@ public sealed class SalesTests
             db.Execute("DELETE FROM product_lot WHERE id=@lotId", new { lotId });
             db.Execute("DELETE FROM product WHERE id=@productId", new { productId });
         }
-        ReturnRecreationDraft draft = await sales.GetReturnRecreationDraftAsync(lineId, ct);
-        draft.ProductMissing.ShouldBeTrue();
-        draft.MissingFields.ShouldContain("category");
+        RestoreDraft draft = (await sales.GetReturnRestoreDraftAsync(lineId, Quantity.One, ct))!;
+        draft.CategoryId.ShouldBeNull();
+        draft.UnitId.ShouldBeNull();
+        draft.TaxRateId.ShouldBeNull();
+        draft.TrackExpiry.ShouldBeNull();
+        draft.SuggestedSku.ShouldBe($"R{lineId:X}");
         await Should.ThrowAsync<DomainException>(() => sales.ReturnAsync(new(saleId,
             fixture.Clock.BusinessDate, "Legacy refund", RefundMode.Cash,
             [new(lineId, Quantity.One, true)], OperationGuard.NewId()), ct));
-        var reviewed = new ReturnRecreationInput(draft.SuggestedSku, draft.ProductName,
-            draft.ProductNameLocal, fixture.CategoryId, fixture.UnitId, fixture.TaxId,
-            "REGULAR", "1006", false, false, "SALEABLE", null);
+        // The operator fills what the old sale did not save; the units go into the new product.
+        var created = new RestoreProductChoice(null, new RestoreNewProduct(draft.SuggestedSku, draft.ProductName,
+            null, fixture.CategoryId, fixture.UnitId, fixture.TaxId, "1006", TrackExpiry: false, IsLoose: false),
+            new Money(110), new Money(120));
         CompletedReturn posted = await sales.ReturnAsync(new(saleId,
             fixture.Clock.BusinessDate, "Legacy refund", RefundMode.Cash,
-            [new(lineId, Quantity.One, true, reviewed)], OperationGuard.NewId()), ct);
+            [new(lineId, Quantity.One, true, created)], OperationGuard.NewId()), ct);
         using var after = fixture.Factory.Open();
-        after.ExecuteScalar<string>("""
-            SELECT snapshot_provenance FROM sale_return_line WHERE sale_return_id=@id
-            """, new { id = posted.ReturnId }).ShouldBe("OPERATOR_REVIEW");
-        after.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE sku=@sku",
-            new { sku = draft.SuggestedSku }).ShouldBe(1L);
+        long newProduct = after.ExecuteScalar<long>("""
+            SELECT id FROM product WHERE sku=@sku AND name='Legacy review' AND category_id=@category
+              AND uom_id=@unit AND tax_rate_id=@tax AND hsn_code='1006' AND track_expiry=0
+              AND default_selling_price=110000 AND default_mrp=120000 AND product_class='SALEABLE'
+            """, new { sku = draft.SuggestedSku, category = fixture.CategoryId, unit = fixture.UnitId, tax = fixture.TaxId });
+        after.QuerySingle<(long Product, long Price, long Cost, long OnHand)>("""
+            SELECT l.product_id,l.selling_price,l.unit_cost,l.qty_on_hand FROM sale_return_line rl
+            JOIN product_lot l ON l.id=rl.restock_lot_id WHERE rl.sale_return_id=@id
+            """, new { id = posted.ReturnId }).ShouldBe((newProduct, 110000L, 70000L, 1000L));
+        after.ExecuteScalar<string>("SELECT changes FROM audit_log WHERE action='RESTORE_PRODUCT'")!
+            .ShouldContain("\"createdProduct\":true");
+    }
+
+    [Fact]
+    public async Task ReturnOfADeletedProduct_GoesIntoTheProductTheOperatorReAdded_WithinItsGuards()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        (long saleId, long lineId, long original) = await fixture.SellThenDeleteAsync("GONE-1", new Quantity(3),
+            expiry: null, deleteProduct: true, ct);
+        long readded;
+        long archived;
+        long internalUse;
+        long weighed;
+        using (var db = fixture.Factory.Open())
+        {
+            long kilogram = db.ExecuteScalar<long>("SELECT id FROM uom WHERE code='KG'");
+            long Product(string sku, long unit, int active, string productClass, int trackExpiry) =>
+                db.ExecuteScalar<long>("""
+                    INSERT INTO product(sku,name,category_id,uom_id,tax_rate_id,hsn_code,price_includes_tax,
+                        track_expiry,default_selling_price,default_mrp,is_active,product_class)
+                    VALUES (@sku,'Restore item',@category,@unit,@tax,'1006',1,@trackExpiry,125000,130000,@active,@productClass)
+                    RETURNING id
+                    """, new { sku, category = fixture.CategoryId, unit, tax = fixture.TaxId, active, productClass, trackExpiry });
+            readded = Product("GONE-1B", fixture.UnitId, 1, "SALEABLE", 0);
+            archived = Product("GONE-OLD", fixture.UnitId, 0, "SALEABLE", 0);
+            internalUse = Product("GONE-RAW", fixture.UnitId, 1, "INTERNAL", 0);
+            weighed = Product("GONE-KG", kilogram, 1, "SALEABLE", 1);
+        }
+        Task<CompletedReturn> Return(decimal quantity, RestoreProductChoice? choice) => fixture.Sales.ReturnAsync(
+            new(saleId, fixture.Clock.BusinessDate, "Refund", RefundMode.Cash,
+                [new(lineId, new Quantity(quantity), true, choice)], OperationGuard.NewId()), ct);
+        RestoreProductChoice Into(long productId, decimal price = 125, decimal? mrp = 130) =>
+            new(productId, null, new Money(price), mrp is null ? null : new Money(mrp.Value));
+
+        (await Should.ThrowAsync<DomainException>(() => Return(1, Into(archived)))).Code
+            .ShouldBe(ErrorCode.RestoreProductUnavailable);
+        (await Should.ThrowAsync<DomainException>(() => Return(1, Into(internalUse)))).Code
+            .ShouldBe(ErrorCode.RestoreProductTypeMismatch);
+        (await Should.ThrowAsync<DomainException>(() => Return(1, Into(weighed)))).Code
+            .ShouldBe(ErrorCode.RestoreExpiryRequired);
+        (await Should.ThrowAsync<DomainException>(() => Return(1, Into(readded, price: 131)))).Code
+            .ShouldBe(ErrorCode.PriceAboveMrp);
+        (await Should.ThrowAsync<DomainException>(() => Return(1, new(null, new("gone-1b", "Restore item", null,
+            fixture.CategoryId, fixture.UnitId, fixture.TaxId, "1006", false, false), new Money(118), null))))
+            .Code.ShouldBe(ErrorCode.SkuExists);
+        using (var db = fixture.Factory.Open())
+            db.ExecuteScalar<long>("SELECT COUNT(*) FROM sale_return").ShouldBe(0L);
+
+        CompletedReturn first = await Return(1, Into(readded, price: 124));
+        // A later return of the same original goes to the same product without asking again.
+        (await fixture.Sales.GetReturnRestoreDraftAsync(lineId, Quantity.One, ct)).ShouldBeNull();
+        CompletedReturn second = await Return(1, null);
+
+        using var after = fixture.Factory.Open();
+        after.Query<(long Product, long Price, long Mrp, long Cost, long OnHand)>("""
+            SELECT l.product_id,l.selling_price,l.mrp,l.unit_cost,l.qty_on_hand FROM sale_return_line rl
+            JOIN product_lot l ON l.id=rl.restock_lot_id ORDER BY rl.id
+            """).ShouldBe([(readded, 124000L, 130000L, 70000L, 1000L), (readded, 118000L, 120000L, 70000L, 1000L)]);
+        after.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE id=@original", new { original }).ShouldBe(0L);
+        after.ExecuteScalar<long>("SELECT quantity FROM product_stock_total WHERE product_id=@readded", new { readded })
+            .ShouldBe(2000L);
+        after.ExecuteScalar<string>("SELECT changes FROM audit_log WHERE action='RESTORE_PRODUCT'")!
+            .ShouldContain($"\"productId\":{readded}");
+        // The return reverses what the sale booked, whatever product takes the units.
+        after.QuerySingle<(long Cost, long ReturnCost)>("SELECT cost,return_cost FROM pnl_day WHERE day=@day",
+                new { day = fixture.Clock.BusinessDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) })
+            .ShouldBe((210000L, 140000L));
+        first.Cost.ShouldBe(new Money(70));
+        second.Cost.ShouldBe(new Money(70));
+        LotSourceReconciliation.CheckAll(after, null, cancellationToken: ct).ShouldBeEmpty();
     }
 
     [Fact]
@@ -1099,6 +1180,42 @@ public sealed class SalesTests
         public Task ReceiveDirectAsync(long productId, long lotId, Quantity quantity, CancellationToken ct) =>
             Database.WriteAsync(tx => _ledger.Change(tx, new(Clock.BusinessDate, productId, lotId,
                 LotChangeKind.DirectEntry, quantity)), ct);
+
+        // Sells a new product's whole lot at ₹118 (cost ₹70, MRP ₹120), deletes the emptied lot
+        // and, when asked, the product, through the services.
+        public async Task<(long SaleId, long LineId, long ProductId)> SellThenDeleteAsync(string sku, Quantity quantity,
+            DateOnly? expiry, bool deleteProduct, CancellationToken ct)
+        {
+            long productId;
+            long lotId;
+            using (var db = Factory.Open())
+            {
+                productId = db.ExecuteScalar<long>("""
+                    INSERT INTO product(sku,name,category_id,uom_id,tax_rate_id,hsn_code,price_includes_tax,
+                        track_expiry,default_selling_price,default_mrp)
+                    VALUES (@sku,'Restore item',@CategoryId,@UnitId,@TaxId,'1006',1,@track,118000,120000) RETURNING id
+                    """, new { sku, CategoryId, UnitId, TaxId, track = expiry is null ? 0 : 1 });
+                lotId = db.ExecuteScalar<long>("""
+                    INSERT INTO product_lot(product_id,lot_code,received_date,expiry_date,unit_cost,selling_price,mrp,
+                        qty_received)
+                    VALUES (@productId,@lotCode,'2026-09-01',@expiry,70000,118000,120000,@quantity) RETURNING id
+                    """, new
+                {
+                    productId,
+                    lotCode = "L-" + sku,
+                    expiry = expiry?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                    quantity = quantity.Scaled,
+                });
+            }
+            await ReceiveDirectAsync(productId, lotId, quantity, ct);
+            long saleId = await Sales.AddProductAsync(null, productId, quantity, cancellationToken: ct);
+            SaleDetails bill = await Sales.GetAsync(saleId, ct);
+            await Sales.CompleteAsync(new(saleId, [new(PaymentMode.Cash, bill.Totals.GrandTotal)], OperationGuard.NewId()), ct);
+            LotItem lot = (await Inventory.GetLotsByIdsAsync([lotId], ct)).Single();
+            await Inventory.DeleteZeroLotAsync(lotId, lot.DetailVersion, ct);
+            if (deleteProduct) (await Catalog.RemoveAsync(productId, ct)).ShouldBe(ProductRemoval.Deleted);
+            return (saleId, bill.Lines.Single().Id, productId);
+        }
 
         // Edits a lot's selling price through the versioned lot workflow, keeping its MRP. The
         // fixture's lots have no expiry, which the edit requires for an expiry-tracked product.

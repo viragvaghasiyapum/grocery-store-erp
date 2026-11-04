@@ -211,6 +211,13 @@ Open-issue fixes (from 26 October 2026): the review items in `revised-plan-issue
   - When differing lots are all it found, the notice says how many, and **Show differences** opens the reconciliation's recorded differences. Under the Phase 2 ruling, there is still no correction workflow for differences carried over from older data. On a fresh store, the check passes after every stock workflow.
   - Day end subtracts each cash expense at its current values, so a voided expense no longer counts and an edited one counts with its new amount, mode and date. Before, it summed the original rows. This was reproduced on a fresh store first.
   - On the full-size store, the check took 101 s with one differing lot and 99 s clean, and the next launch skipped it in 35 ms. The day-end expense query stays on its date indexes: 0.006 ms, and 0.1 ms with 2,689 seeded corrections.
+- **P3-F3 (4 November 2026).** Units that come back after their product was deleted now ask for a product instead of being refused: from a customer return, a cancelled vendor return or a damage correction. One window offers an active product of the same type (such as one the operator added again by hand) or a new product prefilled from the saved details, with each unsaved detail marked. The units go into a new lot of that product at their booked cost, with the selling price and MRP entered there.
+  - Guards: an active product, the same type, the same unit or a unit that takes the quantity, an expiry when the product tracks expiry and none was saved, and a price no higher than MRP. Each refusal has its own message. A new product follows the product form's rules.
+  - Quantity, cost and every P&L and GST figure stay as the documents booked them. A cancelled vendor return keeps the purchase tax, a customer return keeps the cost-side tax its sale line saved, and a damage takes the chosen product's rate, since it saves none.
+  - A later return of the same deleted item goes to the same product, while that product is active.
+  - The lot reason names the source document, and the audit log records the chosen product.
+  - Also fixed: a damage restored into another product could not be corrected again, because the next correction looked for its lot under the deleted product.
+  - The old review form for legacy return lines is replaced by the new window. No schema change; the optional link table was not built.
 
 ## 1. Product contract and precedence
 

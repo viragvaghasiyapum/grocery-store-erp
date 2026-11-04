@@ -382,6 +382,62 @@ public sealed class StockInTests
     }
 
     [Fact]
+    public async Task VendorReturnCancellation_OfADeletedProduct_RestoresIntoANewProduct_WithThePurchaseTax()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long purchaseId = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("PH3-F3"), ct);
+        long lotId = (await fixture.Purchasing.PostAsync(purchaseId, OperationGuard.NewId(), ct)).LotIds.Single();
+        PostedVendorReturn returned = await fixture.Purchasing.PostVendorReturnAsync(new(purchaseId, fixture.Date,
+            "PH3-CN-F3", "Discontinued", [new(lotId, new Quantity(11), new Money(400), new Money(20))]),
+            OperationGuard.NewId(), ct);
+        var catalog = new CatalogService(fixture.Database, new AuditLog(), fixture.Settings, new SystemClock(fixture.Settings));
+        (await catalog.RemoveAsync(fixture.ProductId, ct)).ShouldBe(ProductRemoval.Deleted);
+
+        RestoreDraft draft = (await fixture.Purchasing.GetVendorReturnRestoreDraftsAsync(returned.Id, ct)).Single();
+        using var db = fixture.Factory.Open();
+        draft.Key.ShouldBe(db.ExecuteScalar<long>("SELECT id FROM vendor_return_line"));
+        draft.DocumentNumber.ShouldBe(returned.DocumentNumber);
+        draft.ProductName.ShouldBe("Phase Three Product");
+        draft.SuggestedSku.ShouldBe("PH3-001");
+        draft.UnitCode.ShouldBe("PCS");
+        draft.TaxRateId.ShouldBe(fixture.TaxRateId);
+        draft.BatchNumber.ShouldBe("BATCH");
+        draft.ExpiryDate.ShouldBe(fixture.Date.AddMonths(6));
+        draft.Quantity.ShouldBe(new Quantity(11));
+        (draft.SellingPrice, draft.Mrp).ShouldBe((new Money(300), new Money(350)));
+        long category = db.ExecuteScalar<long>("SELECT id FROM category");
+        var choice = new RestoreProductChoice(null, new RestoreNewProduct(draft.SuggestedSku, draft.ProductName, null,
+            category, draft.UnitId!.Value, draft.TaxRateId, "1006", TrackExpiry: true, IsLoose: false),
+            new Money(290), new Money(350));
+
+        await fixture.Purchasing.CancelVendorReturnAsync(returned.Id, fixture.Date, "Credit refused", OperationGuard.NewId(),
+            new Dictionary<long, RestoreProductChoice> { [draft.Key] = choice }, ct);
+
+        long product = db.ExecuteScalar<long>("""
+            SELECT id FROM product WHERE sku='PH3-001' AND id<>@old AND product_class='SALEABLE' AND hsn_code='1006'
+              AND tax_rate_id=@tax AND track_expiry=1 AND default_selling_price=290000 AND default_mrp=350000
+            """, new { old = fixture.ProductId, tax = fixture.TaxRateId });
+        // The lot keeps the purchase's cost and tax; its prices are the operator's.
+        db.ExecuteScalar<long>("""
+            SELECT COUNT(*) FROM product_lot l JOIN purchase_line pl ON pl.purchase_id=@purchaseId
+            WHERE l.product_id=@product AND l.origin_kind='DIRECT' AND l.qty_on_hand=11000
+              AND l.unit_cost=pl.landed_unit_cost AND l.unit_tax=pl.landed_unit_tax
+              AND l.unit_cost_incl_tax=pl.landed_unit_cost_incl_tax AND l.tax_rate_id_snapshot=pl.tax_rate_id
+              AND l.batch_no=pl.batch_no AND l.expiry_date=pl.expiry_date
+              AND l.selling_price=290000 AND l.mrp=350000
+            """, new { purchaseId, product }).ShouldBe(1L);
+        db.ExecuteScalar<long>("SELECT balance_due FROM v_vendor_balance WHERE vendor_id=@id",
+            new { id = fixture.VendorId }).ShouldBe(2825000L);
+        db.ExecuteScalar<long>("SELECT COALESCE(SUM(amount),0) FROM v_pnl_entry WHERE head_code='VENDOR_RETURN_VARIANCE'")
+            .ShouldBe(0L);
+        db.ExecuteScalar<string>("SELECT changes FROM audit_log WHERE entity='vendor_return' AND action='CANCEL'")!
+            .ShouldContain($"\"productId\":{product},\"createdProduct\":true");
+        (await fixture.Purchasing.GetVendorReturnRestoreDraftsAsync(returned.Id, ct)).ShouldBeEmpty();
+        LotSourceReconciliation.CheckAll(db, null, cancellationToken: ct).ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task InternalUse_IsAnImmutableNonPnlConsumption()
     {
         using var fixture = new StockInFixture();

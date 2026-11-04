@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Services;
+using GroceryErp.Inventory;
 using GroceryErp.Localization;
 using GroceryErp.Purchasing;
 using Microsoft.Extensions.DependencyInjection;
@@ -67,8 +68,19 @@ public partial class VendorReturnHistoryWindow : Window
         CancelReturnButton.IsEnabled = false;
         try
         {
+            // Each line whose lot and product were both deleted needs a product for its units.
+            var restores = new Dictionary<long, RestoreProductChoice>();
+            foreach (RestoreDraft draft in await _purchasing.GetVendorReturnRestoreDraftsAsync(item.Id))
+            {
+                if (await RestoreProductWindow.AskAsync(this, draft) is not { } choice)
+                {
+                    CancelReturnButton.IsEnabled = true;
+                    return;
+                }
+                restores[draft.Key] = choice;
+            }
             DateOnly date = ((App)Application.Current).Services.GetRequiredService<IClock>().BusinessDate;
-            await _purchasing.CancelVendorReturnAsync(item.Id, date, reason, OperationGuard.NewId());
+            await _purchasing.CancelVendorReturnAsync(item.Id, date, reason, OperationGuard.NewId(), restores);
             ReasonBox.Clear();
             await LoadPageAsync();
         }

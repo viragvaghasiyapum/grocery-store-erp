@@ -11,7 +11,8 @@ public enum ErrorCode
     WrongPassword, BackupInvalid, StockCountReviewChanged, DatabaseBusy, DiskFull, DatabaseCorrupt,
     RestoreRecovered, DatabaseIo, AnnualReportInvalid, EntryChanged, EntryVoided, EffectiveMonthClosed,
     AssetTermsFinalized, DamageProductDeleted, CompactionFailed, VendorReturnProductDeleted,
-    LotsDifferFromDocuments
+    LotsDifferFromDocuments, RestoreProductUnavailable, RestoreProductTypeMismatch, RestoreExpiryRequired,
+    SkuExists
 }
 
 public sealed class DomainException(ErrorCode code, params object[] arguments) : Exception(code.ToString())

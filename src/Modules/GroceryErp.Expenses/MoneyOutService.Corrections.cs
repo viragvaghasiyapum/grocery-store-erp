@@ -1,3 +1,4 @@
+using System.Data;
 using CommunityToolkit.Mvvm.Messaging;
 using Dapper;
 using GroceryErp.Core.Errors;
@@ -133,9 +134,55 @@ public sealed partial class MoneyOutService
             """, new { expenseId }, transaction.Transaction)?.ToModel()
         ?? throw new DomainException(ErrorCode.NotFound, "expense", expenseId);
 
+    // A damage's units sit in its lot or, after a restore recreated it, in the newest restored
+    // lot, which may belong to a product the operator chose. That lot gives the product.
+    private const string DamageStateSql = """
+        SELECT s.*,COALESCE(l.product_id,s.OriginalProductId) AS ProductId,l.id IS NOT NULL AS LotExists,
+               EXISTS(SELECT 1 FROM product p WHERE p.id=COALESCE(l.product_id,s.OriginalProductId)) AS ProductExists
+        FROM (SELECT d.id AS DamageId,d.doc_no AS DocumentNumber,d.product_id AS OriginalProductId,
+                     COALESCE((SELECT x.restored_lot_id FROM damage_correction x
+                               WHERE x.damage_id=d.id AND x.restored_lot_id IS NOT NULL
+                               ORDER BY x.id DESC LIMIT 1),d.lot_id) AS LotId,
+                     d.unit_cost AS UnitCost,d.damage_date AS DamageDate,
+                     COALESCE(dc.new_qty,d.qty) AS Quantity,
+                     COALESCE(dc.new_recovered,d.recovered_amount) AS RecoveredAmount,
+                     COALESCE(dc.new_reason,d.reason) AS Reason,
+                     CASE WHEN dc.id IS NULL THEN d.notes ELSE dc.new_notes END AS Notes,
+                     d.batch_no_snapshot AS BatchNumber,d.expiry_date_snapshot AS ExpiryDate,
+                     d.product_name_snapshot AS ProductName,d.product_name_local_snapshot AS ProductNameLocal,
+                     d.product_sku_snapshot AS Sku,d.uom_snapshot AS UnitCode,
+                     COALESCE(d.product_class_snapshot,'SALEABLE') AS ProductClass
+              FROM damage d
+              LEFT JOIN damage_correction dc ON dc.id=(SELECT MAX(id) FROM damage_correction WHERE damage_id=d.id)
+              WHERE d.id=@id) s
+        LEFT JOIN product_lot l ON l.id=s.LotId
+        """;
+
+    /// <summary>
+    /// The saved details for restoring units of a damage whose lot and product were both deleted,
+    /// or null when the units have somewhere to go.
+    /// </summary>
+    public Task<RestoreDraft?> GetDamageRestoreDraftAsync(long damageId, Quantity restored,
+        CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
+    {
+        DamageState state = connection.QuerySingleOrDefault<DamageState>(DamageStateSql, new { id = damageId })
+            ?? throw new DomainException(ErrorCode.NotFound, "damage", damageId);
+        return state.LotExists || state.ProductExists ? null : DamageDraft(connection, null, state, restored);
+    }, cancellationToken);
+
+    private static RestoreDraft DamageDraft(IDbConnection connection, IDbTransaction? transaction, DamageState damage,
+        Quantity quantity) =>
+        new(damage.DamageId, damage.DocumentNumber ?? $"#{damage.DamageId}", damage.ProductName ?? "",
+            damage.ProductNameLocal,
+            RestoreProducts.SuggestSku(connection, transaction, damage.Sku, $"D{damage.DamageId:X}"), null,
+            connection.ExecuteScalar<long?>("SELECT id FROM uom WHERE code=@UnitCode COLLATE NOCASE", damage, transaction),
+            damage.UnitCode, null, null, null, null, damage.ProductClass, damage.BatchNumber, damage.ExpiryDate,
+            quantity, Money.FromScaled(damage.UnitCost), null, null);
+
     // A quantity difference changes today's lot balance in the same transaction. If the
     // damaged lot was deleted at zero, restored units start a new direct lot from the
-    // damage snapshot; units can only be restored while the product still exists.
+    // damage snapshot; if the product was deleted too, they go into the product the
+    // operator chose.
     public async Task<long> CorrectDamageAsync(DamageItem original, DamageCorrection replacement, string reason,
         string operationId, CancellationToken cancellationToken = default)
     {
@@ -152,21 +199,8 @@ public sealed partial class MoneyOutService
         {
             OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.DamageCorrection);
             if (replay is not null) return replay.RefId ?? 0;
-            DamageState current = transaction.Connection.QuerySingleOrDefault<DamageState>("""
-                SELECT d.product_id AS ProductId,
-                       COALESCE((SELECT x.restored_lot_id FROM damage_correction x
-                                 WHERE x.damage_id=d.id AND x.restored_lot_id IS NOT NULL
-                                 ORDER BY x.id DESC LIMIT 1),d.lot_id) AS LotId,
-                       d.unit_cost AS UnitCost,d.damage_date AS DamageDate,
-                       COALESCE(dc.new_qty,d.qty) AS Quantity,
-                       COALESCE(dc.new_recovered,d.recovered_amount) AS RecoveredAmount,
-                       COALESCE(dc.new_reason,d.reason) AS Reason,
-                       CASE WHEN dc.id IS NULL THEN d.notes ELSE dc.new_notes END AS Notes,
-                       d.batch_no_snapshot AS BatchNumber,d.expiry_date_snapshot AS ExpiryDate
-                FROM damage d
-                LEFT JOIN damage_correction dc ON dc.id=(SELECT MAX(id) FROM damage_correction WHERE damage_id=d.id)
-                WHERE d.id=@id
-                """, new { id = original.Id }, transaction.Transaction)
+            DamageState current = transaction.Connection.QuerySingleOrDefault<DamageState>(DamageStateSql,
+                new { id = original.Id }, transaction.Transaction)
                 ?? throw new DomainException(ErrorCode.NotFound, "damage", original.Id);
             if (current.Quantity == 0) throw new DomainException(ErrorCode.EntryVoided);
             if (current.Quantity != original.Quantity.Scaled || current.RecoveredAmount != original.RecoveredAmount.Scaled ||
@@ -178,11 +212,10 @@ public sealed partial class MoneyOutService
             Money previousLoss = unitCost * Quantity.FromScaled(current.Quantity) - Money.FromScaled(current.RecoveredAmount);
             Money newLoss = unitCost * replacement.Quantity - replacement.RecoveredAmount;
             Quantity restored = new(Quantity.FromScaled(current.Quantity).Value - replacement.Quantity.Value);
-            bool lotExists = transaction.Connection.ExecuteScalar<long>(
-                "SELECT EXISTS(SELECT 1 FROM product_lot WHERE id=@LotId AND product_id=@ProductId)",
-                current, transaction.Transaction) != 0;
-            long? restoredLot = restored > Quantity.Zero && !lotExists
-                ? RecreateDamagedLot(transaction, current, restored, correctionReason) : null;
+            (long LotId, long ProductId, RestoredProduct? Chosen)? recreated = restored > Quantity.Zero && !current.LotExists
+                ? RecreateDamagedLot(transaction, current, restored, correctionReason, replacement.Restore) : null;
+            long? restoredLot = recreated?.LotId;
+            if (recreated is { } lot) productId = lot.ProductId;
             long id = transaction.Connection.ExecuteScalar<long>("""
                 INSERT INTO damage_correction(damage_id,correction_date,effective_date,treatment,previous_qty,new_qty,
                     previous_recovered,new_recovered,new_reason,new_notes,expense_delta,restored_lot_id,correction_reason)
@@ -216,6 +249,8 @@ public sealed partial class MoneyOutService
                 after = replacement,
                 lossChange = (newLoss - previousLoss).Scaled,
                 restoredLot,
+                restoredProduct = recreated?.Chosen?.ProductId,
+                createdProduct = recreated?.Chosen?.Created,
             });
             OperationGuard.Complete(transaction, operationId, "damage_correction", id);
             return id;
@@ -232,16 +267,32 @@ public sealed partial class MoneyOutService
             reason, operationId, cancellationToken);
     }
 
-    private long RecreateDamagedLot(DbTx transaction, DamageState damage, Quantity quantity, string reason)
+    private (long LotId, long ProductId, RestoredProduct? Chosen) RecreateDamagedLot(DbTx transaction,
+        DamageState damage, Quantity quantity, string reason, RestoreProductChoice? restore)
     {
-        ProductPrice product = transaction.Connection.QuerySingleOrDefault<ProductPrice>("""
-            SELECT default_selling_price AS SellingPrice,default_mrp AS Mrp FROM product WHERE id=@ProductId
-            """, damage, transaction.Transaction)
-            ?? throw new DomainException(ErrorCode.DamageProductDeleted);
-        long price = product.SellingPrice ?? damage.UnitCost;
-        long? mrp = product.Mrp is { } value && value >= price ? value : null;
+        long productId = damage.ProductId;
+        long price;
+        long? mrp;
+        DateOnly? expiry = damage.ExpiryDate;
+        RestoredProduct? chosen = null;
+        if (damage.ProductExists)
+        {
+            ProductPrice product = transaction.Connection.QuerySingle<ProductPrice>("""
+                SELECT default_selling_price AS SellingPrice,default_mrp AS Mrp FROM product WHERE id=@ProductId
+                """, damage, transaction.Transaction);
+            price = product.SellingPrice ?? damage.UnitCost;
+            mrp = product.Mrp is { } value && value >= price ? value : null;
+        }
+        else
+        {
+            if (restore is null) throw new DomainException(ErrorCode.DamageProductDeleted);
+            chosen = RestoreProducts.Resolve(transaction,
+                DamageDraft(transaction.Connection, transaction.Transaction, damage, quantity), restore);
+            (productId, price, mrp, expiry) = (chosen.ProductId, chosen.SellingPrice.Scaled, chosen.Mrp?.Scaled,
+                chosen.ExpiryDate);
+        }
         // The damage saved only the booked cost, so the product's rate as it is now gives the tax.
-        LotTax tax = LotTaxes.FromBooked(transaction, LotTaxes.ProductRate(transaction, damage.ProductId),
+        LotTax tax = LotTaxes.FromBooked(transaction, LotTaxes.ProductRate(transaction, productId),
             Money.FromScaled(damage.UnitCost));
         string lotCode = numbers.Next(transaction, DocType.Lot, periods.Today);
         long lotId = transaction.Connection.ExecuteScalar<long>("""
@@ -253,21 +304,19 @@ public sealed partial class MoneyOutService
             RETURNING id
             """, tax.AddTo(new DynamicParameters(new
         {
-            productId = damage.ProductId,
+            productId,
             lotCode,
             batch = damage.BatchNumber,
             today = Format(periods.Today),
-            expiry = damage.ExpiryDate,
+            expiry,
             unitCost = damage.UnitCost,
             mrp,
             price,
             quantity = quantity.Scaled,
-            reason = "Damage correction restore: " + reason,
+            reason = $"Damage {damage.DocumentNumber ?? "#" + damage.DamageId} correction restore: {reason}",
         })), transaction.Transaction);
-        long originId = transaction.Connection.ExecuteScalar<long>(
-            "SELECT id FROM direct_stock_origin WHERE lot_id=@lotId", new { lotId }, transaction.Transaction);
-        stock.Change(transaction, new(periods.Today, damage.ProductId, lotId, LotChangeKind.DirectEntry, quantity));
-        return lotId;
+        stock.Change(transaction, new(periods.Today, productId, lotId, LotChangeKind.DirectEntry, quantity));
+        return (lotId, productId, chosen);
     }
 
     public Task<IReadOnlyList<DamageHistoryItem>> GetDamageHistoryAsync(long damageId,
@@ -378,8 +427,13 @@ public sealed partial class MoneyOutService
 
     private sealed class DamageState
     {
+        public long DamageId { get; init; }
+        public string? DocumentNumber { get; init; }
+        public long OriginalProductId { get; init; }
         public long ProductId { get; init; }
         public long LotId { get; init; }
+        public bool LotExists { get; init; }
+        public bool ProductExists { get; init; }
         public long UnitCost { get; init; }
         public DateOnly DamageDate { get; init; }
         public long Quantity { get; init; }
@@ -387,7 +441,12 @@ public sealed partial class MoneyOutService
         public string Reason { get; init; } = "";
         public string? Notes { get; init; }
         public string? BatchNumber { get; init; }
-        public string? ExpiryDate { get; init; }
+        public DateOnly? ExpiryDate { get; init; }
+        public string? ProductName { get; init; }
+        public string? ProductNameLocal { get; init; }
+        public string? Sku { get; init; }
+        public string? UnitCode { get; init; }
+        public string ProductClass { get; init; } = "SALEABLE";
     }
 
     private sealed class ProductPrice

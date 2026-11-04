@@ -21,7 +21,7 @@ Fixes go phase by phase, stopping after each phase for review. A problem that ap
 | 5 | Done 26 Oct 2026: P5-1 fixed, reproduced on a fresh store first | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings; a running app instance locked the App's `bin`, so the App and UI tests were built to a scratch folder. 302 tests: 259 integration, 32 core, 2 architecture, 9 UI (2 opt-in skipped). Full-size store: the re-date timing under P5-1 (script and results in `artifacts/data/revision-issues-phase5`) |
 | 6 | Done 26 Oct 2026: P6-1 and P6-2 fixed. P6-2 was reproduced on a fresh store first. For P6-1, the weekly check was run on a fresh store after every stock workflow and passed | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings. 306 tests: 260 integration, 32 core, 2 architecture, 12 UI (2 opt-in skipped). Full-size store: the weekly-check and day-end timings under P6-1 and P6-2 (scripts and results in `artifacts/data/revision-issues-phase6`) |
 | 7, 8, 9, §15 | Open | |
-| P3-F3 (product choice for returned units) | Planned, after Phase 6 | |
+| P3-F3 (product choice for returned units) | Done 4 Nov 2026: built as decided; also fixed a later correction of a damage restored into another product | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings. 309 tests: 263 integration, 32 core, 2 architecture, 12 UI (2 opt-in skipped). The new window was captured in both modes and languages from the UI smoke journey and checked by eye; it was not used in the running app |
 
 ## Phase 0 — Freeze rules, map dependencies, and baseline
 
@@ -102,7 +102,7 @@ Owner rulings after the Phase 3 review (26 Oct 2026):
   - Cost: the 2,000-purchase review took 1.5–3.4 s in the Phase 7 runs, nearly all of it in each purchase's two lot queries. The change adds one small indexed lookup per distinct received date. It was not measured separately on the full-size store.
   - Also corrected: `Purchasing_CancelBlocked`, shown when a void is refused because stock was used. It still pointed to stock adjustments (removed in Phases 7–8) and said vendor returns were "not yet available". It now reads "Stock from this purchase was used, so it cannot be voided. Use a vendor return to send back what is left."
   - Both guides now say what a void means and when it is allowed.
-- [ ] **P3-F3 Choose a product for returned units when the original was deleted** (planned; owner decision 26 Oct 2026; build after Phase 6)
+- [x] **P3-F3 Choose a product for returned units when the original was deleted** (planned; owner decision 26 Oct 2026; build after Phase 6)
   - Already true, no change: customer returns, vendor returns, vendor-return cancels and damage corrections may refer to documents from a locked year. Each is dated on its own open date and counts in open reports; a locked year never changes. Only a void needs the original date open (P3-F2).
   - Decision: when the product was deleted, a customer return, a vendor-return cancel or a damage restore asks the operator to pick an existing product or create one. A new product is prefilled from the saved details; the operator chooses the category, which vendor-return and damage records do not save. The units go into a new direct lot of that product, dated today. A vendor return itself never meets a deleted product, because deleting needs zero stock and a return needs stock in the purchase's lot.
   - Stays from the original documents:
@@ -120,6 +120,47 @@ Owner rulings after the Phase 3 review (26 Oct 2026):
   - Customer returns gain the "pick an existing product" choice, so a product re-added by hand is not duplicated.
   - Traceability: the lot's reason names the source document and the audit log records the chosen product. A schema-40 link table for the lot panel and the reconciliation report is optional.
   - Until this is built, P3-F1's refusal messages stay.
+  - **Built 4 Nov 2026, no schema change.**
+    - **Shared rule.** `Inventory/RestoreProducts.cs` holds the saved details (`RestoreDraft`) and the operator's choice (`RestoreProductChoice`: an existing product or a `RestoreNewProduct`, plus the new lot's selling price, MRP and expiry). `Resolve` applies the guards inside the restoring transaction:
+      - the product is active (`RestoreProductUnavailable`);
+      - it is of the same type (`RestoreProductTypeMismatch`);
+      - it has the same unit, or a unit that takes the quantity (`FractionalQtyNotAllowed`);
+      - an expiry is given when the product tracks expiry and none was saved (`RestoreExpiryRequired`);
+      - the price is not above MRP (`PriceAboveMrp`).
+    - **New product.** It follows the product form's rules: a free SKU (`SkuExists`), an HSN of 4, 6 or 8 digits, and HSN with a GST rate in Regular GST mode. It takes the original's type and the lot's prices. The four new error codes have English and Gujarati text, Gujarati marked `MT – needs review`.
+    - **What stays.** Quantity, booked unit cost and the P&L effect never depend on the choice: the documents keep their own amounts. A vendor-return cancel adds back the return's tax credit, at its rate and amount, because the GST summary and the variance head read the return and purchase lines.
+    - **Customer returns.**
+      - `GetReturnRestoreDraftAsync(saleLine, quantity)` gives the draft only when the sold product was deleted. `ReturnLineInput.Restore` carries the choice.
+      - The units still go into a `CUSTOMER_RETURN` lot linked to its return line, as every recreated return lot does, rather than the "direct lot" the decision names. That link is what the reconciliation counts.
+      - The lot keeps the cost-side tax the sale line saved. A line from before tax snapshots takes the chosen product's rate.
+      - A later return of the same original reuses the product an earlier return went into, now only while that product is active.
+      - Without a choice, the service still recreates a product from complete saved fields, as before; the app always asks first.
+      - The old legacy review form (`ReturnRecreationWindow`, `ReturnRecreationInput`) is replaced by the shared window. The return line keeps its copy of the sale instead of being overwritten with reviewed values, so `OPERATOR_REVIEW` is no longer written.
+      - An audit entry `RESTORE_PRODUCT` on the return line names the original and chosen products and whether the product was created.
+    - **Damage corrections.**
+      - `GetDamageRestoreDraftAsync(damage, restored)` gives the draft when the damage's lot and product are both gone. `DamageCorrection.Restore` carries the choice.
+      - The lot keeps the damage's cost and takes the chosen product's tax rate, since a damage saves no purchase tax.
+      - Its reason now names the document: `Damage D… correction restore: …`. The audit entry adds `restoredProduct` and `createdProduct`.
+      - Fixed on the way: a damage's product is now read from its current lot. Before, a later correction of a damage restored into another product looked for the lot under the original product, missed it, and tried to recreate it.
+    - **Vendor-return cancels.** `GetVendorReturnRestoreDraftsAsync(return)` lists the lines whose lot and product are both gone. A new `CancelVendorReturnAsync` overload takes a choice per return line; the old signature passes none. The lot keeps the purchase's cost and tax per piece, and the audit entry lists `restoredProducts`.
+    - **Without a choice,** damage restores and vendor-return cancels still refuse with P3-F1's messages. Only service callers can reach that now, because the app asks first.
+    - **Screen.** `RestoreProductWindow` opens from Sales history's **Return**, a damage's **Edit** or **Void**, and **Cancel return** in Return history.
+      - It offers **Use an existing product** (a search of active products of the same type, prefilled with the saved name) or **Create a new product** (prefilled; each detail the record did not save is marked).
+      - Then the new lot's selling price and MRP (from the chosen product, or the saved prices), and the expiry when none was saved.
+      - It checks the guards it can before closing: a product picked, the unit, the expiry, price against MRP, and the SKU against every product, archived ones included.
+      - To support it, catalog search rows now carry `TrackExpiry` (a column of the product row already read), and unit choices carry their code. The strings are `Stock_Restore*` in both languages; the Gujarati is marked `MT – needs review`.
+    - **Not built:** the optional schema-40 link table. The lot reason, the audit entry and, for returns, the return-line link carry the trace.
+  - Regressions:
+    - `SalesTests.ReturnRestoreDraft_IsOfferedOnlyOnceTheSoldProductIsDeleted_WithTheSavedDetails` checks the draft's every field.
+    - `SalesTests.LegacyReturn_RequiresReviewedFieldsBeforeRecreatingDeletedProduct` (rewritten) checks a new product from the operator's details, its lot and the audit entry.
+    - `SalesTests.ReturnOfADeletedProduct_GoesIntoTheProductTheOperatorReAdded_WithinItsGuards` covers:
+      - an archived product, an internal-use product, a product that tracks expiry with none saved, a price above MRP and a taken SKU, each refused with its code;
+      - the return into the re-added product, and a second return that follows it without asking;
+      - the booked cost, the P&L return cost and a clean reconciliation.
+    - `MoneyOutTests.DamageRestore_OfADeletedProduct_GoesIntoTheChosenProduct_AndLaterCorrectionsFollowIt` covers the refusals, the restore, its reason, audit and P&L, and a later correction into the restored lot.
+    - `StockInTests.VendorReturnCancellation_OfADeletedProduct_RestoresIntoANewProduct_WithThePurchaseTax` covers the draft, the new product, the lot's purchase cost and tax, the vendor balance, the variance head and the audit entry.
+    - The UI smoke journey opens the window in both modes and languages. It checks that saving with no product picked keeps the window open with the reason, and that picking a product fills its price.
+  - Both guides describe the choice (Sales history) and point to it from damage corrections and vendor-return cancels. The screenshots `restore-product.en.png` and `.gu.png` replace `return-recreation.*`.
 
 ## Phase 4 — Catalog, lots, deletion, damage, and expiry
 

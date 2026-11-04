@@ -176,6 +176,72 @@ public sealed class MoneyOutTests
     }
 
     [Fact]
+    public async Task DamageRestore_OfADeletedProduct_GoesIntoTheChosenProduct_AndLaterCorrectionsFollowIt()
+    {
+        using var fixture = new Fixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        await fixture.MoneyOut.RecordDamageAsync(
+            new(fixture.LotId, fixture.Today, new Quantity(10), "SPOILED", Money.Zero, null), OperationGuard.NewId(), ct);
+        using var connection = fixture.Factory.Open();
+        long original = connection.ExecuteScalar<long>("SELECT product_id FROM product_lot WHERE id=@id", new { id = fixture.LotId });
+        connection.Execute("DELETE FROM product_lot WHERE id=@id", new { id = fixture.LotId });
+        connection.Execute("DELETE FROM product WHERE id=@original", new { original });
+        long Product(string sku, int active, string productClass) => connection.ExecuteScalar<long>("""
+            INSERT INTO product(sku,name,category_id,uom_id,tax_rate_id,track_expiry,default_selling_price,default_mrp,
+                is_active,product_class)
+            SELECT @sku,'Test product',(SELECT MIN(id) FROM category),(SELECT id FROM uom WHERE code='PCS'),
+                (SELECT MIN(id) FROM tax_rate),1,160000,170000,@active,@productClass
+            RETURNING id
+            """, new { sku, active, productClass });
+        long readded = Product("MONEY-2", 1, "SALEABLE");
+        long archived = Product("MONEY-OLD", 0, "SALEABLE");
+        long internalUse = Product("MONEY-RAW", 1, "INTERNAL");
+        DamageItem damage = (await fixture.MoneyOut.GetDamagesAsync(fixture.Today, fixture.Today, ct)).Single();
+
+        RestoreDraft draft = (await fixture.MoneyOut.GetDamageRestoreDraftAsync(damage.Id, new Quantity(4), ct))!;
+        draft.DocumentNumber.ShouldBe("D2627-000001");
+        draft.ProductName.ShouldBe("Test product");
+        draft.SuggestedSku.ShouldBe("MONEY-1");
+        draft.UnitCode.ShouldBe("PCS");
+        draft.CategoryId.ShouldBeNull();
+        draft.ExpiryDate.ShouldBe(new DateOnly(2027, 9, 1));
+        draft.Quantity.ShouldBe(new Quantity(4));
+        draft.UnitCost.ShouldBe(new Money(50));
+        Task<long> Correct(decimal quantity, RestoreProductChoice? restore) => fixture.MoneyOut.CorrectDamageAsync(damage,
+            new(new Quantity(quantity), Money.Zero, "SPOILED", null) { Restore = restore }, "Some were fine",
+            OperationGuard.NewId(), ct);
+        RestoreProductChoice Into(long productId) => new(productId, null, new Money(155), new Money(170));
+        (await Should.ThrowAsync<DomainException>(() => Correct(6, null))).Code.ShouldBe(ErrorCode.DamageProductDeleted);
+        (await Should.ThrowAsync<DomainException>(() => Correct(6, Into(archived)))).Code
+            .ShouldBe(ErrorCode.RestoreProductUnavailable);
+        (await Should.ThrowAsync<DomainException>(() => Correct(6, Into(internalUse)))).Code
+            .ShouldBe(ErrorCode.RestoreProductTypeMismatch);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM damage_correction").ShouldBe(0L);
+
+        await Correct(6, Into(readded));
+
+        long restored = connection.ExecuteScalar<long>("SELECT restored_lot_id FROM damage_correction");
+        connection.QuerySingle<(long Product, long OnHand, long Cost, long Price, long Mrp, string Expiry, string Origin)>("""
+            SELECT product_id,qty_on_hand,unit_cost,selling_price,mrp,expiry_date,origin_kind FROM product_lot WHERE id=@restored
+            """, new { restored }).ShouldBe((readded, 4000L, 50000L, 155000L, 170000L, "2027-09-01", "DIRECT"));
+        connection.ExecuteScalar<string>("SELECT reason FROM direct_stock_origin WHERE lot_id=@restored", new { restored })
+            .ShouldBe("Damage D2627-000001 correction restore: Some were fine");
+        connection.ExecuteScalar<string>("SELECT changes FROM audit_log WHERE entity='damage' AND action='CORRECT'")!
+            .ShouldContain($"\"restoredProduct\":{readded}");
+        connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='DAMAGES'").ShouldBe(300_000L);
+        (await fixture.MoneyOut.GetDamageRestoreDraftAsync(damage.Id, Quantity.One, ct)).ShouldBeNull();
+
+        // The next correction finds the units in the restored lot of the chosen product.
+        damage = (await fixture.MoneyOut.GetDamagesAsync(fixture.Today, fixture.Today, ct)).Single();
+        await Correct(4, null);
+        connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@restored", new { restored })
+            .ShouldBe(6000L);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot").ShouldBe(1L);
+        connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='DAMAGES'").ShouldBe(200_000L);
+        await fixture.Database.WriteAsync(tx => LotSourceReconciliation.CheckAll(tx.Connection, tx.Transaction).ToArray().ShouldBeEmpty(), ct);
+    }
+
+    [Fact]
     public async Task InternalUseDamage_HasNoPnlHead()
     {
         using var fixture = new Fixture();

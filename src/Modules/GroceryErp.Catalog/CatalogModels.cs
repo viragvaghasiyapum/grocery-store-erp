@@ -61,6 +61,7 @@ public sealed class ProductListItem
     public long? CostInclTaxScaled { get; init; }
     public bool IsLoose { get; init; }
     public bool IsActive { get; init; }
+    public bool TrackExpiry { get; init; }
     public bool HasBarcode { get; init; }
     public string ProductClass { get; init; } = "SALEABLE";
     public bool HasExpiredStock { get; init; }

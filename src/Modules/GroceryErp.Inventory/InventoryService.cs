@@ -16,6 +16,16 @@ public sealed partial class InventoryService(
     PeriodGuard periods,
     IAuditLog audit)
 {
+    /// <summary>The categories, units and tax rates a product created for restored units may use.</summary>
+    public Task<RestoreOptions> GetRestoreOptionsAsync(CancellationToken cancellationToken = default) =>
+        database.ReadAsync(connection => RestoreProducts.Options(connection), cancellationToken);
+
+    /// <summary>Whether any product, archived ones included, already uses the SKU.</summary>
+    public Task<bool> IsSkuInUseAsync(string sku, CancellationToken cancellationToken = default) =>
+        database.ReadAsync(connection => connection.ExecuteScalar<long>(
+            "SELECT EXISTS(SELECT 1 FROM product WHERE sku=@sku COLLATE NOCASE)", new { sku = sku.Trim() }) != 0,
+            cancellationToken);
+
     public Task<LotPage> GetLotPageAsync(long? productId = null, string? query = null, long? beforeId = null,
         int limit = 100, bool availableOnly = false, string expiryFilter = "ALL",
         DateOnly? asOfDate = null, CancellationToken cancellationToken = default) =>

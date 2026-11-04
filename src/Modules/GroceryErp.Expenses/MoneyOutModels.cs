@@ -1,5 +1,6 @@
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
+using GroceryErp.Inventory;
 
 namespace GroceryErp.Expenses;
 
@@ -17,7 +18,11 @@ public sealed record DamageItem(
     string Status = "ACTIVE");
 
 public sealed record DamagePage(IReadOnlyList<DamageItem> Items, bool HasMore, DateOnly? NextDate, long? NextId);
-public sealed record DamageCorrection(Quantity Quantity, Money RecoveredAmount, string Reason, string? Notes);
+public sealed record DamageCorrection(Quantity Quantity, Money RecoveredAmount, string Reason, string? Notes)
+{
+    /// <summary>The operator's product for restored units whose damaged lot and product were both deleted.</summary>
+    public RestoreProductChoice? Restore { get; init; }
+}
 
 /// One line of a damage's history: the original posting, then each correction.
 public sealed record DamageHistoryItem(string Kind, DateOnly RecordedOn, string? Treatment, DateOnly EffectiveDate,

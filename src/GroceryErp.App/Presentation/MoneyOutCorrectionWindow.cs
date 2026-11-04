@@ -4,6 +4,7 @@ using System.Windows.Media;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Services;
 using GroceryErp.Expenses;
+using GroceryErp.Inventory;
 using GroceryErp.Localization;
 
 namespace GroceryErp.App.Presentation;
@@ -188,10 +189,25 @@ public sealed class MoneyOutCorrectionWindow : Window
         try
         {
             if (_damage is { } damage)
-                await (_void
-                    ? _service.VoidDamageAsync(damage, reason!, _operationId)
-                    : _service.CorrectDamageAsync(damage, new(quantity!.Value, amount ?? Money.Zero, code, _notes.Text),
-                        reason!, _operationId));
+            {
+                // Restored units whose lot and product were both deleted need a product first.
+                DamageCorrection correction = _void
+                    ? new(Quantity.Zero, Money.Zero, damage.Reason, damage.Notes)
+                    : new(quantity!.Value, amount ?? Money.Zero, code, _notes.Text);
+                Quantity restoring = new(damage.Quantity.Value - correction.Quantity.Value);
+                if (restoring > Quantity.Zero &&
+                    await _service.GetDamageRestoreDraftAsync(damage.Id, restoring) is { } draft)
+                {
+                    RestoreProductChoice? restore = await RestoreProductWindow.AskAsync(this, draft);
+                    if (restore is null)
+                    {
+                        _save.IsEnabled = true;
+                        return;
+                    }
+                    correction = correction with { Restore = restore };
+                }
+                await _service.CorrectDamageAsync(damage, correction, reason!, _operationId);
+            }
             else if (_salary is { } salary)
                 await (_void
                     ? _service.VoidSalaryPaymentAsync(salary, reason!, _operationId)

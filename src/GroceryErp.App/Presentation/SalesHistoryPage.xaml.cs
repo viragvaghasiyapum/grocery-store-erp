@@ -9,6 +9,7 @@ using GroceryErp.Core;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Services;
+using GroceryErp.Inventory;
 using GroceryErp.Localization;
 using GroceryErp.Sales;
 using Microsoft.Extensions.DependencyInjection;
@@ -431,27 +432,22 @@ public partial class SalesHistoryPage : Page
             var dialog = new SaleActionWindow(true, lines, BillContext(item)) { Owner = Window.GetWindow(this) };
             if (dialog.ShowDialog() != true) return;
             var reviewedLines = new List<ReturnLineInput>(dialog.ReturnLines.Count);
-            ReturnRecreationOptions? recreationOptions = null;
             foreach (ReturnLineInput selected in dialog.ReturnLines)
             {
-                // Only resold units can need a recreated product; damage keeps the sale snapshot.
+                // Only resold units need a product; damage keeps the sale snapshot. When the sold
+                // product was deleted, the operator chooses one for the units.
                 ReturnableSaleLine source = lines.Single(line => line.Line.Id == selected.SaleLineId);
-                if (source.OriginalLotAvailable || !selected.Resellable)
+                RestoreDraft? draft = source.OriginalLotAvailable || !selected.Resellable
+                    ? null
+                    : await _sales.GetReturnRestoreDraftAsync(selected.SaleLineId, selected.Quantity);
+                if (draft is null)
                 {
                     reviewedLines.Add(selected);
                     continue;
                 }
-                ReturnRecreationDraft draft = await _sales.GetReturnRecreationDraftAsync(selected.SaleLineId);
-                if (!draft.ProductMissing || draft.MissingFields.Count == 0)
-                {
-                    reviewedLines.Add(selected);
-                    continue;
-                }
-                recreationOptions ??= await _sales.GetReturnRecreationOptionsAsync();
-                var review = new ReturnRecreationWindow(draft, recreationOptions)
-                { Owner = Window.GetWindow(this) };
-                if (review.ShowDialog() != true) return;
-                reviewedLines.Add(selected with { Recreation = review.Result });
+                RestoreProductChoice? choice = await RestoreProductWindow.AskAsync(Window.GetWindow(this), draft);
+                if (choice is null) return;
+                reviewedLines.Add(selected with { Restore = choice });
             }
             CompletedReturn returned = await _sales.ReturnAsync(new(item.Id, _clock.BusinessDate, dialog.Reason, dialog.SelectedRefundMode,
                 reviewedLines, OperationGuard.NewId()));

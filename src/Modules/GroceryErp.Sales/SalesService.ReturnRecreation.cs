@@ -1,3 +1,4 @@
+using System.Data;
 using Dapper;
 using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
@@ -57,161 +58,49 @@ public sealed partial class SalesService
         return damageId;
     }
 
-    // A resellable return whose sold lot changed or was deleted starts a new lot from
-    // the sale snapshot. A deleted product is recreated once under a new ID and a
-    // conflict-safe SKU; later returns of the same original reuse that product.
+    // A resellable return whose sold lot changed or was deleted starts a new lot from the sale
+    // snapshot. When the product was deleted, the operator's choice decides its product: an
+    // existing one or a new one. Without a choice, an earlier return's active product for the
+    // same original is reused, or a product is recreated once from complete saved fields.
     private (long ProductId, long LotId) CreateReturnLot(DbTx tx, long saleLineId,
-        long returnLineId, Quantity quantity, DateOnly returnDate, ReturnRecreationInput? reviewed)
+        long returnLineId, Quantity quantity, DateOnly returnDate, RestoreProductChoice? restore)
     {
-        RecreationRow row = tx.Connection.QuerySingle<RecreationRow>("""
-            SELECT sl.id AS SaleLineId,sl.product_id AS ProductId,
-                   sl.product_sku_snapshot AS Sku,sl.product_name AS ProductName,
-                   sl.product_name_local AS ProductNameLocal,
-                   sl.category_id_snapshot AS CategoryId,
-                   sl.uom_id_snapshot AS UnitId,sl.tax_rate_id_snapshot AS TaxRateId,
-                   sl.tax_rate_pct AS TaxRateScaled,sl.hsn_code AS HsnCode,
-                   sl.price_includes_tax AS PriceIncludesTax,
-                   sl.track_expiry_snapshot AS TrackExpiry,sl.is_loose_snapshot AS IsLoose,
-                   sl.product_class_snapshot AS ProductClass,
-                   sl.batch_no_snapshot AS BatchNumber,
-                   sl.expiry_date_snapshot AS ExpiryDate,sl.unit_cost AS UnitCost,
-                   sl.unit_price AS SellingPrice,sl.mrp AS Mrp,
-                   sl.tax_mode_snapshot AS TaxMode,sl.tax_label_snapshot AS TaxLabel,
-                   sl.unit_cost_tax AS UnitCostTax,sl.unit_cost_incl_tax AS UnitCostInclTax
-            FROM sale_line sl WHERE sl.id=@saleLineId
-            """, new { saleLineId }, tx.Transaction);
-        if (reviewed is not null)
-        {
-            if (string.IsNullOrWhiteSpace(reviewed.Sku) || reviewed.Sku.Length > 20 ||
-                string.IsNullOrWhiteSpace(reviewed.ProductName) || reviewed.CategoryId <= 0 ||
-                reviewed.UnitId <= 0 || reviewed.TaxRateId <= 0 ||
-                reviewed.ProductClass != "SALEABLE" ||
-                reviewed.TaxMode is not ("REGULAR" or "COMPOSITION" or "NONE") ||
-                reviewed.TaxMode == "REGULAR" && string.IsNullOrWhiteSpace(reviewed.HsnCode) ||
-                reviewed.TrackExpiry && reviewed.ExpiryDate is null ||
-                tx.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM tax_rate WHERE id=@id",
-                    new { id = reviewed.TaxRateId }, tx.Transaction) != 1)
-                throw new DomainException(ErrorCode.Validation, "Review all return recreation fields.");
-            row = row with
-            {
-                Sku = reviewed.Sku.Trim(),
-                ProductName = reviewed.ProductName.Trim(),
-                ProductNameLocal = reviewed.ProductNameLocal?.Trim(),
-                CategoryId = reviewed.CategoryId,
-                UnitId = reviewed.UnitId,
-                TaxRateId = reviewed.TaxRateId,
-                TaxMode = reviewed.TaxMode,
-                HsnCode = reviewed.HsnCode?.Trim(),
-                TrackExpiry = reviewed.TrackExpiry,
-                IsLoose = reviewed.IsLoose,
-                ProductClass = reviewed.ProductClass,
-                ExpiryDate = reviewed.ExpiryDate,
-            };
-            tx.Connection.Execute("""
-                UPDATE sale_return_line SET product_sku_snapshot=@Sku,
-                    product_name_snapshot=@ProductName,product_name_local_snapshot=@ProductNameLocal,
-                    category_id_snapshot=@CategoryId,uom_id_snapshot=@UnitId,
-                    tax_rate_id_snapshot=@TaxRateId,tax_mode_snapshot=@TaxMode,
-                    track_expiry_snapshot=@TrackExpiry,is_loose_snapshot=@IsLoose,
-                    expiry_date_snapshot=@ExpiryDate,snapshot_provenance='OPERATOR_REVIEW',
-                    legacy_unknown_fields=NULL WHERE id=@returnLineId
-                """, new
-            {
-                row.Sku,
-                row.ProductName,
-                row.ProductNameLocal,
-                row.CategoryId,
-                row.UnitId,
-                row.TaxRateId,
-                row.TaxMode,
-                row.TrackExpiry,
-                row.IsLoose,
-                row.ExpiryDate,
-                returnLineId
-            }, tx.Transaction);
-        }
+        RecreationRow row = tx.Connection.QuerySingle<RecreationRow>(RecreationSql,
+            new { saleLineId }, tx.Transaction);
         // Every price includes tax. A line saved as excluding tax charged its rate on top, so the
         // returned stock's price is that customer price, capped at MRP.
-        Money price = Money.FromScaled(row.SellingPrice);
-        if (!row.PriceIncludesTax) price += price.PercentOf(Percent.FromScaled(row.TaxRateScaled));
-        if (row.Mrp is { } mrp && price.Scaled > mrp) price = Money.FromScaled(mrp);
-        if (row.ExpiryDate is { } expiry && expiry < returnDate)
-            throw new DomainException(ErrorCode.ExpiredLot, expiry);
+        Money price = SavedPrice(row);
+        long? mrp = row.Mrp;
+        DateOnly? expiry = row.ExpiryDate;
         long productId = row.ProductId;
+        RestoredProduct? chosen = null;
         bool productExists = tx.Connection.ExecuteScalar<long>(
             "SELECT EXISTS(SELECT 1 FROM product WHERE id=@productId)", new { productId }, tx.Transaction) == 1;
-        long? recreated = productExists ? null : tx.Connection.ExecuteScalar<long?>("""
-            SELECT rl.restock_product_id_snapshot FROM sale_return_line rl
-            WHERE rl.product_id_snapshot=@productId
-              AND rl.restock_product_id_snapshot<>rl.product_id_snapshot
-              AND EXISTS(SELECT 1 FROM product p WHERE p.id=rl.restock_product_id_snapshot)
-            ORDER BY rl.id DESC LIMIT 1
-            """, new { productId }, tx.Transaction);
-        if (recreated is { } existing) productId = existing;
-        else if (!productExists)
+        long? earlier = productExists ? null : EarlierRestock(tx.Connection, tx.Transaction, productId);
+        if (earlier is { } existing) productId = existing;
+        else if (!productExists && restore is not null)
         {
-            if (string.IsNullOrWhiteSpace(row.Sku) || string.IsNullOrWhiteSpace(row.ProductName) || row.CategoryId is null ||
-                row.UnitId is null || row.TaxRateId is null || row.TrackExpiry is null ||
-                row.IsLoose is null || row.ProductClass != "SALEABLE" ||
-                string.IsNullOrWhiteSpace(row.TaxMode) ||
-                row.TaxMode == "REGULAR" && string.IsNullOrWhiteSpace(row.HsnCode) ||
-                row.TrackExpiry == true && row.ExpiryDate is null ||
-                tx.Connection.ExecuteScalar<long>("SELECT EXISTS(SELECT 1 FROM category WHERE id=@id)",
-                    new { id = row.CategoryId }, tx.Transaction) == 0 ||
-                tx.Connection.ExecuteScalar<long>("SELECT EXISTS(SELECT 1 FROM uom WHERE id=@id)",
-                    new { id = row.UnitId }, tx.Transaction) == 0 ||
-                tx.Connection.ExecuteScalar<long>("SELECT EXISTS(SELECT 1 FROM tax_rate WHERE id=@id)",
-                    new { id = row.TaxRateId }, tx.Transaction) == 0)
-                throw new DomainException(ErrorCode.Validation,
-                    "The deleted product has incomplete historical fields. Review its return recreation details.");
-            string sku = !string.IsNullOrWhiteSpace(row.Sku) && row.Sku.Length <= 20 &&
-                tx.Connection.ExecuteScalar<long>("SELECT EXISTS(SELECT 1 FROM product WHERE sku=@sku COLLATE NOCASE)",
-                    new { sku = row.Sku }, tx.Transaction) == 0
-                ? row.Sku : $"R{saleLineId:X}";
-            for (int suffix = 1; suffix <= 255 && tx.Connection.ExecuteScalar<long>(
-                    "SELECT EXISTS(SELECT 1 FROM product WHERE sku=@sku COLLATE NOCASE)",
-                    new { sku }, tx.Transaction) != 0; suffix++)
-                sku = $"R{saleLineId:X}-{suffix:X}";
-            if (tx.Connection.ExecuteScalar<long>(
-                    "SELECT EXISTS(SELECT 1 FROM product WHERE sku=@sku COLLATE NOCASE)",
-                    new { sku }, tx.Transaction) != 0)
-                throw new DomainException(ErrorCode.Validation, "No return SKU is available for the deleted product.");
-            productId = tx.Connection.ExecuteScalar<long>("""
-                INSERT INTO product(sku,name,name_local,category_id,uom_id,hsn_code,
-                    tax_rate_id,is_loose,track_expiry,
-                    default_selling_price,default_mrp,product_class)
-                VALUES (@sku,@ProductName,@ProductNameLocal,@CategoryId,@UnitId,@HsnCode,
-                    @TaxRateId,@IsLoose,@TrackExpiry,
-                    @price,@Mrp,'SALEABLE') RETURNING id
-                """, new
-            {
-                sku,
-                row.ProductName,
-                row.ProductNameLocal,
-                row.CategoryId,
-                row.UnitId,
-                row.HsnCode,
-                row.TaxRateId,
-                row.IsLoose,
-                row.TrackExpiry,
-                price = price.Scaled,
-                row.Mrp
-            }, tx.Transaction);
+            chosen = RestoreProducts.Resolve(tx, Draft(tx.Connection, tx.Transaction, row, quantity), restore);
+            (productId, price, mrp, expiry) = (chosen.ProductId, chosen.SellingPrice, chosen.Mrp?.Scaled, chosen.ExpiryDate);
         }
-        // The lot keeps the sale line's tax label and the cost-side tax the line copied from the
-        // sold lot. A line saved before tax snapshots derives them from its booked cost and percent.
+        else if (!productExists) productId = RecreateProduct(tx, row, price);
+        if (expiry is { } date && date < returnDate) throw new DomainException(ErrorCode.ExpiredLot, date);
+        // The lot keeps the cost-side tax the sale line copied from the sold lot. A line saved
+        // before tax snapshots derives it from its booked cost: at the sale line's rate, or at the
+        // chosen product's rate when the operator chose one.
         var rate = new TaxRateSnapshot(row.TaxRateId, row.TaxLabel, Percent.FromScaled(row.TaxRateScaled));
         LotTax tax = row.UnitCostTax is { } unitTax && row.UnitCostInclTax is { } inclTax
             ? new LotTax(rate, new PurchaseUnitCost(Money.FromScaled(inclTax - unitTax), Money.FromScaled(unitTax),
                 Money.FromScaled(inclTax), Money.FromScaled(row.UnitCost)))
-            : LotTaxes.FromBooked(tx, rate, Money.FromScaled(row.UnitCost));
+            : LotTaxes.FromBooked(tx, chosen is null ? rate : LotTaxes.ProductRate(tx, productId),
+                Money.FromScaled(row.UnitCost));
         string lotCode = documentNumbers.Next(tx, DocType.Lot, returnDate);
         long lotId = tx.Connection.ExecuteScalar<long>("""
             INSERT INTO product_lot(product_id,lot_code,batch_no,received_date,expiry_date,
                 unit_cost,mrp,selling_price,qty_received,origin_kind,origin_ref_id,
                 tax_rate_id_snapshot,tax_label_snapshot,tax_rate_pct_snapshot,unit_tax,unit_cost_incl_tax)
-            VALUES (@productId,@lotCode,@BatchNumber,@receivedDate,@ExpiryDate,
-                @UnitCost,@Mrp,@price,@quantity,'CUSTOMER_RETURN',@returnLineId,
+            VALUES (@productId,@lotCode,@BatchNumber,@receivedDate,@expiry,
+                @UnitCost,@mrp,@price,@quantity,'CUSTOMER_RETURN',@returnLineId,
                 @taxRateId,@taxLabel,@taxRatePct,@unitTax,@unitCostInclTax)
             RETURNING id
             """, tax.AddTo(new DynamicParameters(new
@@ -220,115 +109,147 @@ public sealed partial class SalesService
             lotCode,
             row.BatchNumber,
             receivedDate = returnDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-            row.ExpiryDate,
+            expiry,
             row.UnitCost,
-            row.Mrp,
+            mrp,
             price = price.Scaled,
             quantity = quantity.Scaled,
             returnLineId
         })), tx.Transaction);
+        if (chosen is not null)
+            auditLog.Write(tx, "sale_return_line", returnLineId, "RESTORE_PRODUCT", new
+            {
+                saleLineId,
+                originalProductId = row.ProductId,
+                productId,
+                createdProduct = chosen.Created,
+                lotId,
+            });
         return (productId, lotId);
     }
 
-    // Read-only preparation for Phase 5's return transaction. Null legacy fields
-    // remain visible to the operator; no category, tax, or unit is guessed.
-    public Task<ReturnRecreationDraft> GetReturnRecreationDraftAsync(long saleLineId,
+    // A deleted product is recreated once under a new ID and a conflict-safe SKU, only from
+    // complete saved fields; the return form asks the operator instead.
+    private static long RecreateProduct(DbTx tx, RecreationRow row, Money price)
+    {
+        if (string.IsNullOrWhiteSpace(row.ProductName) || row.CategoryId is null ||
+            row.UnitId is null || row.TaxRateId is null || row.TrackExpiry is null ||
+            row.IsLoose is null || row.ProductClass != "SALEABLE" ||
+            string.IsNullOrWhiteSpace(row.TaxMode) ||
+            row.TaxMode == "REGULAR" && string.IsNullOrWhiteSpace(row.HsnCode) ||
+            row.TrackExpiry == true && row.ExpiryDate is null ||
+            tx.Connection.ExecuteScalar<long>("SELECT EXISTS(SELECT 1 FROM category WHERE id=@id)",
+                new { id = row.CategoryId }, tx.Transaction) == 0 ||
+            tx.Connection.ExecuteScalar<long>("SELECT EXISTS(SELECT 1 FROM uom WHERE id=@id)",
+                new { id = row.UnitId }, tx.Transaction) == 0 ||
+            tx.Connection.ExecuteScalar<long>("SELECT EXISTS(SELECT 1 FROM tax_rate WHERE id=@id)",
+                new { id = row.TaxRateId }, tx.Transaction) == 0)
+            throw new DomainException(ErrorCode.Validation,
+                "The deleted product has incomplete historical fields. Choose a product for the returned units.");
+        string sku = RestoreProducts.SuggestSku(tx.Connection, tx.Transaction, row.Sku, $"R{row.SaleLineId:X}");
+        return tx.Connection.ExecuteScalar<long>("""
+            INSERT INTO product(sku,name,name_local,category_id,uom_id,hsn_code,
+                tax_rate_id,is_loose,track_expiry,
+                default_selling_price,default_mrp,product_class)
+            VALUES (@sku,@ProductName,@ProductNameLocal,@CategoryId,@UnitId,@HsnCode,
+                @TaxRateId,@IsLoose,@TrackExpiry,
+                @price,@Mrp,'SALEABLE') RETURNING id
+            """, new
+        {
+            sku,
+            row.ProductName,
+            row.ProductNameLocal,
+            row.CategoryId,
+            row.UnitId,
+            row.HsnCode,
+            row.TaxRateId,
+            row.IsLoose,
+            row.TrackExpiry,
+            price = price.Scaled,
+            row.Mrp
+        }, tx.Transaction);
+    }
+
+    // The active product an earlier return of the same deleted original went into.
+    private static long? EarlierRestock(IDbConnection connection, IDbTransaction? transaction, long productId) =>
+        connection.ExecuteScalar<long?>("""
+            SELECT rl.restock_product_id_snapshot FROM sale_return_line rl
+            WHERE rl.product_id_snapshot=@productId
+              AND rl.restock_product_id_snapshot<>rl.product_id_snapshot
+              AND EXISTS(SELECT 1 FROM product p WHERE p.id=rl.restock_product_id_snapshot AND p.is_active=1)
+            ORDER BY rl.id DESC LIMIT 1
+            """, new { productId }, transaction);
+
+    private static Money SavedPrice(RecreationRow row)
+    {
+        Money price = Money.FromScaled(row.SellingPrice);
+        if (!row.PriceIncludesTax) price += price.PercentOf(Percent.FromScaled(row.TaxRateScaled));
+        return row.Mrp is { } mrp && price.Scaled > mrp ? Money.FromScaled(mrp) : price;
+    }
+
+    // A saved category, unit or rate that no longer exists counts as not saved.
+    private static RestoreDraft Draft(IDbConnection connection, IDbTransaction? transaction, RecreationRow row,
+        Quantity quantity)
+    {
+        bool Exists(string table, long? id) => id is not null && connection.ExecuteScalar<long>(
+            $"SELECT EXISTS(SELECT 1 FROM {table} WHERE id=@id)", new { id }, transaction) != 0;
+        return new RestoreDraft(row.SaleLineId, row.InvoiceNumber ?? "", row.ProductName, row.ProductNameLocal,
+            RestoreProducts.SuggestSku(connection, transaction, row.Sku, $"R{row.SaleLineId:X}"),
+            Exists("category", row.CategoryId) ? row.CategoryId : null,
+            Exists("uom", row.UnitId) ? row.UnitId : null, row.UnitCode,
+            Exists("tax_rate", row.TaxRateId) ? row.TaxRateId : null, row.HsnCode,
+            row.TrackExpiry, row.IsLoose, string.IsNullOrWhiteSpace(row.ProductClass) ? "SALEABLE" : row.ProductClass,
+            row.BatchNumber, row.ExpiryDate, quantity, Money.FromScaled(row.UnitCost), SavedPrice(row),
+            row.Mrp is { } mrp ? Money.FromScaled(mrp) : null);
+    }
+
+    /// <summary>
+    /// The saved details for a resold return whose product was deleted, or null when the units have
+    /// a product: it still exists, or an earlier return of the same original went into an active one.
+    /// </summary>
+    public Task<RestoreDraft?> GetReturnRestoreDraftAsync(long saleLineId, Quantity quantity,
         CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
     {
         if (saleLineId <= 0) throw new DomainException(ErrorCode.Validation, "Invalid sale line.");
-        RecreationRow? row = connection.QuerySingleOrDefault<RecreationRow>("""
-            SELECT sl.id AS SaleLineId,sl.product_sku_snapshot AS Sku,
-                   sl.product_name AS ProductName,sl.product_name_local AS ProductNameLocal,
-                   sl.category_id_snapshot AS CategoryId,sl.category_name_snapshot AS CategoryName,
-                   sl.uom_id_snapshot AS UnitId,sl.uom_snapshot AS UnitCode,
-                   sl.tax_rate_id_snapshot AS TaxRateId,sl.tax_rate_pct AS TaxRateScaled,
-                   sl.hsn_code AS HsnCode,sl.price_includes_tax AS PriceIncludesTax,
-                   sl.track_expiry_snapshot AS TrackExpiry,sl.is_loose_snapshot AS IsLoose,
-                   sl.product_class_snapshot AS ProductClass,sl.batch_no_snapshot AS BatchNumber,
-                   sl.expiry_date_snapshot AS ExpiryDate,sl.unit_cost AS UnitCost,
-                   sl.unit_price AS SellingPrice,sl.mrp AS Mrp,
-                   sl.tax_mode_snapshot AS TaxMode
-            FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
-            WHERE sl.id=@saleLineId AND s.status='COMPLETED'
+        RecreationRow? row = connection.QuerySingleOrDefault<RecreationRow>(RecreationSql + """
+             AND EXISTS(SELECT 1 FROM sale s WHERE s.id=sl.sale_id AND s.status='COMPLETED')
             """, new { saleLineId });
         if (row is null) throw new DomainException(ErrorCode.NotFound, "completed sale line", saleLineId);
-        var missing = new List<string>();
-        if (string.IsNullOrWhiteSpace(row.Sku)) missing.Add("SKU");
-        if (string.IsNullOrWhiteSpace(row.ProductName)) missing.Add("product name");
-        if (row.CategoryId is null || connection.ExecuteScalar<long>(
-                "SELECT EXISTS(SELECT 1 FROM category WHERE id=@id)", new { id = row.CategoryId }) == 0)
-            missing.Add("category");
-        if (row.UnitId is null || connection.ExecuteScalar<long>(
-                "SELECT EXISTS(SELECT 1 FROM uom WHERE id=@id)", new { id = row.UnitId }) == 0)
-            missing.Add("unit");
-        if (row.TaxRateId is null || connection.ExecuteScalar<long>(
-                "SELECT EXISTS(SELECT 1 FROM tax_rate WHERE id=@id)", new { id = row.TaxRateId }) == 0)
-            missing.Add("tax rate");
-        if (string.IsNullOrWhiteSpace(row.TaxMode)) missing.Add("tax mode");
-        if (row.TaxMode == "REGULAR" && string.IsNullOrWhiteSpace(row.HsnCode)) missing.Add("HSN");
-        if (row.TrackExpiry is null) missing.Add("expiry tracking");
-        if (row.IsLoose is null) missing.Add("quantity type");
-        if (string.IsNullOrWhiteSpace(row.ProductClass)) missing.Add("classification");
-        if (row.TrackExpiry == true && row.ExpiryDate is null) missing.Add("lot expiry");
-        string baseSku = !string.IsNullOrWhiteSpace(row.Sku) && row.Sku.Length <= 20
-            ? row.Sku : $"R{saleLineId:X}";
-        string suggested = baseSku;
-        if (connection.ExecuteScalar<long>(
-                "SELECT EXISTS(SELECT 1 FROM product WHERE sku=@sku COLLATE NOCASE)",
-                new { sku = suggested }) != 0)
-        {
-            baseSku = $"R{saleLineId:X}";
-            suggested = baseSku;
-            for (int suffix = 1; suffix <= 255 && connection.ExecuteScalar<long>(
-                    "SELECT EXISTS(SELECT 1 FROM product WHERE sku=@sku COLLATE NOCASE)",
-                    new { sku = suggested }) != 0; suffix++)
-                suggested = $"{baseSku}-{suffix:X}";
-            if (connection.ExecuteScalar<long>(
-                    "SELECT EXISTS(SELECT 1 FROM product WHERE sku=@sku COLLATE NOCASE)",
-                    new { sku = suggested }) != 0)
-                throw new DomainException(ErrorCode.Validation, "No available return SKU was found.");
-        }
-        return new ReturnRecreationDraft(row.SaleLineId, suggested, row.ProductName, row.ProductNameLocal,
-            row.CategoryId, row.CategoryName, row.UnitId, row.UnitCode,
-            row.TaxRateId, Percent.FromScaled(row.TaxRateScaled), row.HsnCode,
-            row.TrackExpiry, row.IsLoose, row.ProductClass,
-            row.BatchNumber, row.ExpiryDate, Money.FromScaled(row.UnitCost),
-            Money.FromScaled(row.SellingPrice), row.Mrp is null ? null : Money.FromScaled(row.Mrp.Value),
-            missing)
-        {
-            TaxMode = row.TaxMode,
-            // A product an earlier return already recreated is reused without review.
-            ProductMissing = connection.ExecuteScalar<long>("""
-                SELECT NOT EXISTS(SELECT 1 FROM product WHERE id=sl.product_id)
-                   AND NOT EXISTS(SELECT 1 FROM sale_return_line rl
-                       WHERE rl.product_id_snapshot=sl.product_id
-                         AND rl.restock_product_id_snapshot<>rl.product_id_snapshot
-                         AND EXISTS(SELECT 1 FROM product p WHERE p.id=rl.restock_product_id_snapshot))
-                FROM sale_line sl WHERE sl.id=@id
-                """, new { id = row.SaleLineId }) == 1,
-        };
+        bool productExists = connection.ExecuteScalar<long>(
+            "SELECT EXISTS(SELECT 1 FROM product WHERE id=@id)", new { id = row.ProductId }) == 1;
+        return productExists || EarlierRestock(connection, null, row.ProductId) is not null
+            ? null
+            : Draft(connection, null, row, quantity);
     }, cancellationToken);
 
-    public Task<ReturnRecreationOptions> GetReturnRecreationOptionsAsync(
-        CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
-            new ReturnRecreationOptions(
-                connection.Query<ReturnRecreationOption>(
-                    "SELECT id AS Id,name AS Label FROM category ORDER BY name,id").ToArray(),
-                connection.Query<ReturnRecreationOption>(
-                    "SELECT id AS Id,code||' — '||name AS Label FROM uom ORDER BY code,id").ToArray(),
-                connection.Query<ReturnRecreationOption>(
-                    "SELECT id AS Id,name AS Label,rate_pct AS RateScaled FROM tax_rate ORDER BY rate_pct,id").ToArray()),
-            cancellationToken);
+    private const string RecreationSql = """
+        SELECT sl.id AS SaleLineId,sl.product_id AS ProductId,
+               (SELECT invoice_no FROM sale WHERE id=sl.sale_id) AS InvoiceNumber,
+               sl.product_sku_snapshot AS Sku,sl.product_name AS ProductName,
+               sl.product_name_local AS ProductNameLocal,
+               sl.category_id_snapshot AS CategoryId,
+               sl.uom_id_snapshot AS UnitId,sl.uom_snapshot AS UnitCode,sl.tax_rate_id_snapshot AS TaxRateId,
+               sl.tax_rate_pct AS TaxRateScaled,sl.hsn_code AS HsnCode,
+               sl.price_includes_tax AS PriceIncludesTax,
+               sl.track_expiry_snapshot AS TrackExpiry,sl.is_loose_snapshot AS IsLoose,
+               sl.product_class_snapshot AS ProductClass,
+               sl.batch_no_snapshot AS BatchNumber,
+               sl.expiry_date_snapshot AS ExpiryDate,sl.unit_cost AS UnitCost,
+               sl.unit_price AS SellingPrice,sl.mrp AS Mrp,
+               sl.tax_mode_snapshot AS TaxMode,sl.tax_label_snapshot AS TaxLabel,
+               sl.unit_cost_tax AS UnitCostTax,sl.unit_cost_incl_tax AS UnitCostInclTax
+        FROM sale_line sl WHERE sl.id=@saleLineId
+        """;
 
     private sealed record RecreationRow
     {
         public long SaleLineId { get; init; }
         public long ProductId { get; init; }
+        public string? InvoiceNumber { get; init; }
         public string? Sku { get; init; }
         public string ProductName { get; init; } = string.Empty;
         public string? ProductNameLocal { get; init; }
         public long? CategoryId { get; init; }
-        public string? CategoryName { get; init; }
         public long? UnitId { get; init; }
         public string? UnitCode { get; init; }
         public long? TaxRateId { get; init; }

@@ -937,22 +937,30 @@
   <data name="Stock_NetLoss" xml:space="preserve"><value>ચોખ્ખું નુકસાન</value></data>
   <data name="Catalog_BulkNoneEligible" xml:space="preserve"><value>પસંદ કરેલા કોઈપણ ઉત્પાદનો આ ક્રિયા માટે યોગ્ય નથી.</value></data>
   <data name="Reports_IncludeExpired" xml:space="preserve"><value>સમાપ્ત થયેલો સ્ટોક સામેલ કરો</value></data>
-  <data name="Sales_RecreateTitle" xml:space="preserve"><value>પરત માટે ઉત્પાદન અને બેચની સમીક્ષા</value><comment>MT - needs review</comment></data>
-  <data name="Sales_RecreateIntro" xml:space="preserve"><value>{0} | મૂળ કર {1}%
-પરત સ્વીકારતા પહેલાં ખૂટતી ઐતિહાસિક વિગતો ભરો. મૂળ બિલ અને રિફંડ બદલાશે નહીં.</value><comment>MT – needs review</comment></data>
   <data name="Sales_RecreateSku" xml:space="preserve"><value>SKU</value></data>
   <data name="Sales_RecreateName" xml:space="preserve"><value>ઉત્પાદનનું નામ</value></data>
   <data name="Sales_RecreateLocalName" xml:space="preserve"><value>સ્થાનિક નામ</value></data>
   <data name="Sales_RecreateCategory" xml:space="preserve"><value>શ્રેણી</value></data>
   <data name="Sales_RecreateUnit" xml:space="preserve"><value>એકમ</value></data>
   <data name="Sales_RecreateTax" xml:space="preserve"><value>કર દર</value></data>
-  <data name="Sales_RecreateTaxMode" xml:space="preserve"><value>કર પદ્ધતિ</value></data>
   <data name="Sales_RecreateHsn" xml:space="preserve"><value>HSN</value></data>
   <data name="Sales_RecreateTrackExpiry" xml:space="preserve"><value>સમાપ્તિ તારીખ ટ્રેક કરો</value></data>
   <data name="Sales_RecreateFractional" xml:space="preserve"><value>અપૂર્ણાંક જથ્થો</value></data>
   <data name="Sales_RecreateLotExpiry" xml:space="preserve"><value>બેચની સમાપ્તિ તારીખ</value><comment>MT - needs review</comment></data>
-  <data name="Sales_RecreateSave" xml:space="preserve"><value>આ વિગતો વાપરો</value></data>
-  <data name="Sales_RecreateReview" xml:space="preserve"><value>મૂળ વેચાણમાં સાચવેલ નથી. તપાસો.</value><comment>MT - needs review</comment></data>
+  <data name="Stock_RestoreTitle" xml:space="preserve"><value>પાછા ઉમેરાતા એકમો માટે પ્રોડક્ટ પસંદ કરો</value><comment>MT – needs review</comment></data>
+  <data name="Stock_RestoreIntro" xml:space="preserve"><value>{0} કાઢી નાખવામાં આવી છે. {2} ના તેના {1} તમે પસંદ કરો તે પ્રોડક્ટની નવી બેચમાં જશે, દરેક {3} ની નોંધાયેલી કિંમતે.</value><comment>MT – needs review</comment></data>
+  <data name="Stock_RestoreUseExisting" xml:space="preserve"><value>હાલની પ્રોડક્ટ વાપરો</value><comment>MT – needs review</comment></data>
+  <data name="Stock_RestoreCreateNew" xml:space="preserve"><value>નવી પ્રોડક્ટ બનાવો</value><comment>MT – needs review</comment></data>
+  <data name="Stock_RestoreSearch" xml:space="preserve"><value>નામ અથવા SKU થી સક્રિય પ્રોડક્ટ શોધો</value><comment>MT – needs review</comment></data>
+  <data name="Stock_RestoreNoMatches" xml:space="preserve"><value>એ જ પ્રકારની કોઈ સક્રિય પ્રોડક્ટ મળતી નથી.</value><comment>MT – needs review</comment></data>
+  <data name="Stock_RestorePickProduct" xml:space="preserve"><value>યાદીમાંથી પ્રોડક્ટ પસંદ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Stock_RestoreNewLot" xml:space="preserve"><value>નવી બેચ</value><comment>MT – needs review</comment></data>
+  <data name="Stock_RestoreSellingPrice" xml:space="preserve"><value>કર સહિત વેચાણ કિંમત</value><comment>MT – needs review</comment></data>
+  <data name="Stock_RestoreExpiryHint" xml:space="preserve"><value>પ્રોડક્ટની સમાપ્તિ તારીખ રખાતી હોય ત્યારે જરૂરી.</value><comment>MT – needs review</comment></data>
+  <data name="Stock_RestoreSavedOnRecord" xml:space="preserve"><value>મૂળ નોંધમાં સાચવેલું છે.</value><comment>MT – needs review</comment></data>
+  <data name="Stock_RestoreNotSaved" xml:space="preserve"><value>મૂળ નોંધમાં સાચવેલું નથી. તપાસો.</value><comment>MT – needs review</comment></data>
+  <data name="Stock_RestoreHsnDigits" xml:space="preserve"><value>HSN માં 4, 6 અથવા 8 અંક હોવા જોઈએ.</value><comment>MT – needs review</comment></data>
+  <data name="Stock_RestoreSave" xml:space="preserve"><value>એકમો પાછા ઉમેરો</value><comment>MT – needs review</comment></data>
   <data name="Error_AnnualReportInvalid" xml:space="preserve"><value>{0} નો અંતિમ અહેવાલ ચેકસમ તપાસમાં નિષ્ફળ થયો. તેના પર આધાર રાખતા પહેલાં ચકાસાયેલ બેકઅપ પુનઃસ્થાપિત કરો.</value><comment>MT - needs review</comment></data>
   <data name="Error_EntryChanged" xml:space="preserve"><value>આ નોંધ લોડ થયા પછી બદલાઈ છે. રિફ્રેશ કરીને ફરી પ્રયાસ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Error_EntryVoided" xml:space="preserve"><value>આ નોંધ રદ થયેલી છે અને બદલી શકાતી નથી.</value><comment>MT - needs review</comment></data>
@@ -961,6 +969,10 @@
   <data name="Error_DamageProductDeleted" xml:space="preserve"><value>આ એકમો પાછા ઉમેરી શકાતા નથી: મૂળ પ્રોડક્ટ મળી નથી અથવા કાઢી નાખવામાં આવી છે.</value><comment>MT – needs review</comment></data>
   <data name="Error_VendorReturnProductDeleted" xml:space="preserve"><value>આ પરત રદ કરી શકાતું નથી: મૂળ પ્રોડક્ટ મળી નથી અથવા કાઢી નાખવામાં આવી છે.</value><comment>MT – needs review</comment></data>
   <data name="Error_LotsDifferFromDocuments" xml:space="preserve"><value>સાપ્તાહિક સ્ટોક તપાસમાં {0} બેચ મળી જેનો જથ્થો તેના દસ્તાવેજોથી અલગ છે.</value><comment>MT – needs review</comment></data>
+  <data name="Error_RestoreProductUnavailable" xml:space="preserve"><value>પસંદ કરેલી પ્રોડક્ટ આર્કાઇવ થઈ છે અથવા કાઢી નાખવામાં આવી છે. સક્રિય પ્રોડક્ટ પસંદ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_RestoreProductTypeMismatch" xml:space="preserve"><value>મૂળ જેવા જ પ્રકારની પ્રોડક્ટ પસંદ કરો: વેચાણ માટેની અથવા આંતરિક ઉપયોગની.</value><comment>MT – needs review</comment></data>
+  <data name="Error_RestoreExpiryRequired" xml:space="preserve"><value>પસંદ કરેલી પ્રોડક્ટની સમાપ્તિ તારીખ રખાય છે. આ એકમોની સમાપ્તિ તારીખ દાખલ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_SkuExists" xml:space="preserve"><value>આ SKU બીજી પ્રોડક્ટ પહેલેથી વાપરે છે.</value><comment>MT – needs review</comment></data>
   <data name="Reports_PnlScope" xml:space="preserve"><value>નફો-નુકસાન સમયગાળાનો પ્રકાર</value><comment>MT - needs review</comment></data>
   <data name="Reports_PnlScope_Month" xml:space="preserve"><value>મહિનો</value><comment>MT - needs review</comment></data>
   <data name="Reports_PnlScope_CalendarYear" xml:space="preserve"><value>કેલેન્ડર વર્ષ</value><comment>MT - needs review</comment></data>

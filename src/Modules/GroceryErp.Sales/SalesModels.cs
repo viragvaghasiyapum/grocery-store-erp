@@ -1,4 +1,5 @@
 using GroceryErp.Core.Numerics;
+using GroceryErp.Inventory;
 
 namespace GroceryErp.Sales;
 
@@ -157,32 +158,10 @@ public sealed record SaleActivityItem(DateOnly Date, string ProductName, string 
 public sealed record SaleHistoryActivity(IReadOnlyList<SaleReturnHistoryItem> Returns,
     IReadOnlyList<SaleActivityItem> Events);
 
+/// <summary>A returned line. <see cref="Restore"/> is the operator's product for resold units whose product was deleted.</summary>
 public sealed record ReturnLineInput(long SaleLineId, Quantity Quantity, bool Resellable,
-    ReturnRecreationInput? Recreation = null);
+    RestoreProductChoice? Restore = null);
 
-/// <summary>The operator's review of a legacy line whose deleted product a return recreates; prices always include tax.</summary>
-public sealed record ReturnRecreationInput(string Sku, string ProductName, string? ProductNameLocal,
-    long CategoryId, long UnitId, long TaxRateId, string TaxMode, string? HsnCode,
-    bool TrackExpiry, bool IsLoose, string ProductClass,
-    DateOnly? ExpiryDate);
-
-public sealed record ReturnRecreationOption(long Id, string Label, long? RateScaled = null);
-public sealed record ReturnRecreationOptions(
-    IReadOnlyList<ReturnRecreationOption> Categories,
-    IReadOnlyList<ReturnRecreationOption> Units,
-    IReadOnlyList<ReturnRecreationOption> TaxRates);
-
-public sealed record ReturnRecreationDraft(
-    long SaleLineId, string SuggestedSku, string ProductName, string? ProductNameLocal,
-    long? CategoryId, string? CategoryName, long? UnitId, string? UnitCode,
-    long? TaxRateId, Percent TaxRate, string? HsnCode,
-    bool? TrackExpiry, bool? IsLoose, string? ProductClass,
-    string? BatchNumber, DateOnly? ExpiryDate, Money UnitCost, Money SellingPrice,
-    Money? Mrp, IReadOnlyList<string> MissingFields)
-{
-    public string? TaxMode { get; init; }
-    public bool ProductMissing { get; init; }
-}
 public sealed record CreateReturnCommand(
     long SaleId,
     DateOnly ReturnDate,

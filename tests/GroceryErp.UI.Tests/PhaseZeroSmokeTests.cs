@@ -1136,25 +1136,43 @@ public sealed class PhaseZeroSmokeTests
                 TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 returning.Close();
 
-                var recreation = new ReturnRecreationWindow(new ReturnRecreationDraft(lines[0].Id, "SALT-1",
-                    "Tata Salt 1 kg", "ટાટા મીઠું", null, null, null, null, null, new Percent(5), null,
-                    null, false, "SALEABLE", null, null, new Money(20), new Money(30), new Money(32),
-                    ["category", "unit", "tax rate", "tax mode", "HSN", "expiry tracking"]),
-                    new ReturnRecreationOptions([new(1, "Staples")], [new(1, "PCS — Pieces")],
-                        [new(1, "GST 5%", 5000)]));
-                recreation.Show();
-                Capture(recreation, "return-recreation.en.png");
+                // Units of a deleted product: an existing product (a re-added salt) or a new one
+                // prefilled from what the sale saved; unsaved details are marked.
+                var restoreDraft = new RestoreDraft(lines[0].Id, "S2627-000041", "Tata Salt 1 kg", "ટાટા મીઠું",
+                    "SALT-1", null, 1, "PCS", null, null, null, false, "SALEABLE", "B-12", null, Quantity.One,
+                    new Money(20), new Money(30), new Money(32));
+                var restoreOptions = new RestoreOptions([new(1, "Staples")], [new(1, "PCS — Pieces", Code: "PCS")],
+                    [new(1, "GST 5%", 5000)]);
+                ProductListItem[] matches =
+                [
+                    new() { Id = 7, Sku = "SALT-1KG", Name = "Tata Salt 1 kg", Uom = "PCS", SellingPriceScaled = 28000,
+                        MrpScaled = 30000, IsActive = true },
+                ];
+                Func<string, CancellationToken, Task<IReadOnlyList<ProductListItem>>> search = (_, _) =>
+                    Task.FromResult<IReadOnlyList<ProductListItem>>(matches);
+                var restoring = new RestoreProductWindow(restoreDraft, restoreOptions, regularTax: true, search,
+                    static _ => Task.FromResult(false));
+                restoring.Show();
+                DataGrid restoreMatches = Descendants<DataGrid>(restoring).Single();
+                PumpUntil(() => restoreMatches.Items.Count == 1);
+                Capture(restoring, "restore-product.en.png");
+                // Saving with no product picked keeps the window open with the reason; picking one
+                // fills the new lot's prices from it.
+                Descendants<Button>(restoring).Single(button => button.IsDefault)
+                    .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                Descendants<FormErrorSummary>(restoring).Single().HasMessage.ShouldBeTrue();
+                restoring.IsVisible.ShouldBeTrue();
+                restoreMatches.SelectedIndex = 0;
+                Descendants<TextBox>(restoring).ShouldContain(box => box.Text == "28");
+                restoring.Close();
                 TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
-                recreation.Close();
-                var guRecreation = new ReturnRecreationWindow(new ReturnRecreationDraft(lines[0].Id, "SALT-1",
-                    "Tata Salt 1 kg", "ટાટા મીઠું", null, null, null, null, null, new Percent(5), null,
-                    null, false, "SALEABLE", null, null, new Money(20), new Money(30), new Money(32),
-                    ["category", "tax mode"]),
-                    new ReturnRecreationOptions([new(1, "Staples")], [new(1, "PCS — Pieces")],
-                        [new(1, "GST 5%", 5000)]));
-                guRecreation.Show();
-                Capture(guRecreation, "return-recreation.gu.png");
-                guRecreation.Close();
+                var guRestoring = new RestoreProductWindow(restoreDraft, restoreOptions, regularTax: true, search,
+                    static _ => Task.FromResult(false));
+                guRestoring.Show();
+                Descendants<RadioButton>(guRestoring).Last().IsChecked = true;
+                guRestoring.UpdateLayout();
+                Capture(guRestoring, "restore-product.gu.png");
+                guRestoring.Close();
                 TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("en-IN");
 
                 var voidDialog = new SaleActionWindow(false, context: "Bill S2627-000041 · 03-10-2026 · ₹109.00");
