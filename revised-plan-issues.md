@@ -20,7 +20,8 @@ Fixes go phase by phase, stopping after each phase for review. A problem that ap
 | 3 | Done 26 Oct 2026: P3-1, P3-2, P3-3 and P3-4 fixed, each reproduced on a fresh store first; then the owner's two rulings (P3-F1, P3-F2) | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings; a running app instance locked the App's `bin`, so the UI tests were built to a scratch folder. 300 tests: 257 integration, 32 core, 2 architecture, 9 UI (2 opt-in skipped). Full-size store: `ScaleAudit phase6-summary-parity` matched the GST summary to its source form for month, fiscal year and a partial range, before and after seeding returns (timings under P3-1) |
 | 5 | Done 26 Oct 2026: P5-1 fixed, reproduced on a fresh store first | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings; a running app instance locked the App's `bin`, so the App and UI tests were built to a scratch folder. 302 tests: 259 integration, 32 core, 2 architecture, 9 UI (2 opt-in skipped). Full-size store: the re-date timing under P5-1 (script and results in `artifacts/data/revision-issues-phase5`) |
 | 6 | Done 26 Oct 2026: P6-1 and P6-2 fixed. P6-2 was reproduced on a fresh store first. For P6-1, the weekly check was run on a fresh store after every stock workflow and passed | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings. 306 tests: 260 integration, 32 core, 2 architecture, 12 UI (2 opt-in skipped). Full-size store: the weekly-check and day-end timings under P6-1 and P6-2 (scripts and results in `artifacts/data/revision-issues-phase6`) |
-| 7, 8, 9, §15 | Open | |
+| 7 | Done 4 Nov 2026: P7-1 fixed (code reading; every new code is triggered through the services by a regression test on a fresh store). Found on the way and fixed with it: unmapped unique values and four form gaps. P7-2, a related gap found during P7-1, fixed after it | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings. 315 tests: 269 integration, 32 core, 2 architecture, 12 UI (2 opt-in skipped). 18 screens of the messages, in both languages, checked by eye (`artifacts/data/revision-issues-phase7/screens`). Only failure paths changed, so no full-size timing was taken |
+| 8, 9, §15 | Open | |
 | P3-F3 (product choice for returned units) | Done 4 Nov 2026: built as decided; also fixed a later correction of a damage restored into another product | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings. 309 tests: 263 integration, 32 core, 2 architecture, 12 UI (2 opt-in skipped). The new window was captured in both modes and languages from the UI smoke journey and checked by eye; it was not used in the running app |
 
 ## Phase 0 — Freeze rules, map dependencies, and baseline
@@ -236,7 +237,7 @@ No open issues found. The expiry filter window is covered under P8-1.
 
 ## Phase 7 — Clean screens, fast search, filters, and bulk work
 
-- [ ] **P7-1 Specific error reasons never reach the operator** (Medium, read)
+- [x] **P7-1 Specific error reasons never reach the operator** (Medium, read)
   - 169 service checks throw `DomainException(ErrorCode.Validation, "<English reason>")`. `UserError.cs:22-26` formats `Error_Validation`, which has no placeholder, so all of them show "Check the entered values and try again."
   - Rules an operator can hit include:
     - "A held or draft bill still uses this lot"
@@ -250,6 +251,46 @@ No open issues found. The expiry filter window is covered under P8-1.
     - the count failure in P2-1
   - Phase 7 requires actionable failure messages, and CLAUDE.md requires a localized `ErrorCode` for each service check.
   - Fix: give each operator-reachable rule its own `ErrorCode` with English and Gujarati text. Guards that only invalid arguments can trip may stay generic.
+  - **Fixed 4 Nov 2026.** Every `ErrorCode.Validation` site (200 in `src`) was read against the screen that reaches it. A rule is operator-reachable when a screen can send the value or the database state that trips it; a form that already checks the value first leaves the service guard argument-only. No legacy data is involved: each rule was tripped on a fresh schema-39 store.
+    - **New codes (37 here, 3 more below), each with English and Gujarati text, the Gujarati marked `MT – needs review`.** 60 sites changed; 140 argument guards keep `Validation` and its general message.
+      - Billing: `ProductArchived`, `InternalUseNotSaleable`, `LotBlocked` (names the batch; from a chosen batch, from a held bill on resume and from payment), `PriceLabelNeedsPrice`, `InvalidPhone`, `InvalidGstin` (customers, vendors, setup), `CustomerPhoneExists`.
+      - Products and masters: `CategoryHierarchyInvalid` (three checks), `UnitFractionLocked`, `TaxRateOutOfRange`, `ProductClassLocked`, `LooseNeedsFractionalUnit`, `ProductUnitLocked`, `ExpiryRequired` (first lot, lot edit, direct lot, opening stock and purchase line; the lot edit's expiry before receipt is now `InvalidDate`), `TooManyRows` (names the cap; products, lots, purchase and vendor lists, expired write-off, and the Products page's hand-picked selection).
+      - Stock: `FilterRangeReversed` (the Lots filter does not check it on screen), `LotOnOpenBill`, `ExpiredReasonNeedsExpiredLot`, `CountLotDiffersFromDocuments` (P2-1's count failure; names the batch), `TaxRateInactive` (names the rate).
+      - Purchases: `TaxRateRequired`, `PurchaseLineTypeMismatch`, `ExpenseCategoryInactive`, `ExpenseLineAmountRequired`, `PurchaseTooManyLines` (names the 200-line cap, now `PurchasingService.MaxPurchaseLines`), `VendorReturnExceedsLot`, `InvalidPan`.
+      - Money out and assets: `SalaryAlreadyPosted` (names the employee), `AssetAlreadyDisposed` and `AssetDisposalBeforeInUse` (split from one check; names the in-use date), `AssetDepreciationPosted`.
+      - Settings: `CloudFolderNotAllowed`, `DataFolderNotSeparate`, `DataFolderNotEmpty`, `DataMovePending`, `DataMoveStagingInUse` (names the folder), `UsbDriveNotReady`.
+    - **Existing codes reused:** `EntryChanged` for a lot, product, held bill or bulk-damage batch that changed since it was loaded, and `DiscountExceedsLine` for a purchase line's discount above its value (split out of "Invalid purchase line").
+    - **Found on the way: unique values failed as an unknown error.** A duplicate SKU, PLU code, barcode, vendor GSTIN or customer phone, or a duplicate unit code, brand, tax rate, category or expense category name, hit a SQLite UNIQUE constraint that `SqliteErrorMapper` did not map, so the screen said "Could not complete the action. Check the details and try again." (`App_ActionFailed`) The map now turns each into `SkuExists`, `PluExists` (new), `BarcodeExists`, `VendorGstinExists` (new), `CustomerPhoneExists` or `NameExists` (new). The tests confirm SQLite's exact messages, including the expression index `ux_category_name`.
+    - **Found on the way: four forms let a value reach a service guard.** Each now checks it next to its field:
+      - Vendor: payment terms above 3,650 days (`Form_AtMost`, new) and a negative opening balance.
+      - Salary run: a line that deducts more than the salary or pays nothing (`MoneyOut_SalaryLinePaysNothing`, names the employee).
+      - Damage correction: zero units with a recovered amount (`MoneyOut_RecoveredNeedsUnits`).
+      - Expense or salary correction: an amount of zero (Void is the way to zero).
+    - **Screens that threw the general code themselves** now show text: Billing's `quantity*code` entry (`Pos_QuantityPrefixInvalid`), and the masters window's expiry days and tax percentage (existing `Form_` texts).
+    - **Product form:** a unit, classification, SKU, first-lot expiry or first-lot tax refusal now shows under its field.
+    - **Cost:** every check is on a failure path, and the employee name, batch code or rate a message names is read only after the rule has failed. The one change on a successful path: the chosen-batch lookup and the stock recheck at resume and payment also read `lot_code` from the lot row they already fetch by its key. No query was added to a successful action. This was not timed on the full-size store.
+  - Regressions:
+    - `OperatorErrorTests` (new, five tests on a fresh store) trips the new codes through the services, checks the arguments each names, and formats each message in English and Gujarati as the screens do: complete, and not the general text. It also covers the unique values above. The codes it does not trip are asserted in the existing tests below. The window-side checks are covered by the on-screen check below.
+    - `LocalizationTests.EnglishAndGujarati_UseTheSamePlaceholders` (new): every key has the same `{n}` set in both languages. CLAUDE.md said this was already checked; only key sets were.
+    - Existing tests now assert the specific code instead of `Validation`: the category depth (`CatalogTests`, plus a parent loop and a duplicate name), the used unit (plus a duplicate code and a 101% rate), the inactive, missing and ambiguous tax rates (`TaxSnapshotTests`), the stale lot edit (`StockInTests`), the posted-depreciation disposal and the repeated salary run, which also names the employee (`MoneyOutTests`).
+    - **On screen (5 Nov 2026).** The UI smoke journey (`PhaseZeroSmokeTests.VerifyOperatorMessages`) opens the real windows on a fresh store, in English and Gujarati, trips one message of each kind, and checks its text where the operator sees it:
+      - the till's status line: a `*code` entry with no quantity, and an internal-use product's SKU;
+      - **Categories & brands**: a blank brand name (P7-2) and a brand name already in use;
+      - a field on the product form: a unit changed on a product with batches;
+      - a form's summary: a direct lot of a tracked product with no expiry;
+      - the new form checks: vendor terms and opening balance, a salary line deducting more than the salary, and a damage corrected to zero units with a recovered amount.
+    - With `GROCERY_MESSAGE_SCREENSHOT_DIR` set, it saves the 18 screens. They were checked by eye in `artifacts/data/revision-issues-phase7/screens`: each message is complete and in its place, the Gujarati renders, and digits stay English. The windows were rendered from the test, not used by hand in the running app.
+  - Both user guides' "Working with lists" section says a refusal gives its reason and when the general message still appears.
+- [x] **P7-2 The masters window shows "Could not complete the action" for an empty name** (Low, read; found while fixing P7-1)
+  - `CatalogText.Required` throws `ArgumentException`, not a `DomainException`, so saving a category, brand, unit or tax rate with an empty name in **Categories and brands** reaches `UserError` as an unknown error. The window has no `FormValidator`, unlike the other forms.
+  - Fix: check the names in the window before saving, as the other forms do.
+  - **Fixed 4 Nov 2026, in the window.** Each **Save** first checks its required boxes: the category name, the brand name, the unit code and name, and the tax rate's name. An empty or blank box shows "Name is required." or "Unit code is required." (`Form_FieldRequired`, new, Gujarati marked `MT – needs review`) in the status line, takes the focus, and nothing is sent.
+    - The check normalizes the text as `CatalogText` does, so the window refuses exactly what the service would.
+    - The boxes' `MaxLength` already matches the service's limits (80, 10 and 60), so a too-long value cannot reach the service. A required name is the only reachable `ArgumentException`.
+    - The category check now runs before the expiry-days check, in the window's field order.
+    - The service keeps throwing `ArgumentException`: only a caller that skips the window can reach it now. No other screen sends an empty master name; the product form, quick product and restore windows check their own required fields.
+  - Regression: the UI smoke test (`PhaseZeroSmokeTests`) presses each of the four **Save** buttons, now named, with a blank or empty box and checks the status text. Before the fix the window would have shown "Could not complete the action. Check the details and try again. The error was logged." (from the code; the new test was not run against the old code) The window is also in the on-screen check under P7-1.
+  - Both guides' Products section says **Save** with a blank name or unit code says which one is required.
 
 ## Phase 8 — Remove obsolete features, code, and live schema
 

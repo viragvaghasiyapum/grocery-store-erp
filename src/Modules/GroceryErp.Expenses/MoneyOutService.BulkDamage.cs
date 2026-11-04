@@ -39,10 +39,9 @@ public sealed partial class MoneyOutService
                     """, new { id = line.LotId }, tx.Transaction);
                 if (lot is null || lot.OnHand != line.ExpectedOnHandScaled ||
                     lot.DetailVersion != line.ExpectedDetailVersion || line.Quantity.Scaled > lot.OnHand)
-                    throw new DomainException(ErrorCode.Validation,
-                        "Selected lot stock or details changed. Refresh the page and review again.");
+                    throw new DomainException(ErrorCode.EntryChanged, line.LotId);
                 if (reason == "EXPIRED" && (lot.ExpiryDate is null || lot.ExpiryDate >= date))
-                    throw new DomainException(ErrorCode.Validation, "Expired reason requires an expired lot.");
+                    throw new DomainException(ErrorCode.ExpiredReasonNeedsExpiredLot, line.LotId);
                 Money unitCost = Money.FromScaled(lot.UnitCost);
                 Money cost = unitCost * line.Quantity;
                 string document = numbers.Next(tx, DocType.Damage, date);
@@ -105,8 +104,7 @@ public sealed partial class MoneyOutService
             {
                 lots.AddRange(rows.Select(static row => row.ToModel()));
                 if (lots.Count > MaxExpiredWriteOffLots)
-                    throw new DomainException(ErrorCode.Validation,
-                        "More than 5000 expired lots match. Narrow the selection and try again.");
+                    throw new DomainException(ErrorCode.TooManyRows, MaxExpiredWriteOffLots);
             }
             // Sellable lots are found per product through the FEFO index; left to itself SQLite
             // walked every expired lot in the store for each chunk (1.5 s per 500 products).

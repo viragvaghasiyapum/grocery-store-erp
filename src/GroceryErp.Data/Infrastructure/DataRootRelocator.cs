@@ -24,9 +24,9 @@ public static class DataRootRelocator
         string target = Path.TrimEndingDirectorySeparator(Path.GetFullPath(targetRoot));
         ValidateCandidate(source, target);
         if (Directory.Exists(target + ".moving"))
-            throw new DomainException(ErrorCode.Validation, "The move staging folder is already in use.");
+            throw new DomainException(ErrorCode.DataMoveStagingInUse, target + ".moving");
         string marker = Path.Combine(source, MarkerName);
-        if (File.Exists(marker)) throw new DomainException(ErrorCode.Validation, "A data move is already pending.");
+        if (File.Exists(marker)) throw new DomainException(ErrorCode.DataMovePending);
         File.WriteAllText(marker, JsonSerializer.Serialize(new PendingMove(source, target)));
     }
 
@@ -36,7 +36,7 @@ public static class DataRootRelocator
         string target = Path.TrimEndingDirectorySeparator(Path.GetFullPath(targetRoot));
         ValidateTarget(source, target);
         if (Directory.Exists(target) && Directory.EnumerateFileSystemEntries(target).Any())
-            throw new DomainException(ErrorCode.Validation, "The new data folder must be empty.");
+            throw new DomainException(ErrorCode.DataFolderNotEmpty);
     }
 
     public static bool ApplyPending(string? bootstrapFile = null) =>
@@ -68,7 +68,7 @@ public static class DataRootRelocator
                 ? JsonSerializer.Deserialize<PendingMove>(File.ReadAllText(stageMarker)) : null;
             if (staged is null || !staged.Source.Equals(source, StringComparison.OrdinalIgnoreCase) ||
                 !staged.Target.Equals(target, StringComparison.OrdinalIgnoreCase))
-                throw new DomainException(ErrorCode.Validation, "The move staging folder is already in use.");
+                throw new DomainException(ErrorCode.DataMoveStagingInUse, staging);
         }
         Directory.CreateDirectory(staging);
         File.WriteAllText(Path.Combine(staging, StageMarkerName), JsonSerializer.Serialize(pending));
@@ -126,7 +126,7 @@ public static class DataRootRelocator
         if (source.Equals(target, StringComparison.OrdinalIgnoreCase) ||
             source.StartsWith(target + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
             target.StartsWith(source + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-            throw new DomainException(ErrorCode.Validation, "The new data folder must be separate from the current folder.");
+            throw new DomainException(ErrorCode.DataFolderNotSeparate);
         if (!File.Exists(Path.Combine(source, "db", "grocery.db")))
             throw new DomainException(ErrorCode.Validation, "The current database is missing.");
     }

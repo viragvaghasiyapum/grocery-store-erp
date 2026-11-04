@@ -434,6 +434,17 @@ public static class SqliteErrorMapper
         ("lot cost and tax are fixed", ErrorCode.Validation),
         ("product prices must include tax", ErrorCode.Validation),
         ("purchase.vendor_id, purchase.vendor_invoice_no", ErrorCode.DuplicateVendorBill),
+        // Values typed into a master form that another row already uses.
+        ("UNIQUE constraint failed: product.sku", ErrorCode.SkuExists),
+        ("UNIQUE constraint failed: product.plu_code", ErrorCode.PluExists),
+        ("UNIQUE constraint failed: product_barcode.barcode", ErrorCode.BarcodeExists),
+        ("UNIQUE constraint failed: vendor.gstin", ErrorCode.VendorGstinExists),
+        ("UNIQUE constraint failed: customer.phone", ErrorCode.CustomerPhoneExists),
+        ("UNIQUE constraint failed: uom.code", ErrorCode.NameExists),
+        ("UNIQUE constraint failed: brand.name", ErrorCode.NameExists),
+        ("UNIQUE constraint failed: tax_rate.name", ErrorCode.NameExists),
+        ("UNIQUE constraint failed: expense_category.name", ErrorCode.NameExists),
+        ("UNIQUE constraint failed: index 'ux_category_name'", ErrorCode.NameExists),
         ("= date(", ErrorCode.InvalidDate),
         ("FOREIGN KEY constraint failed", ErrorCode.Validation),
     ];

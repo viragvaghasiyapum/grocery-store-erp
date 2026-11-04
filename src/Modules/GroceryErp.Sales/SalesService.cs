@@ -52,9 +52,9 @@ public sealed partial class SalesService(
             LEFT JOIN tax_rate t ON t.id=p.tax_rate_id WHERE p.id=@productId
             """, new { productId }, transaction.Transaction)
             ?? throw new DomainException(ErrorCode.NotFound, productId);
-        if (!product.IsActive) throw new DomainException(ErrorCode.Validation, "Archived products cannot be sold.");
+        if (!product.IsActive) throw new DomainException(ErrorCode.ProductArchived, productId);
         if (product.ProductClass != "SALEABLE")
-            throw new DomainException(ErrorCode.Validation, "Internal-use products cannot be sold.");
+            throw new DomainException(ErrorCode.InternalUseNotSaleable, productId);
         if (!product.AllowFraction && !quantity.IsWhole)
             throw new DomainException(ErrorCode.FractionalQtyNotAllowed, productId);
 
@@ -128,7 +128,7 @@ public sealed partial class SalesService(
             }), cancellationToken);
         if (lot.LotId == 0) throw new DomainException(ErrorCode.NoLotForProduct, productId);
         Money price = Money.FromScaled(lot.Price);
-        if (price <= Money.Zero) throw new DomainException(ErrorCode.Validation, "A price label requires a positive lot price.");
+        if (price <= Money.Zero) throw new DomainException(ErrorCode.PriceLabelNeedsPrice, lot.LotId);
         return await AddProductAsync(saleId, productId, new Quantity(totalPrice.Value / price.Value),
             lot.LotId, scannedBarcode, cancellationToken);
     }
@@ -180,7 +180,7 @@ public sealed partial class SalesService(
         if (!product.AllowFraction && !quantity.IsWhole)
             throw new DomainException(ErrorCode.FractionalQtyNotAllowed, productId);
         if (product.ProductClass != "SALEABLE")
-            throw new DomainException(ErrorCode.Validation, "Internal-use products cannot be sold.");
+            throw new DomainException(ErrorCode.InternalUseNotSaleable, productId);
         Dictionary<long, Quantity> reserved = transaction.Connection.Query<(long LotId, long Qty)>("""
             SELECT lot_id AS LotId,SUM(qty) AS Qty FROM sale_line
             WHERE sale_id=@saleId AND product_id<>@productId GROUP BY lot_id
@@ -355,12 +355,12 @@ public sealed partial class SalesService(
         string? cleanPhone = Clean(phone);
         string? cleanGstin = Clean(gstin);
         if (cleanPhone is not null && (cleanPhone.Length != 10 || !cleanPhone.All(char.IsAsciiDigit)))
-            throw new DomainException(ErrorCode.Validation, nameof(phone));
+            throw new DomainException(ErrorCode.InvalidPhone);
         if (cleanGstin is not null && !GroceryErp.Core.Validation.IndianIds.IsGstin(cleanGstin))
-            throw new DomainException(ErrorCode.Validation, nameof(gstin));
+            throw new DomainException(ErrorCode.InvalidGstin);
         if (cleanPhone is not null && transaction.Connection.ExecuteScalar<long>(
                 "SELECT COUNT(*) FROM customer WHERE phone=@phone", new { phone = cleanPhone }, transaction.Transaction) > 0)
-            throw new DomainException(ErrorCode.Validation, "A customer with this phone already exists.");
+            throw new DomainException(ErrorCode.CustomerPhoneExists);
         long id = transaction.Connection.ExecuteScalar<long>("""
             INSERT INTO customer(name,phone,gstin) VALUES (@name,@phone,@gstin) RETURNING id
             """, new { name = name.Trim(), phone = cleanPhone, gstin = cleanGstin }, transaction.Transaction);
@@ -410,7 +410,7 @@ public sealed partial class SalesService(
             if (status != "HELD") throw new DomainException(ErrorCode.SaleFinalized, saleId);
             if (accepted is not null && !LoadHeldReviewLines(transaction.Connection, saleId)
                     .SequenceEqual(accepted))
-                throw new DomainException(ErrorCode.Validation, "The held bill changed. Review it again.");
+                throw new DomainException(ErrorCode.EntryChanged, saleId);
             RevalidateStock(transaction, saleId);
             // Resuming takes each lot's current price, which includes tax, and its cost-side tax.
             transaction.Connection.Execute("""
@@ -1217,12 +1217,12 @@ public sealed partial class SalesService(
     {
         LotRow row = transaction.Connection.QuerySingleOrDefault<LotRow>("""
             SELECT id AS LotId,qty_on_hand AS OnHand,expiry_date AS Expiry,selling_price AS Price,
-                   mrp AS Mrp,unit_cost AS Cost,is_active AS IsActive,
+                   mrp AS Mrp,unit_cost AS Cost,is_active AS IsActive,lot_code AS LotCode,
                    unit_tax AS CostTax,unit_cost_incl_tax AS CostInclTax FROM product_lot
             WHERE id=@lotId AND product_id=@productId
             """, new { lotId, productId }, transaction.Transaction)
             ?? throw new DomainException(ErrorCode.LotProductMismatch, lotId, productId);
-        if (!row.IsActive) throw new DomainException(ErrorCode.Validation, "The selected lot is blocked.");
+        if (!row.IsActive) throw new DomainException(ErrorCode.LotBlocked, row.LotCode);
         if (settings.Current.BlockExpiredLots && row.Expiry is { } expiry && expiry < clock.BusinessDate)
             throw new DomainException(ErrorCode.ExpiredLot, expiry);
         Quantity available = Quantity.FromScaled(row.OnHand) - reserved.GetValueOrDefault(lotId);
@@ -1240,11 +1240,11 @@ public sealed partial class SalesService(
     {
         foreach (StockRow row in transaction.Connection.Query<StockRow>("""
             SELECT sl.product_id AS ProductId,sl.qty AS Quantity,l.qty_on_hand AS OnHand,
-                   l.expiry_date AS Expiry,l.is_active AS IsActive
+                   l.expiry_date AS Expiry,l.is_active AS IsActive,l.lot_code AS LotCode
             FROM sale_line sl JOIN product_lot l ON l.id=sl.lot_id WHERE sl.sale_id=@saleId
             """, new { saleId }, transaction.Transaction))
         {
-            if (!row.IsActive) throw new DomainException(ErrorCode.Validation, "A bill lot is blocked.");
+            if (!row.IsActive) throw new DomainException(ErrorCode.LotBlocked, row.LotCode);
             if (settings.Current.BlockExpiredLots && row.Expiry is { } expiry && expiry < clock.BusinessDate)
                 throw new DomainException(ErrorCode.ExpiredLot, expiry);
             if (row.Quantity > row.OnHand)
@@ -1433,9 +1433,9 @@ public sealed partial class SalesService(
     private sealed class ProductRow { public string Name { get; init; } = ""; public string? NameLocal { get; init; } public string? HsnCode { get; init; } public bool IsActive { get; init; } public bool AllowFraction { get; init; } public long TaxRate { get; init; } public string ProductClass { get; init; } = "SALEABLE"; }
     private sealed class DbLineRow { public long Id { get; init; } public long ProductId { get; init; } public long LotId { get; init; } public long Quantity { get; init; } public long UnitPrice { get; init; } public long? Mrp { get; init; } public long LineDiscount { get; init; } public long TaxRate { get; init; } public bool PriceIncludesTax { get; init; } public long UnitCost { get; init; } }
     private sealed class HeaderRow { public long Id { get; init; } public string? InvoiceNo { get; init; } public string SaleDate { get; init; } = ""; public string Status { get; init; } = ""; public long BillDiscount { get; init; } public long GrossTotal { get; init; } public long DiscountTotal { get; init; } public long TaxableTotal { get; init; } public long TaxTotal { get; init; } public long RoundOff { get; init; } public long GrandTotal { get; init; } public long CostTotal { get; init; } public long ChangeReturned { get; init; } }
-    private sealed class LotRow { public long LotId { get; init; } public long OnHand { get; init; } public DateOnly? Expiry { get; init; } public long Price { get; init; } public long? Mrp { get; init; } public long Cost { get; init; } public bool IsActive { get; init; } public long? CostTax { get; init; } public long? CostInclTax { get; init; } }
+    private sealed class LotRow { public long LotId { get; init; } public long OnHand { get; init; } public DateOnly? Expiry { get; init; } public long Price { get; init; } public long? Mrp { get; init; } public long Cost { get; init; } public bool IsActive { get; init; } public string LotCode { get; init; } = ""; public long? CostTax { get; init; } public long? CostInclTax { get; init; } }
     private sealed class LineCheckRow { public long ProductId { get; init; } public long OnHand { get; init; } public bool AllowFraction { get; init; } }
-    private sealed class StockRow { public long ProductId { get; init; } public long Quantity { get; init; } public long OnHand { get; init; } public DateOnly? Expiry { get; init; } public bool IsActive { get; init; } }
+    private sealed class StockRow { public long ProductId { get; init; } public long Quantity { get; init; } public long OnHand { get; init; } public DateOnly? Expiry { get; init; } public bool IsActive { get; init; } public string LotCode { get; init; } = ""; }
     private sealed class HeldRow { public long Id { get; init; } public DateTime CreatedAt { get; init; } public string? Label { get; init; } public int ItemCount { get; init; } public long Total { get; init; } }
     private sealed class SavedBillRow { public long Id { get; init; } public DateTime CreatedAt { get; init; } public string? Label { get; init; } public int ItemCount { get; init; } public long Total { get; init; } public string Status { get; init; } = ""; }
     private sealed class HeldReviewRow { public long LineId { get; init; } public string ProductName { get; init; } = ""; public long Quantity { get; init; } public long PreviousPrice { get; init; } public long CurrentPrice { get; init; } public long? PreviousMrp { get; init; } public long? CurrentMrp { get; init; } public long CurrentCost { get; init; } public long Available { get; init; } public bool IsActive { get; init; } public DateOnly? ExpiryDate { get; init; } }

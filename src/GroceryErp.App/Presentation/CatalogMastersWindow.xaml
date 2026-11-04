@@ -35,7 +35,7 @@
             <TextBox x:Name="CategoryExpiryBox" />
             <StackPanel Margin="0,14,0,0" HorizontalAlignment="Right" Orientation="Horizontal">
               <Button Margin="0,0,8,0" Click="NewCategory_OnClick" Content="{l:Tr Catalog_Clear}" />
-              <Button Click="SaveCategory_OnClick" Content="{l:Tr Common_Save}" />
+              <Button x:Name="SaveCategoryButton" Click="SaveCategory_OnClick" Content="{l:Tr Common_Save}" />
             </StackPanel>
           </StackPanel>
         </Grid>
@@ -50,7 +50,7 @@
             <TextBox x:Name="BrandNameBox" MaxLength="80" />
             <StackPanel Margin="0,14,0,0" HorizontalAlignment="Right" Orientation="Horizontal">
               <Button Margin="0,0,8,0" Click="NewBrand_OnClick" Content="{l:Tr Catalog_Clear}" />
-              <Button Click="SaveBrand_OnClick" Content="{l:Tr Common_Save}" />
+              <Button x:Name="SaveBrandButton" Click="SaveBrand_OnClick" Content="{l:Tr Common_Save}" />
             </StackPanel>
           </StackPanel>
         </Grid>
@@ -70,7 +70,7 @@
             <CheckBox x:Name="UnitFractionBox" Margin="0,12,0,0" Content="{l:Tr Catalog_AllowFraction}" />
             <StackPanel Margin="0,14,0,0" HorizontalAlignment="Right" Orientation="Horizontal">
               <Button Margin="0,0,8,0" Click="NewUnit_OnClick" Content="{l:Tr Catalog_Clear}" />
-              <Button Click="SaveUnit_OnClick" Content="{l:Tr Common_Save}" />
+              <Button x:Name="SaveUnitButton" Click="SaveUnit_OnClick" Content="{l:Tr Common_Save}" />
             </StackPanel>
           </StackPanel>
         </Grid>
@@ -88,7 +88,7 @@
             <CheckBox x:Name="TaxActiveBox" Margin="0,12,0,0" IsChecked="True" Content="{l:Tr Catalog_Active}" />
             <StackPanel Margin="0,14,0,0" HorizontalAlignment="Right" Orientation="Horizontal">
               <Button Margin="0,0,8,0" Click="NewTax_OnClick" Content="{l:Tr Catalog_Clear}" />
-              <Button Click="SaveTax_OnClick" Content="{l:Tr Common_Save}" />
+              <Button x:Name="SaveTaxButton" Click="SaveTax_OnClick" Content="{l:Tr Common_Save}" />
             </StackPanel>
           </StackPanel>
         </Grid>

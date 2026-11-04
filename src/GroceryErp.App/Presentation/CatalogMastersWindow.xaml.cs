@@ -4,7 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using GroceryErp.Catalog;
-using GroceryErp.Core.Errors;
+using GroceryErp.Core;
 using GroceryErp.Localization;
 
 namespace GroceryErp.App.Presentation;
@@ -120,13 +120,17 @@ public partial class CatalogMastersWindow : Window
 
     private async void SaveCategory_OnClick(object sender, RoutedEventArgs e)
     {
+        if (Missing(CategoryNameBox, "Catalog_Name")) return;
         try
         {
             int? expiryDays = null;
             if (!string.IsNullOrWhiteSpace(CategoryExpiryBox.Text))
             {
                 if (!int.TryParse(CategoryExpiryBox.Text, NumberStyles.None, CultureInfo.InvariantCulture, out int parsed) || parsed < 0)
-                    throw new DomainException(ErrorCode.Validation, "Expiry days must be zero or greater.");
+                {
+                    StatusText.Text = TranslationSource.Instance.Format("Form_WholeNumberAtLeast", 0);
+                    return;
+                }
                 expiryDays = parsed;
             }
             var input = new CategoryInput(CategoryNameBox.Text, CategoryLocalBox.Text,
@@ -146,6 +150,7 @@ public partial class CatalogMastersWindow : Window
 
     private async void SaveBrand_OnClick(object sender, RoutedEventArgs e)
     {
+        if (Missing(BrandNameBox, "Catalog_Name")) return;
         try
         {
             if (BrandList.SelectedItem is MasterItem selected)
@@ -163,6 +168,7 @@ public partial class CatalogMastersWindow : Window
 
     private async void SaveUnit_OnClick(object sender, RoutedEventArgs e)
     {
+        if (Missing(UnitCodeBox, "Catalog_UnitCode") || Missing(UnitNameBox, "Catalog_Name")) return;
         try
         {
             if (UnitList.SelectedItem is UnitItem selected)
@@ -180,10 +186,14 @@ public partial class CatalogMastersWindow : Window
 
     private async void SaveTax_OnClick(object sender, RoutedEventArgs e)
     {
+        if (Missing(TaxNameBox, "Catalog_Name")) return;
         try
         {
             if (!decimal.TryParse(TaxRateValueBox.Text, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal rate))
-                throw new DomainException(ErrorCode.Validation, "Enter a valid tax percentage.");
+            {
+                StatusText.Text = TranslationSource.Instance["Form_InvalidNumber"];
+                return;
+            }
             if (TaxList.SelectedItem is TaxRateItem selected)
                 await _catalog.UpdateTaxRateAsync(selected.Id, TaxNameBox.Text, rate, TaxActiveBox.IsChecked == true);
             else
@@ -198,6 +208,17 @@ public partial class CatalogMastersWindow : Window
     }
 
     private void ShowError(Exception exception) => StatusText.Text = UserError.Message(exception);
+
+    // The service refuses an empty name as an invalid argument, which reads as "Could not complete the
+    // action". Each box's length limit already matches the service's, so only an empty one is checked
+    // here, after the same normalizing the service does.
+    private bool Missing(TextBox box, string labelKey)
+    {
+        if (!string.IsNullOrWhiteSpace(InputNormalizer.Normalize(box.Text ?? string.Empty))) return false;
+        StatusText.Text = TranslationSource.Instance.Format("Form_FieldRequired", TranslationSource.Instance[labelKey]);
+        box.Focus();
+        return true;
+    }
 
     private void CategoryTree_OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {

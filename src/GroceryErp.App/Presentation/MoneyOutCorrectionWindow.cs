@@ -180,8 +180,12 @@ public sealed class MoneyOutCorrectionWindow : Window
         string? reason = form.Text(_fieldOf[_reason], _reason.Text, required: true, maxLength: 240);
         string code = (_code.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "";
         Quantity? quantity = !_void && _damage is not null ? form.Quantity(_fieldOf[_quantity], _quantity.Text, positive: false) : null;
+        // An expense or salary keeps an amount above zero (Void sets zero); a damage's recovered amount
+        // can be zero, and only units that stay damaged can have one.
         Money? amount = !_void && _fieldOf.ContainsKey(_amount)
-            ? form.Money(_fieldOf[_amount], _amount.Text, required: _damage is null) : null;
+            ? form.Money(_fieldOf[_amount], _amount.Text, required: _damage is null, positive: _damage is null) : null;
+        if (quantity == Quantity.Zero && amount is { } recovered && recovered != Money.Zero)
+            form.AddKey(_fieldOf[_amount], "MoneyOut_RecoveredNeedsUnits");
         DateOnly? date = !_void && _fieldOf.ContainsKey(_date) ? form.Date(_fieldOf[_date], _date.SelectedDate) : null;
         long? category = !_void && _expense is not null ? form.Choice(_fieldOf[_category], _category.SelectedValue) : null;
         if (!form.Apply(_fields, _summary)) return;

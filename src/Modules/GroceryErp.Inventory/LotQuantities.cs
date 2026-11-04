@@ -73,8 +73,8 @@ public sealed class LotQuantities(ISettings settings) : ILotQuantities
 
     private static DomainException Rejected(DbTx transaction, long productId, long lotId, Quantity quantity, bool sale)
     {
-        var lot = transaction.Connection.QuerySingleOrDefault<(long OnHand, long IsActive)?>("""
-            SELECT qty_on_hand AS OnHand,is_active AS IsActive FROM product_lot
+        var lot = transaction.Connection.QuerySingleOrDefault<(long OnHand, long IsActive, string LotCode)?>("""
+            SELECT qty_on_hand AS OnHand,is_active AS IsActive,lot_code AS LotCode FROM product_lot
             WHERE id=@lotId AND product_id=@productId
             """, new { lotId, productId }, transaction.Transaction);
         if (lot is null) return new DomainException(ErrorCode.LotProductMismatch, lotId);
@@ -82,7 +82,7 @@ public sealed class LotQuantities(ISettings settings) : ILotQuantities
             return new DomainException(ErrorCode.InsufficientStock, lotId);
         return sale && lot.Value.IsActive == 1
             ? new DomainException(ErrorCode.ExpiredLot, lotId)
-            : new DomainException(ErrorCode.Validation, "This lot is blocked for sale.");
+            : new DomainException(ErrorCode.LotBlocked, lot.Value.LotCode);
     }
 
     public IReadOnlyList<LotAllocation> AllocateFefo(

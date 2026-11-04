@@ -96,9 +96,7 @@ public sealed partial class InventoryService(
             long[] ids = connection.Query<long>(
                 $"SELECT l.id FROM product_lot l JOIN product p ON p.id=l.product_id WHERE {conditions} ORDER BY l.id DESC LIMIT @cap",
                 parameters).ToArray();
-            if (ids.Length > cap)
-                throw new DomainException(ErrorCode.Validation,
-                    $"More than {cap.ToString(System.Globalization.CultureInfo.InvariantCulture)} lots match. Narrow the filters and try again.");
+            if (ids.Length > cap) throw new DomainException(ErrorCode.TooManyRows, cap);
             return (IReadOnlyList<long>)ids;
         }, cancellationToken);
     }
@@ -125,7 +123,7 @@ public sealed partial class InventoryService(
             filter.Source is not (null or "PURCHASE_LINE" or "DIRECT" or "CUSTOMER_RETURN"))
             throw new DomainException(ErrorCode.Validation, "Invalid lot filter.");
         if (filter.ExpiryFrom > filter.ExpiryTo || filter.MinPrice > filter.MaxPrice)
-            throw new DomainException(ErrorCode.Validation, "The filter range starts after it ends.");
+            throw new DomainException(ErrorCode.FilterRangeReversed);
         DateOnly today = filter.AsOf ?? periods.Today;
         var parameters = new DynamicParameters();
         parameters.Add("productId", filter.ProductId);
@@ -316,7 +314,7 @@ public sealed partial class InventoryService(
         if (transaction.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot WHERE id=@lotId",
             new { lotId }, transaction.Transaction) == 0)
             throw new DomainException(ErrorCode.NotFound, "lot", lotId);
-        throw new DomainException(ErrorCode.Validation, "This lot changed since it was loaded. Refresh it and try again.");
+        throw new DomainException(ErrorCode.EntryChanged, lotId);
     }
 
     // The typed purchase price is before tax. A chosen rate must be active; without one the lot
@@ -345,7 +343,7 @@ public sealed partial class InventoryService(
     private static void ValidateProductQuantity(ProductRule product, Quantity quantity, DateOnly? expiry)
     {
         if (!product.AllowFraction && !quantity.IsWhole) throw new DomainException(ErrorCode.FractionalQtyNotAllowed);
-        if (product.TrackExpiry && expiry is null) throw new DomainException(ErrorCode.Validation, "Expiry is required.");
+        if (product.TrackExpiry && expiry is null) throw new DomainException(ErrorCode.ExpiryRequired);
     }
 
     private static string Required(string? value, int maximum, string parameter)

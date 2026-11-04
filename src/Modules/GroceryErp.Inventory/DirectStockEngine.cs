@@ -184,9 +184,9 @@ public sealed class DirectStockEngine(DocNumberService numbers) : IDirectStockEn
     private void CheckAffected(DbTx tx, IEnumerable<long> lotIds)
     {
         foreach (long lotId in lotIds.Distinct())
-            if (CheckLot(tx, lotId) is { } mismatch)
-                throw new DomainException(ErrorCode.Validation,
-                    $"Lot {lotId} source balance {mismatch.Expected} differs from {mismatch.Actual}.");
+            if (CheckLot(tx, lotId) is not null)
+                throw new DomainException(ErrorCode.CountLotDiffersFromDocuments, tx.Connection.ExecuteScalar<string>(
+                    "SELECT lot_code FROM product_lot WHERE id=@lotId", new { lotId }, tx.Transaction) ?? "");
     }
 
     private static void ValidateCountReplay(DbTx tx, CountResult result, long lotId, long oldQuantity,

@@ -354,7 +354,9 @@ public sealed partial class MoneyOutService(
                                   WHERE employee_id=@employeeId AND period_month=@period
                                     AND kind IN ('SALARY','BONUS','OVERTIME'))
                     """, new { employeeId = line.EmployeeId, period = input.Period.ToString() }, transaction.Transaction) != 0;
-                if (alreadyPaid) throw new DomainException(ErrorCode.Validation, "Salary for this employee and month is already posted.");
+                if (alreadyPaid)
+                    throw new DomainException(ErrorCode.SalaryAlreadyPosted, transaction.Connection.ExecuteScalar<string>(
+                        "SELECT name FROM employee WHERE id=@id", new { id = line.EmployeeId }, transaction.Transaction) ?? "");
                 Money salary = line.BaseSalary - line.LeaveDeduction;
                 if (salary > Money.Zero) firstId = InsertSalary(transaction, line.EmployeeId, input, "SALARY", salary, line.Notes, firstId);
                 if (line.Overtime > Money.Zero) firstId = InsertSalary(transaction, line.EmployeeId, input, "OVERTIME", line.Overtime, line.Notes, firstId);

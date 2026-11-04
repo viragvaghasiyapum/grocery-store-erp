@@ -102,7 +102,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
         return database.WriteAsync(transaction =>
         {
             int depth = CategoryDepth(transaction, input.ParentId);
-            if (depth >= 3) throw new DomainException(ErrorCode.Validation, "Categories can be at most three levels deep.");
+            if (depth >= 3) throw new DomainException(ErrorCode.CategoryHierarchyInvalid);
             long id = transaction.Connection.ExecuteScalar<long>("""
                 INSERT INTO category(parent_id,name,name_local,expiry_alert_days)
                 VALUES (@ParentId,@name,@localName,@ExpiryAlertDays) RETURNING id
@@ -129,7 +129,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
         ArgumentNullException.ThrowIfNull(input);
         string name = CatalogText.Required(input.Name, 80, nameof(input.Name));
         string? localName = CatalogText.Optional(input.NameLocal, 80);
-        if (id == input.ParentId) throw new DomainException(ErrorCode.Validation, "A category cannot be its own parent.");
+        if (id == input.ParentId) throw new DomainException(ErrorCode.CategoryHierarchyInvalid);
         if (input.ExpiryAlertDays < 0) throw new DomainException(ErrorCode.Validation, "Expiry alert days cannot be negative.");
         return database.WriteAsync(transaction =>
         {
@@ -141,7 +141,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
                 ) SELECT COALESCE(MAX(depth),1) FROM descendants
                 """, new { id }, transaction.Transaction);
             if (depth + subtreeHeight > 3 || HasDescendant(transaction, id, input.ParentId))
-                throw new DomainException(ErrorCode.Validation, "The category hierarchy is invalid or exceeds three levels.");
+                throw new DomainException(ErrorCode.CategoryHierarchyInvalid);
             int changed = transaction.Connection.Execute("""
                 UPDATE category SET parent_id=@ParentId,name=@name,name_local=@localName,
                     expiry_alert_days=@ExpiryAlertDays WHERE id=@id
@@ -190,7 +190,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
             if (current is null) throw new DomainException(ErrorCode.NotFound, "unit", id);
             if (current != allowFraction && transaction.Connection.ExecuteScalar<long>(
                     "SELECT EXISTS(SELECT 1 FROM product WHERE uom_id=@id)", new { id }, transaction.Transaction) != 0)
-                throw new DomainException(ErrorCode.Validation, "Fractional quantity cannot change after a unit is used.");
+                throw new DomainException(ErrorCode.UnitFractionLocked);
             transaction.Connection.Execute("""
                 UPDATE uom SET code=@normalizedCode,name=@normalizedName,name_local=@normalizedLocalName,
                     allow_fraction=@fraction WHERE id=@id
@@ -202,7 +202,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
     public Task<long> CreateTaxRateAsync(string name, decimal rate, CancellationToken cancellationToken = default)
     {
         string normalizedName = CatalogText.Required(name, 60, nameof(name));
-        if (rate < 0 || rate > 100) throw new DomainException(ErrorCode.Validation, "Tax rate must be between 0 and 100.");
+        if (rate < 0 || rate > 100) throw new DomainException(ErrorCode.TaxRateOutOfRange);
         return database.WriteAsync(transaction =>
         {
             long id = transaction.Connection.ExecuteScalar<long>(
@@ -216,7 +216,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
     public Task UpdateTaxRateAsync(long id, string name, decimal rate, bool isActive, CancellationToken cancellationToken = default)
     {
         string normalizedName = CatalogText.Required(name, 60, nameof(name));
-        if (rate < 0 || rate > 100) throw new DomainException(ErrorCode.Validation, "Tax rate must be between 0 and 100.");
+        if (rate < 0 || rate > 100) throw new DomainException(ErrorCode.TaxRateOutOfRange);
         return database.WriteAsync(transaction =>
         {
             int changed = transaction.Connection.Execute("""
@@ -243,10 +243,10 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
     {
         ArgumentNullException.ThrowIfNull(lot);
         ValidatedProduct product = Validate(input);
+        if (input.TrackExpiry && lot.ExpiryDate is null) throw new DomainException(ErrorCode.ExpiryRequired);
         if (lot.Quantity <= Quantity.Zero || lot.PurchasePrice < Money.Zero ||
             lot.SellingPrice < Money.Zero || lot.Mrp < Money.Zero ||
             lot.Mrp is not null && lot.SellingPrice > lot.Mrp.Value ||
-            input.TrackExpiry && lot.ExpiryDate is null ||
             lot.ExpiryDate is not null && lot.ExpiryDate < lot.ReceivedDate ||
             string.IsNullOrWhiteSpace(lot.Reason) || lot.Reason.Length > 500 ||
             lot.BatchNumber?.Length > 120)
@@ -368,8 +368,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
                 SELECT EXISTS(SELECT 1 FROM product p WHERE p.id=@id AND p.product_class<>@productClass
                     AND EXISTS(SELECT 1 FROM product_lot l WHERE l.product_id=p.id AND l.qty_on_hand<>0))
                 """, new { id, productClass = product.ProductClass }, transaction.Transaction) != 0)
-                throw new DomainException(ErrorCode.Validation,
-                    "Products with stock cannot change classification. Consume or return stock first.");
+                throw new DomainException(ErrorCode.ProductClassLocked, id);
 
             transaction.Connection.Execute("""
                 UPDATE product SET
@@ -473,7 +472,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
             long exists = transaction.Connection.ExecuteScalar<long>(
                 "SELECT COUNT(*) FROM product WHERE id=@id", new { id }, transaction.Transaction);
             if (exists == 0) throw new DomainException(ErrorCode.NotFound, "product", id);
-            throw new DomainException(ErrorCode.Validation, "This product changed since it was loaded. Refresh it and try again.");
+            throw new DomainException(ErrorCode.EntryChanged, id);
         }
         audit.Write(transaction, "product", id, active ? "RESTORE" : "ARCHIVE", null);
     }, cancellationToken);
@@ -610,12 +609,12 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
         bool? fractional = transaction.Connection.QuerySingleOrDefault<bool?>(
             "SELECT allow_fraction FROM uom WHERE id=@unitId", new { unitId }, transaction.Transaction);
         if (fractional is null) throw new DomainException(ErrorCode.NotFound, "unit", unitId);
-        if (isLoose && !fractional.Value) throw new DomainException(ErrorCode.Validation, "Loose products require a fractional unit.");
+        if (isLoose && !fractional.Value) throw new DomainException(ErrorCode.LooseNeedsFractionalUnit);
         if (productId is not null && transaction.Connection.ExecuteScalar<long>("""
             SELECT EXISTS(SELECT 1 FROM product p WHERE p.id=@productId AND p.uom_id<>@unitId
                 AND EXISTS(SELECT 1 FROM product_lot l WHERE l.product_id=p.id))
             """, new { productId, unitId }, transaction.Transaction) != 0)
-            throw new DomainException(ErrorCode.Validation, "A product's unit cannot change after stock lots exist.");
+            throw new DomainException(ErrorCode.ProductUnitLocked);
     }
 
     private sealed record ValidatedBarcode(string Barcode, long PackQuantity, string Symbology, bool IsPrimary, string Source);

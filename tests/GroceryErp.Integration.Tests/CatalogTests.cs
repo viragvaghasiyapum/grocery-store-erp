@@ -486,7 +486,12 @@ public sealed class CatalogTests
 
         DomainException exception = await Should.ThrowAsync<DomainException>(() =>
             fixture.Service.CreateCategoryAsync(new("Wheat Flour", null, grandchild, null), TestContext.Current.CancellationToken));
-        exception.Code.ShouldBe(ErrorCode.Validation);
+        exception.Code.ShouldBe(ErrorCode.CategoryHierarchyInvalid);
+        (await Should.ThrowAsync<DomainException>(() => fixture.Service.UpdateCategoryAsync(root,
+            new("Food", null, grandchild, null), TestContext.Current.CancellationToken))).Code
+            .ShouldBe(ErrorCode.CategoryHierarchyInvalid);
+        (await Should.ThrowAsync<DomainException>(() => fixture.Service.CreateCategoryAsync(
+            new("Flour", null, child, null), TestContext.Current.CancellationToken))).Code.ShouldBe(ErrorCode.NameExists);
 
         long brand = await fixture.Service.CreateBrandAsync("Example Brand", TestContext.Current.CancellationToken);
         await fixture.Service.UpdateBrandAsync(brand, "Renamed Brand", TestContext.Current.CancellationToken);
@@ -614,7 +619,11 @@ public sealed class CatalogTests
 
         DomainException locked = await Should.ThrowAsync<DomainException>(() => fixture.Service.UpdateUnitAsync(
             fixture.UnitId, "PCS", "Piece", null, true, TestContext.Current.CancellationToken));
-        locked.Code.ShouldBe(ErrorCode.Validation);
+        locked.Code.ShouldBe(ErrorCode.UnitFractionLocked);
+        (await Should.ThrowAsync<DomainException>(() => fixture.Service.CreateUnitAsync("pcs", "Pieces", null, false,
+            TestContext.Current.CancellationToken))).Code.ShouldBe(ErrorCode.NameExists);
+        (await Should.ThrowAsync<DomainException>(() => fixture.Service.CreateTaxRateAsync("Cess", 101m,
+            TestContext.Current.CancellationToken))).Code.ShouldBe(ErrorCode.TaxRateOutOfRange);
 
         long unitId = await fixture.Service.CreateUnitAsync("BAG", "Bag", "થેલી", false, TestContext.Current.CancellationToken);
         await fixture.Service.UpdateUnitAsync(unitId, "BAG", "Large Bag", "મોટી થેલી", true, TestContext.Current.CancellationToken);

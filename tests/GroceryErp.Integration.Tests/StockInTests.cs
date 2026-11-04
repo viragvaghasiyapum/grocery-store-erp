@@ -1001,7 +1001,7 @@ public sealed class StockInTests
         DomainException stale = await Should.ThrowAsync<DomainException>(() =>
             fixture.Inventory.EditLotDetailsAsync(new(lotId, original.DetailVersion,
                 new Money(33), new Money(35), fixture.Date.AddDays(21)), ct));
-        stale.Code.ShouldBe(ErrorCode.Validation);
+        stale.Code.ShouldBe(ErrorCode.EntryChanged);
         (await fixture.Inventory.GetLotPageAsync(fixture.ProductId, limit: 1,
             expiryFilter: "EXPIRING", asOfDate: fixture.Date, cancellationToken: ct)).Items.Single().Id.ShouldBe(lotId);
         (await fixture.Inventory.GetLotPageAsync(fixture.ProductId, limit: 1,

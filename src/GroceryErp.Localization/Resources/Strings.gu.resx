@@ -973,6 +973,47 @@
   <data name="Error_RestoreProductTypeMismatch" xml:space="preserve"><value>મૂળ જેવા જ પ્રકારની પ્રોડક્ટ પસંદ કરો: વેચાણ માટેની અથવા આંતરિક ઉપયોગની.</value><comment>MT – needs review</comment></data>
   <data name="Error_RestoreExpiryRequired" xml:space="preserve"><value>પસંદ કરેલી પ્રોડક્ટની સમાપ્તિ તારીખ રખાય છે. આ એકમોની સમાપ્તિ તારીખ દાખલ કરો.</value><comment>MT – needs review</comment></data>
   <data name="Error_SkuExists" xml:space="preserve"><value>આ SKU બીજી પ્રોડક્ટ પહેલેથી વાપરે છે.</value><comment>MT – needs review</comment></data>
+  <data name="Error_ProductArchived" xml:space="preserve"><value>આ પ્રોડક્ટ આર્કાઇવ થયેલી છે, તેથી વેચી શકાતી નથી. પહેલાં ઉત્પાદનોમાં તેને ફરી સક્રિય કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_InternalUseNotSaleable" xml:space="preserve"><value>આ આંતરિક ઉપયોગની પ્રોડક્ટ છે, તેથી વેચી શકાતી નથી.</value><comment>MT – needs review</comment></data>
+  <data name="Error_LotBlocked" xml:space="preserve"><value>બેચ {0} વેચાણ માટે બ્લોક છે. બીજી બેચ પસંદ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_PriceLabelNeedsPrice" xml:space="preserve"><value>કિંમત લેબલ માટે શૂન્યથી વધુ વેચાણ કિંમતવાળી બેચ જોઈએ. પહેલાં બેચની વેચાણ કિંમત દાખલ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_InvalidPhone" xml:space="preserve"><value>10 અંકનો મોબાઇલ નંબર દાખલ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_InvalidGstin" xml:space="preserve"><value>આ GSTIN માન્ય નથી. તેના 15 અક્ષર તપાસો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_InvalidPan" xml:space="preserve"><value>આ PAN માન્ય નથી. તેમાં 5 અક્ષર, 4 અંક અને 1 અક્ષર હોય છે.</value><comment>MT – needs review</comment></data>
+  <data name="Error_CustomerPhoneExists" xml:space="preserve"><value>આ મોબાઇલ નંબરવાળો ગ્રાહક પહેલેથી છે. તેને શોધીને પસંદ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_CategoryHierarchyInvalid" xml:space="preserve"><value>શ્રેણી વધુમાં વધુ ત્રણ સ્તર ઊંડી હોઈ શકે છે, અને તેને પોતાની નીચે કે પોતાની પેટા-શ્રેણી નીચે મૂકી શકાતી નથી.</value><comment>MT – needs review</comment></data>
+  <data name="Error_UnitFractionLocked" xml:space="preserve"><value>પ્રોડક્ટ જે એકમ વાપરે છે તેમાં અપૂર્ણાંક જથ્થાની છૂટ બદલી શકાતી નથી.</value><comment>MT – needs review</comment></data>
+  <data name="Error_TaxRateOutOfRange" xml:space="preserve"><value>કર દર 0 અને 100 ટકા વચ્ચે હોવો જોઈએ.</value><comment>MT – needs review</comment></data>
+  <data name="Error_ProductClassLocked" xml:space="preserve"><value>સ્ટોકવાળી પ્રોડક્ટ વેચાણ માટેની અને આંતરિક ઉપયોગની વચ્ચે બદલી શકાતી નથી. પહેલાં તેનો સ્ટોક વેચો, વાપરો, નુકસાનમાં નોંધો અથવા પરત કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_LooseNeedsFractionalUnit" xml:space="preserve"><value>છૂટક પ્રોડક્ટ માટે અપૂર્ણાંક જથ્થો સ્વીકારતો એકમ જોઈએ, જેમ કે kg.</value><comment>MT – needs review</comment></data>
+  <data name="Error_ProductUnitLocked" xml:space="preserve"><value>પ્રોડક્ટની બેચ બન્યા પછી તેનો એકમ બદલી શકાતો નથી.</value><comment>MT – needs review</comment></data>
+  <data name="Error_ExpiryRequired" xml:space="preserve"><value>આ પ્રોડક્ટની સમાપ્તિ તારીખ રખાય છે. સમાપ્તિ તારીખ દાખલ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_TooManyRows" xml:space="preserve"><value>આ એક સાથે વધુમાં વધુ {0} હરોળ લે છે. ફિલ્ટર સાંકડા કરીને ફરી પ્રયાસ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_FilterRangeReversed" xml:space="preserve"><value>ફિલ્ટરની શરૂઆતની કિંમત તેના અંતની કિંમત પછીની છે.</value><comment>MT – needs review</comment></data>
+  <data name="Error_LotOnOpenBill" xml:space="preserve"><value>ખુલ્લું અથવા હોલ્ડ કરેલું બિલ હજુ આ બેચ વાપરે છે. પહેલાં તે બિલ પૂર્ણ કરો અથવા તેની લાઇન કાઢી નાખો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_ExpiredReasonNeedsExpiredLot" xml:space="preserve"><value>સમાપ્ત કારણ ફક્ત એવી બેચ માટે છે જેની સમાપ્તિ તારીખ નુકસાનની તારીખ પહેલાંની હોય.</value><comment>MT – needs review</comment></data>
+  <data name="Error_CountLotDiffersFromDocuments" xml:space="preserve"><value>બેચ {0} નો જથ્થો પહેલેથી તેના દસ્તાવેજોથી અલગ છે, તેથી તેની ગણતરી પોસ્ટ કરી શકાતી નથી.</value><comment>MT – needs review</comment></data>
+  <data name="Error_TaxRateInactive" xml:space="preserve"><value>કર દર {0} હવે સક્રિય નથી. સક્રિય દર પસંદ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_TaxRateRequired" xml:space="preserve"><value>પોસ્ટ કરતા પહેલાં દરેક લાઇન માટે કર દર પસંદ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_PurchaseLineTypeMismatch" xml:space="preserve"><value>પ્રોડક્ટ સાથે મેળ ખાતો લાઇન પ્રકાર પસંદ કરો: વેચાણ માટેની પ્રોડક્ટ માટે ઉત્પાદન, આંતરિક ઉપયોગની પ્રોડક્ટ માટે આંતરિક ઉપયોગ.</value><comment>MT – needs review</comment></data>
+  <data name="Error_ExpenseCategoryInactive" xml:space="preserve"><value>આ ખર્ચ શ્રેણી હવે સક્રિય નથી. સક્રિય શ્રેણી પસંદ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_ExpenseLineAmountRequired" xml:space="preserve"><value>ખર્ચ લાઇનમાં શૂન્યથી વધુ રકમ જોઈએ.</value><comment>MT – needs review</comment></data>
+  <data name="Error_PurchaseTooManyLines" xml:space="preserve"><value>એક ખરીદીમાં વધુમાં વધુ {0} લાઇન હોઈ શકે છે. બાકીની લાઇન બીજી ખરીદી તરીકે દાખલ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_VendorReturnExceedsLot" xml:space="preserve"><value>પરત જથ્થો અથવા ક્રેડિટ આ બેચમાં પરત કરવા બાકી છે તેના કરતાં વધુ છે. રિફ્રેશ કરીને પરત ફરી દાખલ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_SalaryAlreadyPosted" xml:space="preserve"><value>{0} નો આ મહિનાનો પગાર પહેલેથી પોસ્ટ થયો છે.</value><comment>MT – needs review</comment></data>
+  <data name="Error_AssetAlreadyDisposed" xml:space="preserve"><value>આ મિલકતનો નિકાલ પહેલેથી થઈ ગયો છે.</value><comment>MT – needs review</comment></data>
+  <data name="Error_AssetDisposalBeforeInUse" xml:space="preserve"><value>નિકાલની તારીખ મિલકત ઉપયોગમાં લીધાની તારીખ {0} પહેલાંની હોઈ શકે નહીં.</value><comment>MT – needs review</comment></data>
+  <data name="Error_AssetDepreciationPosted" xml:space="preserve"><value>નિકાલના મહિના અથવા પછીના મહિનાનો ઘસારો પહેલેથી પોસ્ટ થયો છે, તેથી તે મહિનામાં મિલકતનો નિકાલ કરી શકાતો નથી.</value><comment>MT – needs review</comment></data>
+  <data name="Error_CloudFolderNotAllowed" xml:space="preserve"><value>OneDrive ની બહારનું ફોલ્ડર પસંદ કરો. સિંક થતું ફોલ્ડર સ્ટોર ડેટાબેઝને નુકસાન કરી શકે છે.</value><comment>MT – needs review</comment></data>
+  <data name="Error_DataFolderNotSeparate" xml:space="preserve"><value>હાલના ફોલ્ડરથી અલગ નવું ડેટા ફોલ્ડર પસંદ કરો; તેની અંદરનું કે તેને સમાવતું ફોલ્ડર નહીં.</value><comment>MT – needs review</comment></data>
+  <data name="Error_DataFolderNotEmpty" xml:space="preserve"><value>ડેટા માટે ખાલી ફોલ્ડર પસંદ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_DataMovePending" xml:space="preserve"><value>ડેટા ખસેડવાનું પહેલેથી નક્કી થયેલું છે. એપ ફરી શરૂ થશે ત્યારે તે પૂરું થશે.</value><comment>MT – needs review</comment></data>
+  <data name="Error_DataMoveStagingInUse" xml:space="preserve"><value>ફોલ્ડર {0} અગાઉના ખસેડવામાંથી બાકી રહ્યું છે. તેને કાઢી નાખો અથવા બીજું ફોલ્ડર પસંદ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_UsbDriveNotReady" xml:space="preserve"><value>જોડાયેલી અને તૈયાર, દૂર કરી શકાય તેવી ડ્રાઇવ પસંદ કરો.</value><comment>MT – needs review</comment></data>
+  <data name="Error_PluExists" xml:space="preserve"><value>આ PLU કોડ બીજી પ્રોડક્ટ પહેલેથી વાપરે છે.</value><comment>MT – needs review</comment></data>
+  <data name="Error_VendorGstinExists" xml:space="preserve"><value>આ GSTIN બીજા વિક્રેતા પાસે પહેલેથી છે.</value><comment>MT – needs review</comment></data>
+  <data name="Error_NameExists" xml:space="preserve"><value>આ નામ અથવા કોડ બીજી નોંધ પહેલેથી વાપરે છે.</value><comment>MT – needs review</comment></data>
+  <data name="Pos_QuantityPrefixInvalid" xml:space="preserve"><value>ધન જથ્થો, પછી * અને કોડ દાખલ કરો, જેમ કે 2*8901234567890.</value><comment>MT – needs review</comment></data>
   <data name="Reports_PnlScope" xml:space="preserve"><value>નફો-નુકસાન સમયગાળાનો પ્રકાર</value><comment>MT - needs review</comment></data>
   <data name="Reports_PnlScope_Month" xml:space="preserve"><value>મહિનો</value><comment>MT - needs review</comment></data>
   <data name="Reports_PnlScope_CalendarYear" xml:space="preserve"><value>કેલેન્ડર વર્ષ</value><comment>MT - needs review</comment></data>
@@ -1056,6 +1097,7 @@
   <data name="Assets_TermLine" xml:space="preserve"><value>{0} થી: {1} {2}% · ભંગાર ₹{3} · કિંમત ₹{4} · {5} · {6} એ નોંધ્યું</value><comment>MT - needs review</comment></data>
   <data name="Assets_ChargedOn" xml:space="preserve"><value>ખર્ચ તારીખ</value><comment>MT - needs review</comment></data>
   <data name="Form_Required" xml:space="preserve"><value>જરૂરી છે.</value><comment>MT - needs review</comment></data>
+  <data name="Form_FieldRequired" xml:space="preserve"><value>{0} જરૂરી છે.</value><comment>MT – needs review</comment></data>
   <data name="Form_Choose" xml:space="preserve"><value>એક વિકલ્પ પસંદ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Form_Yes" xml:space="preserve"><value>હા</value><comment>MT - needs review</comment></data>
   <data name="Form_No" xml:space="preserve"><value>ના</value><comment>MT - needs review</comment></data>
@@ -1063,6 +1105,7 @@
   <data name="Form_TooManyDecimals" xml:space="preserve"><value>દશાંશ પછી વધુમાં વધુ 3 અંક વાપરો.</value><comment>MT - needs review</comment></data>
   <data name="Form_MustBePositive" xml:space="preserve"><value>શૂન્યથી મોટી સંખ્યા લખો.</value><comment>MT - needs review</comment></data>
   <data name="Form_AtLeast" xml:space="preserve"><value>{0} કે તેથી વધુ લખો.</value><comment>MT - needs review</comment></data>
+  <data name="Form_AtMost" xml:space="preserve"><value>{0} કે તેથી ઓછું લખો.</value><comment>MT – needs review</comment></data>
   <data name="Form_WholeNumberAtLeast" xml:space="preserve"><value>{0} કે તેથી વધુ પૂર્ણ સંખ્યા લખો.</value><comment>MT - needs review</comment></data>
   <data name="Form_TooLong" xml:space="preserve"><value>વધુમાં વધુ {0} અક્ષર વાપરો.</value><comment>MT - needs review</comment></data>
   <data name="Form_FixProblem_One" xml:space="preserve"><value>સાચવતા પહેલાં {0} ભૂલ સુધારો:</value><comment>MT - needs review</comment></data>
@@ -1180,6 +1223,8 @@
   <data name="MoneyOut_RowCount" xml:space="preserve"><value>હરોળ: {0}</value><comment>MT - needs review</comment></data>
   <data name="MoneyOut_SalaryChooseLines" xml:space="preserve"><value>હરોળ તૈયાર કરો અને ઓછામાં ઓછો એક કર્મચારી પસંદ કરો.</value><comment>MT - needs review</comment></data>
   <data name="MoneyOut_SalaryLineInvalid" xml:space="preserve"><value>{0}: રકમ 0 કે તેથી વધુ સંખ્યા હોવી જોઈએ.</value><comment>MT - needs review</comment></data>
+  <data name="MoneyOut_SalaryLinePaysNothing" xml:space="preserve"><value>{0}: રજા કપાત પગાર કરતાં વધુ હોઈ શકે નહીં, અને લાઇનમાં શૂન્યથી વધુ ચુકવણી હોવી જોઈએ.</value><comment>MT – needs review</comment></data>
+  <data name="MoneyOut_RecoveredNeedsUnits" xml:space="preserve"><value>ફક્ત નુકસાન થયેલા એકમો પર જ વસૂલ રકમ હોઈ શકે. અહીં 0 લખો, અથવા કેટલાક એકમો નુકસાનમાં રાખો.</value><comment>MT – needs review</comment></data>
   <data name="MoneyOut_SalaryPostConfirm" xml:space="preserve"><value>{1} માટે {0} કર્મચારીઓનો પગાર, કુલ ₹{2}, નોંધવો છે?</value><comment>MT - needs review</comment></data>
   <data name="MoneyOut_SalaryRunContext" xml:space="preserve"><value>પગાર કામ કરેલા મહિનામાં ગણાય છે. નોંધતા પહેલાં કપાત, ઓવરટાઇમ કે બોનસ બદલો.</value><comment>MT - needs review</comment></data>
   <data name="MoneyOut_SaveSelected" xml:space="preserve"><value>પસંદ કરેલા સાચવો</value><comment>MT - needs review</comment></data>

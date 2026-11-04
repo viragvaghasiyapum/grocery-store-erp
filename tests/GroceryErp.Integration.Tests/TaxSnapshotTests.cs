@@ -104,10 +104,10 @@ public sealed class TaxSnapshotTests
 
         (await Should.ThrowAsync<DomainException>(() => fixture.Purchasing.SaveDraftAsync(null,
             fixture.Draft("INACTIVE-2", Money.Zero, TaxFixture.Line(fixture.ProductId, Quantity.One,
-                new Money(100), fixture.Gst18)), ct))).Code.ShouldBe(ErrorCode.Validation);
+                new Money(100), fixture.Gst18)), ct))).Code.ShouldBe(ErrorCode.TaxRateInactive);
         (await Should.ThrowAsync<DomainException>(() => fixture.Purchasing.SaveDraftAsync(null,
             fixture.Draft("NO-RATE", Money.Zero, TaxFixture.Line(fixture.ProductId, Quantity.One,
-                new Money(100), null)), ct))).Code.ShouldBe(ErrorCode.Validation);
+                new Money(100), null)), ct))).Code.ShouldBe(ErrorCode.TaxRateRequired);
     }
 
     [Fact]
@@ -125,7 +125,7 @@ public sealed class TaxSnapshotTests
         await fixture.Catalog.CreateTaxRateAsync("IGST 5%", 5m, ct);
         (await fixture.Purchasing.GetDraftAsync(id, ct)).Input.Lines.Single().TaxRateId.ShouldBeNull();
         (await Should.ThrowAsync<DomainException>(() => fixture.Purchasing.PostAsync(id, OperationGuard.NewId(), ct)))
-            .Code.ShouldBe(ErrorCode.Validation);
+            .Code.ShouldBe(ErrorCode.TaxRateRequired);
     }
 
     [Fact]

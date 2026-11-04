@@ -63,7 +63,9 @@ public partial class VendorEditorWindow : Window
         if (pincode is not null && (pincode.Length != 6 || !pincode.All(char.IsAsciiDigit)))
             form.AddKey(PincodeField, "Purchasing_PincodeDigits");
         int? terms = form.WholeNumber(TermsField, TermsBox.Text, required: true);
-        decimal? opening = form.Number(OpeningField, OpeningBox.Text, required: true);
+        if (terms > PurchasingService.MaxPaymentTermsDays)
+            form.AddKey(TermsField, "Form_AtMost", PurchasingService.MaxPaymentTermsDays);
+        decimal? opening = form.Number(OpeningField, OpeningBox.Text, required: true, minimum: 0);
         if (!form.Apply(Fields, Summary)) return;
         SaveButton.IsEnabled = false;
         try

@@ -255,6 +255,11 @@ public partial class ProductForm : UserControl
         ErrorCode.PriceAboveMrp => PriceField,
         ErrorCode.PeriodLocked or ErrorCode.InvalidDate => ProductId is null && AddFirstLotBox.IsChecked == true
             ? FirstLotDateField : null,
+        ErrorCode.LooseNeedsFractionalUnit or ErrorCode.ProductUnitLocked => UnitField,
+        ErrorCode.ProductClassLocked => ClassField,
+        ErrorCode.SkuExists => SkuField,
+        ErrorCode.ExpiryRequired => FirstLotExpiryField,
+        ErrorCode.TaxRateInactive => FirstLotTaxField,
         _ => null,
     };
 }

@@ -20,8 +20,8 @@ public sealed partial class InventoryService
                 FROM product_lot l JOIN product p ON p.id=l.product_id WHERE l.id=@id
                 """, new { id = edit.LotId }, tx.Transaction);
             if (rule is null) throw new DomainException(ErrorCode.NotFound, "lot", edit.LotId);
-            if (edit.ExpiryDate < rule.ReceivedDate || rule.TrackExpiry && edit.ExpiryDate is null)
-                throw new DomainException(ErrorCode.Validation, "Invalid lot expiry.");
+            if (rule.TrackExpiry && edit.ExpiryDate is null) throw new DomainException(ErrorCode.ExpiryRequired);
+            if (edit.ExpiryDate < rule.ReceivedDate) throw new DomainException(ErrorCode.InvalidDate);
             int changed = tx.Connection.Execute("""
                 UPDATE product_lot SET selling_price=@price,mrp=@mrp,expiry_date=@expiry,
                     detail_version=detail_version+1,
@@ -63,7 +63,7 @@ public sealed partial class InventoryService
             """, new { lotId, expectedVersion }, tx.Transaction);
         if (productId is null) ThrowLotEditConflict(tx, lotId);
         if (IsOnOpenBill(tx.Connection, lotId, tx.Transaction))
-            throw new DomainException(ErrorCode.Validation, "A held or draft bill still uses this lot.");
+            throw new DomainException(ErrorCode.LotOnOpenBill, lotId);
         int changed = tx.Connection.Execute("""
             DELETE FROM product_lot WHERE id=@lotId AND qty_on_hand=0 AND detail_version=@expectedVersion
             """, new { lotId, expectedVersion }, tx.Transaction);

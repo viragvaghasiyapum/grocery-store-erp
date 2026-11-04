@@ -1,4 +1,3 @@
-using System.Globalization;
 using CommunityToolkit.Mvvm.Messaging;
 using Dapper;
 using GroceryErp.Core.Errors;
@@ -261,8 +260,7 @@ public sealed partial class PurchasingService
         }, cancellationToken);
     }
 
-    private static DomainException TooMany(int cap) => new(ErrorCode.Validation,
-        $"More than {cap.ToString(CultureInfo.InvariantCulture)} rows match. Narrow the filters and try again.");
+    private static DomainException TooMany(int cap) => new(ErrorCode.TooManyRows, cap);
 
     /// <summary>
     /// Builds the purchase filter from the filters in use only, as plain comparisons the indexes

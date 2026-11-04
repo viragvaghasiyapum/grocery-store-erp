@@ -217,8 +217,10 @@ public sealed class AssetService(
             if (replay is not null) return;
             periods.EnsureOpen(transaction, date);
             AssetState asset = LoadState(transaction.Connection, transaction.Transaction, assetId);
-            if (asset.DisposedDate is not null || date < asset.InUseFrom)
-                throw new DomainException(ErrorCode.Validation, "Asset is already disposed or the date is before it entered use.");
+            if (asset.DisposedDate is not null) throw new DomainException(ErrorCode.AssetAlreadyDisposed, assetId);
+            if (date < asset.InUseFrom)
+                throw new DomainException(ErrorCode.AssetDisposalBeforeInUse,
+                    asset.InUseFrom.ToString("dd-MM-yyyy", System.Globalization.CultureInfo.InvariantCulture));
             // Posted depreciation is immutable. A previously posted disposal month used the
             // whole month, so it cannot be turned into a partial month after the fact.
             string disposalPeriod = YearMonth.From(date).ToString();
@@ -227,7 +229,7 @@ public sealed class AssetService(
                               WHERE asset_id=@assetId AND period_month>=@disposalPeriod)
                 """, new { assetId, disposalPeriod }, transaction.Transaction) != 0;
             if (postedAtOrAfterDisposal)
-                throw new DomainException(ErrorCode.Validation, "Depreciation is already posted for the disposal month or later.");
+                throw new DomainException(ErrorCode.AssetDepreciationPosted, assetId);
             PostAsset(transaction, assetId, YearMonth.From(date), [], date);
             long bookValue = transaction.Connection.ExecuteScalar<long?>("""
                 SELECT closing_value FROM asset_depreciation WHERE asset_id=@assetId ORDER BY period_month DESC LIMIT 1

@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Globalization;
 using System.Resources;
+using System.Text.RegularExpressions;
 using GroceryErp.Core.Errors;
 using GroceryErp.Localization;
 using Shouldly;
@@ -23,6 +24,28 @@ public sealed class LocalizationTests
             tryParents: true)!;
 
         GetKeys(gujarati).ShouldBe(GetKeys(english), ignoreOrder: true);
+    }
+
+    [Fact]
+    public void EnglishAndGujarati_UseTheSamePlaceholders()
+    {
+        // A message formatted with an argument the other language lacks loses that detail, or fails.
+        ResourceSet english = SharedStrings.ResourceManager.GetResourceSet(
+            CultureInfo.InvariantCulture,
+            createIfNotExists: true,
+            tryParents: true)!;
+        ResourceSet gujarati = SharedStrings.ResourceManager.GetResourceSet(
+            CultureInfo.GetCultureInfo("gu-IN"),
+            createIfNotExists: true,
+            tryParents: true)!;
+        Dictionary<string, string?> local = gujarati.Cast<DictionaryEntry>()
+            .ToDictionary(static entry => (string)entry.Key, static entry => entry.Value?.ToString());
+
+        english.Cast<DictionaryEntry>()
+            .Where(entry => !Placeholders(entry.Value?.ToString())
+                .SequenceEqual(Placeholders(local.GetValueOrDefault((string)entry.Key))))
+            .Select(static entry => (string)entry.Key)
+            .ShouldBeEmpty();
     }
 
     [Fact]
@@ -101,6 +124,12 @@ public sealed class LocalizationTests
         transformed.ShouldContain("{0}");
         transformed.Length.ShouldBeGreaterThan("Save {0}".Length);
     }
+
+    private static string[] Placeholders(string? text) => Regex.Matches(text ?? string.Empty, @"\{(\d+)(?:[,:][^}]*)?\}")
+        .Select(static match => match.Groups[1].Value)
+        .Distinct()
+        .Order(StringComparer.Ordinal)
+        .ToArray();
 
     private static string[] GetKeys(ResourceSet resources) => resources
         .Cast<DictionaryEntry>()

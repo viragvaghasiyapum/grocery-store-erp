@@ -216,6 +216,7 @@ public sealed class PhaseZeroSmokeTests
                 // Runs first, while no other window has queued work on this dispatcher.
                 VerifyPhaseSixScreens(translations);
                 VerifyPhaseSevenScreens(translations);
+                VerifyOperatorMessages(translations);
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 DisplayFormatter formatter = new();
                 ShellViewModel viewModel = new(translations, formatter);
@@ -622,6 +623,25 @@ public sealed class PhaseZeroSmokeTests
                 ((TreeViewItem)categoryTree.ItemContainerGenerator.ContainerFromIndex(0)).IsExpanded = true;
                 categoryTree.UpdateLayout();
                 Capture(masters, "category-tree.en.png");
+                // An empty or blank name is named on the window, before the service would refuse it
+                // as an unknown error.
+                var mastersStatus = (TextBlock)masters.FindName("StatusText");
+                string SaveMaster(string button)
+                {
+                    mastersStatus.Text = string.Empty;
+                    ((Button)masters.FindName(button)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    return mastersStatus.Text;
+                }
+                string nameRequired = translations.Format("Form_FieldRequired", translations["Catalog_Name"]);
+                nameRequired.ShouldBe("Name is required.");
+                ((TextBox)masters.FindName("CategoryNameBox")).Text = "   ";
+                SaveMaster("SaveCategoryButton").ShouldBe(nameRequired);
+                SaveMaster("SaveBrandButton").ShouldBe(nameRequired);
+                SaveMaster("SaveUnitButton").ShouldBe(translations.Format("Form_FieldRequired", translations["Catalog_UnitCode"]));
+                ((TextBox)masters.FindName("UnitCodeBox")).Text = "BOX";
+                SaveMaster("SaveUnitButton").ShouldBe(nameRequired);
+                ((TextBox)masters.FindName("TaxRateValueBox")).Text = "5";
+                SaveMaster("SaveTaxButton").ShouldBe(nameRequired);
                 masters.Close();
 
                 var editor = new ProductEditorWindow(catalog) { Width = 760, Height = 720 };
@@ -2122,6 +2142,192 @@ public sealed class PhaseZeroSmokeTests
         }
     }
 
+    // A refused action shows its reason where the operator looks: the till's status line, a master's
+    // status line, the field it concerns or the form's summary. Each is captured in both languages
+    // when GROCERY_MESSAGE_SCREENSHOT_DIR is set.
+    private static void VerifyOperatorMessages(TranslationSource translations)
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"grocery-erp-ui-messages-{Guid.NewGuid():N}");
+        SynchronizationContext? previousContext = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(
+            new System.Windows.Threading.DispatcherSynchronizationContext(System.Windows.Threading.Dispatcher.CurrentDispatcher));
+        try
+        {
+            var paths = new AppPaths(new SettingsBootstrap(root));
+            var factory = new SqliteConnectionFactory(paths);
+            using var database = new DbExecutor(factory);
+            new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
+            using var settings = new SettingsService(database, paths, new AuditLog());
+            Run(() => settings.LoadAsync());
+            var clock = new MutableClock(new DateOnly(2026, 11, 4));
+            var periods = new PeriodGuard(settings, clock);
+            var ledger = new LotQuantities(settings);
+            var numbers = new DocNumberService(settings);
+            var catalog = new CatalogService(database, new AuditLog(), settings, clock);
+            var inventory = new InventoryService(database, ledger, numbers, periods, new AuditLog());
+            var purchasing = new PurchasingService(database, ledger, numbers, periods, settings, new AuditLog());
+            var moneyOut = new MoneyOutService(database, ledger, numbers, periods, new AuditLog());
+            var sales = new SalesService(database, ledger, numbers, periods, settings, new AuditLog(), clock);
+            long rice, gst5, kg;
+            using (var connection = factory.Open())
+            {
+                long staples = connection.ExecuteScalar<long>("INSERT INTO category(name) VALUES ('Staples') RETURNING id");
+                gst5 = connection.ExecuteScalar<long>("SELECT id FROM tax_rate WHERE rate_pct=5000");
+                kg = connection.ExecuteScalar<long>("SELECT id FROM uom WHERE code='KG'");
+                long AddProduct(string sku, string name, string productClass) => connection.ExecuteScalar<long>("""
+                    INSERT INTO product(sku,name,category_id,uom_id,hsn_code,tax_rate_id,track_expiry,
+                        default_selling_price,default_mrp,product_class)
+                    SELECT @sku,@name,@staples,u.id,'1006',@gst5,1,150000,160000,@productClass
+                    FROM uom u WHERE u.code='PCS' RETURNING id
+                    """, new { sku, name, staples, gst5, productClass });
+                rice = AddProduct("RICE01", "Basmati rice 1 kg", "SALEABLE");
+                AddProduct("CLEAN01", "Shop floor cleaner", "INTERNAL");
+            }
+            long riceLot = Run(() => inventory.CreateDirectLotAsync(new OpeningStockLine(rice, new Quantity(10),
+                new Money(80), new Money(150), new Money(160), new DateOnly(2027, 6, 30), "B-2411", clock.BusinessDate),
+                "Opening shelf", OperationGuard.NewId()));
+            Run(() => catalog.CreateBrandAsync("Tata"));
+            long ravi = Run(() => moneyOut.SaveEmployeeAsync(null, new("Ravi Kumar", "9999999999", "Helper",
+                new DateOnly(2026, 4, 1), null, new Money(9000), true, null)));
+            Run(() => moneyOut.RecordDamageAsync(new DamageInput(riceLot, clock.BusinessDate, new Quantity(2), "BROKEN",
+                Money.Zero, null), OperationGuard.NewId()));
+            DamageItem damage = Run(() => moneyOut.GetDamagesAsync(clock.BusinessDate, clock.BusinessDate)).Single();
+            CorrectionDating damageDating = Run(() => moneyOut.PreviewCorrectionAsync(damage.Date));
+            IReadOnlyList<TaxRateItem> taxRates = Run(() => catalog.GetTaxRatesAsync());
+            var click = new RoutedEventArgs(ButtonBase.ClickEvent);
+
+            foreach ((string culture, string suffix) in new[] { ("en-IN", "en"), ("gu-IN", "gu") })
+            {
+                translations.UiCulture = CultureInfo.GetCultureInfo(culture);
+
+                // The till: a typed quantity prefix without a quantity, then an internal-use product's SKU.
+                var billing = new BillingPage(sales, new ScanResolver(database), catalog, inventory, new ReceiptPrinter(settings),
+                    loadOnShow: false);
+                var billingHost = new Window { Content = billing, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
+                billingHost.Show();
+                // The bill grid lays out its column headers a few passes after the page shows.
+                var shown = System.Diagnostics.Stopwatch.StartNew();
+                PumpUntil(() => shown.ElapsedMilliseconds >= 300, 1300);
+                MethodInfo addText = typeof(BillingPage).GetMethod("AddTextAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                void TypeIntoBill(string text)
+                {
+                    var typing = (Task)addText.Invoke(billing, [text, false])!;
+                    PumpUntil(() => typing.IsCompleted);
+                    typing.GetAwaiter().GetResult();
+                }
+                var billStatus = (TextBlock)billing.FindName("StatusText");
+                TypeIntoBill("*RICE01");
+                billStatus.Text.ShouldBe(translations["Pos_QuantityPrefixInvalid"]);
+                CaptureMessage(billingHost, $"billing-quantity-prefix.{suffix}.png");
+                TypeIntoBill("CLEAN01");
+                billStatus.Text.ShouldBe(translations["Error_InternalUseNotSaleable"]);
+                CaptureMessage(billingHost, $"billing-internal-use.{suffix}.png");
+                billingHost.Close();
+
+                // Categories and brands: a blank name (P7-2), then a name another brand already has.
+                var masters = new CatalogMastersWindow(catalog) { Width = 720, Height = 560, Language = AppLanguage };
+                masters.Show();
+                PumpUntil(() => ((ItemsControl)masters.FindName("BrandList")).Items.Count > 0);
+                Descendants<TabControl>(masters).First().SelectedIndex = 1;
+                var mastersStatus = (TextBlock)masters.FindName("StatusText");
+                var brandName = (TextBox)masters.FindName("BrandNameBox");
+                var saveBrand = (Button)masters.FindName("SaveBrandButton");
+                brandName.Text = " ";
+                saveBrand.RaiseEvent(click);
+                mastersStatus.Text.ShouldBe(translations.Format("Form_FieldRequired", translations["Catalog_Name"]));
+                CaptureMessage(masters, $"masters-name-required.{suffix}.png");
+                brandName.Text = "TATA";
+                mastersStatus.Text = string.Empty;
+                saveBrand.RaiseEvent(click);
+                PumpUntil(() => mastersStatus.Text.Length > 0);
+                mastersStatus.Text.ShouldBe(translations["Error_NameExists"]);
+                CaptureMessage(masters, $"masters-name-exists.{suffix}.png");
+                masters.Close();
+
+                // A service refusal on the product form shows under the field it concerns.
+                var editor = new ProductEditorWindow(catalog, rice) { Width = 760, Height = 720, Language = AppLanguage };
+                editor.Show();
+                var productForm = (ProductForm)editor.FindName("Form");
+                var unitBox = (ComboBox)productForm.FindName("UnitBox");
+                var saveProduct = (Button)editor.FindName("SaveButton");
+                PumpUntil(() => saveProduct.IsEnabled && unitBox.SelectedValue is long);
+                unitBox.SelectedValue = kg;
+                saveProduct.RaiseEvent(click);
+                var unitField = (FormField)productForm.FindName("UnitField");
+                PumpUntil(() => unitField.Error is not null);
+                unitField.Error.ShouldBe(translations["Error_ProductUnitLocked"]);
+                CaptureMessage(editor, $"product-unit-locked.{suffix}.png");
+                editor.Close();
+
+                // A service refusal with no field of its own shows in the form's summary.
+                var directLot = new DirectLotWindow(inventory, rice, clock, taxRates, gst5) { Language = AppLanguage };
+                directLot.Show();
+                ((TextBox)directLot.FindName("QuantityBox")).Text = "2";
+                ((TextBox)directLot.FindName("CostBox")).Text = "80";
+                ((TextBox)directLot.FindName("PriceBox")).Text = "150";
+                ((TextBox)directLot.FindName("MrpBox")).Text = "160";
+                ((TextBox)directLot.FindName("ReasonBox")).Text = "Found on the shelf";
+                ((Button)directLot.FindName("SaveButton")).RaiseEvent(click);
+                var lotSummary = (FormErrorSummary)directLot.FindName("Summary");
+                PumpUntil(() => lotSummary.HasMessage);
+                TextOf(lotSummary).ShouldContain(translations["Error_ExpiryRequired"]);
+                CaptureMessage(directLot, $"direct-lot-expiry.{suffix}.png");
+                directLot.Close();
+
+                // The vendor form checks the terms and opening balance the service limits.
+                var vendorForm = new VendorEditorWindow(purchasing) { Language = AppLanguage };
+                vendorForm.Show();
+                ((TextBox)vendorForm.FindName("NameBox")).Text = "Shree Traders";
+                ((TextBox)vendorForm.FindName("TermsBox")).Text = "4000";
+                ((TextBox)vendorForm.FindName("OpeningBox")).Text = "-5";
+                ((Button)vendorForm.FindName("SaveButton")).RaiseEvent(click);
+                ((FormField)vendorForm.FindName("TermsField")).Error
+                    .ShouldBe(translations.Format("Form_AtMost", PurchasingService.MaxPaymentTermsDays));
+                ((FormField)vendorForm.FindName("OpeningField")).Error.ShouldBe(translations.Format("Form_AtLeast", "0"));
+                CaptureMessage(vendorForm, $"vendor-terms-opening.{suffix}.png");
+                vendorForm.Close();
+
+                // A salary-run line that deducts more than the salary names the employee.
+                var salaryRun = new SalaryRunWindow(moneyOut, clock, new Dictionary<long, string> { [ravi] = "Ravi Kumar" })
+                { Language = AppLanguage };
+                salaryRun.Show();
+                var salaryGrid = (DataGrid)salaryRun.FindName("SalaryGrid");
+                typeof(SalaryRunWindow).GetMethod("Prepare_OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(salaryRun, [salaryRun, new RoutedEventArgs()]);
+                PumpUntil(() => salaryGrid.Items.Count == 1);
+                object salaryLine = salaryGrid.Items[0]!;
+                salaryLine.GetType().GetProperty("LeaveDeduction")!.SetValue(salaryLine, "9500");
+                salaryGrid.Items.Refresh();
+                ((Button)salaryRun.FindName("PostButton")).RaiseEvent(click);
+                TextOf((FormErrorSummary)salaryRun.FindName("Summary"))
+                    .ShouldContain(translations.Format("MoneyOut_SalaryLinePaysNothing", "Ravi Kumar"));
+                CaptureMessage(salaryRun, $"salary-run-line.{suffix}.png");
+                salaryRun.Close();
+
+                // A damage corrected to no units cannot keep a recovered amount.
+                var correction = new MoneyOutCorrectionWindow(moneyOut, damage, damageDating, voidEntry: false) { Language = AppLanguage };
+                correction.Show();
+                T Private<T>(string name) => (T)typeof(MoneyOutCorrectionWindow)
+                    .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(correction)!;
+                Private<TextBox>("_quantity").Text = "0";
+                Private<TextBox>("_amount").Text = "5";
+                Private<TextBox>("_reason").Text = "Counted again";
+                Private<Button>("_save").RaiseEvent(click);
+                Descendants<FormField>(correction).Single(field => field.Label == translations["MoneyOut_Recovered"])
+                    .Error.ShouldBe(translations["MoneyOut_RecoveredNeedsUnits"]);
+                CaptureMessage(correction, $"damage-correction-recovered.{suffix}.png");
+                correction.Close();
+            }
+        }
+        finally
+        {
+            translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+            SynchronizationContext.SetSynchronizationContext(previousContext);
+            SqliteConnectionFactory.ClearPoolForDataRoot(root);
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
     {
         for (int index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
@@ -2228,6 +2434,19 @@ public sealed class PhaseZeroSmokeTests
     {
         string? directory = Environment.GetEnvironmentVariable("GROCERY_REVISION_SCREENSHOT_DIR");
         if (string.IsNullOrEmpty(directory)) return;
+        SavePng(surface, actualWidth, actualHeight, directory, fileName);
+    }
+
+    private static void CaptureMessage(Window window, string fileName)
+    {
+        string? directory = Environment.GetEnvironmentVariable("GROCERY_MESSAGE_SCREENSHOT_DIR");
+        if (string.IsNullOrEmpty(directory)) return;
+        window.UpdateLayout();
+        SavePng((Visual)window.Content, window.ActualWidth, window.ActualHeight, directory, fileName);
+    }
+
+    private static void SavePng(Visual surface, double actualWidth, double actualHeight, string directory, string fileName)
+    {
         Directory.CreateDirectory(directory);
         int width = (int)Math.Ceiling(actualWidth);
         int height = (int)Math.Ceiling(actualHeight);

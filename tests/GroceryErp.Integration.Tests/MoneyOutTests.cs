@@ -594,9 +594,9 @@ public sealed class MoneyOutTests
             TestContext.Current.CancellationToken);
         await fixture.Assets.PostThroughAsync(new YearMonth(2026, 8), TestContext.Current.CancellationToken);
 
-        await Should.ThrowAsync<GroceryErp.Core.Errors.DomainException>(() => fixture.Assets.DisposeAsync(
+        (await Should.ThrowAsync<GroceryErp.Core.Errors.DomainException>(() => fixture.Assets.DisposeAsync(
             asset, new DateOnly(2026, 8, 15), new Money(30000), OperationGuard.NewId(),
-            TestContext.Current.CancellationToken));
+            TestContext.Current.CancellationToken))).Code.ShouldBe(GroceryErp.Core.Errors.ErrorCode.AssetDepreciationPosted);
 
         using var connection = fixture.Factory.Open();
         connection.ExecuteScalar<string?>("SELECT disposed_date FROM asset WHERE id=@asset", new { asset }).ShouldBeNull();
@@ -616,9 +616,12 @@ public sealed class MoneyOutTests
             OperationGuard.NewId(), TestContext.Current.CancellationToken);
 
         (await fixture.MoneyOut.PrepareSalaryRunAsync(period, TestContext.Current.CancellationToken)).ShouldBeEmpty();
-        await Should.ThrowAsync<GroceryErp.Core.Errors.DomainException>(() => fixture.MoneyOut.PostSalaryRunAsync(
-            new(period, fixture.Today, "BANK", [new(employee, new Money(1000), Money.Zero, Money.Zero, Money.Zero, null)]),
-            OperationGuard.NewId(), TestContext.Current.CancellationToken));
+        GroceryErp.Core.Errors.DomainException posted = await Should.ThrowAsync<GroceryErp.Core.Errors.DomainException>(() =>
+            fixture.MoneyOut.PostSalaryRunAsync(
+                new(period, fixture.Today, "BANK", [new(employee, new Money(1000), Money.Zero, Money.Zero, Money.Zero, null)]),
+                OperationGuard.NewId(), TestContext.Current.CancellationToken));
+        posted.Code.ShouldBe(GroceryErp.Core.Errors.ErrorCode.SalaryAlreadyPosted);
+        posted.Arguments.ShouldBe(["Asha"]);
         using var connection = fixture.Factory.Open();
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM salary_payment WHERE employee_id=@employee", new { employee }).ShouldBe(1L);
     }

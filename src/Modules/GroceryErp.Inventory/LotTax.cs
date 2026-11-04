@@ -58,7 +58,7 @@ public static class LotTaxes
             """, new { taxRateId }, transaction.Transaction)
             ?? throw new DomainException(ErrorCode.NotFound, "tax rate", taxRateId);
         if (activeOnly && !row.IsActive)
-            throw new DomainException(ErrorCode.Validation, "Choose an active tax rate.");
+            throw new DomainException(ErrorCode.TaxRateInactive, row.Name);
         return new(row.Id, row.Name, Percent.FromScaled(row.RatePct));
     }
 

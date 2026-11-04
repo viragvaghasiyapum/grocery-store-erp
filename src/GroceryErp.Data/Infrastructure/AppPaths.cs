@@ -70,6 +70,6 @@ public sealed class AppPaths
         string cloudRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(oneDrive));
         if (candidate.Equals(cloudRoot, StringComparison.OrdinalIgnoreCase) ||
             candidate.StartsWith(cloudRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-            throw new DomainException(ErrorCode.Validation, "The data folder cannot be inside OneDrive.");
+            throw new DomainException(ErrorCode.CloudFolderNotAllowed);
     }
 }

@@ -104,7 +104,7 @@ public sealed partial class BackupService(
         var drive = new DriveInfo(Path.GetPathRoot(root) ?? root);
         if (drive.DriveType != DriveType.Removable || !drive.IsReady ||
             !root.Equals(Path.GetFullPath(drive.RootDirectory.FullName), StringComparison.OrdinalIgnoreCase))
-            throw new DomainException(ErrorCode.Validation, "Select a ready removable drive.");
+            throw new DomainException(ErrorCode.UsbDriveNotReady);
 
         string source = BackupDirectory;
         if (!Directory.Exists(source)) Directory.CreateDirectory(source);

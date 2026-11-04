@@ -126,9 +126,7 @@ public sealed partial class CatalogService
                 "ORDER BY p.name COLLATE NOCASE,p.id LIMIT @cap");
             parameters.Add("cap", cap + 1);
             long[] ids = connection.Query<long>(sql, parameters).ToArray();
-            if (ids.Length > cap)
-                throw new DomainException(ErrorCode.Validation,
-                    $"More than {cap.ToString(CultureInfo.InvariantCulture)} products match. Narrow the filters and try again.");
+            if (ids.Length > cap) throw new DomainException(ErrorCode.TooManyRows, cap);
             return (IReadOnlyList<long>)ids;
         }, cancellationToken);
     }

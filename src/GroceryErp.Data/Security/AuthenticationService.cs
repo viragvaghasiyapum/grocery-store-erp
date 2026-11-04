@@ -179,7 +179,7 @@ public sealed class FirstRunService(DbExecutor database, PasswordHasher hasher)
         if (request.TaxMode is not ("REGULAR" or "COMPOSITION" or "NONE")) throw new DomainException(ErrorCode.Validation, "Invalid tax mode.");
         if (request.Language is not ("en-IN" or "gu-IN")) throw new DomainException(ErrorCode.Validation, "Invalid language.");
         if (!string.IsNullOrWhiteSpace(request.Gstin) && !IndianIds.IsGstin(request.Gstin.Trim().ToUpperInvariant()))
-            throw new DomainException(ErrorCode.Validation, "Invalid GSTIN.");
+            throw new DomainException(ErrorCode.InvalidGstin);
         if (request.LotPrefix == request.ProductPrefix || request.LotPrefix.Length != 2 || request.ProductPrefix.Length != 2 ||
             !request.LotPrefix.All(char.IsAsciiDigit) || !request.ProductPrefix.All(char.IsAsciiDigit))
             throw new DomainException(ErrorCode.Validation, "Barcode prefixes must be distinct two-digit values.");

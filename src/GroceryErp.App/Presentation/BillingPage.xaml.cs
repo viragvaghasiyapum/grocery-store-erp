@@ -160,7 +160,10 @@ public partial class BillingPage : Page, IDisposable
                 if (separator == 0 || !decimal.TryParse(code[..separator], NumberStyles.Number,
                         CultureInfo.GetCultureInfo("en-IN"), out decimal parsed) || parsed <= 0 ||
                     separator == code.Length - 1)
-                    throw new DomainException(ErrorCode.Validation, "Enter a positive quantity followed by * and a code.");
+                {
+                    StatusText.Text = TranslationSource.Instance["Pos_QuantityPrefixInvalid"];
+                    return;
+                }
                 prefix = new Quantity(parsed);
                 code = code[(separator + 1)..];
             }

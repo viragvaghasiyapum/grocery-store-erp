@@ -417,7 +417,7 @@ public partial class ProductsPage : Page
         _selection.AllMatching
             ? await _catalog.ResolveIdsAsync(CurrentFilter(1), maximum, cancellationToken)
             : _selection.PickedIds.Length <= maximum ? _selection.PickedIds
-                : throw new Core.Errors.DomainException(Core.Errors.ErrorCode.Validation, "Too many products are selected.");
+                : throw new Core.Errors.DomainException(Core.Errors.ErrorCode.TooManyRows, maximum);
 
     private string SelectionSummary()
     {

@@ -12,7 +12,18 @@ public enum ErrorCode
     RestoreRecovered, DatabaseIo, AnnualReportInvalid, EntryChanged, EntryVoided, EffectiveMonthClosed,
     AssetTermsFinalized, DamageProductDeleted, CompactionFailed, VendorReturnProductDeleted,
     LotsDifferFromDocuments, RestoreProductUnavailable, RestoreProductTypeMismatch, RestoreExpiryRequired,
-    SkuExists
+    SkuExists,
+    // Rules an operator can trip from a screen, each with its own message. A guard that only an
+    // invalid argument can trip keeps Validation and its general message.
+    ProductArchived, InternalUseNotSaleable, LotBlocked, PriceLabelNeedsPrice, InvalidPhone, InvalidGstin,
+    InvalidPan, CustomerPhoneExists, CategoryHierarchyInvalid, UnitFractionLocked, TaxRateOutOfRange,
+    ProductClassLocked, LooseNeedsFractionalUnit, ProductUnitLocked, ExpiryRequired, TooManyRows,
+    FilterRangeReversed, LotOnOpenBill, ExpiredReasonNeedsExpiredLot, CountLotDiffersFromDocuments,
+    TaxRateInactive, TaxRateRequired, PurchaseLineTypeMismatch, ExpenseCategoryInactive,
+    ExpenseLineAmountRequired, PurchaseTooManyLines, VendorReturnExceedsLot, SalaryAlreadyPosted,
+    AssetAlreadyDisposed, AssetDisposalBeforeInUse, AssetDepreciationPosted, CloudFolderNotAllowed,
+    DataFolderNotSeparate, DataFolderNotEmpty, DataMovePending, DataMoveStagingInUse, UsbDriveNotReady,
+    PluExists, VendorGstinExists, NameExists
 }
 
 public sealed class DomainException(ErrorCode code, params object[] arguments) : Exception(code.ToString())

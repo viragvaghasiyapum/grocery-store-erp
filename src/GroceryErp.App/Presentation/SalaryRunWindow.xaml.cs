@@ -80,8 +80,12 @@ public partial class SalaryRunWindow : Window
         var lines = new List<SalaryRunLine>();
         foreach (SalaryRow row in (SalaryGrid.ItemsSource as List<SalaryRow> ?? []).Where(static row => row.IsSelected))
         {
-            if (row.ToModel() is { } line) lines.Add(line);
-            else problems.Add(TranslationSource.Instance.Format("MoneyOut_SalaryLineInvalid", row.EmployeeName));
+            if (row.ToModel() is not { } line)
+                problems.Add(TranslationSource.Instance.Format("MoneyOut_SalaryLineInvalid", row.EmployeeName));
+            else if (line.LeaveDeduction > line.BaseSalary ||
+                     line.BaseSalary - line.LeaveDeduction + line.Overtime + line.Bonus <= Money.Zero)
+                problems.Add(TranslationSource.Instance.Format("MoneyOut_SalaryLinePaysNothing", row.EmployeeName));
+            else lines.Add(line);
         }
         if (lines.Count == 0 && problems.Count == 0) problems.Add(TranslationSource.Instance["MoneyOut_SalaryChooseLines"]);
         if (!form.Apply(Fields, Summary, problems)) return;

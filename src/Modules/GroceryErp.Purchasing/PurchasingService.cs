@@ -21,6 +21,8 @@ public sealed partial class PurchasingService(
     IAuditLog audit)
 {
     private static readonly HashSet<string> PaymentModes = ["CASH", "UPI", "BANK", "CHEQUE", "OTHER"];
+    public const int MaxPurchaseLines = 200;
+    public const int MaxPaymentTermsDays = 3650;
 
     public Task<IReadOnlyList<VendorItem>> GetVendorsAsync(bool includeInactive = false, CancellationToken cancellationToken = default) =>
         database.ReadAsync(connection => (IReadOnlyList<VendorItem>)connection.Query<VendorRow>("""
@@ -329,7 +331,7 @@ public sealed partial class PurchasingService(
                     }).ExcludingTax(rate.Rate);
                 ValidateLine(line, row.TrackExpiry, row.AllowFraction, header.ReceivedDate);
                 if ((row.LineKind == "INTERNAL") != (row.ProductClass == "INTERNAL") && row.LineKind != "EXPENSE")
-                    throw new DomainException(ErrorCode.Validation, "Purchase line type does not match product classification.");
+                    throw new DomainException(ErrorCode.PurchaseLineTypeMismatch);
                 resolved.Add((line, rate));
             }
             Money otherCharges = Money.FromScaled(header.OtherCharges);
@@ -382,7 +384,7 @@ public sealed partial class PurchasingService(
                 {
                     // The line's exact amount: the rounded piece price times the pieces can lose paise.
                     long amount = line.Booked.Scaled;
-                    if (amount <= 0) throw new DomainException(ErrorCode.Validation, "Expense line amount must be positive.");
+                    if (amount <= 0) throw new DomainException(ErrorCode.ExpenseLineAmountRequired);
                     int expenseInserted = transaction.Connection.Execute("""
                         INSERT INTO expense(expense_date,category_id,amount,mode,paid_to,reference,notes,purchase_line_id)
                         SELECT @date,@categoryId,@amount,'OTHER',
@@ -399,7 +401,7 @@ public sealed partial class PurchasingService(
                         lineId = row.Id
                     }, transaction.Transaction);
                     if (expenseInserted != 1)
-                        throw new DomainException(ErrorCode.Validation, "Expense category is no longer active.");
+                        throw new DomainException(ErrorCode.ExpenseCategoryInactive);
                     continue;
                 }
                 string lotCode = numbers.Next(transaction, DocType.Lot, header.ReceivedDate);
@@ -773,7 +775,7 @@ public sealed partial class PurchasingService(
                     line.CreditBeforeTax.Scaled > lot.OriginalBeforeTax - lot.CreditedBeforeTax ||
                     line.TaxCredit.Scaled > lot.OriginalTax - lot.CreditedTax ||
                     line.CreditBeforeTax + line.TaxCredit <= Money.Zero)
-                    throw new DomainException(ErrorCode.Validation, "Return quantity or credit exceeds the source lot.");
+                    throw new DomainException(ErrorCode.VendorReturnExceedsLot, line.LotId);
                 beforeTax += line.CreditBeforeTax;
                 tax += line.TaxCredit;
                 cost += Money.FromScaled(lot.UnitCost) * line.Quantity;
@@ -1167,16 +1169,16 @@ public sealed partial class PurchasingService(
                 """, entered, transaction.Transaction) ?? throw new DomainException(ErrorCode.NotFound, "product", entered.ProductId);
             ValidateLine(entered, rule.TrackExpiry, rule.AllowFraction, default);
             if (entered.TaxRateId is not { } taxRateId)
-                throw new DomainException(ErrorCode.Validation, "Choose a tax rate for every line.");
+                throw new DomainException(ErrorCode.TaxRateRequired);
             TaxRateSnapshot rate = LotTaxes.Rate(transaction, taxRateId, activeOnly: !chosenBefore.Contains(taxRateId));
             PurchaseLineInput line = input.RatesIncludeTax ? entered.ExcludingTax(rate.Rate) : entered;
             if (line.LineKind != "EXPENSE" &&
                 ((line.LineKind == "INTERNAL") != (rule.ProductClass == "INTERNAL")))
-                throw new DomainException(ErrorCode.Validation, "Purchase line type does not match product classification.");
+                throw new DomainException(ErrorCode.PurchaseLineTypeMismatch);
             if (line.LineKind == "EXPENSE" && transaction.Connection.ExecuteScalar<long>(
                 "SELECT COUNT(*) FROM expense_category WHERE id=@id AND is_active=1",
                 new { id = line.ExpenseCategoryId }, transaction.Transaction) != 1)
-                throw new DomainException(ErrorCode.Validation, "Choose an active expense category.");
+                throw new DomainException(ErrorCode.ExpenseCategoryInactive);
             resolved.Add((line, rate));
         }
         PricedPurchaseLine[] priced = PriceLines(resolved, input.OtherCharges);
@@ -1258,7 +1260,7 @@ public sealed partial class PurchasingService(
             SELECT CASE WHEN COUNT(*)=1 THEN MIN(id) END FROM tax_rate WHERE rate_pct=@savedPercent AND is_active=1
             """, new { savedPercent }, transaction.Transaction);
         return matched is { } match ? LotTaxes.Rate(transaction, match)
-            : throw new DomainException(ErrorCode.Validation, "Choose a tax rate for every line before posting.");
+            : throw new DomainException(ErrorCode.TaxRateRequired);
     }
 
     private static PostedPurchase LoadPosted(DbTx transaction, long purchaseId)
@@ -1283,8 +1285,9 @@ public sealed partial class PurchasingService(
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.Lines);
+        if (input.Lines.Count > MaxPurchaseLines) throw new DomainException(ErrorCode.PurchaseTooManyLines, MaxPurchaseLines);
         if (input.VendorId <= 0 || input.ReceivedDate == default || input.OtherCharges < Money.Zero ||
-            input.VendorBillTotal < Money.Zero || input.Lines.Count is < 1 or > 200)
+            input.VendorBillTotal < Money.Zero || input.Lines.Count == 0)
             throw new DomainException(ErrorCode.Validation, "Invalid purchase draft.");
         if (input.VendorInvoiceDate is not null && input.VendorInvoiceDate > input.ReceivedDate)
             throw new DomainException(ErrorCode.InvalidDate);
@@ -1295,12 +1298,13 @@ public sealed partial class PurchasingService(
         if (line.ProductId <= 0 || line.LineKind is not ("PRODUCT" or "INTERNAL" or "EXPENSE") ||
             (line.LineKind == "EXPENSE") != (line.ExpenseCategoryId is not null) ||
             line.Quantity <= Quantity.Zero || line.FreeQuantity < Quantity.Zero || line.Rate < Money.Zero ||
-            line.Discount < Money.Zero || line.Discount > line.Rate * line.Quantity || line.SellingPrice < Money.Zero)
+            line.Discount < Money.Zero || line.SellingPrice < Money.Zero)
             throw new DomainException(ErrorCode.Validation, "Invalid purchase line.");
+        if (line.Discount > line.Rate * line.Quantity) throw new DomainException(ErrorCode.DiscountExceedsLine, line.ProductId);
         if (!allowFraction && (!line.Quantity.IsWhole || !line.FreeQuantity.IsWhole))
             throw new DomainException(ErrorCode.FractionalQtyNotAllowed);
         if (line.LineKind != "EXPENSE" && trackExpiry && line.ExpiryDate is null)
-            throw new DomainException(ErrorCode.Validation, "Expiry is required.");
+            throw new DomainException(ErrorCode.ExpiryRequired, line.ProductId);
         if (line.Mrp is not null && line.SellingPrice > line.Mrp.Value) throw new DomainException(ErrorCode.PriceAboveMrp);
         if (line.ManufacturingDate is not null && line.ExpiryDate is not null && line.ManufacturingDate > line.ExpiryDate)
             throw new DomainException(ErrorCode.InvalidDate);
@@ -1315,11 +1319,11 @@ public sealed partial class PurchasingService(
         string? gstin = Upper(input.Gstin, 15);
         string? pan = Upper(input.Pan, 10);
         string? pincode = Optional(input.Pincode, 6);
-        if (gstin is not null && !IndianIds.IsGstin(gstin)) throw new DomainException(ErrorCode.Validation, "GSTIN");
+        if (gstin is not null && !IndianIds.IsGstin(gstin)) throw new DomainException(ErrorCode.InvalidGstin);
         if (pan is null && gstin is not null) pan = gstin.Substring(2, 10);
-        if (pan is not null && !IndianIds.IsPan(pan)) throw new DomainException(ErrorCode.Validation, "PAN");
+        if (pan is not null && !IndianIds.IsPan(pan)) throw new DomainException(ErrorCode.InvalidPan);
         if (pincode is not null && !IndianIds.IsPincode(pincode)) throw new DomainException(ErrorCode.Validation, "Pincode");
-        if (input.PaymentTermsDays < 0 || input.PaymentTermsDays > 3650 || input.OpeningBalance < Money.Zero)
+        if (input.PaymentTermsDays < 0 || input.PaymentTermsDays > MaxPaymentTermsDays || input.OpeningBalance < Money.Zero)
             throw new DomainException(ErrorCode.Validation, "Vendor terms or opening balance.");
         return new(name, Optional(input.ContactPerson, 120), Optional(input.Phone, 40), Optional(input.AlternatePhone, 40),
             Optional(input.Email, 160), Optional(input.Address, 500), Optional(input.City, 100), Optional(input.State, 100),
