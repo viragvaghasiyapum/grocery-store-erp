@@ -124,6 +124,7 @@ public sealed class UpgradeTests
     [InlineData(37)]
     [InlineData(38)]
     [InlineData(39)]
+    [InlineData(40)]
     public void UpgradeFromAnyEarlierVersion_EndsWithTheSchemaOfANewStore(int version)
     {
         using var fresh = new Store();
@@ -256,6 +257,45 @@ public sealed class UpgradeTests
         long[] versions = mode == "REGULAR" ? [2L, 2L, 2L, 1L] : [1L, 1L, 1L, 1L];
         upgraded.Query<long>("SELECT detail_version FROM product_lot ORDER BY id").ShouldBe(versions);
         Should.Throw<SqliteException>(() => upgraded.Execute("UPDATE product SET price_includes_tax=0 WHERE id=2"));
+    }
+
+    // Migration 41 drops five sales summaries nothing reads, rows and all, with their triggers. A
+    // completed sale from before the upgrade can still be voided, and the kept P&L day follows it.
+    [Fact]
+    public void Migration41_DropsTheUnreadSaleSummaries_AndASaleCanStillBeVoided()
+    {
+        using var store = new Store();
+        store.Runner.RunTo(40);
+        using (SqliteConnection db = store.Factory.Open())
+        {
+            db.Execute("""
+                INSERT INTO category(name) VALUES ('Demo');
+                INSERT INTO product(id,sku,name,category_id,uom_id,tax_rate_id,default_selling_price,default_mrp)
+                VALUES (1,'RICE','Rice',(SELECT id FROM category WHERE name='Demo'),(SELECT id FROM uom WHERE code='PCS'),
+                        (SELECT id FROM tax_rate WHERE rate_pct=5000),100000,110000);
+                INSERT INTO product_lot(id,product_id,lot_code,received_date,unit_cost,selling_price,mrp,qty_received)
+                VALUES (1,1,'L1','2026-09-01',60000,100000,110000,0);
+                INSERT INTO sale(invoice_no,sale_date,status) VALUES ('S-1','2026-09-10','DRAFT');
+                INSERT INTO sale_line(sale_id,line_no,product_id,lot_id,product_name,qty,unit_price,
+                    taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
+                VALUES (1,1,1,1,'Rice',3000,100000,300000,0,300000,60000,180000);
+                UPDATE sale SET status='COMPLETED',completed_at='2026-09-10 10:00:00',
+                    taxable_total=300000,grand_total=300000 WHERE id=1;
+                """);
+            foreach (string table in new[] { "sale_product_last", "sale_product_day", "sale_hour_day" })
+                db.ExecuteScalar<long>($"SELECT COUNT(*) FROM {table}").ShouldBe(1L, table);
+            db.ExecuteScalar<long>("SELECT bills FROM pnl_day WHERE day='2026-09-10'").ShouldBe(1L);
+        }
+
+        store.Runner.Run();
+
+        using SqliteConnection upgraded = store.Factory.Open();
+        foreach (string name in ReportsTests.DroppedSaleSummaries)
+            upgraded.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_schema WHERE name=@name OR instr(sql,@name)>0",
+                new { name }).ShouldBe(0L, name);
+        upgraded.Execute("UPDATE sale SET status='VOID',void_reason='Entered twice' WHERE id=1");
+        upgraded.ExecuteScalar<long>("SELECT bills FROM pnl_day WHERE day='2026-09-10'").ShouldBe(0L);
+        upgraded.ExecuteScalar<string>("PRAGMA integrity_check").ShouldBe("ok");
     }
 
     [Fact]

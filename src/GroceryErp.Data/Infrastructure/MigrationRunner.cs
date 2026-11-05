@@ -21,7 +21,7 @@ public sealed class NullMigrationBackup : IMigrationBackup
 
 public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMigrationBackup backup)
 {
-    public const int LatestVersion = 40;
+    public const int LatestVersion = 41;
 
     /// <summary>Backup reason for the last store that still holds the stock ledger; rotation keeps it.</summary>
     public const string LedgerArchiveReason = "pre-ledger-removal";

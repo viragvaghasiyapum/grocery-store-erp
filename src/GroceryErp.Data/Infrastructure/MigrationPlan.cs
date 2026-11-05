@@ -71,8 +71,9 @@ public sealed partial class MigrationRunner
     // to 33 69.2 s on 2.9 GB; 38 to 39 took 12.4 s on 1.8 GB with the file in the OS cache and 37 s
     // from a cold disk, because SQLite checks every row of a table with CHECK constraints when a
     // column is added, and migration 39 adds three to sale_line; the other steps took seconds or
-    // less. The verified backup taken first ran at 10-40 s per GiB depending on the disk cache, so
-    // the slower figures are used. A slower shop PC takes longer, which the confirmation says.
+    // less (40 took 34 ms and 41, which drops five summaries holding about 100 MB, 75-85 ms on
+    // 1.8 GB, both within the 0.1 s per GiB of the last arm). The verified backup taken first ran
+    // at 10-40 s per GiB depending on the disk cache, so the slower figures are used. A slower shop PC takes longer, which the confirmation says.
     internal static TimeSpan Estimate(int from, int to, long databaseBytes)
     {
         double gib = databaseBytes / (1024d * 1024 * 1024);

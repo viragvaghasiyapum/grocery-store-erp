@@ -42,25 +42,24 @@ public sealed class ReportsTests
         stockLines[^1].ShouldStartWith("\"Total\"");
     }
 
+    // Migration 41 dropped the five sales summaries the trimmed Reports stopped reading (last sale
+    // date, product and hourly sales days, and their return days) with their triggers. Nothing in the
+    // schema names them, and a sale still completes, takes a return and is voided, with the kept
+    // report day and P&L day following each step.
     [Fact]
-    public void SaleProductDay_TracksCompletedSalesReturnsAndVoids()
+    public void SaleWrites_RunWithoutTheDroppedSummaries()
     {
         using var fixture = new ReportFixture();
         fixture.SeedGoldenScenario();
         using var connection = fixture.Factory.Open();
-        connection.Execute("UPDATE product SET reorder_level=2000 WHERE id=1");
-        void AssertSourceParity() => connection.ExecuteScalar<long>("""
-            WITH expected AS (
-                SELECT sl.product_id,s.sale_date AS day,COUNT(*) AS entries,SUM(sl.qty) AS qty
-                FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
-                WHERE s.status='COMPLETED' GROUP BY sl.product_id,s.sale_date
-            )
-            SELECT COUNT(*) FROM (
-                SELECT * FROM (SELECT * FROM expected EXCEPT SELECT * FROM sale_product_day)
-                UNION ALL
-                SELECT * FROM (SELECT * FROM sale_product_day EXCEPT SELECT * FROM expected)
-            )
-            """).ShouldBe(0L);
+        foreach (string name in DroppedSaleSummaries)
+            connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_schema WHERE name=@name OR instr(sql,@name)>0",
+                new { name }).ShouldBe(0L, name);
+        long Sold() => connection.ExecuteScalar<long>(
+            "SELECT COALESCE(SUM(quantity),0) FROM sale_report_day WHERE day='2026-09-10'");
+        long Bills() => connection.ExecuteScalar<long>("SELECT COALESCE(SUM(bills),0) FROM pnl_day WHERE day='2026-09-10'");
+        long soldBefore = Sold();
+        long billsBefore = Bills();
 
         connection.Execute("""
             INSERT INTO sale(invoice_no,sale_date,status) VALUES ('LOW-1','2026-09-10','DRAFT');
@@ -68,11 +67,9 @@ public sealed class ReportsTests
                 taxable_amount,tax_amount,line_total,unit_cost,cost_amount)
             VALUES (2,1,1,1,'Rice',3000,100000,300000,0,300000,100000,300000);
             """);
-        AssertSourceParity();
         connection.Execute("UPDATE sale SET status='COMPLETED',taxable_total=300000,grand_total=300000 WHERE id=2");
-        AssertSourceParity();
-        connection.QuerySingle<long>("SELECT qty FROM sale_product_day WHERE product_id=1 AND day='2026-09-10'")
-            .ShouldBe(3000L);
+        Sold().ShouldBe(soldBefore + 3000);
+        Bills().ShouldBe(billsBefore + 1);
 
         connection.Execute("""
             INSERT INTO sale_return(return_no,sale_id,return_date,refund_mode,taxable_total,
@@ -82,13 +79,16 @@ public sealed class ReportsTests
                 tax_amount,refund_amount,cost_amount)
             VALUES (2,1,1000,100000,0,100000,100000);
             """);
-        AssertSourceParity();
-        connection.QuerySingle<long>("SELECT qty FROM sale_product_day WHERE product_id=1 AND day='2026-09-10'")
-            .ShouldBe(3000L);
+        connection.ExecuteScalar<long>("SELECT returned_qty FROM sale_refund_progress WHERE sale_id=2").ShouldBe(1000L);
 
         connection.Execute("UPDATE sale SET status='VOID',void_reason='Correction' WHERE id=2");
-        AssertSourceParity();
+        connection.ExecuteScalar<string>("SELECT status FROM sale WHERE id=2").ShouldBe("VOID");
+        Sold().ShouldBe(soldBefore);
+        Bills().ShouldBe(billsBefore);
     }
+
+    internal static readonly string[] DroppedSaleSummaries =
+        ["sale_product_last", "sale_product_day", "sale_product_return_day", "sale_hour_day", "sale_hour_return_day"];
 
     [Fact]
     public void SaleReportDay_TracksReturnsBackdatingVoidsAndCategoryChanges()

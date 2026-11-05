@@ -154,7 +154,7 @@ public partial class DashboardPage : Page
     {
         if (_summary is null || sender is not Button { Tag: string tag }) return;
         // Expiry and low-stock tiles open Products, where the lots can be written off or reordered;
-        // Payables opens the vendors that are owed money, with their ledgers.
+        // Payables opens every vendor with a balance, inactive ones included, with their ledgers.
         if (tag is "EXPIRED" or "CRITICAL" or "SOON" or "LowStock")
         {
             if (tag == "LowStock") ProductsPage.RequestLowStockFilter(PageStateStore.Current);

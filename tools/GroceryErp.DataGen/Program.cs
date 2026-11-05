@@ -353,6 +353,12 @@ void InsertOverheads(SqliteConnection connection)
                 salvage = 5_000_000L
             }, transaction);
     }
+    // Every asset the app saves has its initial term (AssetService, and migration 34 for older ones);
+    // without it, due depreciation fails in idle maintenance.
+    connection.Execute("""
+        INSERT INTO asset_term(asset_id,effective_month,cost,in_use_from,method,rate_pct,salvage_value,reason)
+        SELECT id,substr(in_use_from,1,7),cost,in_use_from,method,rate_pct,salvage_value,'INITIAL' FROM asset
+        """, transaction: transaction);
     transaction.Commit();
 }
 

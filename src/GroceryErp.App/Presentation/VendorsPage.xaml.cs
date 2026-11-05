@@ -51,14 +51,7 @@ public partial class VendorsPage : Page
         Selection.AllMatchingRequested += async (_, _) => await SelectAllMatchingAsync();
         Pager.PreviousRequested += async (_, _) => await LoadAsync(PageMove.Previous);
         Pager.NextRequested += async (_, _) => await LoadAsync(PageMove.Next);
-        if (PageStateStore.Current?.Get<State>(StateKey) is { } state)
-        {
-            _restoring = true;
-            SearchBox.Text = state.Search;
-            StatusFilter.SelectedIndex = state.Status;
-            BalanceFilter.IsChecked = state.WithBalance;
-            _restoring = false;
-        }
+        ApplyState(PageStateStore.Current?.Get<State>(StateKey));
         PreviewKeyDown += (_, args) =>
         {
             if (Keyboard.Modifiers != ModifierKeys.Control) return;
@@ -77,9 +70,26 @@ public partial class VendorsPage : Page
 
     private sealed record State(string Search, int Status, bool WithBalance);
 
-    /// <summary>Makes the next Vendors page open on active vendors that are owed money.</summary>
+    private void ApplyState(State? state)
+    {
+        if (state is null) return;
+        _restoring = true;
+        SearchBox.Text = state.Search;
+        StatusFilter.SelectedIndex = state.Status;
+        BalanceFilter.IsChecked = state.WithBalance;
+        _restoring = false;
+    }
+
+    /// <summary>
+    /// Makes the next Vendors page open on the vendors behind the dashboard's Payables tile: every
+    /// vendor with a balance, at any status, since the shop still owes an inactive vendor its balance
+    /// and the tile counts it. The balances listed then add up to the tile.
+    /// </summary>
     internal static void RequestBalanceFilter(PageStateStore? store) =>
-        store?.Set(StateKey, new State(string.Empty, 0, true));
+        store?.Set(StateKey, new State(string.Empty, AnyStatusIndex, true));
+
+    // StatusFilter's items: Active only, Inactive only, Any status.
+    private const int AnyStatusIndex = 2;
 
     private VendorFilter CurrentFilter() => new()
     {

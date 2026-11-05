@@ -49,5 +49,6 @@
     <EmbeddedResource Include="../../038_purchase_rates_include_tax.sql" Link="db/038_purchase_rates_include_tax.sql" />
     <EmbeddedResource Include="../../039_tax_snapshots.sql" Link="db/039_tax_snapshots.sql" />
     <EmbeddedResource Include="../../040_deleted_lot_tax.sql" Link="db/040_deleted_lot_tax.sql" />
+    <EmbeddedResource Include="../../041_drop_unread_sale_summaries.sql" Link="db/041_drop_unread_sale_summaries.sql" />
   </ItemGroup>
 </Project>

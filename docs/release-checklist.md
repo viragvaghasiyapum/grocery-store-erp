@@ -1,6 +1,6 @@
 # Grocery ERP 1.2.0 release checklist
 
-> [revised-implementation-plan.md](../revised-implementation-plan.md) §13.3 is authoritative for the release gates and their order. This checklist covers release 1.2.0 on database schema 40: everything after 1.1.0 (schema 37). That is the purchase entry update (schema 38), the operator feedback fixes, the detail panel, the trimmed Reports, the tax decisions of §15 (schema 39) and the open-issue fixes in [revised-plan-issues.md](../revised-plan-issues.md), whose §15 fix added schema 40 (a deleted lot keeps its tax). The plan's execution records hold the measurements behind each change. The 1.1.0 checklist and its evidence stay in [release-checklist-1.1.0.md](release-checklist-1.1.0.md); every gate it left open for hardware or people is open here too.
+> [revised-implementation-plan.md](../revised-implementation-plan.md) §13.3 is authoritative for the release gates and their order. This checklist covers release 1.2.0 on database schema 41: everything after 1.1.0 (schema 37). That is the purchase entry update (schema 38), the operator feedback fixes, the detail panel, the trimmed Reports, the tax decisions of §15 (schema 39), the open-issue fixes in [revised-plan-issues.md](../revised-plan-issues.md), whose §15 fix added schema 40 (a deleted lot keeps its tax), and the review fixes in [revised-plan-bugs.md](../revised-plan-bugs.md), whose C-1 added schema 41 (five sales summaries nothing read are dropped). The plan's execution records hold the measurements behind each change. The 1.1.0 checklist and its evidence stay in [release-checklist-1.1.0.md](release-checklist-1.1.0.md); every gate it left open for hardware or people is open here too.
 
 Record the operator, date, machine and evidence beside every item. Do not release with an unchecked
 software item. Hardware, language and pilot items require a named human sign-off.
@@ -10,18 +10,19 @@ SDK `10.0.401`). They are local evidence, not the target-PC sign-off.
 
 ## Release content
 
-- [x] Release notes for 1.2.0 in English and Gujarati (`src/GroceryErp.App/CHANGELOG.en.md`, `.gu.md`) state schema 40 and are shown once after sign-in in the operator's language (`ReleaseNotesTests`), in a window that fits a 1366×768 screen at 100% and 150% (UI smoke test). `scripts/build-release.ps1` refuses to package a version the notes do not name. Screens of the running app: `artifacts/data/revision-issues-phase9/screens`
+- [x] Release notes for 1.2.0 in English and Gujarati (`src/GroceryErp.App/CHANGELOG.en.md`, `.gu.md`) state schema 41 and are shown once after sign-in in the operator's language (`ReleaseNotesTests`), in a window that fits a 1366×768 screen at 100% and 150% (UI smoke test). `scripts/build-release.ps1` refuses to package a version the notes do not name. Screens of the running app: `artifacts/data/revision-issues-phase9/screens`
 - [ ] The packaged journey sees the notes on the 1.2.0 package's first sign-in (it now checks that they name the release; 1.1.0 never showed its notes)
 - [x] Every item in `revised-plan-issues.md` is fixed, or deferred by the owner. The last two, §15 T-1 (the Products list's next-to-sell lot) and T-2 (a recreated customer-return lot's tax label), were fixed on 5 November 2026
 - [ ] Owner review of the two expiry choices made in the Phase 8 fixes: blocked expired lots count in the Expired tile and badge, and the Expired tile opens Products at **Any status** so archived products' expired stock is listed
+- [ ] Owner review of the Payables choice made in the B-1 fix (`revised-plan-bugs.md`, 5 November 2026): the tile counts inactive vendors' balances and opens Vendors at **Any status** with **With balance due**, so the balances listed add up to it. The alternative was to count active vendors only
 
 ## Automated release gate
 
 - [x] `dotnet format GroceryErp.slnx --verify-no-changes --no-restore`
 - [x] `dotnet build GroceryErp.slnx -c Release --no-restore` has zero warnings; `tools/GroceryErp.ScaleAudit` and `tools/GroceryErp.DataGen` build
 - [x] `dotnet test GroceryErp.slnx -c Release --no-build`: zero failures; the packaged and large-store journeys are opt-in and listed below
-- [x] Migration parity: a store left at each of schemas 1, 4, 15, 19, 25, 28, 29, 32, 33, 35, 36, 37 (release 1.1.0), 38 and 39 upgrades to the schema of a new store with clean integrity and foreign keys (`UpgradeTests`)
-- [ ] Full-size rehearsal from 1.1.0: a schema-37 copy of the full-size store upgraded to 40, then all ten store checks after profiling writes. Partial local evidence: the schema-36 fixture upgraded to 39 passed the ten checks after `phase9-profile`, and migration 39 took 11.1–13.1 s with the file cached and 37 s from a cold disk (`artifacts/data/revision-tax-rehearsal`)
+- [x] Migration parity: a store left at each of schemas 1, 4, 15, 19, 25, 28, 29, 32, 33, 35, 36, 37 (release 1.1.0), 38, 39 and 40 upgrades to the schema of a new store with clean integrity and foreign keys (`UpgradeTests`)
+- [ ] Full-size rehearsal from 1.1.0: a schema-37 copy of the full-size store upgraded to 41, then the store checks after profiling writes: eight from schema 41, which dropped the last-sale and hourly summaries the other two checked. Partial local evidence: the schema-36 fixture upgraded to 39 passed the ten checks after `phase9-profile`, and migration 39 took 11.1–13.1 s with the file cached and 37 s from a cold disk (`artifacts/data/revision-tax-rehearsal`); the same fixture went from 36 to 40 in 10.3 s and from 40 to 41 in 75–85 ms (`artifacts/data/revised-plan-bugs/c1`)
 - [ ] Same-machine before/after profile of 1.1.0 against 1.2.0 for every §13.1 hot path, with mixed readers, writers and a backup; no unexplained regression. Partial local evidence: schema 38 against 39 (`phase9-profile`) and the timings recorded with each open-issue fix
 - [ ] `scripts/build-release.ps1 -Version 1.2.0` produced the setup, portable zip, full package and the 1.1.0 → 1.2.0 delta in `artifacts/Releases`
 - [ ] With `GROCERY_PACKAGED_UI_TEST=1`, the packaged operator journey passes on the 1.2.0 portable build. It last ran on 1.1.0; its purchase step finds cells by column header since schema 38 and has not been run since
@@ -31,7 +32,7 @@ SDK `10.0.401`). They are local evidence, not the target-PC sign-off.
 
 ## Upgrade package
 
-- [ ] A 1.1.0 store shows the update window before sign-in, from schema 37 to 40, with migration 39 in the time estimate (22 s per GiB; migration 40 only adds a table); nothing changes until **Update now**
+- [ ] A 1.1.0 store shows the update window before sign-in, from schema 37 to 41, with migration 39 in the time estimate (22 s per GiB; migration 40 only adds a table, and 41 drops five unread summaries in under 0.1 s per GiB); nothing changes until **Update now**
 - [ ] After the upgrade, the owner checks selling prices: in Regular mode a product saved excluding tax gained the tax a bill used to add, capped at MRP (migration 39). Composition and No-GST stores keep their prices
 - [ ] Upgrade time and peak disk measured on the target shop PC against the window's estimate
 - [ ] Pilot period: daily lot reconciliation, report snapshots, backup success and error logs reviewed before broad rollout
@@ -65,7 +66,9 @@ None of these was signed off for 1.1.0; each stays open.
 
 - [ ] Store/GST/FY settings, tax rates and their names (each purchase line, lot and bill line now saves the name, such as "GST 5%") and HSN data approved by the accountant
 - [x] Owner approval of release 1.2.0 on schema 40 (migration 40, `deleted_lot_tax`, from the §15 T-2 fix), given 5 November 2026 over saving the name on every bill line or making no schema change
+- [ ] Owner approval of release 1.2.0 on schema 41 (migration 41 from `revised-plan-bugs.md` C-1: five sales summaries that nothing has read since Reports was trimmed are dropped with their triggers, so a void no longer recalculates the last sale date of the bill's products). Including it in 1.2.0 rather than a later release was chosen during development on 5 November 2026; the owner's sign-off of the schema-40 approval above does not cover it
 - [ ] Owner review of the recorded decisions (Phases 6, 8 and 9 execution records, §15 and the rulings in `revised-plan-issues.md`)
+- [ ] Owner decision on day end after a later expense correction (P6-2; `revised-plan-bugs.md` O-4): day end shows a day as it is now known, so voiding or editing an expense later changes the cash expected for a day whose drawer was already counted. Keep that, or count corrections on the day they were made
 - [ ] Products and opening stock imported; ten random counts and top 200 barcodes checked
 - [ ] Vendors, opening balances, employees and assets checked
 - [ ] Owner walkthrough completed; password recovery copy stored safely

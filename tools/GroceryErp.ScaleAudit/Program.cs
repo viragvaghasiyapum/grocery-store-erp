@@ -616,6 +616,10 @@ switch (mode)
         break;
     case "phase6-low-stock-day-verify":
     {
+        // Migration 41 dropped the summary this mode checks.
+        using (var versionCheck = factory.Open())
+            if (versionCheck.ExecuteScalar<int>("PRAGMA user_version") >= 41)
+                throw new InvalidOperationException("phase6-low-stock-day-verify needs a store before schema 41, which dropped its summary.");
         using var connection = factory.Open();
         long started = Stopwatch.GetTimestamp();
         long mismatches = connection.ExecuteScalar<long>("""
@@ -636,6 +640,10 @@ switch (mode)
     }
     case "phase6-last-parity":
     {
+        // Migration 41 dropped the summary this mode checks.
+        using (var versionCheck = factory.Open())
+            if (versionCheck.ExecuteScalar<int>("PRAGMA user_version") >= 41)
+                throw new InvalidOperationException("phase6-last-parity needs a store before schema 41, which dropped its summary.");
         await Measure("last-sale-source-parity", () => Task.Run(() =>
         {
             using var connection = factory.Open();
@@ -2853,40 +2861,47 @@ switch (mode)
             if (drift != 0) throw new InvalidDataException($"{drift} sale refund progress rows differ from source documents.");
             return checked((int)drift);
         }), static rows => rows);
-        await Measure("refund-day-projections", () => Task.Run(() =>
+        // Migration 41 dropped the hourly and per-product return summaries, which nothing read.
+        bool hasReturnDaySummaries;
+        using (var versionCheck = factory.Open())
+            hasReturnDaySummaries = versionCheck.ExecuteScalar<int>("PRAGMA user_version") < 41;
+        if (hasReturnDaySummaries)
         {
-            using var connection = factory.Open();
-            long hourlyDrift = connection.ExecuteScalar<long>("""
-                WITH expected AS (
-                  SELECT return_date AS day,strftime('%w',created_at) AS weekday,
-                         CAST(strftime('%H',created_at) AS INTEGER) AS hour,
-                         COUNT(*) AS return_count,SUM(refund_total) AS refund_total
-                  FROM sale_return WHERE refund_total<>0
-                  GROUP BY return_date,strftime('%w',created_at),strftime('%H',created_at)
-                )
-                SELECT (SELECT COUNT(*) FROM expected e LEFT JOIN sale_hour_return_day d
-                  ON d.day=e.day AND d.weekday=e.weekday AND d.hour=e.hour
-                  WHERE d.day IS NULL OR d.return_count<>e.return_count OR d.refund_total<>e.refund_total)
-                +(SELECT COUNT(*) FROM sale_hour_return_day d LEFT JOIN expected e
-                  ON e.day=d.day AND e.weekday=d.weekday AND e.hour=d.hour WHERE e.day IS NULL)
-                """);
-            long productDrift = connection.ExecuteScalar<long>("""
-                WITH expected AS (
-                  SELECT sl.product_id,r.return_date AS day,SUM(rl.qty) AS qty
-                  FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
-                  JOIN sale_line sl ON sl.id=rl.sale_line_id
-                  GROUP BY sl.product_id,r.return_date
-                )
-                SELECT (SELECT COUNT(*) FROM expected e LEFT JOIN sale_product_return_day d
-                  ON d.product_id=e.product_id AND d.day=e.day
-                  WHERE d.product_id IS NULL OR d.returned_qty<>e.qty)
-                +(SELECT COUNT(*) FROM sale_product_return_day d LEFT JOIN expected e
-                  ON e.product_id=d.product_id AND e.day=d.day WHERE e.product_id IS NULL)
-                """);
-            if (hourlyDrift+productDrift != 0)
-                throw new InvalidDataException($"Refund day projection drift: hour={hourlyDrift}, product={productDrift}.");
-            return 0;
-        }), static rows => rows);
+            await Measure("refund-day-projections", () => Task.Run(() =>
+            {
+                using var connection = factory.Open();
+                long hourlyDrift = connection.ExecuteScalar<long>("""
+                    WITH expected AS (
+                      SELECT return_date AS day,strftime('%w',created_at) AS weekday,
+                             CAST(strftime('%H',created_at) AS INTEGER) AS hour,
+                             COUNT(*) AS return_count,SUM(refund_total) AS refund_total
+                      FROM sale_return WHERE refund_total<>0
+                      GROUP BY return_date,strftime('%w',created_at),strftime('%H',created_at)
+                    )
+                    SELECT (SELECT COUNT(*) FROM expected e LEFT JOIN sale_hour_return_day d
+                      ON d.day=e.day AND d.weekday=e.weekday AND d.hour=e.hour
+                      WHERE d.day IS NULL OR d.return_count<>e.return_count OR d.refund_total<>e.refund_total)
+                    +(SELECT COUNT(*) FROM sale_hour_return_day d LEFT JOIN expected e
+                      ON e.day=d.day AND e.weekday=d.weekday AND e.hour=d.hour WHERE e.day IS NULL)
+                    """);
+                long productDrift = connection.ExecuteScalar<long>("""
+                    WITH expected AS (
+                      SELECT sl.product_id,r.return_date AS day,SUM(rl.qty) AS qty
+                      FROM sale_return_line rl JOIN sale_return r ON r.id=rl.sale_return_id
+                      JOIN sale_line sl ON sl.id=rl.sale_line_id
+                      GROUP BY sl.product_id,r.return_date
+                    )
+                    SELECT (SELECT COUNT(*) FROM expected e LEFT JOIN sale_product_return_day d
+                      ON d.product_id=e.product_id AND d.day=e.day
+                      WHERE d.product_id IS NULL OR d.returned_qty<>e.qty)
+                    +(SELECT COUNT(*) FROM sale_product_return_day d LEFT JOIN expected e
+                      ON e.product_id=d.product_id AND e.day=d.day WHERE e.product_id IS NULL)
+                    """);
+                if (hourlyDrift+productDrift != 0)
+                    throw new InvalidDataException($"Refund day projection drift: hour={hourlyDrift}, product={productDrift}.");
+                return 0;
+            }), static rows => rows);
+        }
         break;
     }
     case "phase3-purchase-read":
@@ -3350,6 +3365,9 @@ switch (mode)
                 INSERT INTO asset(name,category,purchase_date,in_use_from,cost,method,rate_pct)
                 SELECT 'Scale Asset ' || printf('%05d',id),'Fixture','2025-01-01','2025-01-01',100000,'SLM',10000
                 FROM customer WHERE name LIKE 'Scale Customer %' ORDER BY id LIMIT 5000;
+                INSERT INTO asset_term(asset_id,effective_month,cost,in_use_from,method,rate_pct,salvage_value,reason)
+                SELECT id,substr(in_use_from,1,7),cost,in_use_from,method,rate_pct,salvage_value,'INITIAL'
+                FROM asset WHERE name LIKE 'Scale Asset %';
                 """, transaction: transaction);
             connection.Execute("""
                 WITH RECURSIVE months(m) AS (VALUES(1) UNION ALL SELECT m+1 FROM months WHERE m<12)
@@ -4235,42 +4253,46 @@ switch (mode)
                     if (drift != 0) throw new InvalidDataException($"{drift} sales report day rows differ from source.");
                     return drift;
                 }), static value => (int)value);
-                await Measure("sale-product-last-reconciliation", () => Task.Run(() =>
+                // Migration 41 dropped the last-sale and hourly summaries, which nothing read.
+                if (connection.ExecuteScalar<int>("PRAGMA user_version") < 41)
                 {
-                    long drift = connection.ExecuteScalar<long>("""
-                        WITH expected AS MATERIALIZED (
-                          SELECT sl.product_id,MAX(s.sale_date) AS last_day
-                          FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
-                          WHERE s.status='COMPLETED' GROUP BY sl.product_id
-                        )
-                        SELECT COUNT(*) FROM (
-                          SELECT * FROM (SELECT * FROM expected EXCEPT SELECT * FROM sale_product_last)
-                          UNION ALL
-                          SELECT * FROM (SELECT * FROM sale_product_last EXCEPT SELECT * FROM expected)
-                        )
-                        """);
-                    if (drift != 0) throw new InvalidDataException($"{drift} last-sale rows differ from source.");
-                    return drift;
-                }), static value => (int)value);
-                await Measure("sale-hour-day-reconciliation", () => Task.Run(() =>
-                {
-                    long drift = connection.ExecuteScalar<long>("""
-                        WITH expected AS MATERIALIZED (
-                          SELECT sale_date AS day,strftime('%w',completed_at) AS weekday,
-                                 CAST(strftime('%H',completed_at) AS INTEGER) AS hour,
-                                 COUNT(*) AS bills,SUM(grand_total) AS revenue
-                          FROM sale WHERE status='COMPLETED' AND completed_at IS NOT NULL
-                          GROUP BY sale_date,strftime('%w',completed_at),strftime('%H',completed_at)
-                        )
-                        SELECT COUNT(*) FROM (
-                          SELECT * FROM (SELECT * FROM expected EXCEPT SELECT * FROM sale_hour_day)
-                          UNION ALL
-                          SELECT * FROM (SELECT * FROM sale_hour_day EXCEPT SELECT * FROM expected)
-                        )
-                        """);
-                    if (drift != 0) throw new InvalidDataException($"{drift} sale hour rows differ from source.");
-                    return drift;
-                }), static value => (int)value);
+                    await Measure("sale-product-last-reconciliation", () => Task.Run(() =>
+                    {
+                        long drift = connection.ExecuteScalar<long>("""
+                            WITH expected AS MATERIALIZED (
+                              SELECT sl.product_id,MAX(s.sale_date) AS last_day
+                              FROM sale_line sl JOIN sale s ON s.id=sl.sale_id
+                              WHERE s.status='COMPLETED' GROUP BY sl.product_id
+                            )
+                            SELECT COUNT(*) FROM (
+                              SELECT * FROM (SELECT * FROM expected EXCEPT SELECT * FROM sale_product_last)
+                              UNION ALL
+                              SELECT * FROM (SELECT * FROM sale_product_last EXCEPT SELECT * FROM expected)
+                            )
+                            """);
+                        if (drift != 0) throw new InvalidDataException($"{drift} last-sale rows differ from source.");
+                        return drift;
+                    }), static value => (int)value);
+                    await Measure("sale-hour-day-reconciliation", () => Task.Run(() =>
+                    {
+                        long drift = connection.ExecuteScalar<long>("""
+                            WITH expected AS MATERIALIZED (
+                              SELECT sale_date AS day,strftime('%w',completed_at) AS weekday,
+                                     CAST(strftime('%H',completed_at) AS INTEGER) AS hour,
+                                     COUNT(*) AS bills,SUM(grand_total) AS revenue
+                              FROM sale WHERE status='COMPLETED' AND completed_at IS NOT NULL
+                              GROUP BY sale_date,strftime('%w',completed_at),strftime('%H',completed_at)
+                            )
+                            SELECT COUNT(*) FROM (
+                              SELECT * FROM (SELECT * FROM expected EXCEPT SELECT * FROM sale_hour_day)
+                              UNION ALL
+                              SELECT * FROM (SELECT * FROM sale_hour_day EXCEPT SELECT * FROM expected)
+                            )
+                            """);
+                        if (drift != 0) throw new InvalidDataException($"{drift} sale hour rows differ from source.");
+                        return drift;
+                    }), static value => (int)value);
+                }
             }
             if (connection.ExecuteScalar<int>("PRAGMA user_version") >= 18)
                 await Measure("dashboard-day-reconciliation", () => Task.Run(() =>

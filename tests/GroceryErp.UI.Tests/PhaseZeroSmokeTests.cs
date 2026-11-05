@@ -218,6 +218,7 @@ public sealed class PhaseZeroSmokeTests
                 VerifyPhaseSevenScreens(translations);
                 VerifyOperatorMessages(translations);
                 VerifyExpiryTiles(translations);
+                VerifyStockAndPayableTiles(translations);
                 VerifyNextLotAndReturnTax(translations);
                 VerifyReleaseNotes(translations);
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
@@ -2488,6 +2489,132 @@ public sealed class PhaseZeroSmokeTests
                     CaptureMessage(lotsHost, $"{capture}.{suffix}.png");
                     lotsHost.Close();
                 }
+            }
+        }
+        finally
+        {
+            translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+            SynchronizationContext.SetSynchronizationContext(previousContext);
+            SqliteConnectionFactory.ClearPoolForDataRoot(root);
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    // B-1: the Payables and Low stock tiles each open a list that holds exactly what the tile counts, on a
+    // fresh store, in both languages; captured when GROCERY_MESSAGE_SCREENSHOT_DIR is set. The shop still
+    // owes an inactive vendor its balance, so Payables counts it and opens Vendors at Any status, where the
+    // balances listed add up to the tile. An archived product below its reorder level is in neither the
+    // Low stock tile nor the active products it opens; one with no lots and a reorder level is in both.
+    private static void VerifyStockAndPayableTiles(TranslationSource translations)
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"grocery-erp-ui-tiles-{Guid.NewGuid():N}");
+        SynchronizationContext? previousContext = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(
+            new System.Windows.Threading.DispatcherSynchronizationContext(System.Windows.Threading.Dispatcher.CurrentDispatcher));
+        try
+        {
+            var paths = new AppPaths(new SettingsBootstrap(root));
+            var factory = new SqliteConnectionFactory(paths);
+            using var database = new DbExecutor(factory);
+            new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
+            using var settings = new SettingsService(database, paths, new AuditLog());
+            Run(() => settings.LoadAsync());
+            DateOnly today = GroceryErp.App.App.BusinessDate;
+            var clock = new MutableClock(today);
+            var ledger = new LotQuantities(settings);
+            var numbers = new DocNumberService(settings);
+            var periods = new PeriodGuard(settings, clock);
+            var inventory = new InventoryService(database, ledger, numbers, periods, new AuditLog());
+            var catalog = new CatalogService(database, new AuditLog(), settings, clock);
+            var purchasing = new PurchasingService(database, ledger, numbers, periods, settings, new AuditLog());
+            var reports = new ReportService(database, settings, clock);
+            long staples = Run(() => catalog.CreateCategoryAsync(new("Staples", null, null, null)));
+            long AddProduct(string sku, string name, long reorderLevel)
+            {
+                using var connection = factory.Open();
+                return connection.ExecuteScalar<long>("""
+                    INSERT INTO product(sku,name,category_id,uom_id,hsn_code,tax_rate_id,track_expiry,reorder_level,
+                                        default_selling_price,default_mrp)
+                    SELECT @sku,@name,@staples,u.id,'1006',(SELECT id FROM tax_rate WHERE rate_pct=5000),0,@reorder,60000,65000
+                    FROM uom u WHERE u.code='PCS' RETURNING id
+                    """, new { sku, name, staples, reorder = reorderLevel * 1000 });
+            }
+            long AddLot(long product, decimal quantity) => Run(() => inventory.CreateDirectLotAsync(
+                new OpeningStockLine(product, new Quantity(quantity), new Money(50), new Money(60), new Money(65),
+                    null, null, today.AddDays(-10)), "Opening shelf", OperationGuard.NewId()));
+            AddLot(AddProduct("BESAN1", "Besan 500 g", 10), 4);      // low: 4 of 10
+            AddProduct("JAGG1", "Jaggery 1 kg", 5);                  // low: no lots yet
+            AddLot(AddProduct("POHA1", "Poha 500 g", 2), 6);         // above its reorder level
+            AddProduct("DAL1", "Toor dal 1 kg", 0);                  // no reorder level
+            long cola = AddProduct("COLA1", "Old cola 600 ml", 5);
+            AddLot(cola, 2);                                         // low, then its product archived
+            Run(() => catalog.RemoveAsync(cola)).ShouldBe(ProductRemoval.Archived);
+
+            long AddVendor(string name, decimal opening) => Run(() => purchasing.CreateVendorAsync(new(name,
+                null, null, null, null, null, null, null, null, null, null, null, null, 0, new Money(opening), null)));
+            AddVendor("Annapurna Traders", 1500);
+            AddVendor("Bharat Oils", 0);
+            long closedMills = AddVendor("Closed Mills", 2500);      // owed, then deactivated
+            long oldSupplier = AddVendor("Old Supplier", 0);         // settled, then deactivated
+            Run(() => purchasing.RunVendorBulkBatchAsync([closedMills, oldSupplier], active: false, OperationGuard.NewId()));
+
+            var importer = new ProductExcelImporter(database, new AuditLog(), settings);
+            Type productStateType = typeof(ProductsPage).GetNestedType("State", BindingFlags.NonPublic)!;
+            string productStateKey = (string)typeof(ProductsPage).GetField("StateKey", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+            MethodInfo applyProductState = typeof(ProductsPage).GetMethod("ApplyState", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            Type vendorStateType = typeof(VendorsPage).GetNestedType("State", BindingFlags.NonPublic)!;
+            string vendorStateKey = (string)typeof(VendorsPage).GetField("StateKey", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+            MethodInfo applyVendorState = typeof(VendorsPage).GetMethod("ApplyState", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            MethodInfo refresh = typeof(DashboardPage).GetMethod("RefreshAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            object Requested(PageStateStore store, Type stateType, string key) =>
+                typeof(PageStateStore).GetMethod("Get")!.MakeGenericMethod(stateType).Invoke(store, [key])!;
+
+            foreach ((string culture, string suffix) in new[] { ("en-IN", "en"), ("gu-IN", "gu") })
+            {
+                translations.UiCulture = CultureInfo.GetCultureInfo(culture);
+                var dashboard = new DashboardPage(reports, new ReportNavigationState(), loadOnShow: false);
+                var dashboardHost = new Window { Content = dashboard, Width = 1120, Height = 700, Language = AppLanguage };
+                dashboardHost.Show();
+                var refreshing = (Task)refresh.Invoke(dashboard, null)!;
+                PumpUntil(() => refreshing.IsCompleted, 15_000);
+                string payables = ((TextBlock)dashboard.FindName("Payables")).Text;
+                payables.ShouldBe($"₹{4000m:N3}");
+                ((Button)dashboard.FindName("LowStockButton")).Content.ShouldBe(translations.Format("Dashboard_LowStockCount", 2));
+                CaptureMessage(dashboardHost, $"tiles-dashboard.{suffix}.png");
+                dashboardHost.Close();
+
+                // Payables: every vendor with a balance, at any status; the balances listed add up to the tile.
+                var store = new PageStateStore();
+                VendorsPage.RequestBalanceFilter(store);
+                var vendors = new VendorsPage(purchasing);
+                applyVendorState.Invoke(vendors, [Requested(store, vendorStateType, vendorStateKey)]);
+                var vendorsHost = new Window { Content = vendors, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
+                vendorsHost.Show();
+                var vendorGrid = (DataGrid)vendors.FindName("VendorsGrid");
+                PumpUntil(() => vendorGrid.Items.Count == 2, 15_000);
+                List<VendorItem> owed = vendorGrid.Items.Cast<VendorItem>().ToList();
+                owed.Select(static vendor => vendor.Name).ShouldBe(["Annapurna Traders", "Closed Mills"]);
+                owed.Select(static vendor => vendor.IsActive).ShouldBe([true, false]);
+                $"₹{owed.Sum(static vendor => vendor.BalanceDue.Value):N3}".ShouldBe(payables);
+                ((ComboBox)vendors.FindName("StatusFilter")).SelectedIndex.ShouldBe(2);
+                ((CheckBox)vendors.FindName("BalanceFilter")).IsChecked.ShouldBe(true);
+                CaptureMessage(vendorsHost, $"tiles-payables-vendors.{suffix}.png");
+                vendorsHost.Close();
+
+                // Low stock: active products at or below their reorder level, as many as the tile counts.
+                store = new PageStateStore();
+                ProductsPage.RequestLowStockFilter(store);
+                var products = new ProductsPage(catalog, settings, importer);
+                applyProductState.Invoke(products, [Requested(store, productStateType, productStateKey)]);
+                var productsHost = new Window { Content = products, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
+                productsHost.Show();
+                var productGrid = (DataGrid)products.FindName("ProductsGrid");
+                PumpUntil(() => productGrid.Items.Count == 2, 15_000);
+                productGrid.Items.Cast<ProductListItem>().Select(static item => item.Name).ShouldBe(["Besan 500 g", "Jaggery 1 kg"]);
+                ((ComboBox)products.FindName("StatusFilter")).SelectedIndex.ShouldBe(0);
+                ((ComboBox)products.FindName("StockFilter")).SelectedIndex.ShouldBe(2);
+                CaptureMessage(productsHost, $"tiles-lowstock-products.{suffix}.png");
+                productsHost.Close();
             }
         }
         finally
