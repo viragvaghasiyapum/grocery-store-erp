@@ -64,7 +64,6 @@ public sealed partial class InventoryService(
                        l.tax_label_snapshot AS TaxLabel,l.unit_tax AS UnitTax,l.unit_cost_incl_tax AS UnitCostInclTax,
                        {{ExpiryBucketSql}} AS ExpiryBucketCode
                 FROM visible page JOIN product_lot l ON l.id=page.id JOIN product p ON p.id=l.product_id
-                JOIN category c ON c.id=p.category_id LEFT JOIN category pc ON pc.id=c.parent_id
                 ORDER BY l.id DESC
                 """, parameters).Select(static row => row.ToModel()).ToList();
             bool hasMore = rows.Count > limit;
@@ -104,17 +103,24 @@ public sealed partial class InventoryService(
     /// <summary>Most lots one "all matching" bulk action may resolve; larger sets must be narrowed.</summary>
     public const int MaxBulkLots = 5000;
 
-    // Labels follow the business date (@date), as the expiry filters do, not the machine clock.
-    private const string ExpiryBucketSql = """
+    // Labels follow the business date (@date), as the expiry filters do, not the machine clock, and
+    // the dashboard's rule (ExpiryAlert): Critical and Soon mark exactly the lots the Expiring filter
+    // lists, so a lot past its alert window is Fresh even when it expires within seven days.
+    private static readonly string ExpiryBucketSql = $"""
         CASE WHEN l.is_active=0 THEN 'BLOCKED' WHEN l.qty_on_hand<=0 THEN 'EMPTY'
              WHEN l.expiry_date IS NULL THEN 'NONE'
              WHEN l.expiry_date<@date THEN 'EXPIRED'
-             WHEN l.expiry_date<=date(@date,'+7 days') THEN 'CRITICAL'
-             WHEN julianday(l.expiry_date)-julianday(@date)<=
-                  COALESCE(p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
-                           CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30)
-                  THEN 'SOON' ELSE 'FRESH' END
+             WHEN l.expiry_date>{ExpiryAlert.WindowEndSql("p", "@date")} THEN 'FRESH'
+             WHEN l.expiry_date<={ExpiryAlert.CriticalEndSql("@date")} THEN 'CRITICAL'
+             ELSE 'SOON' END
         """;
+
+    // The dashboard's expiry rule (ExpiryAlert). The null-expiry term lets one product's expiring lots
+    // be read as a range of the FEFO index (0.1 ms for the busiest product, against 5-8 ms walking
+    // all 1,041 of its lots).
+    private static readonly string ExpiredLots = $"AND {ExpiryAlert.ExpiredSql("l", "@date")}";
+    private static readonly string ExpiringLots =
+        $"AND {ExpiryAlert.ExpiringSql("l", "p", "@date")} AND (l.expiry_date IS NULL)=0";
 
     private (string Conditions, DynamicParameters Parameters) LotConditions(LotFilter filter)
     {
@@ -128,7 +134,6 @@ public sealed partial class InventoryService(
         var parameters = new DynamicParameters();
         parameters.Add("productId", filter.ProductId);
         parameters.Add("date", Format(today));
-        parameters.Add("soon", Format(today.AddDays(30)));
         parameters.Add("expiryFrom", filter.ExpiryFrom is { } from ? Format(from) : null);
         parameters.Add("expiryTo", filter.ExpiryTo is { } to ? Format(to) : null);
         parameters.Add("source", filter.Source);
@@ -143,8 +148,8 @@ public sealed partial class InventoryService(
         };
         string expiry = filter.Expiry switch
         {
-            "EXPIRED" => "AND l.qty_on_hand>0 AND l.expiry_date<@date",
-            "EXPIRING" => "AND l.qty_on_hand>0 AND l.expiry_date>=@date AND l.expiry_date<=@soon",
+            "EXPIRED" => ExpiredLots,
+            "EXPIRING" => ExpiringLots,
             "NONE" => "AND l.expiry_date IS NULL",
             _ => string.Empty,
         };
@@ -186,7 +191,6 @@ public sealed partial class InventoryService(
                    l.tax_label_snapshot AS TaxLabel,l.unit_tax AS UnitTax,l.unit_cost_incl_tax AS UnitCostInclTax,
                    {{ExpiryBucketSql}} AS ExpiryBucketCode
             FROM product_lot l JOIN product p ON p.id=l.product_id
-            JOIN category c ON c.id=p.category_id LEFT JOIN category pc ON pc.id=c.parent_id
             WHERE l.id IN @ids ORDER BY l.id
             """, new { ids, date }).Select(static row => row.ToModel()).ToList(), cancellationToken);
     }

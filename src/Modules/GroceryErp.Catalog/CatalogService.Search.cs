@@ -1,6 +1,7 @@
 using System.Globalization;
 using Dapper;
 using GroceryErp.Core.Errors;
+using GroceryErp.Data.Infrastructure;
 
 namespace GroceryErp.Catalog;
 
@@ -72,6 +73,9 @@ public sealed partial class CatalogService
                   " product_stock_total stock ON stock.product_id=p.id AND stock.is_low=1"
                 : string.Empty;
 
+            bool expiringSet = filter.ExpiryFilter == "EXPIRING" && !Narrowed(filter) &&
+                !ManyExpiringLots(connection, ExpiryToday(filter));
+
             // The cursor as a name bound the index can seek to, so a deep page costs what the first does.
             string after = afterName is null ? string.Empty : """
                 AND p.name COLLATE NOCASE >= @afterName COLLATE NOCASE
@@ -79,7 +83,7 @@ public sealed partial class CatalogService
                 """;
             List<ProductListItem> rows = connection.Query<ProductListItem>(ListSql($$"""
                 SELECT p.id,p.name FROM product p {{productIndex}} {{join}} {{stockJoin}}
-                WHERE {{FilterConditions(filter)}} {{after}}
+                WHERE {{FilterConditions(filter, expiringSet)}} {{after}}
                   {{search}} {{exclude}}
                 ORDER BY p.name COLLATE NOCASE,p.id LIMIT @limit
                 """), parameters).AsList();
@@ -154,7 +158,6 @@ public sealed partial class CatalogService
         parameters.Add("HasStockOnly", filter.HasStockOnly);
         parameters.Add("VendorId", filter.VendorId);
         parameters.Add("expiryToday", ExpiryToday(filter));
-        parameters.Add("expirySoon", ExpiryAsOf(filter).AddDays(30).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
     }
 
     // Expiry marks and filters follow the business date, as the lot filters and badges do.
@@ -163,13 +166,45 @@ public sealed partial class CatalogService
     private string ExpiryToday(ProductSearchFilter filter) =>
         ExpiryAsOf(filter).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-    // Shared by the page, count and ID resolution so a bulk action always means exactly the rows listed.
-    private static string FilterConditions(ProductSearchFilter filter)
+    // Expiring products follow the dashboard's rule (ExpiryAlert): each lot's own alert window, not a
+    // fixed 30 days. Both forms list the same products. The check reads each candidate's earliest
+    // unexpired lot, so its cost follows the products checked: it serves narrowed lists, and broad
+    // pages when many lots are expiring, as a page in name order then fills within a few hundred
+    // names (on the full-size store, 3.5 ms for 2,708 expiring products against 30 ms for the set).
+    // The set costs what the lots inside the window cost, so it serves broad counts, the IDs for a
+    // bulk action, and broad pages when few lots are expiring: with 9 expiring products, walking every
+    // name for a page that never fills took 194 ms, and the set 8 ms. Archived products' lots stay
+    // in the set for "any status".
+    private static readonly string ExpiringCheck = $"AND {ExpiryAlert.HasExpiringLotSql("p", "@expiryToday")}";
+
+    private static readonly string ExpiringSet =
+        $"AND p.id IN (SELECT product_id FROM ({ExpiryAlert.ExpiringLotsSql("@expiryToday", activeProductsOnly: false)}))";
+
+    // A search, or a category, brand, vendor, low-stock, archived or internal-use filter.
+    private static bool Narrowed(ProductSearchFilter filter) =>
+        !string.IsNullOrWhiteSpace(filter.Query) || filter.CategoryId is not null || filter.BrandId is not null ||
+        filter.VendorId is not null || filter.LowStockOnly || filter.ArchivedOnly || filter.ProductClass == "INTERNAL";
+
+    // Whether more than 500 active lots with stock expire inside the default window, read from the
+    // expiry index alone (0.2 ms on the full-size store). Above it a broad page fills sooner by
+    // walking names than by reading the set; on that store the two cost the same near 500.
+    private static bool ManyExpiringLots(System.Data.IDbConnection connection, string expiryToday) =>
+        connection.ExecuteScalar<long>(ManyExpiringLotsSql, new { expiryToday }) > 500;
+
+    private static readonly string ManyExpiringLotsSql = $"""
+        SELECT COUNT(*) FROM (SELECT 1 FROM product_lot INDEXED BY ix_lot_expiry
+          WHERE qty_on_hand>0 AND expiry_date IS NOT NULL AND is_active=1
+            AND expiry_date>=@expiryToday AND expiry_date<={ExpiryAlert.DefaultWindowEndSql("@expiryToday")} LIMIT 501)
+        """;
+
+    // Shared by the page, count and ID resolution so a bulk action always means exactly the rows
+    // listed; expiringSet picks the form of the Expiring filter, not what it matches.
+    private static string FilterConditions(ProductSearchFilter filter, bool expiringSet)
     {
         string expiry = filter.ExpiryFilter switch
         {
-            "EXPIRED" => "AND EXISTS(SELECT 1 FROM product_lot el WHERE el.product_id=p.id AND el.qty_on_hand>0 AND el.expiry_date<@expiryToday)",
-            "EXPIRING" => "AND EXISTS(SELECT 1 FROM product_lot el WHERE el.product_id=p.id AND el.qty_on_hand>0 AND el.expiry_date>=@expiryToday AND el.expiry_date<=@expirySoon)",
+            "EXPIRED" => $"AND EXISTS(SELECT 1 FROM product_lot el WHERE el.product_id=p.id AND {ExpiryAlert.ExpiredSql("el", "@expiryToday")})",
+            "EXPIRING" => expiringSet ? ExpiringSet : ExpiringCheck,
             _ => string.Empty,
         };
         string vendor = filter.VendorId is null ? string.Empty
@@ -213,7 +248,8 @@ public sealed partial class CatalogService
             search = PrefixCondition;
             parameters.Add("prefix", PrefixPattern(query));
         }
-        return ($"SELECT {select} FROM product p {join} WHERE {FilterConditions(filter)} {search} {tail}", parameters);
+        return ($"SELECT {select} FROM product p {join} WHERE {FilterConditions(filter, expiringSet: !Narrowed(filter))} {search} {tail}",
+            parameters);
     }
 
     private long[] ExactMatches(System.Data.IDbConnection connection, string query, ProductSearchFilter filter)
@@ -225,7 +261,7 @@ public sealed partial class CatalogService
             SELECT p.id FROM product p
             WHERE p.id IN (SELECT id FROM product WHERE sku=@exact
                            UNION SELECT product_id FROM product_barcode WHERE barcode=@exact)
-              AND {FilterConditions(filter)}
+              AND {FilterConditions(filter, expiringSet: false)}
             ORDER BY p.name COLLATE NOCASE,p.id LIMIT 8
             """, parameters).ToArray();
     }

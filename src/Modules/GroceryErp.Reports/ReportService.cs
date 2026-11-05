@@ -43,6 +43,46 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
         return new(await currentTask, await previousTask);
     }
 
+    // Each tile counts exactly what the list it opens shows (ExpiryAlert). Expired counts every
+    // expired lot with stock, blocked or not and of any product, from the expiry index alone; its tile
+    // opens Products at any status. Critical and Soon count the expiring lots of active products, as
+    // the Products list they open does. Stock value is every lot's cost, archived products included,
+    // as the current unsold stock report it opens totals it; low stock stays with active products, as
+    // its list does.
+    private static readonly string DashboardCoreSql = $"""
+        WITH today_sales AS MATERIALIZED (
+          SELECT sales,bills,taxable,taxable-cost AS gross_profit
+          FROM pnl_day WHERE day=@today
+        ), expiry AS MATERIALIZED (
+          SELECT (SELECT COUNT(*) FROM product_lot x
+                  WHERE {ExpiryAlert.ExpiredSql("x", "@today")} AND x.expiry_date IS NOT NULL) AS expired,
+                 COUNT(*) FILTER (WHERE e.expiry_date<={ExpiryAlert.CriticalEndSql("@today")}) AS critical,
+                 COUNT(*) FILTER (WHERE e.expiry_date>{ExpiryAlert.CriticalEndSql("@today")}) AS soon
+          FROM ({ExpiryAlert.ExpiringLotsSql("@today", activeProductsOnly: true)}) e
+        ), stock AS MATERIALIZED (
+          SELECT (SELECT COUNT(*) FROM product_stock_total t JOIN product p ON p.id=t.product_id
+                  WHERE t.is_low=1 AND p.is_active=1) AS low_products,
+                 (SELECT COALESCE(SUM(cost_value),0) FROM product_stock_total) AS stock_value
+        )
+        SELECT
+          COALESCE(today_sales.sales,0) AS TodaySales,
+          COALESCE(today_sales.taxable,0) AS TodayTaxableSales,
+          COALESCE(today_sales.bills,0) AS TodayBills,
+          COALESCE(today_sales.gross_profit,0) AS TodayGrossProfit,
+          COALESCE((SELECT SUM(sales) FROM pnl_day WHERE day BETWEEN @monthStart AND @today),0) AS MonthSales,
+          COALESCE((SELECT SUM(sales) FROM pnl_day WHERE day BETWEEN @previousStart AND @previousThrough),0) AS PreviousMonthSales,
+          expiry.expired AS ExpiredLots,
+          expiry.critical AS CriticalLots,
+          expiry.soon AS SoonLots,
+          stock.low_products AS LowStockProducts,
+          stock.stock_value AS StockValue,
+          COALESCE((SELECT SUM(balance_due) FROM v_vendor_balance),0) AS Payables
+        FROM (SELECT 1) AS anchor
+        LEFT JOIN today_sales ON 1=1
+        CROSS JOIN expiry
+        CROSS JOIN stock
+        """;
+
     public async Task<DashboardSummary> GetDashboardAsync(CancellationToken cancellationToken = default)
     {
         DateOnly today = clock.BusinessDate;
@@ -55,62 +95,7 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
         {
             using var transaction = connection.BeginTransaction(deferred: true);
             long stageStarted = Stopwatch.GetTimestamp();
-            DashboardCore core = connection.QuerySingle<DashboardCore>("""
-            WITH today_sales AS MATERIALIZED (
-              SELECT sales,bills,taxable,taxable-cost AS gross_profit
-              FROM pnl_day WHERE day=@today
-            ), expiry_bounds AS MATERIALIZED (
-              SELECT @today AS day,MAX(alert_days) AS max_days FROM (
-                SELECT COALESCE(MAX(expiry_alert_days),0) AS alert_days FROM product
-                UNION ALL SELECT COALESCE(MAX(expiry_alert_days),0) FROM category
-                UNION ALL SELECT COALESCE(CAST(value AS INTEGER),30)
-                  FROM setting WHERE key='expiry.default_alert_days'
-                UNION ALL SELECT 30
-              )
-            ), expiry_near AS MATERIALIZED (
-              SELECT COUNT(*) FILTER (WHERE l.expiry_date<=date(b.day,'+7 days')) AS critical,
-                     COUNT(*) FILTER (WHERE l.expiry_date>date(b.day,'+7 days')) AS soon
-              FROM expiry_bounds b JOIN product_lot l
-                ON l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date IS NOT NULL
-               AND l.expiry_date BETWEEN b.day
-                   AND COALESCE(date(b.day,'+'||b.max_days||' days'),'9999-12-31')
-              JOIN product p ON p.id=l.product_id
-              JOIN category c ON c.id=p.category_id
-              LEFT JOIN category pc ON pc.id=c.parent_id
-              WHERE l.expiry_date<=COALESCE(date(b.day,'+'||COALESCE(
-                  p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
-                  CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30
-                )||' days'),'9999-12-31')
-            ), expiry AS MATERIALIZED (
-              SELECT (SELECT COUNT(*) FROM product_lot l
-                      WHERE l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date IS NOT NULL
-                        AND l.expiry_date<b.day) AS expired,
-                     n.critical,n.soon
-              FROM expiry_bounds b CROSS JOIN expiry_near n
-            ), stock AS MATERIALIZED (
-              SELECT COUNT(*) FILTER (WHERE t.is_low=1) AS low_products,
-                     COALESCE(SUM(t.cost_value),0) AS stock_value
-              FROM product_stock_total t JOIN product p ON p.id=t.product_id
-              WHERE p.is_active=1
-            )
-            SELECT
-              COALESCE(today_sales.sales,0) AS TodaySales,
-              COALESCE(today_sales.taxable,0) AS TodayTaxableSales,
-              COALESCE(today_sales.bills,0) AS TodayBills,
-              COALESCE(today_sales.gross_profit,0) AS TodayGrossProfit,
-              COALESCE((SELECT SUM(sales) FROM pnl_day WHERE day BETWEEN @monthStart AND @today),0) AS MonthSales,
-              COALESCE((SELECT SUM(sales) FROM pnl_day WHERE day BETWEEN @previousStart AND @previousThrough),0) AS PreviousMonthSales,
-              expiry.expired AS ExpiredLots,
-              expiry.critical AS CriticalLots,
-              expiry.soon AS SoonLots,
-              stock.low_products AS LowStockProducts,
-              stock.stock_value AS StockValue,
-              COALESCE((SELECT SUM(balance_due) FROM v_vendor_balance),0) AS Payables
-            FROM (SELECT 1) AS anchor
-            LEFT JOIN today_sales ON 1=1
-            CROSS JOIN expiry
-            CROSS JOIN stock
-            """, new { today = Iso(today), monthStart = Iso(monthStart), previousStart = Iso(previousStart), previousThrough = Iso(previousThrough) }, transaction);
+            DashboardCore core = connection.QuerySingle<DashboardCore>(DashboardCoreSql, new { today = Iso(today), monthStart = Iso(monthStart), previousStart = Iso(previousStart), previousThrough = Iso(previousThrough) }, transaction);
             PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(stageStarted).TotalMilliseconds,
                 new KeyValuePair<string, object?>("operation", "dashboard.core"));
             cancellationToken.ThrowIfCancellationRequested();

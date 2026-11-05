@@ -108,9 +108,13 @@ public partial class ProductsPage : Page
     private sealed record State(string Search, int Class, int Status, long CategoryId, int Stock, int Expiry,
         long BrandId, long VendorId, bool NoBarcode, bool MissingLocal, bool Loose, bool MoreFilters);
 
-    /// <summary>Makes the next Products page open on active products with expired, or else expiring, stock.</summary>
+    /// <summary>
+    /// Makes the next Products page open on the products behind a dashboard expiry tile: expired stock
+    /// at any status, since an archived product's expired lots still need writing off, or else active
+    /// products with expiring stock, as the Critical and Soon tiles count them.
+    /// </summary>
     internal static void RequestExpiryFilter(PageStateStore? store, bool expired) =>
-        store?.Set(StateKey, new State(string.Empty, 0, 0, 0, 0, expired ? 1 : 2, 0, 0, false, false, false, false));
+        store?.Set(StateKey, new State(string.Empty, 0, expired ? 2 : 0, 0, 0, expired ? 1 : 2, 0, 0, false, false, false, false));
 
     /// <summary>Makes the next Products page open on active products below their reorder level.</summary>
     internal static void RequestLowStockFilter(PageStateStore? store) =>

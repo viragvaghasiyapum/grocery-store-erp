@@ -206,6 +206,195 @@ public sealed class ListFilterTests
     }
 
     [Fact]
+    public async Task DashboardExpiryTiles_OpenListsHoldingExactlyTheLotsTheyCount()
+    {
+        using var fixture = new FilterFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        DateOnly today = fixture.Today;
+        // Dairy alerts 60 days and its child Paneer inherits that; Bakery alerts 3 days; Grains has
+        // none, so the 30-day default applies.
+        long dairy = await fixture.Catalog.CreateCategoryAsync(new("Dairy alerts", null, null, 60), ct);
+        long paneer = await fixture.Catalog.CreateCategoryAsync(new("Paneer alerts", null, dairy, null), ct);
+        long bakery = await fixture.Catalog.CreateCategoryAsync(new("Bakery alerts", null, null, 3), ct);
+        long Product(string sku, long category, int? alertDays = null)
+        {
+            using var connection = fixture.Factory.Open();
+            return connection.ExecuteScalar<long>("""
+                INSERT INTO product(sku,name,category_id,uom_id,tax_rate_id,track_expiry,expiry_alert_days,default_selling_price)
+                VALUES (@sku,'Alert '||@sku,@category,(SELECT id FROM uom WHERE code='PCS'),
+                        (SELECT id FROM tax_rate WHERE rate_pct=5000),1,@alertDays,30000) RETURNING id
+                """, new { sku, category, alertDays });
+        }
+        Task<long> Lot(long product, int expiresIn) => fixture.Inventory.CreateDirectLotAsync(
+            new OpeningStockLine(product, new Quantity(2), new Money(20), new Money(30), new Money(35),
+                today.AddDays(expiresIn), "B" + expiresIn, today.AddDays(-30)), "Expiry alert test", OperationGuard.NewId(), ct);
+        long milk = Product("MILK", dairy);
+        long milkLot = await Lot(milk, 45);           // the report's case: inside the category's 60 days
+        long paneerProduct = Product("PANEER", paneer);
+        long paneerLot = await Lot(paneerProduct, 50); // the parent category's 60 days
+        long breadLot = await Lot(Product("BREAD", bakery), 5);    // past the category's 3 days
+        long biscuitLot = await Lot(Product("BISCUIT", dairy, 10), 20); // past the product's own 10 days
+        long honey = Product("HONEY", fixture.Grains, 90);
+        long honeyLot = await Lot(honey, 80); // inside the product's own 90 days
+        long rice = Product("RICE", fixture.Grains);
+        long riceCritical = await Lot(rice, 2);
+        long riceExpired = await Lot(rice, -1);
+        long oil = Product("OIL", fixture.Grains);
+        long[] oilLots = [await Lot(oil, 5), await Lot(oil, -2)];
+        await fixture.Inventory.RunLotBulkBatchAsync(LotBulkAction.Block, oilLots, OperationGuard.NewId(), ct);
+        long soap = Product("SOAP", fixture.Grains);
+        long soapSoon = await Lot(soap, 4);
+        long soapExpired = await Lot(soap, -3);
+        (await fixture.Catalog.RemoveAsync(soap, ct)).ShouldBe(ProductRemoval.Archived);
+        // The Products filter checks each product's earliest unexpired active lot: a blocked lot ahead
+        // of it is skipped either way, and a lot expiring today still counts.
+        long ghee = Product("GHEE", fixture.Grains);
+        long[] gheeLots = [await Lot(ghee, 1), await Lot(ghee, 20)];
+        long jam = Product("JAM", fixture.Grains);
+        long[] jamLots = [await Lot(jam, 2), await Lot(jam, 200)];
+        await fixture.Inventory.RunLotBulkBatchAsync(LotBulkAction.Block, [gheeLots[0], jamLots[0]], OperationGuard.NewId(), ct);
+        long dal = Product("DAL", fixture.Grains);
+        long dalToday = await Lot(dal, 0);
+        await Lot(dal, 200);
+
+        // The rule restated independently: expired is any lot with stock past its expiry; critical
+        // (seven days) and soon are active lots with stock inside their own alert window.
+        string iso(DateOnly date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        List<(long LotId, long ProductId, bool ProductActive, string? Alert)> Rule()
+        {
+            using var connection = fixture.Factory.Open();
+            return connection.Query<(long, long, bool, string?)>("""
+                SELECT l.id,l.product_id,p.is_active,
+                       CASE WHEN l.qty_on_hand<=0 OR l.expiry_date IS NULL THEN NULL
+                            WHEN julianday(l.expiry_date)<julianday(@today) THEN 'EXPIRED'
+                            WHEN l.is_active=0 THEN NULL
+                            WHEN julianday(l.expiry_date)-julianday(@today)>COALESCE(p.expiry_alert_days,c.expiry_alert_days,
+                                 pc.expiry_alert_days,CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30)
+                                 THEN NULL
+                            WHEN julianday(l.expiry_date)-julianday(@today)<=7 THEN 'CRITICAL' ELSE 'SOON' END
+                FROM product_lot l JOIN product p ON p.id=l.product_id
+                JOIN category c ON c.id=p.category_id LEFT JOIN category pc ON pc.id=c.parent_id
+                """, new { today = iso(today) }).AsList();
+        }
+        var lots = Rule();
+        string? AlertOf(long lot) => lots.Single(row => row.LotId == lot).Alert;
+        AlertOf(milkLot).ShouldBe("SOON");
+        AlertOf(paneerLot).ShouldBe("SOON");
+        AlertOf(breadLot).ShouldBeNull();
+        AlertOf(biscuitLot).ShouldBeNull();
+        AlertOf(honeyLot).ShouldBe("SOON");
+        AlertOf(riceCritical).ShouldBe("CRITICAL");
+        AlertOf(oilLots[1]).ShouldBe("EXPIRED");
+        AlertOf(soapSoon).ShouldBe("CRITICAL");
+        AlertOf(gheeLots[0]).ShouldBeNull();
+        AlertOf(gheeLots[1]).ShouldBe("SOON");
+        AlertOf(jamLots[0]).ShouldBeNull();
+        AlertOf(jamLots[1]).ShouldBeNull();
+        AlertOf(dalToday).ShouldBe("CRITICAL");
+
+        var reports = new ReportService(fixture.Database, fixture.Settings, new FixedClock(today));
+        DashboardSummary dashboard = await reports.GetDashboardAsync(ct);
+        var expired = lots.Where(static row => row.Alert == "EXPIRED").ToList();
+        var critical = lots.Where(static row => row.Alert == "CRITICAL" && row.ProductActive).ToList();
+        var soon = lots.Where(static row => row.Alert == "SOON" && row.ProductActive).ToList();
+        dashboard.ExpiredLots.ShouldBe(expired.Count);
+        dashboard.CriticalLots.ShouldBe(critical.Count);
+        dashboard.SoonLots.ShouldBe(soon.Count);
+        (await fixture.MoneyOut.GetActionableExpiryCountAsync(ct)).ShouldBe(expired.Count + critical.Count);
+        expired.Select(static row => row.LotId).ShouldContain(oilLots[1]);
+        expired.Select(static row => row.LotId).ShouldContain(soapExpired);
+        expired.Select(static row => row.LotId).ShouldContain(riceExpired);
+
+        // Each tile opens Products on the products behind its lots: Expired at any status, Critical
+        // and Soon on active products. Pages, count and IDs all agree.
+        async Task<long[]> Listed(ProductSearchFilter filter)
+        {
+            var ids = new List<long>();
+            ProductSearchPage page = await fixture.Catalog.SearchPageAsync(filter, cancellationToken: ct);
+            ids.AddRange(page.Items.Select(static item => item.Id));
+            while (page.HasMore)
+            {
+                page = await fixture.Catalog.SearchPageAsync(filter, page.NextName, page.NextId, ct);
+                ids.AddRange(page.Items.Select(static item => item.Id));
+            }
+            (await fixture.Catalog.CountAsync(filter, ct)).ShouldBe(ids.Count);
+            (await fixture.Catalog.ResolveIdsAsync(filter, cancellationToken: ct)).ShouldBe(ids, ignoreOrder: true);
+            return [.. ids];
+        }
+        long[] expiredProducts = await Listed(new ProductSearchFilter(Limit: 3, IncludeArchived: true,
+            ExpiryFilter: "EXPIRED", ExpiryAsOf: today)
+        { ExactFirst = true });
+        expiredProducts.ShouldBe(expired.Select(static row => row.ProductId).Distinct(), ignoreOrder: true);
+        expiredProducts.ShouldContain(soap);
+        var expiringFilter = new ProductSearchFilter(Limit: 3, ExpiryFilter: "EXPIRING", ExpiryAsOf: today) { ExactFirst = true };
+        long[] expiringProducts = await Listed(expiringFilter);
+        expiringProducts.ShouldBe(critical.Concat(soon).Select(static row => row.ProductId).Distinct(), ignoreOrder: true);
+        expiringProducts.ShouldContain(milk);
+        expiringProducts.ShouldNotContain(soap);
+        expiringProducts.ShouldNotContain(oil);
+        expiringProducts.ShouldContain(ghee);
+        expiringProducts.ShouldNotContain(jam);
+        expiringProducts.ShouldContain(dal);
+        // A search or category narrows the same rule, archived products included at any status.
+        (await Listed(new ProductSearchFilter(Limit: 3, CategoryId: dairy, ExpiryFilter: "EXPIRING", ExpiryAsOf: today)))
+            .ShouldBe([milk]);
+        (await Listed(new ProductSearchFilter("Alert", Limit: 3, IncludeArchived: true, ExpiryFilter: "EXPIRING", ExpiryAsOf: today)))
+            .ShouldBe([milk, paneerProduct, honey, rice, soap, ghee, dal], ignoreOrder: true);
+
+        // Inside one product the Lots tab follows the same lot rule, and its labels name it.
+        foreach (long product in lots.Select(static row => row.ProductId).Distinct())
+        {
+            LotFilter filter = new() { ProductId = product, Expiry = "EXPIRING", AsOf = today };
+            long[] want = lots.Where(row => row.ProductId == product && row.Alert is "CRITICAL" or "SOON")
+                .Select(static row => row.LotId).OrderByDescending(static id => id).ToArray();
+            (await fixture.Inventory.GetLotPageAsync(filter, null, 50, ct)).Items.Select(static lot => lot.Id).ShouldBe(want);
+            (await fixture.Inventory.CountLotsAsync(filter, ct)).ShouldBe(want.Length);
+            (await fixture.Inventory.GetLotPageAsync(new LotFilter { ProductId = product, Expiry = "EXPIRED", AsOf = today }, null, 50, ct))
+                .Items.Select(static lot => lot.Id).ShouldBe(lots.Where(row => row.ProductId == product && row.Alert == "EXPIRED")
+                    .Select(static row => row.LotId).OrderByDescending(static id => id));
+            foreach (LotItem lot in (await fixture.Inventory.GetLotPageAsync(new LotFilter { ProductId = product, AsOf = today },
+                null, 50, ct)).Items.Where(static lot => lot.IsActive && lot.OnHand > Quantity.Zero && lot.ExpiryDate is not null))
+                lot.ExpiryBucketCode.ShouldBe(AlertOf(lot.Id) ?? "FRESH", $"lot {lot.LotCode}");
+        }
+        (await fixture.Inventory.GetLotsByIdsAsync([breadLot, milkLot, oilLots[0]], ct)).Select(static lot => lot.ExpiryBucketCode)
+            .ShouldBe(["SOON", "FRESH", "BLOCKED"]);
+
+        // A broad page reads the expiring-lot set while few lots are expiring. Past 500 it walks names
+        // and checks each product's earliest lot instead; its count and IDs still read the set. Either
+        // way it lists the products the rule names.
+        async Task<string> PageSql()
+        {
+            var executed = new System.Collections.Concurrent.ConcurrentQueue<string>();
+            fixture.Factory.SqlTrace = (_, sql) => executed.Enqueue(sql);
+            try { await fixture.Catalog.SearchPageAsync(expiringFilter, cancellationToken: ct); }
+            finally { fixture.Factory.SqlTrace = null; }
+            return executed.Single(static sql => sql.Contains("visible AS MATERIALIZED", StringComparison.Ordinal));
+        }
+        const string earliestLot = "ORDER BY el.expiry_date LIMIT 1";
+        string setPage = await PageSql();
+        setPage.ShouldContain("UNION ALL");
+        setPage.ShouldNotContain(earliestLot);
+        long busy = Product("BUSY", fixture.Grains);
+        using (var connection = fixture.Factory.Open())
+        {
+            connection.Execute("""
+                WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<501)
+                INSERT INTO product_lot(product_id,lot_code,received_date,expiry_date,unit_cost,selling_price,qty_received)
+                SELECT @busy,'BUSY-'||i,@received,@expiry,20000,30000,1000 FROM n
+                """, new { busy, received = iso(today.AddDays(-30)), expiry = iso(today.AddDays(10)) });
+            connection.Execute("UPDATE product_lot SET qty_on_hand=qty_received WHERE product_id=@busy", new { busy });
+        }
+        string walkPage = await PageSql();
+        walkPage.ShouldContain(earliestLot);
+        walkPage.ShouldNotContain("UNION ALL");
+        lots = Rule();
+        long[] walked = await Listed(expiringFilter);
+        walked.ShouldBe(lots.Where(static row => row.Alert is "CRITICAL" or "SOON" && row.ProductActive)
+            .Select(static row => row.ProductId).Distinct(), ignoreOrder: true);
+        walked.ShouldBe([.. expiringProducts, busy], ignoreOrder: true);
+    }
+
+    [Fact]
     public async Task ExpiryMarks_FollowTheBusinessDate_NotTheMachineClock()
     {
         using var fixture = new FilterFixture();
@@ -398,8 +587,9 @@ public sealed class ListFilterTests
                         Expired = connection.ExecuteScalar<bool>("""
                             SELECT EXISTS(SELECT 1 FROM product_lot WHERE product_id=@id AND qty_on_hand>0 AND expiry_date<@today)
                             """, new { id, today }),
+                        // No seed sets alert days, so every window is the 30-day default.
                         Expiring = connection.ExecuteScalar<bool>("""
-                            SELECT EXISTS(SELECT 1 FROM product_lot WHERE product_id=@id AND qty_on_hand>0
+                            SELECT EXISTS(SELECT 1 FROM product_lot WHERE product_id=@id AND qty_on_hand>0 AND is_active=1
                                           AND expiry_date>=@today AND expiry_date<=@soon)
                             """, new { id, today, soon }),
                         FromVendor = connection.ExecuteScalar<bool>(

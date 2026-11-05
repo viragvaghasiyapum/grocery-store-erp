@@ -78,7 +78,7 @@
           <DataGridTextColumn Width="88" Header="{l:Tr Stock_LotCode}" Binding="{Binding LotCode}"/>
           <DataGridTextColumn Width="90" Header="{l:Tr Stock_Batch}" Binding="{Binding BatchNumber}"/>
           <!-- Expiry date and its status share one column so the panel needs less sideways scrolling. -->
-          <DataGridTemplateColumn Width="130" Header="{l:Tr Stock_Expiry}" SortMemberPath="ExpiryDate">
+          <DataGridTemplateColumn Width="165" Header="{l:Tr Stock_Expiry}" SortMemberPath="ExpiryDate">
             <DataGridTemplateColumn.CellTemplate><DataTemplate>
               <TextBlock TextTrimming="CharacterEllipsis">
                 <Run Text="{Binding ExpiryDate, StringFormat=dd MMM yy, Mode=OneWay}"/>

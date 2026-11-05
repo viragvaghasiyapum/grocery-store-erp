@@ -349,6 +349,18 @@ public sealed class MoneyOutTests
         await CheckAsync();
         connection.Execute("UPDATE product_lot SET is_active=0 WHERE id=@id", new { id = fixture.LotId });
         await CheckAsync();
+        // Blocked, the lot leaves Critical; once expired it counts again, since it still has to be
+        // written off. An archived product's expiring lot does not count; its expired one does.
+        connection.Execute("UPDATE product_lot SET expiry_date=@past WHERE id=@id", new { past = Iso(fixture.Today.AddDays(-1)), id = fixture.LotId });
+        await CheckAsync();
+        (await fixture.MoneyOut.GetActionableExpiryCountAsync(TestContext.Current.CancellationToken)).ShouldBe(1);
+        connection.Execute("UPDATE product_lot SET is_active=1,expiry_date=@soon WHERE id=@id", new { soon, id = fixture.LotId });
+        connection.Execute("UPDATE product SET is_active=0 WHERE id=@productId", new { productId });
+        await CheckAsync();
+        (await fixture.MoneyOut.GetActionableExpiryCountAsync(TestContext.Current.CancellationToken)).ShouldBe(0);
+        connection.Execute("UPDATE product_lot SET expiry_date=@past WHERE id=@id", new { past = Iso(fixture.Today.AddDays(-1)), id = fixture.LotId });
+        await CheckAsync();
+        (await fixture.MoneyOut.GetActionableExpiryCountAsync(TestContext.Current.CancellationToken)).ShouldBe(1);
     }
 
     [Fact]
@@ -683,17 +695,20 @@ public sealed class MoneyOutTests
 
     private static string Iso(DateOnly date) => date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
-    // The v_expiry_alert rules as of a given business date; the view itself counts from the machine clock.
+    // The dashboard's expiry rule as of a given business date, restated without the app's SQL: every
+    // expired lot with stock, blocked or not and of any product; critical and soon only for active lots
+    // of active products inside their alert window.
     private const string ExpiryAlertAsOfSql = """
         SELECT *,CASE WHEN days_left<0 THEN 'EXPIRED' WHEN days_left<=7 THEN 'CRITICAL' ELSE 'SOON' END AS bucket
         FROM (
           SELECT CAST(julianday(l.expiry_date)-julianday(@asOf) AS INTEGER) AS days_left,
                  COALESCE(p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
-                          CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30) AS alert_days
+                          CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30) AS alert_days,
+                 l.is_active=1 AND p.is_active=1 AS in_use
           FROM product_lot l JOIN product p ON p.id=l.product_id
           JOIN category c ON c.id=p.category_id LEFT JOIN category pc ON pc.id=c.parent_id
-          WHERE l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date IS NOT NULL
-        ) WHERE days_left<=alert_days
+          WHERE l.qty_on_hand>0 AND l.expiry_date IS NOT NULL
+        ) WHERE days_left<0 OR (in_use AND days_left<=alert_days)
         """;
 
     private sealed class FixedClock(DateOnly date) : IClock

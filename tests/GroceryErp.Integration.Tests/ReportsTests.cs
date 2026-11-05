@@ -593,7 +593,7 @@ public sealed class ReportsTests
     }
 
     [Fact]
-    public async Task DashboardCore_PreservesSalesExpiryAndActiveStockTotals()
+    public async Task DashboardCore_PreservesSalesExpiryAndStockTotals()
     {
         using var fixture = new ReportFixture();
         DateOnly businessDate = new(2026, 9, 27);
@@ -648,8 +648,13 @@ public sealed class ReportsTests
         dashboard.ExpiredLots.ShouldBe(2);
         dashboard.CriticalLots.ShouldBe(1);
         dashboard.SoonLots.ShouldBe(1);
+        // Low stock counts active products, as its Products list shows. Stock value is every lot's
+        // cost, the archived product's ₹1 included, as the current unsold stock report totals it.
         dashboard.LowStockProducts.ShouldBe(1);
-        dashboard.StockValue.Value.ShouldBe(8m);
+        dashboard.StockValue.Value.ShouldBe(9m);
+        TabularReport stockReport = await fixture.Reports.GetReportAsync(ReportKind.StockValue, new(IncludeExpired: true),
+            TestContext.Current.CancellationToken);
+        stockReport.Totals["CostValue"].ShouldBe(dashboard.StockValue.Value);
         dashboard.Payables.Value.ShouldBe(0m);
 
         var emptyDay = new ReportService(fixture.Database, fixture.Settings,
@@ -659,7 +664,7 @@ public sealed class ReportsTests
         noSales.TodayBills.ShouldBe(0);
         noSales.TodayGrossProfit.Value.ShouldBe(0m);
         noSales.LowStockProducts.ShouldBe(1);
-        noSales.StockValue.Value.ShouldBe(8m);
+        noSales.StockValue.Value.ShouldBe(9m);
 
         async Task AssertExpiryParity()
         {
@@ -982,17 +987,20 @@ public sealed class ReportsTests
         }
     }
 
-    // The v_expiry_alert rules as of a given business date; the view itself counts from the machine clock.
+    // The dashboard's expiry rule as of a given business date, restated without the app's SQL: every
+    // expired lot with stock, blocked or not and of any product; critical and soon only for active lots
+    // of active products inside their alert window.
     private const string ExpiryAlertAsOfSql = """
         SELECT *,CASE WHEN days_left<0 THEN 'EXPIRED' WHEN days_left<=7 THEN 'CRITICAL' ELSE 'SOON' END AS bucket
         FROM (
           SELECT CAST(julianday(l.expiry_date)-julianday(@asOf) AS INTEGER) AS days_left,
                  COALESCE(p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
-                          CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30) AS alert_days
+                          CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30) AS alert_days,
+                 l.is_active=1 AND p.is_active=1 AS in_use
           FROM product_lot l JOIN product p ON p.id=l.product_id
           JOIN category c ON c.id=p.category_id LEFT JOIN category pc ON pc.id=c.parent_id
-          WHERE l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date IS NOT NULL
-        ) WHERE days_left<=alert_days
+          WHERE l.qty_on_hand>0 AND l.expiry_date IS NOT NULL
+        ) WHERE days_left<0 OR (in_use AND days_left<=alert_days)
         """;
 
     private sealed class FixedClock(DateOnly date) : IClock

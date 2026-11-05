@@ -924,7 +924,7 @@
   <data name="Stock_BulkDamage" xml:space="preserve"><value>Mark selected lots damaged</value></data>
   <data name="Stock_DeleteZero" xml:space="preserve"><value>Delete selected empty lots</value></data>
   <data name="Stock_ExpiryFilterAll" xml:space="preserve"><value>All lots</value></data>
-  <data name="Stock_Expiring" xml:space="preserve"><value>Expiring in 30 days</value></data>
+  <data name="Stock_Expiring" xml:space="preserve"><value>Expiring soon</value></data>
   <data name="Stock_Available" xml:space="preserve"><value>Available</value></data>
   <data name="Stock_DamagePreview" xml:space="preserve"><value>{0} lots · {1} units · {2} cost value</value></data>
   <data name="MoneyOut_DamageDate" xml:space="preserve"><value>Damage date</value></data>

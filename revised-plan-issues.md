@@ -21,7 +21,8 @@ Fixes go phase by phase, stopping after each phase for review. A problem that ap
 | 5 | Done 26 Oct 2026: P5-1 fixed, reproduced on a fresh store first | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings; a running app instance locked the App's `bin`, so the App and UI tests were built to a scratch folder. 302 tests: 259 integration, 32 core, 2 architecture, 9 UI (2 opt-in skipped). Full-size store: the re-date timing under P5-1 (script and results in `artifacts/data/revision-issues-phase5`) |
 | 6 | Done 26 Oct 2026: P6-1 and P6-2 fixed. P6-2 was reproduced on a fresh store first. For P6-1, the weekly check was run on a fresh store after every stock workflow and passed | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings. 306 tests: 260 integration, 32 core, 2 architecture, 12 UI (2 opt-in skipped). Full-size store: the weekly-check and day-end timings under P6-1 and P6-2 (scripts and results in `artifacts/data/revision-issues-phase6`) |
 | 7 | Done 4 Nov 2026: P7-1 fixed (code reading; every new code is triggered through the services by a regression test on a fresh store). Found on the way and fixed with it: unmapped unique values and four form gaps. P7-2, a related gap found during P7-1, fixed after it | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings. 315 tests: 269 integration, 32 core, 2 architecture, 12 UI (2 opt-in skipped). 18 screens of the messages, in both languages, checked by eye (`artifacts/data/revision-issues-phase7/screens`). Only failure paths changed, so no full-size timing was taken |
-| 8, 9, §15 | Open | |
+| 8 | Done 5 Nov 2026: P8-1 and P8-2 fixed, each reproduced on a fresh store first (the new tests fail on the previous build). Found on the way and fixed: blocked expired lots missing from the Expired tile and badge, and archived products' expired stock missing from the list the tile opens (both choices open to the owner's review), and three Gujarati texts cut off on screen | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings. 316 tests: 270 integration, 32 core, 2 architecture, 12 UI (2 opt-in skipped). 10 screens of the tiles and the lists they open, in both languages, checked by eye (`artifacts/data/revision-issues-phase8/screens`). Full-size store: ScaleAudit `phase8-expiry` alternating with the previous build on an unchanged and a seeded copy (timings under P8-1) |
+| 9, §15 | Open | |
 | P3-F3 (product choice for returned units) | Done 4 Nov 2026: built as decided; also fixed a later correction of a damage restored into another product | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings. 309 tests: 263 integration, 32 core, 2 architecture, 12 UI (2 opt-in skipped). The new window was captured in both modes and languages from the UI smoke journey and checked by eye; it was not used in the running app |
 
 ## Phase 0 — Freeze rules, map dependencies, and baseline
@@ -294,14 +295,87 @@ No open issues found. The expiry filter window is covered under P8-1.
 
 ## Phase 8 — Remove obsolete features, code, and live schema
 
-- [ ] **P8-1 The dashboard "Soon" tile opens a list that does not match it** (Medium, reproduced)
+- [x] **P8-1 The dashboard "Soon" tile opens a list that does not match it** (Medium, reproduced)
   - The tile counts lots within each product's, category's or default alert days (`ReportService.cs:70-83`).
   - The Products and Lots Expiring filters it opens use a fixed 30 days (`CatalogService.Search.cs:159,174`, `InventoryService.cs:123,139`).
   - Repro: with alert days of 60 and expiry in 45 days, the tile shows Soon = 1 and the filtered list is empty.
   - Fix: use the same alert-day rule in both places.
-- [ ] **P8-2 The dashboard stock value leaves out archived products** (Low, read)
+  - **Fixed 5 Nov 2026.** A rule of the shipped design, not of older data, so it was checked on a fresh store through the services. The new regression test (below) fails on the previous build. One rule now lives in `Data/Infrastructure/ExpiryAlert.cs`, used by the dashboard, the Products badge, both expiry filters, the lot labels and the purchase short-expiry warning:
+    - **Expired:** a lot with stock past its expiry date, blocked or not, of any product.
+    - **Expiring:** an active lot with stock that expires from the business date to the end of its alert window. The window is the product's alert days, else its category's, else the parent category's, else the `expiry.default_alert_days` setting, else 30. The lot is critical within seven days and soon after that.
+  - What changed for the operator:
+    - **Products ▸ Expiring soon** (was "Expiring in 30 days"; in Gujarati **સમાપ્તિ નજીક**, short enough for its box) and the Lots tab's Expiring filter list exactly the lots the tiles count. Blocked lots are left out, as the tiles always left them out.
+    - The lot labels **0–7 days** and **Soon** mark only lots inside their window. A lot past its window is **Fresh**, even five days before expiry when its category alerts at three.
+    - The purchase short-expiry warning now also takes the parent category's alert days. Before, it skipped them.
+  - Found on the way, two more cases where a tile and its list differed. Both decided here and open to the owner's review:
+    - **A blocked expired lot.** The Expired list and the expired write-off include it, but the Expired tile and the badge did not count it. The tile and badge now count it, because it still has to be written off.
+    - **An archived product with stock.** The Expired tile counted its expired lots, but the Products list opened on active products. The Expired tile now opens Products at **Any status**. The Critical and Soon tiles and the badge now count only active products' lots, as the list they open shows; an archived product's lot cannot be sold.
+  - Speed:
+    - The dashboard counts one set of expiring lots, `ExpiryAlert.ExpiringLotsSql`. Lots up to the default window are read through `ix_lot_expiry`, each checked against its own window. Past the default window, only products with a wider window can qualify: those with their own alert days above the default, or none of their own in a category (or parent) with a wider window. Their lots are read through `ix_lot_fefo`.
+    - The Products Expiring filter has two forms that list the same products:
+      - **The per-product check** (`ExpiryAlert.HasExpiringLotSql`) seeks each candidate's earliest unexpired active lot in `ix_lot_fefo` and compares it with that product's window. Its cost follows the products checked.
+      - **The set** (`ExpiringLotsSql` as one `IN` list) costs what the lots inside the window cost.
+    - Which form each read uses:
+      - A search, or a category, brand, vendor, low-stock, archived or internal-use filter, uses the check.
+      - An unnarrowed count and the IDs for a bulk action use the set.
+      - An unnarrowed page uses the check, walking names in order, when more than 500 lots with stock expire inside the default window. That count reads `ix_lot_expiry` alone and takes 0.2 ms. Otherwise the page uses the set.
+    - Rejected, measured in Node on the full-size store (`few.mjs`, `walk.mjs`, `resolve.mjs`, `probe.mjs`):
+      - Reading every lot up to the widest window, as the old dashboard did. With 48 products alerting a year ahead, the dashboard and the products page took 500 ms.
+      - The set for every read. With 2,708 expiring products, the first page took 30 ms against 3.5 ms for the check.
+      - The check for every read. Walking every name took 145 ms for the bulk IDs (36 ms for the set) and 194 ms for a page with 9 expiring products (8 ms for the set). The 500-lot switch sits where the two forms cost the same: with 878 expiring products the check's page took 9 ms and the set's 22 ms; with 306, 48 ms and 14 ms.
+      - An `EXISTS` testing each lot. It works out the window before each seek, so over every product it took 92 ms against 59 ms for the check.
+    - One product's expiring lots now read a range of `ix_lot_fefo`. The lot pages no longer join both category tables for the label. The dashboard keeps the unary `+p.is_active`, so the expiry index stays the outer loop. As a plain term, SQLite started from an automatic index on products: 2.4 s instead of 26 ms.
+    - No schema change.
+  - Full-size store, through the services (ScaleAudit `phase8-expiry`, 5 Nov 2026; the run script, results and query plans are in `artifacts/data/revision-issues-phase8`). The copy of the Phase 9 fixture has 47,010 products and 223,272 lots; as of 26 September 2026, 2,708 products are expiring. The base build (commit 9301f4d) and this change ran alternately (base, new, new, base) on an otherwise idle PC. The table gives p50/p95 ms (or p50 alone) of 31 warm runs, from each build's second round. The first base round followed a restart, with a cold file cache, so it is left out. Earlier runs on this page were taken while other programs loaded the PC, and these numbers replace them.
+
+    | Read | Before | After |
+    |---|---|---|
+    | Dashboard: whole read; core read | 65.9 / 67.6; 29.9 / 33.4 | 61.1 / 64.2; 25.5 / 27.4 |
+    | Products badge | 10.6 / 11.5 | 8.9 / 9.5 |
+    | Expiring products: first page; next page | 16.6 / 17.8; 16.6 / 17.8 | 6.9 / 7.8; 6.4 / 6.8 |
+    | Expiring products: count (2,708) | 364 / 375 | 14.7 / 15.8 |
+    | Expiring products: IDs for a bulk action | 599 / 615 | 16.8 / 20.4 |
+    | Few expiring (10 products, as of 14 Sep 2028): page, count, IDs | 660, 403, 662 | 2.2, 1.6, 1.7 |
+    | Expiring, with a common-word search: page, count (178) | 31.9, 29.2 | 7.9, 1.8 |
+    | Expiring, in the category with the most (44): page, count | 9.1, 7.1 | 1.3, 0.4 |
+    | Expiring, in the largest category (20,000 products, no lots): page, count | 3.1, 2.8 | 4.8, 4.5 |
+    | Busiest product's expiring lots | 0.53 / 0.72 | 0.33 / 0.38 |
+
+    - The seeded copy (`seed-variety.mjs`) adds alert days of 60 on ten categories, 7 on every 50th product and 365 on 48 products, blocked lots inside and past the window, and 100 archived products with stock. On it:
+      - The dashboard went from 166 to 66 ms and the count from 372 to 20 ms.
+      - The IDs went from 598 to 23 ms, the first page from 17 to 7 ms, and the few-expiring page from 658 to 9.6 ms.
+    - One read got slower: the largest category, by 1.7 ms. Every product in it is checked, and every check misses.
+    - Peak working set stayed at 101–109 MiB.
+    - On the unseeded copy, both builds' tiles match their lists. On the seeded copy, the base build's did not:
+      - Expired: 162,054 lots against 162,154 by the rule.
+      - Critical: 752 against 740. Soon: 2,670 against 2,626.
+      - Expiring products listed: 2,660 against 2,816.
+      - Stock value: ₹58,128,476 short.
+    - This change matches the rule on every count, on both copies.
+  - Regressions:
+    - `ListFilterTests.DashboardExpiryTiles_OpenListsHoldingExactlyTheLotsTheyCount` (new) builds lots through the services:
+      - Alert windows: a category's (milk, 45 days in 60), a parent category's (paneer), and a product's own wider one (honey, 80 days in 90). Milk, paneer and honey are read through the set's wider-window branch.
+      - Lots past their window: bread (5 days, past its category's 3) and biscuits (20 days, past the product's own 10).
+      - A blocked lot, and an archived product with stock.
+      - Three cases for the per-product check: a blocked lot ahead of an expiring one (ghee), a blocked lot ahead of a fresh one (jam), and a lot expiring today (dal).
+    - It checks:
+      - The tiles and badge, against the rule written independently.
+      - The Products lists the tiles open, across pages, count and IDs, both unnarrowed and narrowed.
+      - Each product's Lots filters, and every label.
+    - It then adds 501 expiring lots, checks from the SQL that the unnarrowed page switched from the set to the check, and checks the lists against the rule again.
+    - `MoneyOutTests.ActionableExpiryCount_MatchesAlertViewAcrossThresholdChanges` now also covers a blocked expired lot and an archived product. `ReportsTests.DashboardCore_PreservesSalesExpiryAndStockTotals` and that test share the restated rule.
+    - The UI smoke journey (`PhaseZeroSmokeTests.VerifyExpiryTiles`, new) checks on screen, in both languages, the tiles, the two lists they open and two products' labels. It passed. Its ten screenshots (`artifacts/data/revision-issues-phase8/screens`) were checked by eye. They showed three Gujarati texts cut off, now fixed:
+      - The Expiring filter, now **સમાપ્તિ નજીક**.
+      - **Any status**, now **બધી સ્થિતિ**. The same string is used on Money out and Vendors.
+      - The Lots tab's expiry labels. Its Expiry column went from 130 to 165 px.
+  - Both guides describe the rule (dashboard, Products filters, Lots tab, purchase warning).
+- [x] **P8-2 The dashboard stock value leaves out archived products** (Low, read)
   - `ReportService.cs:93-94` filters `p.is_active=1`. A product with stock is archived instead of deleted, so its stock drops out of the tile, while the Current unsold stock report still counts it.
   - Fix: drop the filter for the stock value and keep it for the low-stock count.
+  - **Fixed 5 Nov 2026**, as proposed. Checked on a fresh store: `ReportsTests.DashboardCore_PreservesSalesExpiryAndStockTotals` archives a product with ₹1 of stock. The tile showed ₹8 and the report ₹9 before; both now show ₹9. The test now asserts the tile against the report's total.
+    - Stock value sums `product_stock_total` alone. The low-stock count keeps its active-product join, the same as the Low stock list it opens.
+    - On the full-size store the stock part of the dashboard read went from 15 to 8 ms (Node, same SQLite 3.53.3), with the same total.
+    - Both guides say the tile includes archived products' stock.
 
 ## Phase 9 — Full-scale optimization, acceptance, and release
 

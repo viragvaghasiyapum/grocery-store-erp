@@ -22,25 +22,22 @@ public sealed partial class MoneyOutService(
     private static readonly HashSet<string> ExpenseModes = ["CASH", "UPI", "BANK", "CARD", "OTHER"];
     private static readonly HashSet<string> SalaryModes = ["CASH", "UPI", "BANK", "OTHER"];
 
-    // Counted as of the business date, like the Products expiry filters it links to.
+    // The Products badge, counted as of the business date: the dashboard's Expired and Critical lots
+    // (ExpiryAlert), so it agrees with those tiles and the Products filters they open.
+    private static readonly string ActionableExpirySql = $"""
+        SELECT
+          (SELECT COUNT(*) FROM product_lot l INDEXED BY ix_lot_expiry
+           WHERE {ExpiryAlert.ExpiredSql("l", "@today")} AND l.expiry_date IS NOT NULL)
+          +
+          (SELECT COUNT(*) FROM product_lot l INDEXED BY ix_lot_expiry
+           JOIN product p ON p.id=l.product_id
+           WHERE {ExpiryAlert.ExpiringSql("l", "p", "@today")}
+             AND l.expiry_date<={ExpiryAlert.CriticalEndSql("@today")} AND +p.is_active=1)
+        """;
+
     public Task<int> GetActionableExpiryCountAsync(CancellationToken cancellationToken = default) =>
-        database.ReadAsync(connection => connection.ExecuteScalar<int>("""
-            SELECT
-              (SELECT COUNT(*) FROM product_lot l INDEXED BY ix_lot_expiry
-               WHERE l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date IS NOT NULL
-                 AND l.expiry_date<@today)
-              +
-              (SELECT COUNT(*) FROM product_lot l INDEXED BY ix_lot_expiry
-               JOIN product p ON p.id=l.product_id
-               JOIN category c ON c.id=p.category_id
-               LEFT JOIN category pc ON pc.id=c.parent_id
-               WHERE l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date IS NOT NULL
-                 AND l.expiry_date BETWEEN @today AND date(@today,'+7 days')
-                 AND l.expiry_date<=date(@today,'+'||COALESCE(
-                     p.expiry_alert_days,c.expiry_alert_days,pc.expiry_alert_days,
-                     CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30
-                 )||' days'))
-            """, new { today = periods.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) }),
+        database.ReadAsync(connection => connection.ExecuteScalar<int>(ActionableExpirySql,
+            new { today = periods.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) }),
             cancellationToken);
 
     public Task<IReadOnlyList<DamageItem>> GetDamagesAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default)

@@ -256,10 +256,21 @@ public sealed partial class PurchasingService(
     public Task<PurchaseLineDefaults> GetLineDefaultsAsync(long vendorId, long productId, DateOnly receivedDate,
         CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
     {
-        LineDefaultsRow? row = connection.QuerySingleOrDefault<LineDefaultsRow>("""
+        // The short-expiry warning uses the dashboard's alert window (ExpiryAlert), parent category included.
+        LineDefaultsRow? row = connection.QuerySingleOrDefault<LineDefaultsRow>(LineDefaultsSql,
+            new { vendorId, productId });
+        if (row is null) throw new DomainException(ErrorCode.NotFound, "product", productId);
+        return new PurchaseLineDefaults(row.LastRate is null ? null : Money.FromScaled(row.LastRate.Value),
+            row.TaxRateId, Percent.FromScaled(row.TaxRate), row.Mrp is null ? null : Money.FromScaled(row.Mrp.Value),
+            row.SellingPrice is null ? null : Money.FromScaled(row.SellingPrice.Value),
+            row.TrackExpiry && row.ShelfLifeDays is int shelfLife ? receivedDate.AddDays(shelfLife) : null,
+            row.ExpiryAlertDays);
+    }, cancellationToken);
+
+    private static readonly string LineDefaultsSql = $"""
             SELECT p.track_expiry AS TrackExpiry,
                    p.default_shelf_life_days AS ShelfLifeDays,
-                   COALESCE(p.expiry_alert_days,c.expiry_alert_days,@globalAlert) AS ExpiryAlertDays,
+                   {ExpiryAlert.DaysSql("p")} AS ExpiryAlertDays,
                    t.id AS TaxRateId,COALESCE(t.rate_pct,0) AS TaxRate,
                    COALESCE((SELECT l.mrp FROM product_lot l WHERE l.product_id=p.id ORDER BY l.id DESC LIMIT 1),
                             p.default_mrp) AS Mrp,
@@ -268,17 +279,10 @@ public sealed partial class PurchasingService(
                    (SELECT pl.unit_cost FROM purchase_line pl JOIN purchase po ON po.id=pl.purchase_id
                     WHERE pl.product_id=p.id AND po.vendor_id=@vendorId AND po.status='POSTED'
                     ORDER BY po.received_date DESC,pl.id DESC LIMIT 1) AS LastRate
-            FROM product p JOIN category c ON c.id=p.category_id
+            FROM product p
             LEFT JOIN tax_rate t ON t.id=p.tax_rate_id
             WHERE p.id=@productId AND p.is_active=1
-            """, new { vendorId, productId, globalAlert = settings.Current.ExpiryDefaultAlertDays });
-        if (row is null) throw new DomainException(ErrorCode.NotFound, "product", productId);
-        return new PurchaseLineDefaults(row.LastRate is null ? null : Money.FromScaled(row.LastRate.Value),
-            row.TaxRateId, Percent.FromScaled(row.TaxRate), row.Mrp is null ? null : Money.FromScaled(row.Mrp.Value),
-            row.SellingPrice is null ? null : Money.FromScaled(row.SellingPrice.Value),
-            row.TrackExpiry && row.ShelfLifeDays is int shelfLife ? receivedDate.AddDays(shelfLife) : null,
-            row.ExpiryAlertDays);
-    }, cancellationToken);
+            """;
 
     public async Task<PostedPurchase> PostAsync(long purchaseId, string operationId, CancellationToken cancellationToken = default)
     {

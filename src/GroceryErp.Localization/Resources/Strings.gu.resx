@@ -924,7 +924,7 @@
   <data name="Stock_BulkDamage" xml:space="preserve"><value>પસંદ કરેલી બેચ નુકસાનમાં નોંધો</value><comment>MT - needs review</comment></data>
   <data name="Stock_DeleteZero" xml:space="preserve"><value>પસંદ કરેલી ખાલી બેચ કાઢી નાખો</value><comment>MT - needs review</comment></data>
   <data name="Stock_ExpiryFilterAll" xml:space="preserve"><value>બધી બેચ</value><comment>MT - needs review</comment></data>
-  <data name="Stock_Expiring" xml:space="preserve"><value>30 દિવસમાં સમાપ્ત થતા</value></data>
+  <data name="Stock_Expiring" xml:space="preserve"><value>સમાપ્તિ નજીક</value><comment>MT – needs review</comment></data>
   <data name="Stock_Available" xml:space="preserve"><value>ઉપલબ્ધ</value></data>
   <data name="Stock_DamagePreview" xml:space="preserve"><value>{0} બેચ · {1} એકમ · {2} કિંમત</value><comment>MT - needs review</comment></data>
   <data name="MoneyOut_DamageDate" xml:space="preserve"><value>નુકસાનની તારીખ</value></data>
@@ -1159,7 +1159,7 @@
   <data name="Catalog_AllBrands" xml:space="preserve"><value>બધી બ્રાન્ડ</value><comment>MT - needs review</comment></data>
   <data name="Catalog_AllCategories" xml:space="preserve"><value>બધી શ્રેણીઓ</value><comment>MT - needs review</comment></data>
   <data name="Catalog_AllTypes" xml:space="preserve"><value>બધા પ્રકાર</value><comment>MT - needs review</comment></data>
-  <data name="Catalog_AnyStatus" xml:space="preserve"><value>કોઈપણ સ્થિતિ</value><comment>MT - needs review</comment></data>
+  <data name="Catalog_AnyStatus" xml:space="preserve"><value>બધી સ્થિતિ</value><comment>MT - needs review</comment></data>
   <data name="Catalog_AnyStock" xml:space="preserve"><value>કોઈપણ સ્ટોક</value><comment>MT - needs review</comment></data>
   <data name="Catalog_ArchivedOnly" xml:space="preserve"><value>આર્કાઇવ</value><comment>MT - needs review</comment></data>
   <data name="Catalog_ArchivedStatus" xml:space="preserve"><value>આર્કાઇવ</value><comment>MT - needs review</comment></data>

@@ -2093,6 +2093,139 @@ switch (mode)
             """, new { productId });
         break;
     }
+    case "phase8-expiry":
+    {
+        // P8-1/P8-2: the dashboard's expiry and stock tiles and the Products and Lots lists they open,
+        // through the services as of ScaleAudit's business date. Each read runs once traced (its plan is
+        // captured), once to warm up, then 31 times. Read-only. The tile check compares the counts with
+        // an independent statement of the rule and reports, without failing, so an older build's
+        // differences show in its results.
+        DateOnly today = clock.BusinessDate;
+        long busyProduct, largeCategory, expiringCategory;
+        string commonWord, rareName;
+        DateOnly fewExpiringAsOf;
+        using (var connection = factory.Open())
+        {
+            busyProduct = connection.ExecuteScalar<long>(
+                "SELECT product_id FROM product_lot GROUP BY product_id ORDER BY COUNT(*) DESC LIMIT 1");
+            // The largest category (on DataGen's store it holds no lots, so every candidate misses), the
+            // category and the first name word with the most products expiring within 30 days.
+            largeCategory = connection.ExecuteScalar<long>(
+                "SELECT category_id FROM product GROUP BY category_id ORDER BY COUNT(*) DESC LIMIT 1");
+            var near = new { today = today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) };
+            expiringCategory = connection.ExecuteScalar<long>("""
+                SELECT p.category_id FROM product_lot l JOIN product p ON p.id=l.product_id
+                WHERE l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date BETWEEN @today AND date(@today,'+30 days')
+                GROUP BY p.category_id ORDER BY COUNT(DISTINCT p.id) DESC LIMIT 1
+                """, near);
+            commonWord = connection.ExecuteScalar<string>("""
+                SELECT lower(substr(p.name,1,instr(p.name||' ',' ')-1)) AS word
+                FROM product_lot l JOIN product p ON p.id=l.product_id
+                WHERE l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date BETWEEN @today AND date(@today,'+30 days')
+                GROUP BY word HAVING length(word)>=3 ORDER BY COUNT(DISTINCT p.id) DESC LIMIT 1
+                """, near) ?? "";
+            rareName = connection.ExecuteScalar<string>("SELECT name FROM product ORDER BY id DESC LIMIT 1") ?? "";
+            // Ten days before the last expiry with stock, few lots are still to expire.
+            fewExpiringAsOf = DateOnly.ParseExact(connection.ExecuteScalar<string>(
+                "SELECT date(MAX(expiry_date),'-10 days') FROM product_lot WHERE qty_on_hand>0") ?? "2030-01-01",
+                "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        }
+        ProductSearchFilter fewExpiring = new(Limit: 50, ExpiryFilter: "EXPIRING", ExpiryAsOf: fewExpiringAsOf) { ExactFirst = true };
+        ProductSearchFilter expiringProducts = new(Limit: 50, ExpiryFilter: "EXPIRING", ExpiryAsOf: today) { ExactFirst = true };
+        ProductSearchFilter expiredAnyStatus = new(Limit: 50, IncludeArchived: true, ExpiryFilter: "EXPIRED", ExpiryAsOf: today)
+        { ExactFirst = true };
+        ProductSearchPage firstExpiring = await catalog.SearchPageAsync(expiringProducts);
+        var shapes = new (string Name, Func<Task<int>> Read)[]
+        {
+            ("dashboard", async () => { DashboardSummary d = await reports.GetDashboardAsync(); return d.ExpiredLots + d.CriticalLots + d.SoonLots; }),
+            ("expiry-badge", () => moneyOut.GetActionableExpiryCountAsync()),
+            ("products-expiring-page", async () => (await catalog.SearchPageAsync(expiringProducts)).Items.Count),
+            ("products-expiring-next-page", async () => (await catalog.SearchPageAsync(expiringProducts,
+                firstExpiring.NextName, firstExpiring.NextId)).Items.Count),
+            ("products-expiring-count", () => catalog.CountAsync(expiringProducts)),
+            ("products-expiring-resolve", async () => (await catalog.ResolveIdsAsync(expiringProducts)).Count),
+            ("products-expiring-common-search", async () => (await catalog.SearchPageAsync(expiringProducts with
+                { Query = commonWord, Limit = 8 })).Items.Count),
+            ("products-expiring-common-search-count", () => catalog.CountAsync(expiringProducts with { Query = commonWord })),
+            ("products-expiring-rare-search", async () => (await catalog.SearchPageAsync(expiringProducts with
+                { Query = rareName, Limit = 8 })).Items.Count),
+            ("products-expiring-large-category", async () => (await catalog.SearchPageAsync(expiringProducts with
+                { CategoryId = largeCategory })).Items.Count),
+            ("products-expiring-large-category-count", () => catalog.CountAsync(expiringProducts with { CategoryId = largeCategory })),
+            ("products-expiring-busy-category", async () => (await catalog.SearchPageAsync(expiringProducts with
+                { CategoryId = expiringCategory })).Items.Count),
+            ("products-expiring-busy-category-count", () => catalog.CountAsync(expiringProducts with { CategoryId = expiringCategory })),
+            ("products-expiring-archived-too-page", async () => (await catalog.SearchPageAsync(expiringProducts with
+                { IncludeArchived = true })).Items.Count),
+            ("products-expiring-few-page", async () => (await catalog.SearchPageAsync(fewExpiring)).Items.Count),
+            ("products-expiring-few-count", () => catalog.CountAsync(fewExpiring)),
+            ("products-expiring-few-resolve", async () => (await catalog.ResolveIdsAsync(fewExpiring)).Count),
+            ("products-expired-any-status-page", async () => (await catalog.SearchPageAsync(expiredAnyStatus)).Items.Count),
+            ("lots-busiest-expiring", async () => (await inventory.GetLotPageAsync(new LotFilter
+                { ProductId = busyProduct, Expiry = "EXPIRING", AsOf = today }, null, 50)).Items.Count),
+            ("lots-busiest-page", async () => (await inventory.GetLotPageAsync(new LotFilter
+                { ProductId = busyProduct, AsOf = today }, null, 50)).Items.Count),
+        };
+        foreach (var shape in shapes)
+        {
+            var executed = new List<string>();
+            factory.SqlTrace = (_, sql) => { lock (executed) executed.Add(sql); };
+            try { await shape.Read(); }
+            finally { factory.SqlTrace = null; }
+            for (int index = 0; index < executed.Count; index++)
+                if (executed[index].TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) ||
+                    executed[index].TrimStart().StartsWith("WITH", StringComparison.OrdinalIgnoreCase))
+                    CapturePlan($"{shape.Name}-{index}", executed[index]);
+            await Measure(shape.Name + "-first", shape.Read, static count => count);
+            for (int index = 0; index < 31; index++)
+            {
+                long started = Stopwatch.GetTimestamp();
+                int rows = await shape.Read();
+                profileSamples.Add(new(shape.Name, Stopwatch.GetElapsedTime(started).TotalMilliseconds, rows, null));
+            }
+        }
+        DashboardSummary dashboard = await reports.GetDashboardAsync();
+        int listedExpiring = await catalog.CountAsync(expiringProducts);
+        int listedExpired = await catalog.CountAsync(expiredAnyStatus);
+        using (var connection = factory.Open())
+        {
+            var rule = connection.QuerySingle<(long Expired, long Critical, long Soon, long ExpiringProducts, long ExpiredProducts, long StockValue)>("""
+                WITH lots AS (
+                  SELECT l.product_id,p.is_active AS product_active,
+                         CASE WHEN julianday(l.expiry_date)<julianday(@today) THEN 'EXPIRED'
+                              WHEN l.is_active=0 THEN NULL
+                              WHEN julianday(l.expiry_date)-julianday(@today)>COALESCE(p.expiry_alert_days,c.expiry_alert_days,
+                                   pc.expiry_alert_days,CAST((SELECT value FROM setting WHERE key='expiry.default_alert_days') AS INTEGER),30)
+                                   THEN NULL
+                              WHEN julianday(l.expiry_date)-julianday(@today)<=7 THEN 'CRITICAL' ELSE 'SOON' END AS alert
+                  FROM product_lot l NOT INDEXED JOIN product p ON p.id=l.product_id
+                  JOIN category c ON c.id=p.category_id LEFT JOIN category pc ON pc.id=c.parent_id
+                  WHERE l.qty_on_hand>0 AND l.expiry_date IS NOT NULL
+                )
+                SELECT COUNT(*) FILTER (WHERE alert='EXPIRED'),
+                       COUNT(*) FILTER (WHERE alert='CRITICAL' AND product_active=1),
+                       COUNT(*) FILTER (WHERE alert='SOON' AND product_active=1),
+                       COUNT(DISTINCT product_id) FILTER (WHERE alert IN ('CRITICAL','SOON') AND product_active=1),
+                       COUNT(DISTINCT product_id) FILTER (WHERE alert='EXPIRED'),
+                       (SELECT SUM(CAST(ROUND(qty_on_hand*unit_cost/1000.0) AS INTEGER)) FROM product_lot NOT INDEXED)
+                FROM lots
+                """, new { today = today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) });
+            var tiles = new
+            {
+                businessDate = today,
+                dashboard = new { dashboard.ExpiredLots, dashboard.CriticalLots, dashboard.SoonLots, StockValue = dashboard.StockValue.Scaled },
+                rule = new { rule.Expired, rule.Critical, rule.Soon, rule.ExpiringProducts, rule.ExpiredProducts, rule.StockValue },
+                listedExpiringProducts = listedExpiring,
+                listedExpiredProductsAnyStatus = listedExpired,
+                matches = dashboard.ExpiredLots == rule.Expired && dashboard.CriticalLots == rule.Critical &&
+                    dashboard.SoonLots == rule.Soon && listedExpiring == rule.ExpiringProducts &&
+                    listedExpired == rule.ExpiredProducts && dashboard.StockValue.Scaled == rule.StockValue,
+            };
+            phaseNine = tiles;
+            Console.WriteLine("TILES " + JsonSerializer.Serialize(tiles));
+        }
+        break;
+    }
     case "phase7-sql":
     {
         // Times one SQL file through the app's connection factory, raw and through Dapper, to

@@ -217,6 +217,7 @@ public sealed class PhaseZeroSmokeTests
                 VerifyPhaseSixScreens(translations);
                 VerifyPhaseSevenScreens(translations);
                 VerifyOperatorMessages(translations);
+                VerifyExpiryTiles(translations);
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 DisplayFormatter formatter = new();
                 ShellViewModel viewModel = new(translations, formatter);
@@ -2317,6 +2318,135 @@ public sealed class PhaseZeroSmokeTests
                     .Error.ShouldBe(translations["MoneyOut_RecoveredNeedsUnits"]);
                 CaptureMessage(correction, $"damage-correction-recovered.{suffix}.png");
                 correction.Close();
+            }
+        }
+        finally
+        {
+            translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+            SynchronizationContext.SetSynchronizationContext(previousContext);
+            SqliteConnectionFactory.ClearPoolForDataRoot(root);
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    // P8-1 and P8-2 on screen, on a fresh store: the dashboard's expiry and stock tiles, the Products
+    // list each expiry tile opens (with the filters the tile asks for) and two products' lot labels, in
+    // both languages; captured when GROCERY_MESSAGE_SCREENSHOT_DIR is set. Pages hosted without the app
+    // read the machine date, so the store's clock does too.
+    private static void VerifyExpiryTiles(TranslationSource translations)
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"grocery-erp-ui-expiry-{Guid.NewGuid():N}");
+        SynchronizationContext? previousContext = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(
+            new System.Windows.Threading.DispatcherSynchronizationContext(System.Windows.Threading.Dispatcher.CurrentDispatcher));
+        try
+        {
+            var paths = new AppPaths(new SettingsBootstrap(root));
+            var factory = new SqliteConnectionFactory(paths);
+            using var database = new DbExecutor(factory);
+            new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
+            using var settings = new SettingsService(database, paths, new AuditLog());
+            Run(() => settings.LoadAsync());
+            DateOnly today = GroceryErp.App.App.BusinessDate;
+            var clock = new MutableClock(today);
+            var inventory = new InventoryService(database, new LotQuantities(settings), new DocNumberService(settings),
+                new PeriodGuard(settings, clock), new AuditLog());
+            var catalog = new CatalogService(database, new AuditLog(), settings, clock);
+            var reports = new ReportService(database, settings, clock);
+            // Dairy alerts 60 days and Bakery 3; Staples has none, so the 30-day default applies.
+            long dairy = Run(() => catalog.CreateCategoryAsync(new("Dairy", null, null, 60)));
+            long bakery = Run(() => catalog.CreateCategoryAsync(new("Bakery", null, null, 3)));
+            long staples = Run(() => catalog.CreateCategoryAsync(new("Staples", null, null, null)));
+            long AddProduct(string sku, string name, long category)
+            {
+                using var connection = factory.Open();
+                return connection.ExecuteScalar<long>("""
+                    INSERT INTO product(sku,name,category_id,uom_id,hsn_code,tax_rate_id,track_expiry,default_selling_price,default_mrp)
+                    SELECT @sku,@name,@category,u.id,'0401',(SELECT id FROM tax_rate WHERE rate_pct=5000),1,60000,65000
+                    FROM uom u WHERE u.code='PCS' RETURNING id
+                    """, new { sku, name, category });
+            }
+            long AddLot(long product, int expiresIn, string batch) => Run(() => inventory.CreateDirectLotAsync(
+                new OpeningStockLine(product, new Quantity(4), new Money(50), new Money(60), new Money(65),
+                    today.AddDays(expiresIn), batch, today.AddDays(-30)), "Opening shelf", OperationGuard.NewId()));
+            long milk = AddProduct("MILK1", "Amul milk 1 L", dairy);
+            AddLot(milk, 45, "M-45");                    // Soon: inside Dairy's 60 days
+            long bread = AddProduct("BREAD1", "Brown bread", bakery);
+            AddLot(bread, 5, "B-05");                    // Fresh: past Bakery's 3 days
+            long rice = AddProduct("RICE1", "Basmati rice 1 kg", staples);
+            AddLot(rice, 2, "R-02");                     // 0-7 days
+            AddLot(rice, -1, "R-EXP");                   // Expired
+            AddLot(rice, 20, "R-20");                    // Soon
+            AddLot(rice, 200, "R-200");                  // Fresh
+            long oil = AddProduct("OIL1", "Sunflower oil 1 L", staples);
+            long oilLot = AddLot(oil, -2, "O-EXP");      // Expired, then blocked
+            Run(() => inventory.RunLotBulkBatchAsync(LotBulkAction.Block, [oilLot], OperationGuard.NewId()));
+            long soap = AddProduct("SOAP1", "Bath soap", staples);
+            AddLot(soap, -3, "S-EXP");                   // Expired, then its product archived
+            Run(() => catalog.RemoveAsync(soap)).ShouldBe(ProductRemoval.Archived);
+            AddLot(AddProduct("DAL1", "Toor dal 1 kg", staples), 200, "D-200");
+            decimal stockTotal = Run(() => reports.GetReportAsync(ReportKind.StockValue, new ReportFilter(IncludeExpired: true)))
+                .Totals["CostValue"];
+            var importer = new ProductExcelImporter(database, new AuditLog(), settings);
+            Type stateType = typeof(ProductsPage).GetNestedType("State", BindingFlags.NonPublic)!;
+            string stateKey = (string)typeof(ProductsPage).GetField("StateKey", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+            MethodInfo applyState = typeof(ProductsPage).GetMethod("ApplyState", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            MethodInfo refresh = typeof(DashboardPage).GetMethod("RefreshAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+            foreach ((string culture, string suffix) in new[] { ("en-IN", "en"), ("gu-IN", "gu") })
+            {
+                translations.UiCulture = CultureInfo.GetCultureInfo(culture);
+                var dashboard = new DashboardPage(reports, new ReportNavigationState(), loadOnShow: false);
+                var dashboardHost = new Window { Content = dashboard, Width = 1120, Height = 700, Language = AppLanguage };
+                dashboardHost.Show();
+                var refreshing = (Task)refresh.Invoke(dashboard, null)!;
+                PumpUntil(() => refreshing.IsCompleted, 15_000);
+                ((Button)dashboard.FindName("ExpiredButton")).Content.ShouldBe(translations.Format("Dashboard_ExpiredCount", 3));
+                ((Button)dashboard.FindName("CriticalButton")).Content.ShouldBe(translations.Format("Dashboard_CriticalCount", 1));
+                ((Button)dashboard.FindName("SoonButton")).Content.ShouldBe(translations.Format("Dashboard_SoonCount", 2));
+                ((TextBlock)dashboard.FindName("StockValue")).Text.ShouldBe($"₹{stockTotal:N3}");
+                CaptureMessage(dashboardHost, $"expiry-dashboard.{suffix}.png");
+                dashboardHost.Close();
+
+                // Each expiry tile asks Products for its filters: Expired at any status, Critical
+                // and Soon on active products expiring within their alert days.
+                foreach ((bool expired, string capture, string[] names) in new[]
+                {
+                    (false, "expiry-products-expiring", new[] { "Amul milk 1 L", "Basmati rice 1 kg" }),
+                    (true, "expiry-products-expired", new[] { "Basmati rice 1 kg", "Bath soap", "Sunflower oil 1 L" }),
+                })
+                {
+                    var store = new PageStateStore();
+                    ProductsPage.RequestExpiryFilter(store, expired);
+                    object state = typeof(PageStateStore).GetMethod("Get")!.MakeGenericMethod(stateType).Invoke(store, [stateKey])!;
+                    var products = new ProductsPage(catalog, settings, importer);
+                    applyState.Invoke(products, [state]);
+                    var productsHost = new Window { Content = products, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
+                    productsHost.Show();
+                    var grid = (DataGrid)products.FindName("ProductsGrid");
+                    PumpUntil(() => grid.Items.Count == names.Length, 15_000);
+                    grid.Items.Cast<ProductListItem>().Select(static item => item.Name).ShouldBe(names);
+                    ((ComboBox)products.FindName("StatusFilter")).SelectedIndex.ShouldBe(expired ? 2 : 0);
+                    CaptureMessage(productsHost, $"{capture}.{suffix}.png");
+                    productsHost.Close();
+                }
+
+                // Labels follow each lot's own alert window: bread five days out is Fresh past Bakery's three.
+                foreach ((long product, string capture, string[] codes) in new[]
+                {
+                    (rice, "expiry-lots-rice", new[] { "FRESH", "SOON", "EXPIRED", "CRITICAL" }),
+                    (bread, "expiry-lots-bread", new[] { "FRESH" }),
+                })
+                {
+                    var lots = new ProductLotsView(inventory, product, isInternal: false);
+                    var lotsHost = new Window { Content = lots, Width = 1000, Height = 520, Language = AppLanguage };
+                    lotsHost.Show();
+                    var grid = (DataGrid)lots.FindName("LotsGrid");
+                    PumpUntil(() => grid.Items.Count == codes.Length, 15_000);
+                    grid.Items.Cast<LotItem>().Select(static lot => lot.ExpiryBucketCode).ShouldBe(codes);
+                    CaptureMessage(lotsHost, $"{capture}.{suffix}.png");
+                    lotsHost.Close();
+                }
             }
         }
         finally
