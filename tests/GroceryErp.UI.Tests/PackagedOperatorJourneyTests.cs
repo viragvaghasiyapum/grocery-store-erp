@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.IO.Compression;
+using System.Runtime.InteropServices;
 using Dapper;
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Input;
@@ -66,6 +67,7 @@ public sealed class PackagedOperatorJourneyTests
                 window.FindFirstDescendant(cf => cf.ByAutomationId("CloseButton")) is not null)) is not null,
                 TimeSpan.FromSeconds(15));
             Find(notes!, "VersionText").Name.ShouldStartWith("Grocery ERP ");
+            Screen(notes!, "1-release-notes");
             Invoke(notes!, "CloseButton");
             await WaitUntilAsync(() => shell.ModalWindows.Length == 0, TimeSpan.FromSeconds(10));
 
@@ -122,6 +124,7 @@ public sealed class PackagedOperatorJourneyTests
             EditPurchaseCell(purchase, "Batch", "PKG-BATCH");
             EditPurchaseCell(purchase, "Expiry", DateTime.Today.AddYears(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
             EditPurchaseCell(purchase, "Rate", "20");
+            Screen(purchase, "2-purchase");
             Click(purchase, "PostButton");
             await WaitUntilAsync(() => PurchaseExists(store), TimeSpan.FromSeconds(10));
             foreach (Window prompt in app.GetAllTopLevelWindows(automation).Where(window =>
@@ -140,8 +143,10 @@ public sealed class PackagedOperatorJourneyTests
             Enter(shell, "ScanBox", barcode);
             Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
             await WaitUntilAsync(() => CountSalesRows(store, "sale_line") == 1, TimeSpan.FromSeconds(10));
+            Screen(shell, "3-billing");
             ClickNamed(shell, "F9 Cash");
             Window payment = await WaitWindowAsync(app, automation, "CashBox");
+            Screen(payment, "4-payment");
             ClickNamed(payment, "Complete bill");
             try { await WaitUntilAsync(() => CountSalesRows(store, "sale") == 1, TimeSpan.FromSeconds(10)); }
             catch (TimeoutException)
@@ -155,8 +160,10 @@ public sealed class PackagedOperatorJourneyTests
             await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("TodaySales")) is not null,
                 TimeSpan.FromSeconds(10));
 
+            Screen(shell, "5-dashboard");
             shell.FindFirstDescendant(cf => cf.ByName("ગુ"))?.Click();
             Find(shell, "LockButton").Name.ShouldBe("લૉક");
+            Screen(shell, "6-dashboard-gujarati");
             Click(shell, "LockButton");
             Enter(shell, "UnlockPassword", "test-owner-2026");
             Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
@@ -169,6 +176,7 @@ public sealed class PackagedOperatorJourneyTests
             Click(shell, "BackupButton");
             await WaitUntilAsync(() => Directory.Exists(Path.Combine(store, "backups")) &&
                 Directory.EnumerateFiles(Path.Combine(store, "backups"), "*_manual.zip").Any(), TimeSpan.FromSeconds(30));
+            Screen(shell, "7-backup");
             shell.Close();
             await WaitUntilAsync(() => app.HasExited, TimeSpan.FromSeconds(30));
             Directory.EnumerateFiles(Path.Combine(store, "backups"), "*_close.zip").ShouldNotBeEmpty();
@@ -180,6 +188,23 @@ public sealed class PackagedOperatorJourneyTests
             try { await WaitUntilAsync(() => TryDeleteDirectory(root), TimeSpan.FromSeconds(10)); }
             catch (TimeoutException) { Trace.TraceWarning("Test package could not be removed: {0}", root); }
         }
+    }
+
+    [DllImport("user32.dll")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetProcessDpiAwarenessContext(nint value);
+
+    // GROCERY_PACKAGED_UI_SCREENS names a folder for a picture of each step; the run's store is deleted.
+    private static void Screen(AutomationElement window, string name)
+    {
+        string? folder = Environment.GetEnvironmentVariable("GROCERY_PACKAGED_UI_SCREENS");
+        if (string.IsNullOrWhiteSpace(folder)) return;
+        Directory.CreateDirectory(folder);
+        // On a scaled display a process that is not DPI-aware captures only part of the window.
+        SetProcessDpiAwarenessContext(-4);
+        Thread.Sleep(500);
+        window.CaptureToFile(Path.Combine(folder, name + ".png"));
     }
 
     private static async Task<Window> WaitWindowAsync(PackagedApplication app, UIA3Automation automation, string automationId)

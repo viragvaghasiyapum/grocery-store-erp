@@ -1,8 +1,24 @@
 # Revised plan: bugs and remaining work
 
-Progress (5 November 2026): B-1, C-1 (release 1.2.0 now on schema 41), D-1 to D-5 and the found B-2 are fixed. Of G-6, the tiles and the weekly-check notice were tried in the running app; `RestoreProductWindow` from the three restore paths was not. G-1 to G-5 were deferred on 5 November 2026, and drive D: is nearly full, which packaging (G-3, G-4) needs cleared first. The owner decisions remain open.
+Progress (6 November 2026):
+- Fixed: B-1, C-1 (release 1.2.0 now on schema 41), D-1 to D-5, and B-2 to B-7, which were found while fixing.
+  - B-3 was a High bug: the restore-product window could not open in the running app.
+  - G-5 found B-5 to B-7. B-6 and B-7 were 1.2.0 regressions: page actions folded under **More** at any window width, and opening a bill or an asset's timeline kept that page in memory for the rest of the session. Over ten rounds the app reached 375 MiB against the 350 MiB gate; with the fix it stays at about 280 MiB.
+- Release gates that run on the development PC: G-1 to G-6 are done. G-3 and G-4 must be repeated on packages rebuilt after the commit, since B-5 to B-7 changed the app after they ran.
+- Drive D: was cleared before this work (199 GB free), so packaging was not blocked.
+- The owner decisions remain open.
 
-Verified after these fixes: `dotnet format --verify-no-changes` passed; Release builds of the solution, ScaleAudit and DataGen had no warnings; 325 tests ran: 278 integration (276 before), 32 core, 2 architecture, 13 UI, with 323 passed and the 2 opt-in journeys skipped. Committed as 7ed8707 on `revised`.
+Verified on the current working tree, 6 November:
+- `dotnet format --verify-no-changes` passed. The Release build of the solution had no warnings; ScaleAudit and DataGen have not changed since they built without warnings on 5 November.
+- 327 tests ran, with 325 passed and the 2 opt-in journeys skipped. No test method was added for B-5 to B-7; their checks extend the UI smoke test, each shown to fail on the previous code. The large-store journey passed on its own (G-5).
+- The earlier fixes were committed as 7ed8707 on `revised`.
+- Not committed yet: the B-3 to B-7 fixes and their tests, the journey and tool changes (`ScaleUiTests`, `PackagedOperatorJourneyTests` screenshots, ScaleAudit `restore-setup`), the guides' text and four of their pictures, `docs/perf/1.2.0.md`, and the updates to this file, the checklist, the plan and CLAUDE.md.
+
+Still to do, in order:
+1. Commit the changes.
+2. Rebuild the 1.2.0 packages with `scripts/build-release.ps1 -Version 1.2.0`, so the embedded commit matches (G-3), and rerun the packaged journey on the new portable build (G-4).
+3. Retake the guide's Purchases page pictures (`purchases-page.en/.gu.png`) with the vendor and status lists loaded; they still show the folded **More** (B-6).
+4. The human gates in `docs/release-checklist.md`, and the owner decisions below.
 
 Status: review of `revised-implementation-plan.md` and `revised-plan-issues.md` against the code, 5 November 2026, release 1.2.0 on schema 40. Every item in `revised-plan-issues.md` is closed with a regression test; this file lists what the review found beyond them.
 
@@ -56,22 +72,120 @@ The gates that need the target PC, store hardware or people (WPF memory on the r
   - Not an app bug: per the rule on suspect data, checked against what the app itself writes. No app path can save an asset without a term, and every store upgraded through 34 has them.
   - **Fixed 5 Nov 2026.** Both tools now add the INITIAL term with migration 34's backfill statement. A new DataGen store has none missing (it had 2 of 2 missing before). ScaleAudit and DataGen build without warnings.
 
+- [x] **B-3 The restore-product window could not open from any path in the running app** (High; found by G-6, reproduced in the running app and by a new test)
+  - Before it opens, `RestoreProductWindow.AskAsync` loads its choices through `InventoryService.GetRestoreOptionsAsync` (`RestoreProducts.Options`). Dapper builds a positional record only through a constructor whose parameters match the result columns exactly, and parameters with defaults do not count. `RestoreOption(long Id, string Label, long? RateScaled = null, bool AllowFraction = false, string? Code = null)` matched none of the three queries (two, five and three columns), so every call threw "A parameterless default constructor or one matching signature (System.Int64 Id, System.String Label) is required". The operator saw "Could not complete the action", and no customer return, damage correction or vendor-return cancel of a deleted product could be finished in the app.
+  - Not caught before because nothing called `GetRestoreOptionsAsync`: the UI smoke journey builds the window with hand-made options, and the integration tests pass a choice straight to the services.
+  - **Fixed 5 Nov 2026.** `RestoreProducts.Options` reads each row as a tuple and builds the option itself. Same three queries over small master tables, no schema change, no other caller.
+  - Test: `SalesTests.RestoreOptions_ListActiveCategoriesAndTaxRates_AndEveryUnitWithItsCode` (active categories and tax rates only, every unit with its code and fraction rule, inactive rows left out). On the previous code it fails with the app's exception. All 28 restore tests pass.
+  - Running app: see G-6. No document or guide described the failure, so neither changes.
+- [x] **B-4 Printing with no receipt printer chosen showed the general failure message, with a doubled full stop** (Low; found by G-6 in the running app)
+  - `ReceiptPrinter` threw `InvalidOperationException("A receipt printer has not been configured.")`, which a screen shows as "Could not complete the action. Check the details and try again. The error was logged." `Sales_PrintFailed` and `Sales_ReturnPrintFailed` add a full stop after a message that already ends with one ("…was logged.."). A cash bill also repeated the drawer's identical message after "; ".
+  - **Fixed 5 Nov 2026.** `ErrorCode.PrinterNotConfigured`: "No receipt printer is chosen. Choose one in Settings." (Gujarati marked `MT – needs review`; 253 marked strings now). Both templates no longer add a full stop after the message, in both languages, and Billing does not repeat the drawer's message when it is the receipt's.
+  - Test: `SalesTests.PrintingWithoutAReceiptPrinter_IsRefusedWithItsOwnMessage` (bill receipt, return receipt and both drawer calls; neither language's status line has ".."). Running app: the return's status line reads "Return R2627-000001 saved. Printing failed: No receipt printer is chosen. Choose one in Settings." (`g6-restore/screens/1d-sales-history-after-return.png`).
+- [x] **B-5 The purchase panel had two columns headed "Tax"** (Low; found by G-5 in the running app)
+  - The §15 wording change ("Tax" instead of "GST") turned both of the purchase lines' tax headings into "Tax" (કર): `Purchasing_Gst`, the rate's name ("GST 5%"), had read "GST %", and `Purchasing_TaxTotal`, the line's tax amount, had read "GST". In `PurchaseInvoiceView` they sit side by side, so the panel showed "Tax | Tax" (`g5/v120d-captures/scale-audit-ui-purchases-detail.png`). No other table shows both.
+  - **Fixed 5 Nov 2026.** The rate's column there now takes the existing `Catalog_TaxRate`, "Tax rate" (કર દર), as on the product form, so no new string needs the Gujarati review. `Purchasing_Gst` keeps "Tax" elsewhere, since Billing's totals use it for the bill's tax amount. XAML only.
+  - Test: the UI smoke test's purchase-panel step checks that every column of the lines has its own heading and one is the tax rate. On the previous XAML it fails at the distinct count.
+  - Documents: both user guides (the purchase panel's columns).
+- [x] **B-6 Sales history, Purchases and Assets folded their last actions behind More at any window width** (Medium–Low, a 1.2.0 regression; found by G-5 in the running app)
+  - `ActionStrip` keeps a title row's actions on one line and moves the last ones under **More ▾** when they do not fit. For a title row it reserved the title's width, read as `ActualWidth` (`ActionStrip.TitleRow`).
+  - At 1.1.0 the title row ended with the pager's status text, so the title kept its text width. The table-footer change (4cd88b4, 25 Oct) moved the pager into the footer. The title became the row's last child and stretched over the free space, so the reserve took in all the room the actions did not use.
+  - Result: the actions never fit. The last one or two were under **More** at any width: Sales history's **Export CSV** on a 1938-px window (`g5/v120d-captures/scale-audit-ui-sales-history.png`), Assets' **Post depreciation now** and **Dispose**, Purchases' last two. Each later width change, such as a panel opening beside the list, could fold another.
+  - Found because the G-5 journey's export step looks for **Export CSV** in the title row, and both runs stopped there.
+  - **Fixed 5 Nov 2026.** `TitleRow` reserves the title's measured text width with its margin, the same measure the strip uses for its buttons. One measure of the title on each width change; nothing else changes.
+  - Test: the UI smoke test's new `VerifyTitleActionsFold`, for Purchases, Assets and Sales history.
+    - At 1600 px, and after five width changes between 1520 and 1600, nothing is under **More**.
+    - At 640 px some are, and every action is either shown or under **More**. Back at 1600 all return.
+    - On the previous code it fails at Purchases, 1600 px, with 2 actions under **More**.
+  - Screens: the guide's Sales history and Assets pictures (both languages) showed the folded **More** and were replaced from the smoke test's captures, checked by eye. `purchases-page.en/.gu.png` shows it too, but the smoke test's capture of that page has no vendor or status list loaded, so the old picture stays until it is retaken. The guide text already says the last actions move under **More** only when the row is narrow.
+- [x] **B-7 Opening a bill in Sales history or an asset's timeline kept that page in memory for the rest of the session** (Medium, a 1.2.0 regression; found by G-5's ten-round run)
+  - G-5's three rounds with the detail panels peaked at 329 MiB, under the 350 MiB gate, but the working set at each round's end rose about 10 MiB a round, against 3–4 on 1.1.0.
+  - Ten rounds on the full-size store took it from 270 to 350 MiB (process peak 375 MiB, 383 after the export). The managed heap left after full collections grew from 36 to 106 MiB. Without the panels it stayed at 29–36 MiB, as on 1.1.0.
+  - Cause: `PagerBar` subscribes to the app's language source (`TranslationSource.Instance`, which lives for the whole session) on `Loaded` and unsubscribes on `Unloaded`. The pagers inside the Sales history bill panel (`DetailPager`) and the asset timeline (`TimelinePager`) are loaded with their page while the panel is collapsed. They are loaded again when the panel first opens and its body joins the visual tree, but unloaded only once. The second subscription stayed, so the language source held the pager, and through it the page and its tables.
+  - Found with an in-process check that showed each page in one frame and then left it: Sales history and Assets stayed alive only after their panels had opened. A heap snapshot of that process (ClrMD, a scratch tool, nothing added to the repo) gave the path `TranslationSource` → `PropertyChanged` → `PagerBar` → page.
+  - **Fixed 6 Nov 2026.** `PagerBar` removes its handler before adding it, as `LanguageRefresh` already did, so it holds at most one. `ActionStrip` and `FilterRow`, which use the same pattern and can sit in a panel (the product panel's Lots tab), do the same. No other change.
+  - Test: the UI smoke test shows Products (also with its panel and with its Lots tab), Purchases, Vendors, Sales history and Assets, each with and without its panel, one after another in one frame as the shell does. Each must leave the language source's subscriber count as it found it. On the previous `PagerBar` it fails, naming "Sales history with its panel, Assets with its panel".
+    - The check first asserted that each page is collected. With the fix, Assets was still held, by a UI Automation client elsewhere on this desktop (a reference-counted `ElementProxy` for a table header), which the app does not control. So the check counts subscriptions instead.
+  - Running app: ten rounds with every panel on the build with the fix (G-5). Working set 267–285 MiB at each round's end, flat from round 3; managed heap 31–41 MiB; process peak 325 MiB, including the export.
+
 ## Release gates that need no shop hardware
 
 `docs/release-checklist.md` says not to release with an unchecked software item. These can be run on the development PC. CLAUDE.md's "What remains are human gates" does not hold until they are done.
 
-- [ ] **G-1 Full-size upgrade from 1.1.0**: a schema-37 copy of the full-size store upgraded to 41, then the store checks after profiling writes: eight from schema 41, which dropped what the other two checked (checklist line 25). Rehearsed so far: 36→39, and for C-1, 36→40 (10.3 s) and 40→41 with the eight checks passing, without profiling writes.
-- [ ] **G-2 Same-machine profile of 1.1.0 against 1.2.0** for every §13.1 hot path, with mixed readers, writers and a backup (checklist line 25). Only schema 38 against 39 and the per-fix timings exist.
-- [ ] **G-3 Build the 1.2.0 packages** with `scripts/build-release.ps1 -Version 1.2.0`: setup, portable zip, full package and the 1.1.0 → 1.2.0 delta (checklist line 26). `artifacts/Releases` holds only 1.1.0.
-- [ ] **G-4 Packaged operator journey on the 1.2.0 portable build** (`GROCERY_PACKAGED_UI_TEST=1`), including the release notes window on first sign-in (checklist lines 14 and 27). It last ran on 1.1.0, before the schema-38 purchase form, the table footer, the detail panel, the tax columns and the notes window.
-- [ ] **G-5 Large-store WPF journey on the published 1.2.0 build** (`ScaleUiTests`): the update window from schema 37, every page over three rounds, the detail panels and a full-history export, with the working set recorded (checklist lines 28 and 44). Memory was last measured on 1.1.0 (296 MiB peak), before the detail panel.
-- [ ] **G-6 Behaviour never tried in the running app**, each noted in its own record:
+- [x] **G-1 Full-size upgrade from 1.1.0**: a schema-37 copy of the full-size store upgraded to 41, then the store checks after profiling writes: eight from schema 41, which dropped what the other two checked (checklist line 25). Rehearsed so far: 36→39, and for C-1, 36→40 (10.3 s) and 40→41 with the eight checks passing, without profiling writes.
+  - **Done 5 Nov 2026.** The preserved schema-36 fixture was taken to 37 by the 1.1.0 build (commit 05b8f26, 18 ms), as a shop on 1.1.0 has it. Three copies of that store went from 37 to 41 with the 1.2.0 build in 10.0–10.1 s each (file cached, process peak 69 MiB).
+  - On the last copy, after the 1.2.0 `phase9-profile` writes (300 bills with voids and returns, purchase posts and voids, damage, counts, vendor returns and cancels, a verified backup during the bills), all eight store checks passed: report-day and dashboard projections, integrity (45 s), foreign keys, every lot against its source documents (40 s at 73 MiB), sale lines after lot expiry and interrupted writes.
+  - Then, on the same copy: a bill killed after its lot update and before commit left no sale rows, no foreign-key violations and no lot mismatches, and `quick_check` was ok. A verified backup took 15.9 s (542 MB zip). Restored into an empty data root it took 18.6 s, and the restored store passed the eight checks. The eight checks passed again on the original afterwards.
+  - Evidence: `artifacts/data/revised-plan-bugs/g1-g2` (`run-ab.sh`, `migrate-*`, `verify-after-profile`, `crash*`, `backup`, `restore*`, `verify-final`). The store copies were deleted after the run.
+- [x] **G-2 Same-machine profile of 1.1.0 against 1.2.0** for every §13.1 hot path, with mixed readers, writers and a backup (checklist line 25). Only schema 38 against 39 and the per-fix timings exist.
+  - **Done 5 Nov 2026; no regression.** `phase9-profile` alternated 1.1.0 (commit 05b8f26, built in a scratch worktree) on schema 37 and 1.2.0 on its own 37→41 upgrade, each on a fresh copy of the full-size store at 37. There were three rounds right after the copy and upgrade, then two more where every copy first waited 120 s. Tables are in `docs/perf/1.2.0.md`; evidence in `artifacts/data/revised-plan-bugs/g1-g2`.
+  - Mixed load (300 bills with voids and returns, four readers, back-office writes and a verified backup at once), all ten runs: no errors and no lot mismatches. Bill commit p95 was 9.4–11.2 ms on 1.1.0 and 10.2–10.3 ms on 1.2.0 (gate 100 ms); scan to bill line p95 was 10.1–13.8 and 9.8–12.3 ms (gate 50 ms). WAL peaks were 9–11 MB and process peaks 135–145 MiB in both.
+  - Isolated reads and searches are all within 0.3 ms of 1.1.0 and inside their gates. Two small differences have causes:
+    - Products searches are 0.05–0.1 ms slower. They run T-1's query, which prices each row from the lot a bill takes next. It visits a quarter of the rows (160 against 650 VM steps) but compiles a longer statement.
+    - Opening a finalized year's P&L is 0.2–0.3 ms slower on identical SQL and C#. SQLite timed alone shows no difference (`bench-reads.mjs`): schema 41 even opens faster, 2.2 against 2.4 ms, with 126 triggers against 138. The remainder is in the process and was accepted at under a millisecond on a report opened by a click.
+  - Isolated writes depended on what the store file had just been through, not on the build:
+    - Profiled right after its 10 s upgrade, 1.2.0's back-office writes were 1–4 ms slower than 1.1.0's.
+    - With both copies settled for 120 s, 1.2.0's writes were 1.5–4 times faster. For example, completing a bill took 2.4–3.0 ms against 7.4–8.2 ms, and a purchase void 1.0 ms against 3.9–4.1 ms.
+    - The SQL trace shows the same statements and triggers in both builds for damage, counts, purchases and vendor returns, and fewer for sales after C-1 (completing a bill 97 statements against 112).
+  - Full-history exports, settled and alternating: Sales register (872,312 bills) took 9.5–9.7 s and Item sales 10.0–10.1 s in both builds, peaking at 87 and 97 MiB. In the first pass, 1.1.0's Item sales took 36.8 s because it ran first on a cold file cache.
+  - Upgrade 37→41 took 10.0–10.1 s on three copies, at a 69 MiB peak (see G-1).
+- [x] **G-3 Build the 1.2.0 packages** with `scripts/build-release.ps1 -Version 1.2.0`: setup, portable zip, full package and the 1.1.0 → 1.2.0 delta (checklist line 26). `artifacts/Releases` holds only 1.1.0.
+  - **Done 5 Nov 2026**, after the format gate and the full suite passed on the same tree (327 tests: 325 passed, the 2 opt-in journeys skipped). `artifacts/publish` was cleared first, because the script publishes over it and 1.1.0's files were still there.
+  - The script ran in 65 s and produced `GroceryErp-win-Setup.exe` (90.0 MB), `GroceryErp-win-Portable.zip` (82.5 MB), `GroceryErp-1.2.0-full.nupkg` (82.5 MB) and `GroceryErp-1.2.0-delta.nupkg` (2.26 MB: 19 files patched, 291 unchanged, 2 removed). The portable package's `sq.version` and the executable's file version are 1.2.0.
+  - Velopack reports 307 files unsigned, as at 1.1.0; signing needs the owner's certificate (checklist).
+  - The build includes the uncommitted changes of 5 November (B-3, B-4 and the test and tool changes). Its embedded commit reads e7d71d8, the last commit, so rebuild once they are committed.
+  - 1.1.0's portable zip and setup, which this build overwrites, were kept in `artifacts/Releases-1.1.0-portable` for the same-machine WPF comparison (G-5).
+- [x] **G-4 Packaged operator journey on the 1.2.0 portable build** (`GROCERY_PACKAGED_UI_TEST=1`), including the release notes window on first sign-in (checklist lines 14 and 27). It last ran on 1.1.0, before the schema-38 purchase form, the table footer, the detail panel, the tax columns and the notes window.
+  - **Passed 5 Nov 2026** in 30 s on the 1.2.0 portable zip, extracted to a temporary folder with an empty store and no network use.
+  - The journey covers first-run setup, a product and vendor, a purchase whose cells are found by column header, every page, a cash sale, Gujarati, lock and unlock, and manual and close backups.
+  - The release notes opened once on the first sign-in, named "Grocery ERP 1.2.0" and ended "Database schema: 41".
+  - The test can now save a picture of each step to `GROCERY_PACKAGED_UI_SCREENS`. Its seven screens were checked by eye: notes, purchase form, billing, payment, dashboard in English and Gujarati, and backup. They and the log are in `artifacts/data/revised-plan-bugs/g4`.
+- [x] **G-5 Large-store WPF journey on the published 1.2.0 build** (`ScaleUiTests`): the update window from schema 37, every page over three rounds, the detail panels and a full-history export, with the working set recorded (checklist lines 28 and 44). Memory was last measured on 1.1.0 (296 MiB peak), before the detail panel.
+  - **Done 6 Nov 2026**, after it found B-5, B-6 and B-7. The final run is on the 1.2.0 build with all three fixed: the release script's own self-contained ReadyToRun publish of the working tree, version 1.2.0. The packages are rebuilt after the commit (G-3).
+  - The runner is `artifacts/data/revised-plan-bugs/g5/run-journey.sh <root> <exe> <label> [details] [rounds]`. It takes a fresh copy of the schema-37 full-size store into `%TEMP%\grocery-erp-packaged-ui-*` and sets the login with the 1.1.0 build's ScaleAudit `ui-setup`. It runs the rounds, the export of all 871,876 bills and, with `details`, the detail panels. It keeps the JSON, logs and screens, then deletes the copy. `summarize.mjs` and `roundends.mjs` print the figures below.
+  - Journey changes (`ScaleUiTests`; test code only):
+    - `GROCERY_SCALE_UI_DETAILS=1` opens the first record's panel on each page as an operator does, waits for the **Next record** arrow, then samples memory and captures the screen. A damage opens when picked, an asset's timeline from **View timeline** (a double-click there edits the asset), other records on a double-click.
+    - With panels on, after the export it presses **Search**, so the list shows the export's dates (Sales history starts on today, which has no bills in the fixture), and opens the first bill's panel.
+    - The app is brought to the front before every navigation, and the Save As dialog before the path is typed. The journey's presses are not real input, so a window that came in front stayed there: one run stalled when this session's terminal covered the app.
+    - The export step repeats a dropped press, as the page rounds do, and saves a screen if Sales history never shows.
+  - Results on the development PC, each build on a fresh copy of the store (MiB unless marked):
+
+    | | 1.1.0, no panels | 1.2.0, no panels | 1.2.0, panels, ten rounds |
+    |---|---|---|---|
+    | Update 37 → 41, with the verified backup | — | 29.3 s | 29.5 s |
+    | Sign-in window after launch, update included / shell after sign-in | 4.0 s / 0.97 s | 31.0 s / 0.58 s | 32.8 s / 0.64 s |
+    | Working set at each round's end | 249, 251, 255, 260 | 258, 259, 269, 271 | 267, 269, 285, 281, then 279–283 |
+    | Highest private bytes | 188 | 208 | 214 |
+    | Process peak, export included | 303 | 318 | 325 |
+    | Page control found, after the first | 148–305 ms | 186–284 ms | 177–294 ms |
+    | Panel shown | — | — | 329–503 ms; a bill after the export 281 ms |
+    | Export of 871,876 bills | 25.0 s | 32.3 s | 28.0 s |
+
+  - The update window read "data version 37 to 41", about 2 minutes, 3.62 GB needed of 58.08 GB free, and a verified backup first (`v120x10-captures/scale-audit-ui-upgrade.png`).
+  - Every capture of the final run was checked to be the app, and the panels by eye: product, purchase (**Tax rate** and **Tax** headings, B-5), vendor ledger, asset timeline, damage and bill. Sales history shows **Export CSV** in its title row (B-6).
+  - Export time varied 25.9–32.3 s across the 1.2.0 runs and was 25.0 s on 1.1.0, all far under its 15-minute limit; it was not profiled further.
+  - Seen, not changed: the bill panel's Expiry column reads "2027-10-18" (`ExpiryDisplay`), unlike the other tables' "18 Oct 2026"; it was the same at 1.1.0. With the timeline open, Assets' narrower title row puts **Post depreciation now** under **More**, because it does not fit there (the smoke test checks this).
+  - Runs kept under `g5`: `v120` (first run, stopped at Assets, a journey fault); `v120d` and `v120p` (stopped at the export: B-6); `v120f`, `v120g` and `v110` (passed; panels before B-7); `v120n` (stopped when the terminal covered the app) and `v120n2`; `v120t10` (ten rounds before B-7); `v120x10` (the final run). Two screens from `v120p` that showed another program's window instead of the app were deleted.
+- [x] **G-6 Behaviour never tried in the running app**, each noted in its own record (all three tried by 5 Nov 2026):
   - [x] the weekly-check notice and **Show differences** (P6-1): tried in the running app on 5 Nov 2026.
     - Setup: a fresh DataGen store (schema 41, B-2 fixed) with one lot's quantity lowered by 5 in SQL, the only way to make a lot differ from its documents on fresh data. Release build, driven by UI Automation (`artifacts/data/revised-plan-bugs/weekly-journey.ps1`). Nothing was touched after sign-in.
     - Result: after exactly the 10-minute idle window the weekly check ran. The notice under the title bar read "The weekly stock check found 1 lots whose quantity differs from their documents." with **Show differences**. Clicking it opened Reports at **Purchased vs used reconciliation**, **Differences only**, listing that one lot (L0000001). Screen: `artifacts/data/revised-plan-bugs/g6-screens/app-weekly-notice-show-differences.png`.
     - The first attempt, on a DataGen store before the B-2 fix, showed the general "A background safety check failed" notice with **Settings** instead, because due depreciation failed in the same session (see B-2).
     - Wording seen on screen, not changed: with one lot the text says "1 lots" (`Error_LotsDifferFromDocuments`, English and Gujarati); a count-neutral wording would need the Gujarati review too.
-  - [ ] `RestoreProductWindow` from a return, a damage correction and a vendor-return cancel (P3-F3): not yet tried in the running app.
+  - [x] `RestoreProductWindow` from a return, a damage correction and a vendor-return cancel (P3-F3): tried in the running app on 5 Nov 2026. The first try found B-3, which stopped all three paths, and B-4; both are fixed. The run below is on the fixed build.
+    - Setup on a fresh DataGen store (schema 41), through the app's own services (new `ScaleAudit <root> restore-setup`):
+      - Bill S2627-000001 sold all three of a soap; the product was then deleted and added again under a new SKU (G6-SOAP-2).
+      - Damage D2627-000001 wrote off all ten of a biscuit as spoiled; the product was then deleted.
+      - Vendor return V2627-000001 sent back all eleven of an oil; the product was then deleted.
+      - Each deletion went through `CatalogService.RemoveAsync`, and the schema-40 trigger kept each lot's tax in `deleted_lot_tax`.
+    - Driven by UI Automation on the Release build (`artifacts/data/revised-plan-bugs/restore-journey.ps1`, run by `g6-restore/run.ps1`); 14 screens are in `g6-restore/screens`.
+    - **Return** (Sales history → Return → Return all remaining → Confirm). The window listed the re-added G6-SOAP-2 under **Use an existing product**, and picking it set the new lot's price to that product's 46. The bill became Refunded. Lot 155 (customer-return origin) holds 3 at the booked 30.000, with **GST 5%** and tax 1.500 from the deleted lot (T-2). A `RESTORE_PRODUCT` audit entry names both products.
+    - **Damage correction** (Money out → the damage → Edit, quantity 10 → 6). **Create a new product** came prefilled with SKU, name, local name and unit. Category, tax rate, HSN, track expiry and fractional quantity each said "Not saved on the original record. Check it."; track expiry was preset to Yes because the lot's expiry was saved.
+      - A damage saves no selling price and its lot is gone, so the price was empty, and **Restore units** refused with "Selling price incl. tax: Required" until it was typed. Nothing is guessed, as designed.
+      - The damage shows Corrected, 6 units. Lot 156 of the new G6-BISCUIT holds 4 at 20.000, with the saved expiry and the reason "Damage D2627-000001 correction restore: …".
+    - **Vendor-return cancel** (Purchases → Open → Return history → Cancel return). The existing-product search found nothing ("No active product of the same type matches"). **Create a new product** came prefilled with GST 5%, prices 190 and 199 from the purchase, and the saved expiry, locked.
+      - The return shows Cancelled. Lot 157 of the new G6-OIL holds 11 at the purchase's 150.000 plus tax 7.500. The CANCEL audit entry lists `restoredProducts`.
+    - Afterwards, all eight store checks passed on that store (`g6-restore/verify.json`). Every lot reconciles to its documents.
   - [x] the Low stock and Payables tiles' destinations: clicked through in the running app on 5 Nov 2026 (see B-1).
 
 ## Document drift

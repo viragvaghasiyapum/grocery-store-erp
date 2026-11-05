@@ -206,6 +206,8 @@ public sealed class ScaleUiTests
             ];
             int extraRounds = int.TryParse(Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_ROUNDS"),
                 out int rounds) && rounds > 1 ? rounds - 1 : 0;
+            // GROCERY_SCALE_UI_DETAILS opens the first record's detail panel on every page that has one.
+            bool details = Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_DETAILS") == "1";
             var captured = new HashSet<string>(StringComparer.Ordinal);
             foreach ((string label, string control) in pages
                          .Concat([("Products", "SearchBox"), ("Purchases", "PurchasesGrid"), ("Money out", "MoneyOutTabs")])
@@ -219,6 +221,9 @@ public sealed class ScaleUiTests
                     ?? throw new InvalidOperationException($"Missing navigation action: {label}");
                 for (AutomationElement? candidate = action; candidate is not null; candidate = candidate.Parent)
                     if (candidate.Patterns.Invoke.IsSupported) { action = candidate; break; }
+                // The presses are not real input, so a window that comes in front (such as the terminal
+                // running the test) stays there; a covered app stopped navigating in one run.
+                shell.SetForeground();
                 action.Press();
                 try
                 {
@@ -293,6 +298,13 @@ public sealed class ScaleUiTests
                 if (captured.Add(label))
                     shell.CaptureToFile(Path.Combine(root, "scale-audit-ui-" + label.ToLowerInvariant().Replace(' ', '-') + ".png"));
                 Assert.False(app.HasExited, $"App exited on {label}");
+                if (details && DetailList(label) is { } listId)
+                {
+                    object detail = await OpenDetailAsync(app, shell, label, listId, root, captured);
+                    records.Add(detail);
+                    Console.WriteLine(JsonSerializer.Serialize(detail));
+                    Assert.False(app.HasExited, $"App exited on the {label} detail panel");
+                }
                 if (label == "Billing (POS)" &&
                     Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_SAVED_BILLS") == "1")
                 {
@@ -309,7 +321,7 @@ public sealed class ScaleUiTests
             if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_DIALOGS") == "1")
                 await AuditDialogsAsync(app, automation, shell, root);
             if (Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_EXPORT") == "1")
-                await ExportFullHistoryAsync(app, automation, shell, root);
+                await ExportFullHistoryAsync(app, automation, shell, root, details, captured);
             // A memory investigation can capture the process here, after the last page settled.
             if (int.TryParse(Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_HOLD_SECONDS"), out int hold) && hold > 0)
             {
@@ -852,15 +864,34 @@ public sealed class ScaleUiTests
             JsonSerializer.Serialize(records, JsonOptions));
     }
 
+    // With details, the first bill's panel opens after the export, once Search lists the export's dates:
+    // Sales history starts on today, which has no bills in a fixture.
     private static async Task ExportFullHistoryAsync(UiApplication app, UIA3Automation automation,
-        Window shell, string root)
+        Window shell, string root, bool details, HashSet<string> captured)
     {
+        File.AppendAllText(Path.Combine(root, "scale-audit-ui-progress.txt"), $"Starting export{Environment.NewLine}");
         AutomationElement history = shell.FindFirstDescendant(cf => cf.ByName("Sales history"))!;
         for (AutomationElement? candidate = history; candidate is not null; candidate = candidate.Parent)
             if (candidate.Patterns.Invoke.IsSupported) { history = candidate; break; }
+        shell.SetForeground();
         history.Press();
-        await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("ExportButton")) is not null,
-            TimeSpan.FromSeconds(20));
+        int presses = 1;
+        try
+        {
+            // As in the page rounds, repeat an invoke that was dropped.
+            var pressed = Stopwatch.StartNew();
+            await WaitUntilAsync(() =>
+            {
+                if (shell.FindFirstDescendant(cf => cf.ByAutomationId("ExportButton")) is not null) return true;
+                if (pressed.Elapsed > TimeSpan.FromSeconds(4)) { history.Press(); presses++; pressed.Restart(); }
+                return false;
+            }, TimeSpan.FromSeconds(20), 250);
+        }
+        catch (TimeoutException)
+        {
+            shell.CaptureToFile(Path.Combine(root, "scale-audit-export-timeout.png"));
+            throw;
+        }
         string? dateText = Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_EXPORT_DATE");
         foreach ((string picker, string? selected) in new[]
         {
@@ -898,6 +929,8 @@ public sealed class ScaleUiTests
             shell.CaptureToFile(Path.Combine(root, "scale-audit-export-dialogs.png"));
             throw;
         }
+        // The path is typed as keystrokes, so the dialog must be the window that receives them.
+        save!.SetForeground();
         Keyboard.Type(path);
         Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
         await WaitUntilAsync(() => File.Exists(path), TimeSpan.FromMinutes(15));
@@ -914,17 +947,34 @@ public sealed class ScaleUiTests
             Assert.EndsWith(",1.00", firstRow, StringComparison.Ordinal);
         }
         Assert.False(app.HasExited);
-        using Process? process = Process.GetProcessesByName("GroceryErp.App")
-            .OrderByDescending(static item => item.StartTime).FirstOrDefault();
-        process?.Refresh();
+        long? exportPeak;
+        using (Process? process = Process.GetProcessesByName("GroceryErp.App")
+                   .OrderByDescending(static item => item.StartTime).FirstOrDefault())
+        {
+            process?.Refresh();
+            exportPeak = process?.PeakWorkingSet64;
+        }
+        object? detail = null;
+        if (details)
+        {
+            // The export reads the dates directly; the list keeps today's bills until Search applies them.
+            (shell.FindFirstDescendant(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.Button).And(cf.ByName("Search")))
+                ?? throw new InvalidOperationException("Sales history has no Search button.")).Press();
+            AutomationElement list = shell.FindFirstDescendant(cf => cf.ByAutomationId("HistoryGrid"))!;
+            await WaitUntilAsync(() => list.Patterns.Grid.Pattern.RowCount.Value > 0, TimeSpan.FromSeconds(20), 250);
+            detail = await OpenDetailAsync(app, shell, "Sales history", "HistoryGrid", root, captured);
+            Assert.False(app.HasExited, "App exited on the Sales history detail panel");
+        }
         File.WriteAllText(Path.Combine(root, "scale-audit-history-export.json"),
             JsonSerializer.Serialize(new
             {
                 rows = count,
                 elapsedMilliseconds = timer.Elapsed.TotalMilliseconds,
                 bytes = new FileInfo(path).Length,
-                peakWorkingSet = process?.PeakWorkingSet64,
-                alive = !app.HasExited
+                peakWorkingSet = exportPeak,
+                alive = !app.HasExited,
+                navigationPresses = presses,
+                detail,
             }, JsonOptions));
     }
 
@@ -932,6 +982,75 @@ public sealed class ScaleUiTests
     {
         try { return element.Name; }
         catch (FlaUI.Core.Exceptions.PropertyNotSupportedException) { return "<unavailable>"; }
+    }
+
+    // The list whose records open a detail panel on each page.
+    private static string? DetailList(string page) => page switch
+    {
+        "Products" => "ProductsGrid",
+        "Purchases" => "PurchasesGrid",
+        "Vendors" => "VendorsGrid",
+        "Assets" => "AssetGrid",
+        "Sales history" => "HistoryGrid",
+        "Money out" => "DamageGrid",
+        _ => null,
+    };
+
+    // Opens the first record's detail panel as the operator does (a damage opens when picked, an asset's
+    // timeline from View timeline, since a double-click there edits the asset, other records on a
+    // double-click), waits for the panel's record arrows, then samples the app's memory.
+    private static async Task<object> OpenDetailAsync(UiApplication app, Window shell, string page, string listId,
+        string root, HashSet<string> captured)
+    {
+        AutomationElement list = shell.FindFirstDescendant(cf => cf.ByAutomationId(listId))
+            ?? throw new InvalidOperationException($"Missing list {listId} on {page}");
+        var grid = list.Patterns.Grid.Pattern;
+        int rows = grid.RowCount.Value;
+        if (rows == 0) return new { page = page + " detail", skipped = "no rows" };
+        var timer = Stopwatch.StartNew();
+        AutomationElement cell = grid.GetItem(0, Math.Min(1, grid.ColumnCount.Value - 1));
+        try
+        {
+            if (page == "Money out") cell.Click();
+            else if (page == "Assets")
+            {
+                cell.Click();
+                AutomationElement? timeline = null;
+                await WaitUntilAsync(() => (timeline = shell.FindFirstDescendant(cf => cf.ByAutomationId("TimelineButton")))
+                    is { IsEnabled: true, IsOffscreen: false }, TimeSpan.FromSeconds(10), 100);
+                timeline!.Patterns.Invoke.Pattern.Invoke();
+            }
+            else cell.DoubleClick();
+            await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByName("Next record")) is { IsOffscreen: false },
+                TimeSpan.FromSeconds(20), 250);
+        }
+        catch (TimeoutException)
+        {
+            shell.CaptureToFile(Path.Combine(root, "scale-audit-ui-detail-timeout.png"));
+            throw;
+        }
+        double opened = timer.Elapsed.TotalMilliseconds;
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        await Task.Delay(1500, TestContext.Current.CancellationToken);
+        using Process? process = Process.GetProcessesByName("GroceryErp.App")
+            .OrderByDescending(static item => item.StartTime).FirstOrDefault();
+        process?.Refresh();
+        if (captured.Add(page + " detail"))
+            shell.CaptureToFile(Path.Combine(root,
+                "scale-audit-ui-" + page.ToLowerInvariant().Replace(' ', '-') + "-detail.png"));
+        return new
+        {
+            page = page + " detail",
+            controlFoundMilliseconds = opened,
+            settledMilliseconds = timer.Elapsed.TotalMilliseconds,
+            workingSet = process?.WorkingSet64,
+            peakWorkingSet = process?.PeakWorkingSet64,
+            privateBytes = process?.PrivateMemorySize64,
+            gridRowItems = rows,
+            alive = !app.HasExited,
+        };
     }
 
     private static Task<Window> WaitWindowAsync(UiApplication app, UIA3Automation automation,

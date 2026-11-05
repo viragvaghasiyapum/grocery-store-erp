@@ -196,6 +196,41 @@ public sealed class SalesTests
         completed.InvoiceNumber.ShouldNotBeNullOrWhiteSpace();
     }
 
+    // With no receipt printer chosen, a bill's or return's receipt and the drawer are refused with
+    // their own message, and the status line reads as sentences (B-4 in revised-plan-bugs.md).
+    [Fact]
+    public async Task PrintingWithoutAReceiptPrinter_IsRefusedWithItsOwnMessage()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One,
+            cancellationToken: ct);
+        CompletedSale completed = await fixture.Sales.CompleteAsync(new(saleId,
+            [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+        fixture.Settings.Current.ReceiptPrinterName.ShouldBeEmpty();
+        var journal = new PrintJobJournal(fixture.Factory);
+        var printer = new ReceiptPrinter(fixture.Settings, journal);
+        ReceiptData receipt = await fixture.Sales.GetReceiptAsync(saleId, cancellationToken: ct);
+
+        foreach (Func<Task> print in new Func<Task>[]
+                 {
+                     () => printer.PrintAsync(receipt), () => printer.QueueReceiptAsync(receipt),
+                     printer.QueueDrawerAsync, printer.OpenDrawerAsync,
+                 })
+            (await Should.ThrowAsync<DomainException>(print)).Code.ShouldBe(ErrorCode.PrinterNotConfigured);
+        journal.ReviewCount().ShouldBe(0);
+
+        foreach (string language in new[] { "en-IN", "gu-IN" })
+        {
+            var culture = System.Globalization.CultureInfo.GetCultureInfo(language);
+            string Text(string key) => GroceryErp.Localization.SharedStrings.ResourceManager.GetString(key, culture)!;
+            string reason = Text("Error_PrinterNotConfigured");
+            reason.ShouldNotBeNullOrWhiteSpace();
+            string.Format(culture, Text("Sales_PrintFailed"), completed.InvoiceNumber, reason).ShouldNotContain("..");
+            string.Format(culture, Text("Sales_ReturnPrintFailed"), "R2627-000001", reason).ShouldNotContain("..");
+        }
+    }
+
     [Fact]
     public async Task Return_ProrationReconciles_AndNonResellableStockBecomesDamage()
     {
@@ -645,6 +680,38 @@ public sealed class SalesTests
         first.Cost.ShouldBe(new Money(70));
         second.Cost.ShouldBe(new Money(70));
         LotSourceReconciliation.CheckAll(after, null, cancellationToken: ct).ShouldBeEmpty();
+    }
+
+    // The restore window loads its choices before it opens, from every restore path. Dapper could
+    // not build these options from the rows (B-3 in revised-plan-bugs.md), so the window never opened.
+    [Fact]
+    public async Task RestoreOptions_ListActiveCategoriesAndTaxRates_AndEveryUnitWithItsCode()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long retiredRate;
+        using (var db = fixture.Factory.Open())
+        {
+            db.Execute("INSERT INTO category(name,is_active) VALUES ('Retired shelf',0)");
+            retiredRate = db.ExecuteScalar<long>(
+                "INSERT INTO tax_rate(name,rate_pct,is_active) VALUES ('Old 7%',7000,0) RETURNING id");
+        }
+
+        RestoreOptions options = await fixture.Inventory.GetRestoreOptionsAsync(ct);
+
+        using var check = fixture.Factory.Open();
+        options.Categories.Select(static option => option.Id)
+            .ShouldBe(check.Query<long>("SELECT id FROM category WHERE is_active=1 ORDER BY name,id"));
+        options.Categories.ShouldContain(option => option.Id == fixture.CategoryId && option.Label == "Food");
+        options.Categories.ShouldNotContain(option => option.Label == "Retired shelf");
+        options.Units.Count.ShouldBe(check.ExecuteScalar<int>("SELECT COUNT(*) FROM uom"));
+        options.Units.Single(option => option.Id == fixture.UnitId)
+            .ShouldBe(new RestoreOption(fixture.UnitId, "PCS — Piece", AllowFraction: false, Code: "PCS"));
+        options.Units.Single(option => option.Code == "KG").AllowFraction.ShouldBeTrue();
+        options.TaxRates.Select(static option => option.Id)
+            .ShouldBe(check.Query<long>("SELECT id FROM tax_rate WHERE is_active=1 ORDER BY rate_pct,id"));
+        options.TaxRates.ShouldNotContain(option => option.Id == retiredRate);
+        options.TaxRates.Single(option => option.Id == fixture.TaxId).RateScaled.ShouldBe(18000L);
     }
 
     [Fact]

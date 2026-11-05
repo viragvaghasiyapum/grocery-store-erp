@@ -21,7 +21,8 @@
         <DataGridTextColumn Width="75" Header="{l:Tr Purchasing_FreeQty}" Binding="{Binding FreeQuantity}"/>
         <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_Rate}" Binding="{Binding Rate, Converter={StaticResource Amount}}"/>
         <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_Discount}" Binding="{Binding Discount, Converter={StaticResource Amount}}"/>
-        <DataGridTextColumn Width="82" Header="{l:Tr Purchasing_Gst}" Binding="{Binding TaxLabel, TargetNullValue=—}"/>
+        <!-- The rate's name beside the line's tax amount, so the two headings differ. -->
+        <DataGridTextColumn Width="92" Header="{l:Tr Catalog_TaxRate}" Binding="{Binding TaxLabel, TargetNullValue=—}"/>
         <DataGridTextColumn Width="85" Header="{l:Tr Purchasing_TaxTotal}" Binding="{Binding TaxAmount, Converter={StaticResource Amount}}"/>
         <DataGridTextColumn Width="95" Header="{l:Tr Purchasing_ComputedTotal}" Binding="{Binding LineTotal, Converter={StaticResource Amount}}"/>
         <!-- One piece, with its share of other charges: Purchase price + Tax/unit = incl. tax as shown. -->

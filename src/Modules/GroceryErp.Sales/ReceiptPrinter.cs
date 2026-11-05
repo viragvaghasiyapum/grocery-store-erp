@@ -7,6 +7,7 @@ using System.Threading.Channels;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
@@ -213,10 +214,11 @@ public sealed class ReceiptPrinter
         }
     }
 
+    // The operator sees this, so it is a localized error rather than a general failure.
     private void EnsureConfigured()
     {
         if (string.IsNullOrWhiteSpace(settings.Current.ReceiptPrinterName))
-            throw new InvalidOperationException("A receipt printer has not been configured.");
+            throw new DomainException(ErrorCode.PrinterNotConfigured);
     }
 
     private sealed record PrintJob(Action Action, TaskCompletionSource? Completion, long JournalId = 0,
@@ -304,7 +306,7 @@ public sealed class ReceiptPrinter
     {
         string printer = settings.Current.ReceiptPrinterName;
         if (string.IsNullOrWhiteSpace(printer))
-            throw new InvalidOperationException("A receipt printer has not been configured.");
+            throw new DomainException(ErrorCode.PrinterNotConfigured);
         RawPrinter.Send(printer, [0x1B, 0x70, 0x00, 0x19, 0xFA], "Open cash drawer");
     }
 

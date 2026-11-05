@@ -331,7 +331,12 @@ public partial class BillingPage : Page, IDisposable
             if (payments.Any(static payment => payment.Mode == PaymentMode.Cash))
             {
                 try { await _printer.QueueDrawerAsync(); }
-                catch (Exception exception) { printError = printError is null ? UserError.Message(exception) : $"{printError}; {UserError.Message(exception)}"; }
+                catch (Exception exception)
+                {
+                    // Each message is a sentence; one that the receipt already gave (no printer chosen) is not repeated.
+                    string drawerError = UserError.Message(exception);
+                    printError = printError is null || printError == drawerError ? drawerError : $"{printError} {drawerError}";
+                }
             }
             StartNew();
             await RefreshAsync();

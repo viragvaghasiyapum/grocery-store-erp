@@ -874,6 +874,7 @@ public sealed class PhaseZeroSmokeTests
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 Capture(purchasesHost, "purchases-page.gu.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                VerifyTitleActionsFold(purchasesHost, purchasesPage);
                 var purchaseGrid = (DataGrid)purchasesPage.FindName("PurchasesGrid");
                 purchaseGrid.Columns[2].Width = new DataGridLength(300, DataGridLengthUnitType.Pixel);
                 purchaseGrid.Columns[2].DisplayIndex = 1;
@@ -1003,6 +1004,7 @@ public sealed class PhaseZeroSmokeTests
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 Capture(assetsHost, "assets.gu.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                VerifyTitleActionsFold(assetsHost, assetsPage);
                 var assetGrid = (DataGrid)assetsPage.FindName("AssetGrid");
                 assetGrid.AutoGenerateColumns.ShouldBeFalse();
                 assetGrid.CanUserResizeColumns.ShouldBeTrue();
@@ -1140,6 +1142,7 @@ public sealed class PhaseZeroSmokeTests
                 TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 Capture(historyHost, "sales-history.gu.png");
                 TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                VerifyTitleActionsFold(historyHost, history);
                 historyHost.Close();
 
                 ReturnableSaleLine[] returnable =
@@ -1541,6 +1544,31 @@ public sealed class PhaseZeroSmokeTests
             PumpUntil(() => assetGrid.Items.Count == 1);
             assetGrid.SelectedIndex = 0;
             ((Button)assetsPage.FindName("EditAssetButton")).IsEnabled.ShouldBeTrue();
+            // With the timeline beside the list, the narrower title row folds an action only when the
+            // shown ones do not fit beside the title (B-6).
+            assetsHost.Width = 1600;
+            assetsHost.UpdateLayout();
+            var assetActions = (Panel)assetsPage.FindName("TitleActions");
+            List<Button> assetOrder = [.. assetActions.Children.OfType<Button>()];
+            assetOrder.Count.ShouldBe(5);
+            ((Button)assetsPage.FindName("TimelineButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            PumpUntil(() => ((FrameworkElement)assetsPage.FindName("Timeline")).Visibility == Visibility.Visible);
+            static double Wide(FrameworkElement element)
+            {
+                if (element.Visibility == Visibility.Collapsed) return 0;
+                element.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                return element.DesiredSize.Width;
+            }
+            foreach (double width in new double[] { 1600, 1500, 1400, 1300, 1200, 1600 })
+            {
+                assetsHost.Width = width;
+                assetsHost.UpdateLayout();
+                assetsHost.UpdateLayout();
+                var row = (FrameworkElement)assetsPage.FindName("TitleRow");
+                double needed = Wide((FrameworkElement)assetsPage.FindName("TitleText")) + assetOrder.Sum(Wide);
+                bool folded = assetOrder.Any(button => button.Visibility != Visibility.Collapsed && !assetActions.Children.Contains(button));
+                folded.ShouldBe(needed > row.ActualWidth - 2, $"Assets timeline at {width}: row {row.ActualWidth:0}, needed {needed:0}");
+            }
             assetsHost.Close();
             // Editing terms previews the recalculated months before saving; blocked changes cannot save.
             var assetForm = new AssetFormWindow(assets, clock, [], (AssetItem)assetGrid.Items[0]) { Language = AppLanguage };
@@ -1918,7 +1946,11 @@ public sealed class PhaseZeroSmokeTests
             invoice.Title.ShouldContain(posted.DocumentNumber);
             invoice.Facts.ShouldContain("Shree Wholesale Traders");
             var invoiceView = (PurchaseInvoiceView)purchases.FindName("InvoiceView");
-            ((DataGrid)invoiceView.FindName("LinesGrid")).Items.Count.ShouldBe(1);
+            var invoiceLines = (DataGrid)invoiceView.FindName("LinesGrid");
+            invoiceLines.Items.Count.ShouldBe(1);
+            // Every column has its own heading: the line's tax rate is not headed like its tax amount.
+            invoiceLines.Columns.Select(static column => column.Header).Distinct().Count().ShouldBe(invoiceLines.Columns.Count);
+            invoiceLines.Columns.ShouldContain(column => Equals(column.Header, translations["Catalog_TaxRate"]));
             ((Button)purchases.FindName("OpenButton")).Visibility.ShouldBe(Visibility.Collapsed);
             ((Button)purchases.FindName("InvoiceVendorReturnButton")).Visibility.ShouldBe(Visibility.Visible);
             ((Button)purchases.FindName("InvoiceEditButton")).Visibility.ShouldBe(Visibility.Collapsed);
@@ -2139,6 +2171,75 @@ public sealed class PhaseZeroSmokeTests
             AssetItem fridge = Run(() => assets.GetAssetPageAsync()).Items.Single();
             CaptureForm(new AssetDisposalWindow(assets, clock, fridge), "asset-disposal.en.png");
             helper.ShouldBeGreaterThan(0);
+
+            // A page whose detail panel was opened lets go of the app's language source once the shell
+            // moves on (B-7 in revised-plan-bugs.md): one frame hosts each page in turn, as the shell does.
+            var pageFrame = new Frame { NavigationUIVisibility = System.Windows.Navigation.NavigationUIVisibility.Hidden };
+            var shellHost = new Window { Content = pageFrame, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
+            shellHost.Show();
+            Func<bool> OpenFirst(Page page, string listName, string? buttonName, string panelName)
+            {
+                var list = (DataGrid)page.FindName(listName);
+                PumpUntil(() => list.Items.Count > 0);
+                list.SelectedIndex = 0;
+                if (buttonName is not null)
+                    ((Button)page.FindName(buttonName)).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                var panel = (FrameworkElement)page.FindName(panelName);
+                return () => panel.Visibility == Visibility.Visible;
+            }
+            Func<bool> OpenProduct(Page page)
+            {
+                var list = (DataGrid)page.FindName("ProductsGrid");
+                PumpUntil(() => list.Items.Count > 0);
+                var panel = (ProductDetailsPanel)page.FindName("Details");
+                panel.Initialize(catalog, inventory, clock.BusinessDate, regularTaxMode: true);
+                list.SelectedIndex = 0;
+                typeof(ProductsPage).GetMethod("OpenDetailsAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(page, [list.Items[0], false]);
+                return () => panel.Visibility == Visibility.Visible;
+            }
+            Func<bool> OpenLots(Page page)
+            {
+                Func<bool> opened = OpenProduct(page);
+                PumpUntil(opened);
+                var panel = (ProductDetailsPanel)page.FindName("Details");
+                ((TabControl)panel.FindName("Tabs")).SelectedItem = panel.FindName("LotsTab");
+                return () => ((ContentControl)panel.FindName("LotsHost")).Content is FrameworkElement { IsLoaded: true };
+            }
+            var importer = new ProductExcelImporter(database, new AuditLog(), settings);
+            Func<Page> productsPage = () => new ProductsPage(catalog, settings, importer);
+            Func<Page> purchasesPage = () => new PurchasesPage(purchasing);
+            Func<Page> vendorsPage = () => new VendorsPage(purchasing);
+            Func<Page> historyPage = () => new SalesHistoryPage(sales, new ReceiptPrinter(settings), clock);
+            Func<Page> assetsPage = () => new AssetsPage(assets, clock, purchasing);
+            (string Name, Func<Page> Create, Func<Page, Func<bool>>? Open)[] screens =
+            [
+                ("Products", productsPage, null),
+                ("Products with its panel", productsPage, OpenProduct),
+                ("Products with its Lots tab", productsPage, OpenLots),
+                ("Purchases", purchasesPage, null),
+                ("Purchases with its panel", purchasesPage, page => OpenFirst(page, "PurchasesGrid", "OpenButton", "Invoice")),
+                ("Vendors", vendorsPage, null),
+                ("Vendors with its panel", vendorsPage, page => OpenFirst(page, "VendorsGrid", "LedgerButton", "Ledger")),
+                ("Sales history", historyPage, null),
+                ("Sales history with its panel", historyPage, page => OpenFirst(page, "HistoryGrid", "ViewItemsButton", "Detail")),
+                ("Assets", assetsPage, null),
+                ("Assets with its panel", assetsPage, page => OpenFirst(page, "AssetGrid", "TimelineButton", "Timeline")),
+            ];
+            // The language source lives for the whole session, so a subscription a page leaves behind
+            // keeps that page and everything it showed. Each page must leave the count as it found it.
+            static int LanguageSubscribers() =>
+                ((Delegate?)typeof(TranslationSource).GetField(nameof(TranslationSource.PropertyChanged),
+                    BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(TranslationSource.Instance))?.GetInvocationList().Length ?? 0;
+            var kept = new List<string>();
+            foreach ((string name, Func<Page> create, Func<Page, Func<bool>>? open) in screens)
+            {
+                int before = LanguageSubscribers();
+                ShowAndLeave(pageFrame, create, open);
+                if (LanguageSubscribers() != before) kept.Add(name);
+            }
+            string.Join(", ", kept).ShouldBeEmpty();
+            shellHost.Close();
         }
         finally
         {
@@ -3025,6 +3126,60 @@ public sealed class PhaseZeroSmokeTests
         Math.Abs(filters.TranslatePoint(new Point(), window).Y - filtersY).ShouldBeLessThan(1);
         Math.Abs(pager.TranslatePoint(new Point(), window).Y - pagerY).ShouldBeLessThan(1);
         Math.Abs(header.TranslatePoint(new Point(), window).Y - headerY).ShouldBeLessThan(1);
+    }
+
+    // Shows a page in the host as the shell does, opens its first record's panel when asked, then moves on.
+    private static void ShowAndLeave(Frame host, Func<Page> create, Func<Page, Func<bool>>? open)
+    {
+        Page page = create();
+        host.Navigate(page);
+        PumpUntil(() => page.IsLoaded);
+        if (open is not null)
+        {
+            Func<bool> opened = open(page);
+            PumpUntil(opened, 10_000);
+            opened().ShouldBeTrue($"{page.GetType().Name} panel");
+        }
+        host.Navigate(new Page());
+        PumpUntil(() => !page.IsLoaded);
+        // The shell keeps no history of pages, so neither does this frame.
+        while (host.CanGoBack) host.RemoveBackEntry();
+    }
+
+    // A title row keeps every action while there is room and folds the last ones behind More only
+    // when narrow, and width changes do not fold more each time (B-6 in revised-plan-bugs.md). The
+    // window is left at its starting width. The strip rearranges inside the layout pass's size change,
+    // so a second pass shows the result; the dispatcher is not pumped, since a created shell has
+    // queued its navigation to the dashboard.
+    private static void VerifyTitleActionsFold(Window host, FrameworkElement page)
+    {
+        var actions = (Panel)page.FindName("TitleActions");
+        var menu = (FrameworkElement)page.FindName("MoreActionsMenu");
+        var more = (MenuItem)page.FindName("MoreActions");
+        int total = actions.Children.OfType<Button>().Count() + more.Items.Count;
+        double start = host.Width;
+        void SetWidth(double width)
+        {
+            host.Width = width;
+            host.UpdateLayout();
+            host.UpdateLayout();
+        }
+        // Wide enough for every title and its actions, then a panel opening and closing beside the list.
+        foreach (double width in new double[] { 1600, 1560, 1520, 1600, 1580, 1600 })
+        {
+            SetWidth(width);
+            more.Items.Count.ShouldBe(0, $"{page.GetType().Name} at {width}");
+            actions.Children.OfType<Button>().Count().ShouldBe(total);
+            menu.Visibility.ShouldBe(Visibility.Collapsed);
+        }
+        SetWidth(640);
+        more.Items.Count.ShouldBeGreaterThan(0);
+        (actions.Children.OfType<Button>().Count() + more.Items.Count).ShouldBe(total);
+        menu.Visibility.ShouldBe(Visibility.Visible);
+        SetWidth(1600);
+        more.Items.Count.ShouldBe(0);
+        menu.Visibility.ShouldBe(Visibility.Collapsed);
+        SetWidth(start);
     }
 
     // Every visible button, text box, list box and date box a keyboard or screen-reader user can

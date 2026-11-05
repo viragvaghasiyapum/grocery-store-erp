@@ -53,6 +53,8 @@ internal sealed class FilterRow
         };
         bar.Loaded += (_, _) =>
         {
+            // Loaded can come twice before one Unloaded (see PagerBar); subscribe once.
+            TranslationSource.Instance.PropertyChanged -= TranslationChanged;
             TranslationSource.Instance.PropertyChanged += TranslationChanged;
             Arrange();
         };

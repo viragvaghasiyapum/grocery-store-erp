@@ -60,7 +60,13 @@ public sealed class PagerBar : Border
         layout.Children.Add(_selection);
         layout.Children.Add(_status);
         Child = layout;
-        Loaded += (_, _) => TranslationSource.Instance.PropertyChanged += OnTranslationChanged;
+        // A pager in a detail panel is loaded with its page while the panel is collapsed, and again when
+        // the panel first opens, but unloaded once; subscribing once keeps the page from being held.
+        Loaded += (_, _) =>
+        {
+            TranslationSource.Instance.PropertyChanged -= OnTranslationChanged;
+            TranslationSource.Instance.PropertyChanged += OnTranslationChanged;
+        };
         Unloaded += (_, _) => TranslationSource.Instance.PropertyChanged -= OnTranslationChanged;
     }
 

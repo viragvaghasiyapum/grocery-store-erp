@@ -23,7 +23,7 @@ public enum ErrorCode
     ExpenseLineAmountRequired, PurchaseTooManyLines, VendorReturnExceedsLot, SalaryAlreadyPosted,
     AssetAlreadyDisposed, AssetDisposalBeforeInUse, AssetDepreciationPosted, CloudFolderNotAllowed,
     DataFolderNotSeparate, DataFolderNotEmpty, DataMovePending, DataMoveStagingInUse, UsbDriveNotReady,
-    PluExists, VendorGstinExists, NameExists
+    PluExists, VendorGstinExists, NameExists, PrinterNotConfigured
 }
 
 public sealed class DomainException(ErrorCode code, params object[] arguments) : Exception(code.ToString())

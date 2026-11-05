@@ -616,7 +616,7 @@
   <data name="Sales_PaymentShort" xml:space="preserve"><value>ચુકવણી બિલની કુલ રકમ કરતાં ઓછી છે.</value><comment>MT - needs review</comment></data>
   <data name="Sales_NonCashOverpayment" xml:space="preserve"><value>માત્ર રોકડ ચુકવણી બિલની રકમ કરતાં વધુ હોઈ શકે.</value><comment>MT - needs review</comment></data>
   <data name="Sales_Completed" xml:space="preserve"><value>બિલ {0} પૂર્ણ થયું.</value><comment>MT - needs review</comment></data>
-  <data name="Sales_PrintFailed" xml:space="preserve"><value>બિલ {0} પૂર્ણ થયું. છાપવામાં ભૂલ: {1}. ફરી છાપવા Ctrl+P દબાવો.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_PrintFailed" xml:space="preserve"><value>બિલ {0} પૂર્ણ થયું. છાપવામાં ભૂલ: {1} ફરી છાપવા Ctrl+P દબાવો.</value><comment>MT - needs review</comment></data>
   <data name="Sales_SavedBills" xml:space="preserve"><value>સાચવેલા બિલ</value><comment>MT - needs review</comment></data>
   <data name="Sales_SelectSavedBill" xml:space="preserve"><value>આગળ વધવા માટે બિલ પસંદ કરો</value><comment>MT - needs review</comment></data>
   <data name="Sales_HoldLabel" xml:space="preserve"><value>લેબલ</value><comment>MT - needs review</comment></data>
@@ -654,7 +654,7 @@
   <data name="Receipt_Taxable" xml:space="preserve"><value>કરપાત્ર</value><comment>MT - needs review</comment></data>
   <data name="Receipt_Gst" xml:space="preserve"><value>GST</value></data>
   <data name="Receipt_RefundBy" xml:space="preserve"><value>રિફંડ માધ્યમ</value><comment>MT - needs review</comment></data>
-  <data name="Sales_ReturnPrintFailed" xml:space="preserve"><value>પરત {0} સાચવ્યું. છાપવામાં ભૂલ: {1}.</value><comment>MT - needs review</comment></data>
+  <data name="Sales_ReturnPrintFailed" xml:space="preserve"><value>પરત {0} સાચવ્યું. છાપવામાં ભૂલ: {1}</value><comment>MT - needs review</comment></data>
   <data name="Receipt_RefundTotal" xml:space="preserve"><value>રિફંડ</value><comment>MT - needs review</comment></data>
   <data name="Receipt_RefundModeCash" xml:space="preserve"><value>રોકડ</value><comment>MT - needs review</comment></data>
   <data name="Receipt_RefundModeUpi" xml:space="preserve"><value>UPI</value></data>
@@ -1013,6 +1013,7 @@
   <data name="Error_PluExists" xml:space="preserve"><value>આ PLU કોડ બીજી પ્રોડક્ટ પહેલેથી વાપરે છે.</value><comment>MT – needs review</comment></data>
   <data name="Error_VendorGstinExists" xml:space="preserve"><value>આ GSTIN બીજા વિક્રેતા પાસે પહેલેથી છે.</value><comment>MT – needs review</comment></data>
   <data name="Error_NameExists" xml:space="preserve"><value>આ નામ અથવા કોડ બીજી નોંધ પહેલેથી વાપરે છે.</value><comment>MT – needs review</comment></data>
+  <data name="Error_PrinterNotConfigured" xml:space="preserve"><value>કોઈ રસીદ પ્રિન્ટર પસંદ કરેલ નથી. સેટિંગ્સમાં એક પસંદ કરો.</value><comment>MT – needs review</comment></data>
   <data name="Pos_QuantityPrefixInvalid" xml:space="preserve"><value>ધન જથ્થો, પછી * અને કોડ દાખલ કરો, જેમ કે 2*8901234567890.</value><comment>MT – needs review</comment></data>
   <data name="Reports_PnlScope" xml:space="preserve"><value>નફો-નુકસાન સમયગાળાનો પ્રકાર</value><comment>MT - needs review</comment></data>
   <data name="Reports_PnlScope_Month" xml:space="preserve"><value>મહિનો</value><comment>MT - needs review</comment></data>

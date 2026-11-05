@@ -21,7 +21,7 @@ using GroceryErp.Reports;
 using GroceryErp.Sales;
 
 if (args.Length < 1)
-    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase9-profile|phase9-export|phase3-purchase-read|phase7-filters|phase1-schema-audit|phase1-rollback|refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|phase6-reports|phase6-matrix|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|phase5-label-failure|phase5-live-write|phase5-return-reconcile|phase5-sales-read|phase5-count-read|phase5-fixture-align|phase5-direct-audit|phase5-direct-crash|phase5-direct-crash-check|phase6-annual|rebuild-pnl-days|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup] [output.json] [duration-seconds or restore-crash-boundary]");
+    throw new ArgumentException("Usage: GroceryErp.ScaleAudit <data-root> [phase9-profile|phase9-export|phase3-purchase-read|phase7-filters|phase1-schema-audit|phase1-rollback|refresh-storm|attribution-profile|history-profile|phase1-read|phase1-export|phase1-low-seed|phase1-count|phase1-history-seed|phase1-history-hot|profile|sustained-profile|shape-profile|report-profile|phase6-reports|phase6-matrix|hot-plans|cold-warm|customer-seed|realism-seed|fault-transaction|print-queue-metric|print-journal-profile|phase5-label-failure|phase5-live-write|phase5-return-reconcile|phase5-sales-read|phase5-count-read|phase5-fixture-align|phase5-direct-audit|phase5-direct-crash|phase5-direct-crash-check|phase6-annual|rebuild-pnl-days|optimized-read|hot-index-trial|read|gap-read|gap-scan|gap-seed|gap-payroll-seed|whole-count|weekly-maintenance|weekly-maintenance-overlap|opening-preview|product-preview|product-import|product-import-overlap|data-move|a4-render|print-render|catalog|index-trial|migrate|write|enrich|void|feature-write|concurrent|backup|backup-cancel|phase3-read|phase3-resource|restore-race|restore-crash|restore-recover|export|history-export|dashboard-reconcile|verify|data-shape|ui-setup|restore-setup] [output.json] [duration-seconds or restore-crash-boundary]");
 
 string root = Path.GetFullPath(args[0]);
 string mode = args.Length > 1 ? args[1] : "read";
@@ -4169,6 +4169,87 @@ switch (mode)
                 return 1;
             }), static x => x);
         break;
+    // Release gate G-6 (revised-plan-bugs.md): three products whose units come back after the product
+    // was deleted, made today through the app's own services, so the running app opens the restore
+    // window from a customer return, a damage correction and a vendor-return cancel. A product of
+    // the first one's name is added again, as an operator would, to be picked in the window.
+    case "restore-setup":
+    {
+        if (!Path.GetFileName(root).Contains("rehearsal", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The restore setup writes documents; use a disposable rehearsal root.");
+        var today = new SystemClock(settings);
+        DateOnly date = today.BusinessDate;
+        var todayPeriods = new PeriodGuard(settings, today);
+        var todayCatalog = new CatalogService(database, audit, settings, today);
+        var todayPurchasing = new PurchasingService(database, ledger, numbers, todayPeriods, settings, audit);
+        var todaySales = new SalesService(database, ledger, numbers, todayPeriods, settings, audit, today);
+        var todayMoneyOut = new MoneyOutService(database, ledger, numbers, todayPeriods, audit);
+        long category, unit, tax, vendor;
+        using (var connection = factory.Open())
+        {
+            category = connection.ExecuteScalar<long>("SELECT MIN(id) FROM category WHERE is_active=1 AND parent_id IS NULL");
+            unit = connection.ExecuteScalar<long>("SELECT id FROM uom WHERE code='PCS'");
+            tax = connection.ExecuteScalar<long>("SELECT id FROM tax_rate WHERE rate_pct=5000 AND is_active=1 ORDER BY id LIMIT 1");
+            vendor = connection.ExecuteScalar<long>("SELECT MIN(id) FROM vendor WHERE is_active=1");
+        }
+        async Task<(long Product, PostedPurchase Purchase)> BuyAsync(string sku, string name, string local, string hsn,
+            bool trackExpiry, decimal quantity, decimal cost, decimal price, decimal mrp)
+        {
+            long product = await todayCatalog.CreateAsync(new ProductInput(sku, name, local, null, category, null, unit,
+                hsn, tax, false, null, trackExpiry, null, null, Quantity.Zero, new Money(price), new Money(mrp), []));
+            long draft = await todayPurchasing.SaveDraftAsync(null, new PurchaseDraftInput(vendor, "G6-" + sku, date, date,
+                null, Money.Zero, "G-6 restore setup",
+                [new PurchaseLineInput(product, "B-" + sku, null, trackExpiry ? date.AddMonths(8) : null,
+                    new Quantity(quantity), Quantity.Zero, new Money(cost), Money.Zero, tax, new Money(mrp), new Money(price))]));
+            return (product, await todayPurchasing.PostAsync(draft, OperationGuard.NewId()));
+        }
+        async Task DeleteAsync(long product)
+        {
+            if (await todayCatalog.RemoveAsync(product) != ProductRemoval.Deleted)
+                throw new InvalidOperationException($"Product {product} was archived, not deleted.");
+        }
+
+        // A customer return: all three sold, then the product deleted and added again under a new SKU.
+        (long soap, _) = await BuyAsync("G6-SOAP", "G6 Sandal soap 100 g", "જી6 ચંદન સાબુ", "3401", false, 3, 30, 45, 48);
+        long saleId = await todaySales.AddProductAsync(null, soap, new Quantity(3));
+        SaleDetails bill = await todaySales.GetAsync(saleId);
+        CompletedSale sold = await todaySales.CompleteAsync(new(saleId,
+            [new(PaymentMode.Cash, bill.Totals.GrandTotal)], OperationGuard.NewId()));
+        await DeleteAsync(soap);
+        (long soapAgain, _) = await BuyAsync("G6-SOAP-2", "G6 Sandal soap 100 g", "જી6 ચંદન સાબુ", "3401", false, 5, 31, 46, 48);
+
+        // A damage correction: all ten written off as spoiled, then the product deleted.
+        (long biscuit, PostedPurchase biscuitPurchase) =
+            await BuyAsync("G6-BISCUIT", "G6 Glucose biscuit 200 g", "જી6 ગ્લુકોઝ બિસ્કિટ", "1905", true, 10, 20, 28, 30);
+        long damageId = await todayMoneyOut.RecordDamageAsync(new(biscuitPurchase.LotIds.Single(), date, new Quantity(10),
+            "SPOILED", Money.Zero, "Rain leak in the store room"), OperationGuard.NewId());
+        await DeleteAsync(biscuit);
+
+        // A vendor-return cancel: all eleven returned, then the product deleted.
+        (long oil, PostedPurchase oilPurchase) =
+            await BuyAsync("G6-OIL", "G6 Groundnut oil 1 L", "જી6 સીંગતેલ", "1508", true, 11, 150, 190, 199);
+        PostedVendorReturn returned = await todayPurchasing.PostVendorReturnAsync(new(oilPurchase.Id, date, "G6-CN-1",
+            "Leaking cans", [new(oilPurchase.LotIds.Single(), new Quantity(11), new Money(1650), new Money(82.5m))]),
+            OperationGuard.NewId());
+        await DeleteAsync(oil);
+
+        string damageNumber;
+        using (var connection = factory.Open())
+            damageNumber = connection.ExecuteScalar<string>("SELECT doc_no FROM damage WHERE id=@damageId", new { damageId })!;
+        var setup = new
+        {
+            date,
+            sale = new { id = saleId, invoice = sold.InvoiceNumber, deletedProduct = soap, readdedProduct = soapAgain },
+            damage = new { id = damageId, number = damageNumber, deletedProduct = biscuit },
+            vendorReturn = new { id = returned.Id, number = returned.DocumentNumber, purchase = oilPurchase.Id,
+                purchaseNumber = oilPurchase.DocumentNumber, vendorInvoice = "G6-G6-OIL", deletedProduct = oil },
+        };
+        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+        File.WriteAllText(output, JsonSerializer.Serialize(setup, new JsonSerializerOptions { WriteIndented = true }));
+        Console.WriteLine(JsonSerializer.Serialize(setup));
+        Console.WriteLine($"RESULTS {output}");
+        return;
+    }
     case "data-shape":
         using (var connection = factory.Open())
         {

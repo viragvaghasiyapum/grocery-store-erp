@@ -59,6 +59,8 @@ internal sealed class ActionStrip
         };
         room.Loaded += (_, _) =>
         {
+            // Loaded can come twice before one Unloaded (see PagerBar); subscribe once.
+            TranslationSource.Instance.PropertyChanged -= TranslationChanged;
             TranslationSource.Instance.PropertyChanged += TranslationChanged;
             Arrange();
         };
@@ -69,9 +71,10 @@ internal sealed class ActionStrip
         };
     }
 
-    /// <summary>The reserve for a page's title row: the title with its margin.</summary>
-    public static Func<double> TitleRow(FrameworkElement title) =>
-        () => title.ActualWidth + title.Margin.Left + title.Margin.Right;
+    /// <summary>The reserve for a page's title row: the title's text with its margin. The title is the
+    /// row's last child and stretches over whatever the actions leave, so its laid-out width would
+    /// reserve that free space too and fold an action at any width.</summary>
+    public static Func<double> TitleRow(FrameworkElement title) => () => Width(title);
 
     private void TranslationChanged(object? sender, PropertyChangedEventArgs e)
     {

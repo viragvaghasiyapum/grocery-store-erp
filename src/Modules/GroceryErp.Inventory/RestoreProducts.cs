@@ -51,18 +51,20 @@ public static class RestoreProducts
     public static RestoreOptions Options(IDbConnection connection)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        // Dapper builds a positional record only through a constructor whose parameters match the
+        // columns exactly, and RestoreOption's optional parameters do not count, so each row is read
+        // as a tuple and the option is built here.
         return new(
-            connection.Query<RestoreOption>(
-                "SELECT id AS Id,name AS Label FROM category WHERE is_active=1 ORDER BY name,id").ToArray(),
-            connection.Query<RestoreOption>("""
-                SELECT id AS Id,code||' — '||name AS Label,NULL AS RateScaled,allow_fraction AS AllowFraction,
-                       code AS Code
-                FROM uom ORDER BY code,id
-                """).ToArray(),
-            connection.Query<RestoreOption>("""
-                SELECT id AS Id,name AS Label,rate_pct AS RateScaled FROM tax_rate WHERE is_active=1
-                ORDER BY rate_pct,id
-                """).ToArray());
+            connection.Query<(long Id, string Label)>(
+                    "SELECT id,name FROM category WHERE is_active=1 ORDER BY name,id")
+                .Select(static row => new RestoreOption(row.Id, row.Label)).ToArray(),
+            connection.Query<(long Id, string Label, bool AllowFraction, string Code)>(
+                    "SELECT id,code||' — '||name,allow_fraction,code FROM uom ORDER BY code,id")
+                .Select(static row => new RestoreOption(row.Id, row.Label, AllowFraction: row.AllowFraction, Code: row.Code))
+                .ToArray(),
+            connection.Query<(long Id, string Label, long RateScaled)>(
+                    "SELECT id,name,rate_pct FROM tax_rate WHERE is_active=1 ORDER BY rate_pct,id")
+                .Select(static row => new RestoreOption(row.Id, row.Label, row.RateScaled)).ToArray());
     }
 
     /// <summary>The saved SKU when it is free, otherwise the fallback with the first free suffix.</summary>
