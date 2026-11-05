@@ -477,6 +477,7 @@ No open issues found. The expiry filter window is covered under P8-1.
     - Saving the label on the sale line needs three `sale_line` columns. Migration 39 measured that at 12 s cached and 37 s cold on the full-size store. It would also add about 12 bytes to every future sale line, roughly 60 MB at 5.2 million lines, for a value that only a return of a deleted lot reads.
     - The purchase line alone misses direct, opening-stock, count-surplus and earlier return lots, and opening stock is most of a new shop's first lots.
     - The table costs nothing on a sale and one small row per deleted lot.
+  - **Owner ruling (5 Nov 2026):** release 1.2.0 ships on schema 40 with this table, approved over the two alternatives above.
   - Migration 40 took 34 ms on the full-size store (peak working set 72 MiB). `MigrationRunner.LatestVersion` is 40, and the update window's estimate uses its default rate for the step.
   - Regressions in `TaxSnapshotTests` (the three return tests fail on the previous build):
     - `ReturnLot_TakesTheRateLabelAndPercentOfTheLotTheUnitsWereSoldFrom` (Regular mode) returns three units:

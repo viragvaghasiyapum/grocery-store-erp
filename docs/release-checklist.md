@@ -64,6 +64,7 @@ None of these was signed off for 1.1.0; each stays open.
 ## Business data and pilot
 
 - [ ] Store/GST/FY settings, tax rates and their names (each purchase line, lot and bill line now saves the name, such as "GST 5%") and HSN data approved by the accountant
+- [x] Owner approval of release 1.2.0 on schema 40 (migration 40, `deleted_lot_tax`, from the §15 T-2 fix), given 5 November 2026 over saving the name on every bill line or making no schema change
 - [ ] Owner review of the recorded decisions (Phases 6, 8 and 9 execution records, §15 and the rulings in `revised-plan-issues.md`)
 - [ ] Products and opening stock imported; ten random counts and top 200 barcodes checked
 - [ ] Vendors, opening balances, employees and assets checked
