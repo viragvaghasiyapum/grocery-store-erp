@@ -6,7 +6,7 @@ Progress (6 November 2026):
   - G-5 found B-5 to B-7. B-6 and B-7 were 1.2.0 regressions: page actions folded under **More** at any window width, and opening a bill or an asset's timeline kept that page in memory for the rest of the session. Over ten rounds the app reached 375 MiB against the 350 MiB gate; with the fix it stays at about 280 MiB.
 - Release gates that run on the development PC: G-1 to G-6 are done. G-3 and G-4 must be repeated on packages rebuilt after the commit, since B-5 to B-7 changed the app after they ran.
 - Drive D: was cleared before this work (199 GB free), so packaging was not blocked.
-- The owner decisions remain open.
+- Owner decisions, 6 November: O-1, O-2, O-4 and O-5 kept as built, and schema 41 approved (O-6). O-3, the review of the recorded decisions, waits for the owner to go through `docs/owner-review-1.2.0.md`.
 
 Verified on the current working tree, 6 November:
 - `dotnet format --verify-no-changes` passed. The Release build of the solution had no warnings; ScaleAudit and DataGen have not changed since they built without warnings on 5 November.
@@ -16,7 +16,7 @@ Verified on the current working tree, 6 November:
 Still to do, in order:
 1. Rebuild the 1.2.0 packages from 13944a4 or later with `scripts/build-release.ps1 -Version 1.2.0`, so the embedded commit matches (G-3), and rerun the packaged journey on the new portable build (G-4).
 2. Retake the guide's Purchases page pictures (`purchases-page.en/.gu.png`) with the vendor and status lists loaded; they still show the folded **More** (B-6).
-3. The human gates in `docs/release-checklist.md`, and the owner decisions below.
+3. The human gates in `docs/release-checklist.md`, including the owner's review of the recorded decisions (O-3).
 
 Status: review of `revised-implementation-plan.md` and `revised-plan-issues.md` against the code, 5 November 2026, release 1.2.0 on schema 40. Every item in `revised-plan-issues.md` is closed with a regression test; this file lists what the review found beyond them.
 
@@ -210,12 +210,21 @@ The gates that need the target PC, store hardware or people (WPF memory on the r
 
 ## Owner decisions still open
 
-- [ ] **O-1** The two expiry choices from the Phase 8 fixes: blocked expired lots count in the Expired tile and badge, and the Expired tile opens Products at **Any status** (checklist line 16).
-- [ ] **O-2** After an upgrade from 1.1.0, the selling prices migration 39 converted for products saved excluding tax (checklist line 35).
-- [ ] **O-3** Review of the recorded decisions in the Phase 6, 8 and 9 records, §15 and the rulings in `revised-plan-issues.md` (checklist line 68).
-- [ ] **O-4 Day end of a past day changes after a later expense correction** (P6-2). Day end now shows a day "as it is now known", so voiding or editing an expense later changes the cash expected for a day whose drawer was already counted. The P6-2 record states this, but it is not on the owner's review list. Ask whether that is wanted, or whether day end should count corrections on the day they were made.
-  - 5 Nov 2026: now on the owner's list in `docs/release-checklist.md` (Business data and pilot). The decision stays open.
-- [ ] **O-5 The Payables choice in the B-1 fix**: the tile counts inactive vendors' balances and opens Vendors at **Any status**; the alternative was to count active vendors only. Added to `docs/release-checklist.md` beside the Phase 8 expiry choices.
+Decided on 6 November 2026, except O-3, which is a review rather than a choice.
+
+- [x] **O-1** The two expiry choices from the Phase 8 fixes: blocked expired lots count in the Expired tile and badge, and the Expired tile opens Products at **Any status** (checklist line 16).
+  - **Kept, 6 Nov 2026.** The tile is the list of stock to remove: a blocked or archived product's expired stock is still on the shelf and still has to be written off. No change.
+- [x] **O-2** After an upgrade from 1.1.0, the selling prices migration 39 converted for products saved excluding tax (checklist line 36).
+  - **Accepted, 6 Nov 2026.** The conversion concerns only data made by 1.1.0: such a price now includes the tax a bill used to add, capped at MRP, so the customer pays what they paid before. A store started on 1.2.0 is not affected, and the production store starts empty (§15). The price check after an upgrade stays in the checklist for any store that does come from 1.1.0. No change.
+- [ ] **O-3** Review of the recorded decisions in the Phase 6, 8 and 9 records, §15 and the rulings in `revised-plan-issues.md` (checklist line 70).
+  - 6 Nov 2026: the decisions are listed on one page, money first, in [docs/owner-review-1.2.0.md](docs/owner-review-1.2.0.md), for the owner to tick or mark for change. Open until the owner has gone through it.
+- [x] **O-4 Day end of a past day changes after a later expense correction** (P6-2). Day end now shows a day "as it is now known", so voiding or editing an expense later changes the cash expected for a day whose drawer was already counted. The P6-2 record states this, but it is not on the owner's review list. Ask whether that is wanted, or whether day end should count corrections on the day they were made.
+  - 5 Nov 2026: now on the owner's list in `docs/release-checklist.md` (Business data and pilot).
+  - **Kept, 6 Nov 2026.** The app saves no drawer count, so no stored figure is contradicted. A void or edit means the expense was entered wrongly, so the corrected day explains the difference found when that drawer was counted. Cash paid on a later day is a new expense on that day, which leaves earlier days as they were; both user guides now say so. No code change.
+- [x] **O-5 The Payables choice in the B-1 fix**: the tile counts inactive vendors' balances and opens Vendors at **Any status**; the alternative was to count active vendors only. Added to `docs/release-checklist.md` beside the Phase 8 expiry choices.
+  - **Kept, 6 Nov 2026.** The shop still owes an archived vendor, so leaving the balance out would understate what it owes. No change.
+- [x] **O-6 Release 1.2.0 on schema 41** (C-1; checklist line 69). The schema-40 approval of 5 November did not cover migration 41.
+  - **Approved, 6 Nov 2026.** Nothing reads the five dropped summaries, and voiding a five-line bill on the full-size store fell from 343–345 ms to 0.57–0.60 ms.
 
 ## Accepted risks (owner rulings; no fix planned)
 

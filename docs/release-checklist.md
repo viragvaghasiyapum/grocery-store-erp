@@ -13,8 +13,8 @@ SDK `10.0.401`). They are local evidence, not the target-PC sign-off.
 - [x] Release notes for 1.2.0 in English and Gujarati (`src/GroceryErp.App/CHANGELOG.en.md`, `.gu.md`) state schema 41 and are shown once after sign-in in the operator's language (`ReleaseNotesTests`), in a window that fits a 1366×768 screen at 100% and 150% (UI smoke test). `scripts/build-release.ps1` refuses to package a version the notes do not name. Screens of the running app: `artifacts/data/revision-issues-phase9/screens`
 - [x] The packaged journey sees the notes on the 1.2.0 package's first sign-in (it now checks that they name the release; 1.1.0 never showed its notes). 5 November 2026: shown once, "Grocery ERP 1.2.0" … "Database schema: 41" (`artifacts/data/revised-plan-bugs/g4/screens/1-release-notes.png`)
 - [x] Every item in `revised-plan-issues.md` is fixed, or deferred by the owner. The last two, §15 T-1 (the Products list's next-to-sell lot) and T-2 (a recreated customer-return lot's tax label), were fixed on 5 November 2026
-- [ ] Owner review of the two expiry choices made in the Phase 8 fixes: blocked expired lots count in the Expired tile and badge, and the Expired tile opens Products at **Any status** so archived products' expired stock is listed
-- [ ] Owner review of the Payables choice made in the B-1 fix (`revised-plan-bugs.md`, 5 November 2026): the tile counts inactive vendors' balances and opens Vendors at **Any status** with **With balance due**, so the balances listed add up to it. The alternative was to count active vendors only
+- [x] Owner review of the two expiry choices made in the Phase 8 fixes: blocked expired lots count in the Expired tile and badge, and the Expired tile opens Products at **Any status** so archived products' expired stock is listed. Both kept by the owner, 6 November 2026 (`revised-plan-bugs.md` O-1)
+- [x] Owner review of the Payables choice made in the B-1 fix (`revised-plan-bugs.md`, 5 November 2026): the tile counts inactive vendors' balances and opens Vendors at **Any status** with **With balance due**, so the balances listed add up to it. The alternative was to count active vendors only. Kept by the owner, 6 November 2026 (O-5)
 
 ## Automated release gate
 
@@ -33,7 +33,7 @@ SDK `10.0.401`). They are local evidence, not the target-PC sign-off.
 ## Upgrade package
 
 - [ ] A 1.1.0 store shows the update window before sign-in, from schema 37 to 41, with migration 39 in the time estimate (22 s per GiB; migration 40 only adds a table, and 41 drops five unread summaries in under 0.1 s per GiB); nothing changes until **Update now**
-- [ ] After the upgrade, the owner checks selling prices: in Regular mode a product saved excluding tax gained the tax a bill used to add, capped at MRP (migration 39). Composition and No-GST stores keep their prices
+- [ ] After the upgrade, the owner checks selling prices: in Regular mode a product saved excluding tax gained the tax a bill used to add, capped at MRP (migration 39). Composition and No-GST stores keep their prices. The owner accepted this conversion on 6 November 2026 (`revised-plan-bugs.md` O-2); the check applies only to a store upgraded from 1.1.0, since the production store starts empty on 1.2.0
 - [ ] Upgrade time and peak disk measured on the target shop PC against the window's estimate
 - [ ] Pilot period: daily lot reconciliation, report snapshots, backup success and error logs reviewed before broad rollout
 
@@ -66,9 +66,9 @@ None of these was signed off for 1.1.0; each stays open.
 
 - [ ] Store/GST/FY settings, tax rates and their names (each purchase line, lot and bill line now saves the name, such as "GST 5%") and HSN data approved by the accountant
 - [x] Owner approval of release 1.2.0 on schema 40 (migration 40, `deleted_lot_tax`, from the §15 T-2 fix), given 5 November 2026 over saving the name on every bill line or making no schema change
-- [ ] Owner approval of release 1.2.0 on schema 41 (migration 41 from `revised-plan-bugs.md` C-1: five sales summaries that nothing has read since Reports was trimmed are dropped with their triggers, so a void no longer recalculates the last sale date of the bill's products). Including it in 1.2.0 rather than a later release was chosen during development on 5 November 2026; the owner's sign-off of the schema-40 approval above does not cover it
-- [ ] Owner review of the recorded decisions (Phases 6, 8 and 9 execution records, §15 and the rulings in `revised-plan-issues.md`)
-- [ ] Owner decision on day end after a later expense correction (P6-2; `revised-plan-bugs.md` O-4): day end shows a day as it is now known, so voiding or editing an expense later changes the cash expected for a day whose drawer was already counted. Keep that, or count corrections on the day they were made
+- [x] Owner approval of release 1.2.0 on schema 41 (migration 41 from `revised-plan-bugs.md` C-1: five sales summaries that nothing has read since Reports was trimmed are dropped with their triggers, so a void no longer recalculates the last sale date of the bill's products). Including it in 1.2.0 rather than a later release was chosen during development on 5 November 2026; the schema-40 approval above did not cover it. Approved 6 November 2026 (O-6)
+- [ ] Owner review of the recorded decisions (Phases 6, 8 and 9 execution records, §15 and the rulings in `revised-plan-issues.md`), listed on one page in [owner-review-1.2.0.md](owner-review-1.2.0.md)
+- [x] Owner decision on day end after a later expense correction (P6-2; `revised-plan-bugs.md` O-4): day end shows a day as it is now known, so voiding or editing an expense later changes the cash expected for a day whose drawer was already counted. Kept by the owner, 6 November 2026: Edit and Void are for an expense entered wrongly, and cash paid on a later day is a new expense on that day (both guides say so)
 - [ ] Products and opening stock imported; ten random counts and top 200 barcodes checked
 - [ ] Vendors, opening balances, employees and assets checked
 - [ ] Owner walkthrough completed; password recovery copy stored safely

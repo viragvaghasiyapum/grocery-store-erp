@@ -234,7 +234,7 @@ No open issues found. The expiry filter window is covered under P8-1.
     - Day end now sums each cash expense at its current values, by the same rule as `CurrentExpenseSql`: the newest correction or, if there is none, the original row. A void is a correction to zero.
     - Each of the two branches reads its own date index.
     - A purchase Expense line is always booked with mode `OTHER`, so it is never cash, and its reversal on a void needs no branch.
-    - A past day's figure changes when one of its expenses is later voided or edited. The day end shows the day as it is now known.
+    - A past day's figure changes when one of its expenses is later voided or edited. The day end shows the day as it is now known. The owner kept this on 6 November 2026 (`revised-plan-bugs.md` O-4).
   - Full-size store (4,890 expenses): the plan uses `ix_expense_date`, `ix_expense_correction_new_date` and the covering `ix_expense_correction_expense`, with no scan. On the busiest expense day the query took 0.0059 ms (old: 0.0053 ms). With 2,689 corrections seeded in a rolled-back transaction, about 175 of them moved onto that day, it took 0.095 ms.
   - Regression: `SalesTests.DayEnd_CountsEachCashExpenseAtItsCurrentValues` covers a void, a lowered amount, cash changed to UPI, UPI changed to cash, an expense moved to the day before, one moved onto the day, one edited twice and one untouched. It checks the cash expected in the drawer and the other day's total.
   - Both guides' day-end text says how voided and edited expenses count.
@@ -310,7 +310,7 @@ No open issues found. The expiry filter window is covered under P8-1.
     - **Products ▸ Expiring soon** (was "Expiring in 30 days"; in Gujarati **સમાપ્તિ નજીક**, short enough for its box) and the Lots tab's Expiring filter list exactly the lots the tiles count. Blocked lots are left out, as the tiles always left them out.
     - The lot labels **0–7 days** and **Soon** mark only lots inside their window. A lot past its window is **Fresh**, even five days before expiry when its category alerts at three.
     - The purchase short-expiry warning now also takes the parent category's alert days. Before, it skipped them.
-  - Found on the way, two more cases where a tile and its list differed. Both decided here and open to the owner's review:
+  - Found on the way, two more cases where a tile and its list differed. Both decided here; the owner kept both on 6 November 2026 (`revised-plan-bugs.md` O-1):
     - **A blocked expired lot.** The Expired list and the expired write-off include it, but the Expired tile and the badge did not count it. The tile and badge now count it, because it still has to be written off.
     - **An archived product with stock.** The Expired tile counted its expired lots, but the Products list opened on active products. The Expired tile now opens Products at **Any status**. The Critical and Soon tiles and the badge now count only active products' lots, as the list they open shows; an archived product's lot cannot be sold.
   - Speed:
