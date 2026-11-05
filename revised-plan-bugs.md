@@ -11,14 +11,12 @@ Progress (6 November 2026):
 Verified on the current working tree, 6 November:
 - `dotnet format --verify-no-changes` passed. The Release build of the solution had no warnings; ScaleAudit and DataGen have not changed since they built without warnings on 5 November.
 - 327 tests ran, with 325 passed and the 2 opt-in journeys skipped. No test method was added for B-5 to B-7; their checks extend the UI smoke test, each shown to fail on the previous code. The large-store journey passed on its own (G-5).
-- The earlier fixes were committed as 7ed8707 on `revised`.
-- Not committed yet: the B-3 to B-7 fixes and their tests, the journey and tool changes (`ScaleUiTests`, `PackagedOperatorJourneyTests` screenshots, ScaleAudit `restore-setup`), the guides' text and four of their pictures, `docs/perf/1.2.0.md`, and the updates to this file, the checklist, the plan and CLAUDE.md.
+- The fixes are committed on `revised`: B-1, C-1, B-2 and D-1 to D-5 as 7ed8707, and B-3 to B-7 with the gate records as 13944a4.
 
 Still to do, in order:
-1. Commit the changes.
-2. Rebuild the 1.2.0 packages with `scripts/build-release.ps1 -Version 1.2.0`, so the embedded commit matches (G-3), and rerun the packaged journey on the new portable build (G-4).
-3. Retake the guide's Purchases page pictures (`purchases-page.en/.gu.png`) with the vendor and status lists loaded; they still show the folded **More** (B-6).
-4. The human gates in `docs/release-checklist.md`, and the owner decisions below.
+1. Rebuild the 1.2.0 packages from 13944a4 or later with `scripts/build-release.ps1 -Version 1.2.0`, so the embedded commit matches (G-3), and rerun the packaged journey on the new portable build (G-4).
+2. Retake the guide's Purchases page pictures (`purchases-page.en/.gu.png`) with the vendor and status lists loaded; they still show the folded **More** (B-6).
+3. The human gates in `docs/release-checklist.md`, and the owner decisions below.
 
 Status: review of `revised-implementation-plan.md` and `revised-plan-issues.md` against the code, 5 November 2026, release 1.2.0 on schema 40. Every item in `revised-plan-issues.md` is closed with a regression test; this file lists what the review found beyond them.
 
