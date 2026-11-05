@@ -96,6 +96,7 @@ public sealed class LotQuantities(ISettings settings) : ILotQuantities
         if (productId <= 0 || requested <= Quantity.Zero)
             throw new DomainException(ErrorCode.Validation, "A product and positive quantity are required.");
 
+        // The order and expiry rule of SellableLot, whose first lot the Products list shows.
         List<LotStock> lots = transaction.Connection.Query<LotRow>("""
             SELECT id AS LotId, qty_on_hand AS OnHand, expiry_date AS Expiry,
                    selling_price AS Price, mrp AS Mrp, unit_cost AS Cost,

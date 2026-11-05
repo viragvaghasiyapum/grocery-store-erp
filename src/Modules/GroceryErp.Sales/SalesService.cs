@@ -110,21 +110,19 @@ public sealed partial class SalesService(
         return id;
     }, cancellationToken);
 
+    // A price label is sold from the lot Billing sells next; its price turns the label's amount into a quantity.
+    private static readonly string PriceLabelLotSql =
+        $"SELECT id AS LotId,selling_price AS Price FROM product_lot WHERE id={SellableLot.NextIdSql("@productId", "@from")}";
+
     public async Task<long> AddPriceLabelAsync(long? saleId, long productId, Money totalPrice,
         string? scannedBarcode = null, CancellationToken cancellationToken = default)
     {
         if (totalPrice <= Money.Zero) throw new DomainException(ErrorCode.Validation, totalPrice);
         (long LotId, long Price) lot = await database.ReadAsync(connection =>
-            connection.QuerySingleOrDefault<(long LotId, long Price)>("""
-                SELECT id AS LotId,selling_price AS Price FROM product_lot
-                WHERE product_id=@productId AND is_active=1 AND qty_on_hand>0
-                  AND (@blockExpired=0 OR expiry_date IS NULL OR expiry_date>=@date)
-                ORDER BY expiry_date IS NULL,expiry_date,received_date,id LIMIT 1
-                """, new
+            connection.QuerySingleOrDefault<(long LotId, long Price)>(PriceLabelLotSql, new
             {
                 productId,
-                blockExpired = settings.Current.BlockExpiredLots ? 1 : 0,
-                date = DateText(clock.BusinessDate),
+                from = SellableLot.From(settings.Current.BlockExpiredLots, clock.BusinessDate),
             }), cancellationToken);
         if (lot.LotId == 0) throw new DomainException(ErrorCode.NoLotForProduct, productId);
         Money price = Money.FromScaled(lot.Price);

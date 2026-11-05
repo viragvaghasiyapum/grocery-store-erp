@@ -123,6 +123,7 @@ public sealed class UpgradeTests
     [InlineData(36)]
     [InlineData(37)]
     [InlineData(38)]
+    [InlineData(39)]
     public void UpgradeFromAnyEarlierVersion_EndsWithTheSchemaOfANewStore(int version)
     {
         using var fresh = new Store();

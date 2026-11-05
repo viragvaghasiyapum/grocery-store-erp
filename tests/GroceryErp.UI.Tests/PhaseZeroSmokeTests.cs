@@ -218,6 +218,7 @@ public sealed class PhaseZeroSmokeTests
                 VerifyPhaseSevenScreens(translations);
                 VerifyOperatorMessages(translations);
                 VerifyExpiryTiles(translations);
+                VerifyNextLotAndReturnTax(translations);
                 VerifyReleaseNotes(translations);
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 DisplayFormatter formatter = new();
@@ -1392,8 +1393,10 @@ public sealed class PhaseZeroSmokeTests
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
 
+        // A guard against a hung journey, not a speed budget: alone it takes about 50 s, but in a full
+        // run the integration tests share the CPU and it took over 120 s (5 November 2026).
         await completion.Task.WaitAsync(
-            TimeSpan.FromSeconds(120),
+            TimeSpan.FromSeconds(300),
             TestContext.Current.CancellationToken);
     }
 
@@ -2494,6 +2497,154 @@ public sealed class PhaseZeroSmokeTests
             SqliteConnectionFactory.ClearPoolForDataRoot(root);
             if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
         }
+    }
+
+    // §15 T-1 and T-2 on screen, on a fresh store, in both languages; captured when
+    // GROCERY_MESSAGE_SCREENSHOT_DIR is set. The Products list and Billing's list of name matches show
+    // the prices of the lot a bill takes next: not the expired one, and of two lots expiring on the same
+    // day the one received first. A unit returned after its lot was deleted is restocked under the tax
+    // name it was bought at (GST 18%), not the bill line's sale-side name (GST 5%). Pages hosted without
+    // the app read the machine date, so the store's clock does too.
+    private static void VerifyNextLotAndReturnTax(TranslationSource translations)
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"grocery-erp-ui-next-lot-{Guid.NewGuid():N}");
+        SynchronizationContext? previousContext = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(
+            new System.Windows.Threading.DispatcherSynchronizationContext(System.Windows.Threading.Dispatcher.CurrentDispatcher));
+        try
+        {
+            var paths = new AppPaths(new SettingsBootstrap(root));
+            var factory = new SqliteConnectionFactory(paths);
+            using var database = new DbExecutor(factory);
+            new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
+            using var settings = new SettingsService(database, paths, new AuditLog());
+            Run(() => settings.LoadAsync());
+            DateOnly today = GroceryErp.App.App.BusinessDate;
+            var clock = new MutableClock(today);
+            var ledger = new LotQuantities(settings);
+            var numbers = new DocNumberService(settings);
+            var periods = new PeriodGuard(settings, clock);
+            var inventory = new InventoryService(database, ledger, numbers, periods, new AuditLog());
+            var catalog = new CatalogService(database, new AuditLog(), settings, clock);
+            var sales = new SalesService(database, ledger, numbers, periods, settings, new AuditLog(), clock);
+            long staples = Run(() => catalog.CreateCategoryAsync(new("Staples", null, null, null)));
+            long gst18;
+            using (var connection = factory.Open())
+                gst18 = connection.ExecuteScalar<long>("SELECT id FROM tax_rate WHERE rate_pct=18000");
+            long AddProduct(string sku, string name)
+            {
+                using var connection = factory.Open();
+                return connection.ExecuteScalar<long>("""
+                    INSERT INTO product(sku,name,category_id,uom_id,hsn_code,tax_rate_id,track_expiry,default_selling_price,default_mrp)
+                    SELECT @sku,@name,@staples,u.id,'1006',(SELECT id FROM tax_rate WHERE rate_pct=5000),1,140000,160000
+                    FROM uom u WHERE u.code='PCS' RETURNING id
+                    """, new { sku, name, staples });
+            }
+            long AddLot(long product, string batch, decimal cost, decimal price, int expiresIn, int receivedAgo,
+                bool boughtAt18 = false, int quantity = 4) => Run(() => inventory.CreateDirectLotAsync(
+                new OpeningStockLine(product, new Quantity(quantity), new Money(cost), new Money(price), new Money(160),
+                    today.AddDays(expiresIn), batch, today.AddDays(-receivedAgo))
+                { TaxRateId = boughtAt18 ? gst18 : null }, "Opening shelf", OperationGuard.NewId()));
+            long basmati = AddProduct("RICE1", "Basmati rice 1 kg");
+            AddLot(basmati, "R-EXP", 80, 100, -1, 30);                       // expired: never sold while blocked
+            AddLot(basmati, "R-LATE", 100, 118, 60, 5);                      // same expiry, received later
+            long next = AddLot(basmati, "R-NEXT", 100, 112, 60, 20, boughtAt18: true);
+            long sold = AddLot(basmati, "R-SOLD", 100, 125, 120, 10, boughtAt18: true, quantity: 2);
+            AddLot(AddProduct("RICE2", "Brown rice 1 kg"), "B-90", 50, 70, 90, 3);
+            // Both R-SOLD units are sold, its emptied lot deleted, and one unit comes back resellable.
+            // Completing and returning run on this thread, as Billing and Sales history call them, so the
+            // change messages reach pages left from earlier steps on their own thread.
+            T OnDispatcher<T>(Func<Task<T>> action)
+            {
+                Task<T> task = action();
+                PumpUntil(() => task.IsCompleted, 30_000);
+                return task.GetAwaiter().GetResult();
+            }
+            long saleId = Run(() => sales.AddProductAsync(null, basmati, new Quantity(2), preferredLotId: sold));
+            OnDispatcher(() => sales.CompleteAsync(new(saleId, [new(PaymentMode.Cash, new Money(250))], OperationGuard.NewId())));
+            SaleLine soldLine = Run(() => sales.GetAsync(saleId)).Lines.Single();
+            soldLine.TaxLabel.ShouldBe("GST 5%");
+            using (var connection = factory.Open())
+                Run(() => inventory.DeleteZeroLotAsync(sold,
+                    connection.ExecuteScalar<long>("SELECT detail_version FROM product_lot WHERE id=@sold", new { sold })));
+            OnDispatcher(() => sales.ReturnAsync(new(saleId, today, "Unopened", RefundMode.Cash,
+                [new(soldLine.Id, Quantity.One, true)], OperationGuard.NewId())));
+            var importer = new ProductExcelImporter(database, new AuditLog(), settings);
+
+            foreach ((string culture, string suffix) in new[] { ("en-IN", "en"), ("gu-IN", "gu") })
+            {
+                translations.UiCulture = CultureInfo.GetCultureInfo(culture);
+                // 100 + 18% tax = 118.00, from R-NEXT: R-EXP has expired and R-LATE came in later.
+                var products = new ProductsPage(catalog, settings, importer);
+                var productsHost = new Window { Content = products, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
+                productsHost.Show();
+                var productGrid = (DataGrid)products.FindName("ProductsGrid");
+                PumpUntil(() => productGrid.Items.Count == 2, 15_000);
+                CaptureMessage(productsHost, $"next-lot-products.{suffix}.png");
+                ProductListItem row = productGrid.Items.Cast<ProductListItem>().Single(static item => item.Sku == "RICE1");
+                row.SellingPrice.ShouldBe(new Money(112));
+                row.Mrp.ShouldBe(new Money(160));
+                row.CostInclTax.ShouldBe(new Money(118));
+                productsHost.Close();
+
+                // Billing lists both rice products at those prices, and the picked one joins at 112 from R-NEXT.
+                var billing = new BillingPage(sales, new ScanResolver(database), catalog, inventory, new ReceiptPrinter(settings),
+                    loadOnShow: false);
+                var billingHost = new Window { Content = billing, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
+                billingHost.Show();
+                var typing = (Task)typeof(BillingPage).GetMethod("AddTextAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(billing, ["rice", false])!;
+                PumpUntil(() => typing.IsCompleted);
+                typing.GetAwaiter().GetResult();
+                var billChoices = (ProductChoices)billing.FindName("ProductChoices");
+                var billChoiceList = (ListBox)billChoices.FindName("List");
+                billChoices.IsOpen.ShouldBeTrue();
+                CaptureMessage(billChoices, $"next-lot-billing-choices.{suffix}.png");
+                billChoiceList.Items.Cast<ProductListItem>().Single(static item => item.Sku == "RICE1").SellingPrice
+                    .ShouldBe(new Money(112));
+                billChoiceList.SelectedItem = billChoiceList.Items.Cast<ProductListItem>().Single(static item => item.Sku == "RICE1");
+                billing.Dispatcher.Invoke(() => billChoiceList.RaiseEvent(
+                    new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(billingHost)!, 0, Key.Enter)
+                    { RoutedEvent = Keyboard.KeyDownEvent }));
+                var billGrid = (DataGrid)billing.FindName("BillGrid");
+                PumpUntil(() => billGrid.Items.Count == 1);
+                CaptureMessage(billingHost, $"next-lot-billing-line.{suffix}.png");
+                ((SaleLine)billGrid.Items[0]).LotId.ShouldBe(next);
+                ((SaleLine)billGrid.Items[0]).UnitPrice.ShouldBe(new Money(112));
+                billingHost.Close();
+
+                // The returned unit's lot: Purchase price 100.00 + Tax/unit 18.00 = 118.00 under GST 18%.
+                var lots = new ProductLotsView(inventory, basmati, isInternal: false);
+                var lotsHost = new Window { Content = lots, Width = 1366, Height = 520, Language = AppLanguage };
+                lotsHost.Show();
+                var lotGrid = (DataGrid)lots.FindName("LotsGrid");
+                // R-EXP, R-LATE, R-NEXT and the return lot; the emptied R-SOLD was deleted.
+                PumpUntil(() => lotGrid.Items.Count == 4, 15_000);
+                CaptureMessage(lotsHost, $"return-lot-tax.{suffix}.png");
+                LotItem returned = lotGrid.Items.Cast<LotItem>().Single(static lot => lot.OriginKind == "CUSTOMER_RETURN");
+                returned.TaxLabel.ShouldBe("GST 18%");
+                returned.PurchasePrice.ShouldBe(new Money(100));
+                returned.UnitTax.ShouldBe(new Money(18));
+                returned.UnitCostInclTax.ShouldBe(new Money(118));
+                lotsHost.Close();
+            }
+        }
+        finally
+        {
+            translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+            SynchronizationContext.SetSynchronizationContext(previousContext);
+            SqliteConnectionFactory.ClearPoolForDataRoot(root);
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static void CaptureMessage(Popup popup, string fileName)
+    {
+        string? directory = Environment.GetEnvironmentVariable("GROCERY_MESSAGE_SCREENSHOT_DIR");
+        if (string.IsNullOrEmpty(directory)) return;
+        var content = (FrameworkElement)popup.Child;
+        content.UpdateLayout();
+        SavePng(content, content.ActualWidth, content.ActualHeight, directory, fileName);
     }
 
     private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject

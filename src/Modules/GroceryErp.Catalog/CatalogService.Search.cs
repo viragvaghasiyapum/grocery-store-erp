@@ -27,6 +27,8 @@ public sealed partial class CatalogService
             AddFilterParameters(parameters, filter);
             parameters.Add("afterName", afterName);
             parameters.Add("afterId", afterId);
+            string sellableFrom = SellableFrom(filter);
+            parameters.Add("sellableFrom", sellableFrom);
 
             // An exact SKU or barcode is the operator's clearest intent, so it leads the first
             // page; later pages exclude it so keyset paging never repeats or skips a row.
@@ -95,7 +97,7 @@ public sealed partial class CatalogService
                 List<ProductListItem> exact = connection.Query<ProductListItem>(ListSql("""
                     SELECT p.id,p.name FROM product p WHERE p.id IN @exactIds
                     ORDER BY p.name COLLATE NOCASE,p.id
-                    """), new { exactIds, expiryToday = ExpiryToday(filter) }).AsList();
+                    """), new { exactIds, expiryToday = ExpiryToday(filter), sellableFrom }).AsList();
                 rows.InsertRange(0, exact);
             }
             return new ProductSearchPage(rows, hasMore, last?.Name, last?.Id);
@@ -165,6 +167,10 @@ public sealed partial class CatalogService
 
     private string ExpiryToday(ProductSearchFilter filter) =>
         ExpiryAsOf(filter).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    // The row's lot is the one Billing sells next on that date, under the same expired-lot setting.
+    private string SellableFrom(ProductSearchFilter filter) =>
+        SellableLot.From(settings.Current.BlockExpiredLots, ExpiryAsOf(filter));
 
     // Expiring products follow the dashboard's rule (ExpiryAlert): each lot's own alert window, not a
     // fixed 30 days. Both forms list the same products. The check reads each candidate's earliest
@@ -327,7 +333,11 @@ public sealed partial class CatalogService
     }
 
     // Projects a page of product IDs (selected by the inner query, which must return id and name)
-    // to list rows with stock total and the FEFO lot's price, MRP and purchase price including tax.
+    // to list rows with stock total and the price, MRP and purchase price including tax of the lot
+    // Billing sells next (SellableLot, with @sellableFrom); a product with no stock it can sell shows
+    // its default prices and no purchase price.
+    private static readonly string NextLotSql = SellableLot.NextIdSql("p.id", "@sellableFrom");
+
     private static string ListSql(string visible) => $$"""
         WITH visible AS MATERIALIZED ({{visible}})
         SELECT p.id AS Id, p.sku AS Sku, p.name AS Name, p.name_local AS NameLocal,
@@ -346,9 +356,7 @@ public sealed partial class CatalogService
         JOIN category c ON c.id=p.category_id
         JOIN uom u ON u.id=p.uom_id
         LEFT JOIN brand b ON b.id=p.brand_id
-        LEFT JOIN product_lot l ON l.id=(
-            SELECT pl.id FROM product_lot pl WHERE pl.product_id=p.id AND pl.qty_on_hand>0 AND pl.is_active=1
-            ORDER BY CASE WHEN pl.expiry_date IS NULL THEN 1 ELSE 0 END, pl.expiry_date, pl.id LIMIT 1)
+        LEFT JOIN product_lot l ON l.id={{NextLotSql}}
         ORDER BY page.name COLLATE NOCASE,page.id
         """;
 }

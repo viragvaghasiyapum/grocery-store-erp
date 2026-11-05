@@ -248,6 +248,14 @@ public sealed class TaxSnapshotTests
                 .Message.ShouldContain("fixed when the lot is created");
         db.Execute("UPDATE product_lot SET selling_price=140000 WHERE id=@lot", new { lot });
         db.ExecuteScalar<long>("SELECT selling_price FROM product_lot WHERE id=@lot", new { lot }).ShouldBe(140_000L);
+
+        // Deleting a lot keeps its tax, once and for good; a lot saved without tax values keeps nothing.
+        long untaxed = db.ExecuteScalar<long>("SELECT MAX(id) FROM product_lot WHERE unit_tax IS NULL");
+        db.Execute("DELETE FROM product_lot WHERE id IN (@lot,@untaxed)", new { lot, untaxed });
+        db.Query<(long Lot, long Tax, long Incl)>("SELECT lot_id,unit_tax,unit_cost_incl_tax FROM deleted_lot_tax")
+            .ShouldBe([(lot, 5_000L, 105_000L)]);
+        foreach (string change in new[] { "UPDATE deleted_lot_tax SET tax_label_snapshot='Other'", "DELETE FROM deleted_lot_tax" })
+            Should.Throw<SqliteException>(() => db.Execute(change)).Message.ShouldContain("deleted lot tax is immutable");
     }
 
     [Fact]
@@ -414,6 +422,230 @@ public sealed class TaxSnapshotTests
         check.ExecuteScalar<long>("SELECT price_includes_tax FROM product WHERE sku='TAX-1'").ShouldBe(1L);
     }
 
+    // Decision 10: the Products list shows the selling price, MRP and purchase price including tax of
+    // the lot Billing sells next, by Billing's rule: no expired lot while they are blocked, the
+    // earliest expiry, then the earliest received, lots without an expiry last.
+    [Fact]
+    public async Task ProductsList_ShowsTheLotBillingSellsNext_UnderTheSameRules()
+    {
+        using var fixture = new TaxFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        DateOnly today = fixture.Today;
+        long other;
+        using (SqliteConnection db = fixture.Factory.Open())
+            other = db.ExecuteScalar<long>("""
+                INSERT INTO product(sku,name,category_id,uom_id,hsn_code,tax_rate_id,track_expiry,
+                    default_selling_price,default_mrp)
+                VALUES ('TAX-2','Second product',@CategoryId,@UnitId,'1006',@Gst5,0,140000,160000) RETURNING id
+                """, new { fixture.CategoryId, fixture.UnitId, fixture.Gst5 });
+        Task<long> Lot(decimal cost, decimal price, DateOnly? expiry, DateOnly received, long? rate = null,
+            long? productId = null) => fixture.Inventory.CreateDirectLotAsync(fixture.Opening(new Money(cost)) with
+            {
+                ProductId = productId ?? fixture.ProductId,
+                Quantity = new Quantity(5),
+                SellingPrice = new Money(price),
+                ExpiryDate = expiry,
+                ReceivedDate = received,
+                TaxRateId = rate,
+            }, "Stock", OperationGuard.NewId(), ct);
+        long soonest = await Lot(80, 100, today.AddDays(2), today);
+        // Both expire on 25 November: the one received earlier sells first, though it was entered later.
+        await Lot(100, 118, today.AddDays(60), today);
+        long receivedFirst = await Lot(100, 112, today.AddDays(60), today.AddDays(-6), fixture.Gst18);
+        long undated = await Lot(70, 90, null, today);
+        // The second product's only stock expires on 28 September.
+        await Lot(50, 150, today.AddDays(2), today, productId: other);
+
+        async Task<ProductListItem> Row(long productId) =>
+            (await fixture.Catalog.SearchAsync(new ProductSearchFilter(), ct)).Single(row => row.Id == productId);
+        async Task Expect(long lotId, decimal price, decimal costInclTax)
+        {
+            ProductListItem row = await Row(fixture.ProductId);
+            row.SellingPrice.ShouldBe(new Money(price));
+            row.CostInclTax.ShouldBe(new Money(costInclTax));
+            // An exact SKU leads Billing's list of name matches through its own query.
+            ProductListItem exact = (await fixture.Catalog.SearchAsync(new ProductSearchFilter(Query: "TAX-1")
+            { ExactFirst = true }, ct))[0];
+            exact.Id.ShouldBe(fixture.ProductId);
+            exact.SellingPrice.ShouldBe(row.SellingPrice);
+            exact.CostInclTax.ShouldBe(row.CostInclTax);
+            long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
+            SaleLine billed = (await fixture.Sales.GetAsync(saleId, ct)).Lines.Single();
+            billed.LotId.ShouldBe(lotId);
+            billed.UnitPrice.ShouldBe(new Money(price));
+            billed.UnitCostInclTax.ShouldBe(new Money(costInclTax));
+        }
+
+        // 80 + 5% tax.
+        await Expect(soonest, 100, 84);
+
+        fixture.Clock.Now = new DateTime(2026, 10, 1, 11, 0, 0);
+        // 100 + 18% tax; the expired lot is skipped and the earlier receipt wins the tie.
+        await Expect(receivedFirst, 112, 118);
+        long labelSale = await fixture.Sales.AddPriceLabelAsync(null, fixture.ProductId, new Money(224), cancellationToken: ct);
+        SaleLine label = (await fixture.Sales.GetAsync(labelSale, ct)).Lines.Single();
+        label.LotId.ShouldBe(receivedFirst);
+        label.Quantity.ShouldBe(new Quantity(2));
+        // Nothing the second product holds can be sold: its default price and no purchase price.
+        ProductListItem expiredOnly = await Row(other);
+        expiredOnly.SellingPrice.ShouldBe(new Money(140));
+        expiredOnly.CostInclTax.ShouldBeNull();
+        expiredOnly.Stock.ShouldBe(new Quantity(5));
+
+        await fixture.Settings.SaveAsync(new Dictionary<string, string> { ["pos.block_expired"] = "0" }, ct);
+        await Expect(soonest, 100, 84);
+        (await Row(other)).CostInclTax.ShouldBe(new Money(52.5m));
+
+        await fixture.Settings.SaveAsync(new Dictionary<string, string> { ["pos.block_expired"] = "1" }, ct);
+        fixture.Clock.Now = new DateTime(2026, 11, 26, 11, 0, 0);
+        // Every dated lot has expired; 70 + 5% tax.
+        await Expect(undated, 90, 73.5m);
+    }
+
+    // A returned unit restocked into a new lot keeps the tax per piece its sale line copied from the
+    // lot it was sold from, under that lot's rate, label and percent; the sale line's own label is
+    // the sale side. The lot is read while it exists, and from what its deletion kept once deleted.
+    [Fact]
+    public async Task ReturnLot_TakesTheRateLabelAndPercentOfTheLotTheUnitsWereSoldFrom()
+    {
+        using var fixture = new TaxFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        await fixture.Catalog.CreateTaxRateAsync("GST 12%", 12m, ct);
+        long gst12 = fixture.RateId("GST 12%");
+        // The product sells at GST 5%; its stock was bought at other rates.
+        long id = await fixture.Purchasing.SaveDraftAsync(null, fixture.Draft("RET-18", Money.Zero,
+            TaxFixture.Line(fixture.ProductId, new Quantity(2), new Money(100), fixture.Gst18)), ct);
+        long bought = (await fixture.Purchasing.PostAsync(id, OperationGuard.NewId(), ct)).LotIds.Single();
+        long direct = await fixture.Inventory.CreateDirectLotAsync(fixture.Opening(new Money(100)) with
+        { Quantity = new Quantity(2), TaxRateId = fixture.Gst18 }, "Stock", OperationGuard.NewId(), ct);
+        long edited = await fixture.Inventory.CreateDirectLotAsync(fixture.Opening(new Money(100)) with
+        { Quantity = new Quantity(3), TaxRateId = gst12 }, "Stock", OperationGuard.NewId(), ct);
+        long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, new Quantity(2),
+            preferredLotId: bought, cancellationToken: ct);
+        await fixture.Sales.AddProductAsync(saleId, fixture.ProductId, new Quantity(2), preferredLotId: direct, cancellationToken: ct);
+        await fixture.Sales.AddProductAsync(saleId, fixture.ProductId, Quantity.One, preferredLotId: edited, cancellationToken: ct);
+        await fixture.Sales.CompleteAsync(new(saleId, [new(PaymentMode.Cash, new Money(750))], OperationGuard.NewId()), ct);
+        IReadOnlyList<SaleLine> lines = (await fixture.Sales.GetAsync(saleId, ct)).Lines;
+        lines.Select(static line => line.TaxLabel).ShouldAllBe(label => label == "GST 5%");
+
+        // The purchase lot and the direct lot are sold out and deleted; the third has a new price,
+        // so the units cannot go back into it.
+        using (SqliteConnection db = fixture.Factory.Open())
+        {
+            foreach (long lot in new[] { bought, direct })
+                await fixture.Inventory.DeleteZeroLotAsync(lot,
+                    db.ExecuteScalar<long>("SELECT detail_version FROM product_lot WHERE id=@lot", new { lot }), ct);
+            await fixture.Inventory.EditLotDetailsAsync(new(edited,
+                db.ExecuteScalar<long>("SELECT detail_version FROM product_lot WHERE id=@edited", new { edited }),
+                new Money(155), new Money(160), null), ct);
+            db.Query<long>("SELECT lot_id FROM deleted_lot_tax ORDER BY lot_id").ShouldBe([bought, direct]);
+        }
+
+        await fixture.Sales.ReturnAsync(new(saleId, fixture.Today, "Returned", RefundMode.Cash,
+            [.. lines.Select(static line => new ReturnLineInput(line.Id, Quantity.One, true))], OperationGuard.NewId()), ct);
+
+        using SqliteConnection check = fixture.Factory.Open();
+        check.Query<LotTaxRow>("""
+            SELECT l.tax_rate_id_snapshot AS RateId,l.tax_label_snapshot AS Label,l.tax_rate_pct_snapshot AS Pct,
+                   l.unit_cost AS Cost,l.unit_tax AS Tax,l.unit_cost_incl_tax AS Incl
+            FROM sale_return_line rl JOIN sale_line sl ON sl.id=rl.sale_line_id
+            JOIN product_lot l ON l.id=rl.restock_lot_id ORDER BY sl.line_no
+            """).ShouldBe([
+            new LotTaxRow(fixture.Gst18, "GST 18%", 18_000, 100_000, 18_000, 118_000),
+            new LotTaxRow(fixture.Gst18, "GST 18%", 18_000, 100_000, 18_000, 118_000),
+            new LotTaxRow(gst12, "GST 12%", 12_000, 100_000, 12_000, 112_000),
+        ]);
+        await fixture.Database.WriteAsync(tx => LotSourceReconciliation.CheckAll(tx.Connection, tx.Transaction).ToArray().ShouldBeEmpty(), ct);
+    }
+
+    // In Composition mode a bill charges no tax, so its line has no label, while its lot was bought
+    // with tax. When the product was deleted too, the units go into the product the operator chose,
+    // still under the purchase's label.
+    [Fact]
+    public async Task ReturnLot_InCompositionMode_KeepsThePurchaseLabel_InTheProductChosenForADeletedOne()
+    {
+        using var fixture = new TaxFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        await fixture.Settings.SaveAsync(new Dictionary<string, string> { ["tax.mode"] = "COMPOSITION" }, ct);
+        long id = await fixture.Purchasing.SaveDraftAsync(null, fixture.Draft("COMP-1", Money.Zero,
+            TaxFixture.Line(fixture.ProductId, new Quantity(2), new Money(100), fixture.Gst5)), ct);
+        long lot = (await fixture.Purchasing.PostAsync(id, OperationGuard.NewId(), ct)).LotIds.Single();
+        long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, new Quantity(2), cancellationToken: ct);
+        await fixture.Sales.CompleteAsync(new(saleId, [new(PaymentMode.Cash, new Money(300))], OperationGuard.NewId()), ct);
+        SaleLine line = (await fixture.Sales.GetAsync(saleId, ct)).Lines.Single();
+        line.TaxLabel.ShouldBeNull();
+        line.UnitCostTax.ShouldBe(new Money(5));
+        long chosen;
+        using (SqliteConnection db = fixture.Factory.Open())
+        {
+            await fixture.Inventory.DeleteZeroLotAsync(lot,
+                db.ExecuteScalar<long>("SELECT detail_version FROM product_lot WHERE id=@lot", new { lot }), ct);
+            chosen = db.ExecuteScalar<long>("""
+                INSERT INTO product(sku,name,category_id,uom_id,hsn_code,tax_rate_id,track_expiry,
+                    default_selling_price,default_mrp)
+                VALUES ('TAX-NEW','Tax product again',@CategoryId,@UnitId,'1006',@Gst18,0,140000,160000) RETURNING id
+                """, new { fixture.CategoryId, fixture.UnitId, fixture.Gst18 });
+        }
+        (await fixture.Catalog.RemoveAsync(fixture.ProductId, ct)).ShouldBe(ProductRemoval.Deleted);
+
+        await fixture.Sales.ReturnAsync(new(saleId, fixture.Today, "Returned", RefundMode.Cash,
+            [new(line.Id, Quantity.One, true, new RestoreProductChoice(chosen, null, new Money(140), new Money(160)))],
+            OperationGuard.NewId()), ct);
+        // A later return of the same original follows the product chosen first.
+        await fixture.Sales.ReturnAsync(new(saleId, fixture.Today, "Returned", RefundMode.Cash,
+            [new(line.Id, Quantity.One, true)], OperationGuard.NewId()), ct);
+
+        using SqliteConnection check = fixture.Factory.Open();
+        // Composition books the price including tax; the tax is the one paid at 5%.
+        check.Query<LotTaxRow>("""
+            SELECT tax_rate_id_snapshot AS RateId,tax_label_snapshot AS Label,tax_rate_pct_snapshot AS Pct,
+                   unit_cost AS Cost,unit_tax AS Tax,unit_cost_incl_tax AS Incl
+            FROM product_lot WHERE product_id=@chosen ORDER BY id
+            """, new { chosen }).ShouldBe([
+            new LotTaxRow(fixture.Gst5, "GST 5%", 5_000, 105_000, 5_000, 105_000),
+            new LotTaxRow(fixture.Gst5, "GST 5%", 5_000, 105_000, 5_000, 105_000),
+        ]);
+    }
+
+    // Lots deleted before schema 40 kept nothing. A purchase lot is traced through its purchase
+    // line; a lot of another origin keeps the tax paid with no label rather than a wrong one.
+    [Fact]
+    public async Task ReturnLot_OfALotDeletedBeforeSchema40_TakesItsPurchaseLinesLabel_OrNone()
+    {
+        using var fixture = new TaxFixture(version: 39);
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long id = await fixture.Purchasing.SaveDraftAsync(null, fixture.Draft("OLD-18", Money.Zero,
+            TaxFixture.Line(fixture.ProductId, Quantity.One, new Money(100), fixture.Gst18)), ct);
+        long bought = (await fixture.Purchasing.PostAsync(id, OperationGuard.NewId(), ct)).LotIds.Single();
+        long direct = await fixture.Inventory.CreateDirectLotAsync(fixture.Opening(new Money(100)) with
+        { Quantity = Quantity.One, TaxRateId = fixture.Gst18 }, "Stock", OperationGuard.NewId(), ct);
+        long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One,
+            preferredLotId: bought, cancellationToken: ct);
+        await fixture.Sales.AddProductAsync(saleId, fixture.ProductId, Quantity.One, preferredLotId: direct, cancellationToken: ct);
+        await fixture.Sales.CompleteAsync(new(saleId, [new(PaymentMode.Cash, new Money(300))], OperationGuard.NewId()), ct);
+        using (SqliteConnection db = fixture.Factory.Open())
+            foreach (long lot in new[] { bought, direct })
+                await fixture.Inventory.DeleteZeroLotAsync(lot,
+                    db.ExecuteScalar<long>("SELECT detail_version FROM product_lot WHERE id=@lot", new { lot }), ct);
+
+        fixture.Upgrade();
+        IReadOnlyList<SaleLine> lines = (await fixture.Sales.GetAsync(saleId, ct)).Lines;
+        await fixture.Sales.ReturnAsync(new(saleId, fixture.Today, "Returned", RefundMode.Cash,
+            [.. lines.Select(static line => new ReturnLineInput(line.Id, Quantity.One, true))], OperationGuard.NewId()), ct);
+
+        using SqliteConnection check = fixture.Factory.Open();
+        check.ExecuteScalar<long>("SELECT COUNT(*) FROM deleted_lot_tax").ShouldBe(0L);
+        check.Query<LotTaxRow>("""
+            SELECT l.tax_rate_id_snapshot AS RateId,l.tax_label_snapshot AS Label,l.tax_rate_pct_snapshot AS Pct,
+                   l.unit_cost AS Cost,l.unit_tax AS Tax,l.unit_cost_incl_tax AS Incl
+            FROM sale_return_line rl JOIN sale_line sl ON sl.id=rl.sale_line_id
+            JOIN product_lot l ON l.id=rl.restock_lot_id ORDER BY sl.line_no
+            """).ShouldBe([
+            new LotTaxRow(fixture.Gst18, "GST 18%", 18_000, 100_000, 18_000, 118_000),
+            new LotTaxRow(null, null, 0, 100_000, 18_000, 118_000),
+        ]);
+    }
+
     [Fact]
     public async Task BookedCost_Cogs_PnlAndGstSummary_AreThoseBeforeTaxSnapshots()
     {
@@ -452,13 +684,14 @@ public sealed class TaxSnapshotTests
 
     private sealed class TaxFixture : IDisposable
     {
-        public TaxFixture()
+        // A store at an older schema rehearses an upgrade; Upgrade then takes it to the latest.
+        public TaxFixture(int? version = null)
         {
             Root = Path.Combine(Path.GetTempPath(), $"grocery-erp-tax-{Guid.NewGuid():N}");
             var paths = new AppPaths(new SettingsBootstrap(Root));
             Factory = new SqliteConnectionFactory(paths);
             Database = new DbExecutor(Factory);
-            new MigrationRunner(Factory, NullMigrationBackup.Instance).Run();
+            new MigrationRunner(Factory, NullMigrationBackup.Instance).RunTo(version ?? MigrationRunner.LatestVersion);
             Settings = new SettingsService(Database, paths, new AuditLog());
             Settings.LoadAsync().GetAwaiter().GetResult();
             Clock = new FixedClock(new DateTime(2026, 9, 26, 11, 0, 0));
@@ -504,6 +737,8 @@ public sealed class TaxSnapshotTests
         public long ProductId { get; }
         public long VendorId { get; }
         public DateOnly Today => Clock.BusinessDate;
+
+        public void Upgrade() => new MigrationRunner(Factory, NullMigrationBackup.Instance).Run();
 
         public static PurchaseLineInput Line(long productId, Quantity quantity, Money rate, long? taxRateId) =>
             new(productId, null, null, null, quantity, Quantity.Zero, rate, Money.Zero, taxRateId,
@@ -558,7 +793,7 @@ public sealed class TaxSnapshotTests
 
     private sealed class FixedClock(DateTime now) : IClock
     {
-        public DateTime Now => now;
-        public DateOnly BusinessDate => DateOnly.FromDateTime(now);
+        public DateTime Now { get; set; } = now;
+        public DateOnly BusinessDate => DateOnly.FromDateTime(Now);
     }
 }

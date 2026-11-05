@@ -2226,6 +2226,117 @@ switch (mode)
         }
         break;
     }
+    case "section15-products":
+    {
+        // §15 T-1: the Products list (and Billing's list of name matches) shows the selling price, MRP
+        // and purchase price including tax of the lot Billing sells next. Times the list's reads through
+        // the services as of ScaleAudit's business date: each runs once traced (its plan is captured),
+        // once to warm up, then 31 times. Then pages through every product under each expired-lot
+        // setting and counts the rows whose values differ from the first lot of AllocateFefo's own
+        // query; it reports, without failing, so an older build's differences show. The setting is put
+        // back afterwards.
+        DateOnly today = clock.BusinessDate;
+        string asOf = today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        string commonWord, busiestExpired;
+        long expiredCategory;
+        using (var connection = factory.Open())
+        {
+            commonWord = connection.ExecuteScalar<string>("""
+                SELECT lower(substr(name,1,instr(name||' ',' ')-1)) AS word FROM product
+                GROUP BY word HAVING length(word)>=3 ORDER BY COUNT(*) DESC LIMIT 1
+                """) ?? "";
+            // The product and the category holding the most expired lots with stock.
+            busiestExpired = connection.ExecuteScalar<string>("""
+                SELECT p.name FROM product_lot l JOIN product p ON p.id=l.product_id
+                WHERE l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date<@asOf
+                GROUP BY p.id ORDER BY COUNT(*) DESC LIMIT 1
+                """, new { asOf }) ?? "";
+            expiredCategory = connection.ExecuteScalar<long>("""
+                SELECT p.category_id FROM product_lot l JOIN product p ON p.id=l.product_id
+                WHERE l.qty_on_hand>0 AND l.is_active=1 AND l.expiry_date<@asOf
+                GROUP BY p.category_id ORDER BY COUNT(*) DESC LIMIT 1
+                """, new { asOf });
+        }
+        ProductSearchFilter listed = new(Limit: 50, ExpiryAsOf: today) { ExactFirst = true };
+        ProductSearchPage firstPage = await catalog.SearchPageAsync(listed);
+        var shapes = new (string Name, Func<Task<int>> Read)[]
+        {
+            ("products-first-page", async () => (await catalog.SearchPageAsync(listed)).Items.Count),
+            ("products-next-page", async () => (await catalog.SearchPageAsync(listed,
+                firstPage.NextName, firstPage.NextId)).Items.Count),
+            ("products-common-search", async () => (await catalog.SearchPageAsync(listed with
+                { Query = commonWord, Limit = 8 })).Items.Count),
+            ("products-busiest-expired-product", async () => (await catalog.SearchPageAsync(listed with
+                { Query = busiestExpired, Limit = 8 })).Items.Count),
+            ("products-expired-filter", async () => (await catalog.SearchPageAsync(listed with
+                { ExpiryFilter = "EXPIRED" })).Items.Count),
+            ("products-category-most-expired", async () => (await catalog.SearchPageAsync(listed with
+                { CategoryId = expiredCategory })).Items.Count),
+            ("billing-name-matches", async () => (await catalog.SearchAsync(new ProductSearchFilter(
+                Query: commonWord, Limit: 50, SaleableOnly: true))).Count),
+        };
+        foreach (var shape in shapes)
+        {
+            var executed = new List<string>();
+            factory.SqlTrace = (_, sql) => { lock (executed) executed.Add(sql); };
+            try { await shape.Read(); }
+            finally { factory.SqlTrace = null; }
+            for (int index = 0; index < executed.Count; index++)
+                if (executed[index].TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) ||
+                    executed[index].TrimStart().StartsWith("WITH", StringComparison.OrdinalIgnoreCase))
+                    CapturePlan($"{shape.Name}-{index}", executed[index]);
+            await Measure(shape.Name + "-first", shape.Read, static count => count);
+            for (int index = 0; index < 31; index++)
+            {
+                long started = Stopwatch.GetTimestamp();
+                int rows = await shape.Read();
+                profileSamples.Add(new(shape.Name, Stopwatch.GetElapsedTime(started).TotalMilliseconds, rows, null));
+            }
+        }
+        string blockSetting = settings.Current.BlockExpiredLots ? "1" : "0";
+        var parity = new List<object>();
+        try
+        {
+            foreach (bool block in new[] { true, false })
+            {
+                await settings.SaveAsync(new Dictionary<string, string> { ["pos.block_expired"] = block ? "1" : "0" });
+                var shown = new Dictionary<long, (long? Price, long? Mrp, long? CostInclTax)>();
+                ProductSearchFilter every = new(Limit: 200, IncludeArchived: true, ExpiryAsOf: today);
+                string? afterName = null;
+                long? afterId = null;
+                long started = Stopwatch.GetTimestamp();
+                while (true)
+                {
+                    ProductSearchPage page = await catalog.SearchPageAsync(every, afterName, afterId);
+                    foreach (ProductListItem item in page.Items)
+                        shown[item.Id] = (item.SellingPriceScaled, item.MrpScaled, item.CostInclTaxScaled);
+                    if (!page.HasMore) break;
+                    (afterName, afterId) = (page.NextName, page.NextId);
+                }
+                double pagingMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                int differing = 0;
+                using (var connection = factory.Open())
+                    foreach (var next in connection.Query<(long Id, long? Price, long? Mrp, long? CostInclTax)>("""
+                        SELECT p.id,COALESCE(l.selling_price,p.default_selling_price),COALESCE(l.mrp,p.default_mrp),
+                               l.unit_cost_incl_tax
+                        FROM product p NOT INDEXED LEFT JOIN product_lot l ON l.id=(
+                          SELECT id FROM product_lot WHERE product_id=p.id AND is_active=1 AND qty_on_hand>0
+                            AND (@blockExpired=0 OR expiry_date IS NULL OR expiry_date>=@asOf)
+                          ORDER BY expiry_date IS NULL, expiry_date, received_date, id LIMIT 1)
+                        """, new { blockExpired = block ? 1 : 0, asOf }))
+                        if (!shown.TryGetValue(next.Id, out var row) || row != (next.Price, next.Mrp, next.CostInclTax))
+                            differing++;
+                parity.Add(new { blockExpired = block, products = shown.Count, differing, pagingMs });
+            }
+        }
+        finally
+        {
+            await settings.SaveAsync(new Dictionary<string, string> { ["pos.block_expired"] = blockSetting });
+        }
+        phaseNine = new { businessDate = today, nextLot = parity };
+        Console.WriteLine("NEXT-LOT " + JsonSerializer.Serialize(parity));
+        break;
+    }
     case "phase7-sql":
     {
         // Times one SQL file through the app's connection factory, raw and through Dapper, to

@@ -85,14 +85,17 @@ public sealed partial class SalesService
         }
         else if (!productExists) productId = RecreateProduct(tx, row, price);
         if (expiry is { } date && date < returnDate) throw new DomainException(ErrorCode.ExpiredLot, date);
-        // The lot keeps the cost-side tax the sale line copied from the sold lot. A line saved
-        // before tax snapshots derives it from its booked cost: at the sale line's rate, or at the
-        // chosen product's rate when the operator chose one.
-        var rate = new TaxRateSnapshot(row.TaxRateId, row.TaxLabel, Percent.FromScaled(row.TaxRateScaled));
+        // The lot keeps the purchase-side tax the sale line copied from the sold lot, under the rate,
+        // label and percent that lot was bought at. The sale line's own label is the sale side, so
+        // it is not used for it. A line saved before tax snapshots derives the tax from its booked
+        // cost: at the sale line's rate, or at the chosen product's rate when the operator chose one.
         LotTax tax = row.UnitCostTax is { } unitTax && row.UnitCostInclTax is { } inclTax
-            ? new LotTax(rate, new PurchaseUnitCost(Money.FromScaled(inclTax - unitTax), Money.FromScaled(unitTax),
-                Money.FromScaled(inclTax), Money.FromScaled(row.UnitCost)))
-            : LotTaxes.FromBooked(tx, chosen is null ? rate : LotTaxes.ProductRate(tx, productId),
+            ? new LotTax(SoldLotRate(tx, row.LotId, unitTax, inclTax), new PurchaseUnitCost(
+                Money.FromScaled(inclTax - unitTax), Money.FromScaled(unitTax), Money.FromScaled(inclTax),
+                Money.FromScaled(row.UnitCost)))
+            : LotTaxes.FromBooked(tx, chosen is null
+                    ? new TaxRateSnapshot(row.TaxRateId, row.TaxLabel, Percent.FromScaled(row.TaxRateScaled))
+                    : LotTaxes.ProductRate(tx, productId),
                 Money.FromScaled(row.UnitCost));
         string lotCode = documentNumbers.Next(tx, DocType.Lot, returnDate);
         long lotId = tx.Connection.ExecuteScalar<long>("""
@@ -126,6 +129,37 @@ public sealed partial class SalesService
                 lotId,
             });
         return (productId, lotId);
+    }
+
+    // The rate the sold lot was bought at: from the lot while it exists, else from what its deletion
+    // kept (deleted_lot_tax, schema 40), else from its purchase line, for a lot deleted before
+    // schema 40. Each source must hold the tax per piece the sale line copied, so the label always
+    // names that tax. A lot of another origin deleted before schema 40 left no label: the units keep
+    // the tax paid with no label, rather than a label that contradicts it. Three key lookups, on a
+    // return that restocks a new lot only.
+    private static TaxRateSnapshot SoldLotRate(DbTx tx, long lotId, long unitTax, long inclTax)
+    {
+        SoldLotRateRow? sold = tx.Connection.QueryFirstOrDefault<SoldLotRateRow>("""
+            SELECT Id,Label,Pct FROM (
+              SELECT 1 AS Source,tax_rate_id_snapshot AS Id,tax_label_snapshot AS Label,tax_rate_pct_snapshot AS Pct
+              FROM product_lot WHERE id=@lotId AND unit_tax=@unitTax AND unit_cost_incl_tax=@inclTax
+              UNION ALL
+              SELECT 2,tax_rate_id_snapshot,tax_label_snapshot,tax_rate_pct_snapshot
+              FROM deleted_lot_tax WHERE lot_id=@lotId AND unit_tax=@unitTax AND unit_cost_incl_tax=@inclTax
+              UNION ALL
+              SELECT 3,tax_rate_id,tax_label_snapshot,tax_rate_pct
+              FROM purchase_line WHERE lot_id_snapshot=@lotId
+                AND landed_unit_tax=@unitTax AND landed_unit_cost_incl_tax=@inclTax)
+            ORDER BY Source LIMIT 1
+            """, new { lotId, unitTax, inclTax }, tx.Transaction);
+        return sold is null ? TaxRateSnapshot.None : new(sold.Id, sold.Label, Percent.FromScaled(sold.Pct ?? 0));
+    }
+
+    private sealed class SoldLotRateRow
+    {
+        public long? Id { get; init; }
+        public string? Label { get; init; }
+        public long? Pct { get; init; }
     }
 
     // A deleted product is recreated once under a new ID and a conflict-safe SKU, only from
@@ -223,7 +257,7 @@ public sealed partial class SalesService
     }, cancellationToken);
 
     private const string RecreationSql = """
-        SELECT sl.id AS SaleLineId,sl.product_id AS ProductId,
+        SELECT sl.id AS SaleLineId,sl.product_id AS ProductId,sl.lot_id AS LotId,
                (SELECT invoice_no FROM sale WHERE id=sl.sale_id) AS InvoiceNumber,
                sl.product_sku_snapshot AS Sku,sl.product_name AS ProductName,
                sl.product_name_local AS ProductNameLocal,
@@ -245,6 +279,7 @@ public sealed partial class SalesService
     {
         public long SaleLineId { get; init; }
         public long ProductId { get; init; }
+        public long LotId { get; init; }
         public string? InvoiceNumber { get; init; }
         public string? Sku { get; init; }
         public string ProductName { get; init; } = string.Empty;

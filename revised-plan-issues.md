@@ -23,7 +23,7 @@ Fixes go phase by phase, stopping after each phase for review. A problem that ap
 | 7 | Done 4 Nov 2026: P7-1 fixed (code reading; every new code is triggered through the services by a regression test on a fresh store). Found on the way and fixed with it: unmapped unique values and four form gaps. P7-2, a related gap found during P7-1, fixed after it | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings. 315 tests: 269 integration, 32 core, 2 architecture, 12 UI (2 opt-in skipped). 18 screens of the messages, in both languages, checked by eye (`artifacts/data/revision-issues-phase7/screens`). Only failure paths changed, so no full-size timing was taken |
 | 8 | Done 5 Nov 2026: P8-1 and P8-2 fixed, each reproduced on a fresh store first (the new tests fail on the previous build). Found on the way and fixed: blocked expired lots missing from the Expired tile and badge, and archived products' expired stock missing from the list the tile opens (both choices open to the owner's review), and three Gujarati texts cut off on screen | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings. 316 tests: 270 integration, 32 core, 2 architecture, 12 UI (2 opt-in skipped). 10 screens of the tiles and the lists they open, in both languages, checked by eye (`artifacts/data/revision-issues-phase8/screens`). Full-size store: ScaleAudit `phase8-expiry` alternating with the previous build on an unchanged and a seeded copy (timings under P8-1) |
 | 9 | Done 5 Nov 2026: P9-1 and P9-2 fixed. Found on the way and fixed with P9-1: no release notes had ever been shown (both files went into satellite assemblies), and a message box could not hold them on a 1366×768 screen, so they now open in a scrolling window | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings. 318 tests: 271 integration, 32 core, 2 architecture, 13 UI (2 opt-in skipped). In the full run the integration, core and architecture tests passed, but the UI smoke journey overran its 120 s budget while the integration tests and a full-screen program loaded the PC; the UI project run alone then passed in 38 s. 6 screens of the notes window (smoke-journey renders at 1366×768 and captures from the running app, both languages), plus the message box it replaces, checked by eye (`artifacts/data/revision-issues-phase9/screens`). No query or write path changed, so no full-size timing was taken |
-| §15 | Open | |
+| §15 | Done 5 Nov 2026: T-1 and T-2 fixed, each reproduced on a fresh store first (the new tests fail on the previous build). T-2 adds schema 40 (`deleted_lot_tax`), so release 1.2.0 now ships on schema 40 | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings. 323 tests: 276 integration, 32 core, 2 architecture, 13 UI (2 opt-in skipped). The UI smoke journey's hang guard went from 120 to 300 s: alone the UI project passes in 50 s, but beside the integration tests the journey overran 120 s, as it once did in Phase 9; in the passing full run the UI project took 2 min 22 s. 16 screens checked by eye, in both languages: 8 from this build and the same 8 from the previous one (`artifacts/data/revision-issues-section15/screens`). Full-size store: migration 40 took 34 ms, and ScaleAudit `section15-products` alternated with the previous build (timings under T-1) |
 | P3-F3 (product choice for returned units) | Done 4 Nov 2026: built as decided; also fixed a later correction of a damage restored into another product | `dotnet format --verify-no-changes` passed. Release builds of every project, ScaleAudit and DataGen had no warnings. 309 tests: 263 integration, 32 core, 2 architecture, 12 UI (2 opt-in skipped). The new window was captured in both modes and languages from the UI smoke journey and checked by eye; it was not used in the running app |
 
 ## Phase 0 — Freeze rules, map dependencies, and baseline
@@ -410,13 +410,83 @@ No open issues found. The expiry filter window is covered under P8-1.
 
 ## §15 — Tax decisions (schema 39)
 
-- [ ] **T-1 The Products list's "next to sell" lot can be an expired one** (Medium, reproduced)
+- [x] **T-1 The Products list's "next to sell" lot can be an expired one** (Medium, reproduced)
   - `ListSql` in `CatalogService.Search.cs:314-316` picks the first lot by expiry with stock and active.
   - Billing's FEFO (`LotQuantities.cs:104-106`) also skips expired lots when `pos.block_expired` is on (the default), and breaks ties by received date.
   - Repro: with an expired lot at ₹100 and a fresh lot at ₹118, the list shows ₹100 and Billing adds the fresh lot at ₹118.
   - This goes against §15 decision 10, and Selling price, MRP and Purchase price incl. tax all come from the wrong lot.
   - Fix: apply the same expiry and ordering rules as `AllocateFefo`, as of the business date.
-- [ ] **T-2 A recreated customer-return lot can show a tax label that contradicts its tax** (Low, read)
+  - **Fixed 5 Nov 2026.** A rule of the shipped design, so it was reproduced on a fresh store through the services first: with an expired lot at ₹100 (₹80 + 5%) and a fresh one at ₹118 (₹100 + 5%), the list showed ₹100 and ₹84.00, and Billing added ₹118. Found with it:
+    - The list broke a tie on expiry by lot number, while Billing takes the lot received first.
+    - Billing's list of name matches reads the same search, so it showed the same wrong price.
+    - The shipped subquery sorted each product's lots in a temporary B-tree instead of reading the FEFO index.
+  - **One rule.** `SellableLot` (`Data/Infrastructure/SellableLot.cs`) names the lot a bill takes next:
+    - an active lot with stock, the earliest expiry first, then the earliest received, then the lowest ID;
+    - lots without an expiry last;
+    - no lot past its expiry while `pos.block_expired` is on, as of the list's date (the business date).
+  - It is two seeks of `ix_lot_fefo` in one `COALESCE`: the first lot with an expiry from that date, else the first lot without one. Expired lots ahead of it are skipped by the seek, not read.
+  - Where it is used:
+    - `ListSql`, for the Products list, the exact SKU or barcode rows and Billing's name matches;
+    - Billing's price-label lookup (`AddPriceLabelAsync`). Its rule was already right; it now reads the same SQL.
+  - `AllocateFefo` keeps its own query, because it needs every lot in order. A comment ties the two orders together.
+  - A product with no stock that can be sold, for example only expired stock while expired lots are blocked, shows its default prices and "—", as a product with no stock did.
+  - No schema change.
+  - Full-size store. Scripts, results and plans are in `artifacts/data/revision-issues-section15`.
+    - The shipped subquery picked another lot than Billing on 26,974 of 47,010 products: every product with an expired lot with stock. The values shown differed on 106 of them, because DataGen gives most of a product's lots the same prices. They differed on none with expired lots allowed.
+    - SQL forms in Node, first page of 200 by name / the 200 products with the most expired lots (one holds 802), p50: shipped 12.1 / 81 ms, one walk of the FEFO index filtering expired lots 1.9 / 1.5 ms, two seeks 0.38 / 0.28 ms. The walk and the seeks pick the same lot for every product under both settings.
+    - Through the services, ScaleAudit `section15-products`, alternating the base build (commit aa04a22) with this change (base, new, new, base). p50/p95 ms of 31 warm runs:
+
+      | Read | Before | After |
+      |---|---|---|
+      | Products, first page of 50 | 2.50/3.63, 1.59/2.48 | 2.36/3.64, 1.18/1.73 |
+      | Products, next page | 2.34/3.11, 2.45/3.52 | 2.42/3.96, 1.15/1.92 |
+      | Product with the most expired lots, by name | 3.46/4.04, 3.69/5.02 | 2.58/4.11, 2.56/3.30 |
+      | Expired filter, first page | 2.54/3.38, 2.25/3.88 | 2.62/3.91, 2.12/3.15 |
+      | Category with the most expired lots | 3.17/3.99, 2.50/3.60 | 2.89/3.83, 2.57/3.99 |
+      | Common-word search (8 rows) | 19.5/23.1, 19.6/22.3 | 20.5/24.0, 18.6/21.9 |
+      | Billing name matches (50 rows) | 19.9/23.9, 19.0/24.3 | 21.5/24.9, 18.4/20.7 |
+      | Paging through all 47,010 products, expired blocked / allowed | 3.98 / 3.63 s, 3.63 / 3.48 s | 2.82 / 1.69 s, 2.23 / 1.93 s |
+      | Rows differing from Billing's next lot, blocked / allowed | 106 / 0 | 0 / 0 |
+
+      The single pages are within run-to-run noise, since the lot is one subquery per row. The searches' time is in the trigram search. Peak working set was 128–131 MiB in every run.
+  - Regressions:
+    - `TaxSnapshotTests.ProductsList_ShowsTheLotBillingSellsNext_UnderTheSameRules` builds lots through the services and checks the list, the exact-SKU row and what Billing actually adds, each time:
+      - on the day the soonest lot is current;
+      - once it has expired: the lot received first wins a tie on expiry, although it was entered later, and a price label sells from it;
+      - with expired lots allowed;
+      - once every dated lot has expired: the lot without an expiry;
+      - for a product holding only expired stock: its default price and no purchase price.
+    - It fails on the previous build.
+    - On screen, `PhaseZeroSmokeTests.VerifyNextLotAndReturnTax` (new) shows the real Products page, Billing's list and the bill line it adds, in English and Gujarati. It checks the values the operator sees.
+  - Both guides' Products text says which lot the row's prices come from, and their Billing text says the list of name matches shows the same price.
+- [x] **T-2 A recreated customer-return lot can show a tax label that contradicts its tax** (Low, read)
   - `SalesService.ReturnRecreation.cs:203` builds the lot's label and percent from the sale line, which is the sale side, but takes `unit_tax` and `unit_cost_incl_tax` from the sold lot, which is the purchase side.
   - In Composition or No-GST mode the sale line has no label and 0%, so the lot shows "—" next to a non-zero Tax/unit. When the purchase line used a different rate than the product, the label disagrees with the tax.
   - Fix: save the sold lot's label and percent on the sale line with the cost-side values, or derive them from the purchase line where it still exists.
+  - **Fixed 5 Nov 2026, schema 40.** Reproduced first on a fresh store through the services:
+    - In Composition mode, a lot bought at GST 5% came back with no label, 0%, and Tax/unit 5.00.
+    - In Regular mode, stock bought at GST 18% for a product that sells at 5% came back as "GST 5%", 5%, with Tax/unit 18.00.
+  - **The fix.** The new lot takes the rate, label and percent of the lot the units were sold from (`SoldLotRate`), from the first source that holds the tax per piece the sale line copied:
+    1. The sold lot, while it exists. A lot's tax is fixed when it is created, so this is exact.
+    2. `deleted_lot_tax`, new in migration 40. An `AFTER DELETE` trigger on `product_lot` copies a lot's five tax values there, for every lot saved with them. It covers all three deletion paths: one zero lot, zero lots in bulk, and a deleted product's lots. Lot IDs key the rows. They are never reused, because schema 29 made `product_lot` `AUTOINCREMENT`; a throwaway test confirmed a lot posted after the newest was deleted gets a new ID. The rows cannot be changed or deleted.
+    3. The purchase line that created the lot (`lot_id_snapshot`), for a lot deleted before schema 40.
+  - When no source holds that tax, the lot keeps the tax as paid with no label, rather than a label that contradicts it. This can only happen for a lot from another origin deleted before schema 40, so only on a store that ran schema 39; a store upgraded from 1.1.0 has no lot with tax values to lose.
+  - A sale line saved before tax snapshots still derives the tax from its booked cost, as before.
+  - The lookup is three key reads, and only on a return that restocks a new lot.
+  - **The deleted-lot table was chosen over the two suggested fixes.**
+    - Saving the label on the sale line needs three `sale_line` columns. Migration 39 measured that at 12 s cached and 37 s cold on the full-size store. It would also add about 12 bytes to every future sale line, roughly 60 MB at 5.2 million lines, for a value that only a return of a deleted lot reads.
+    - The purchase line alone misses direct, opening-stock, count-surplus and earlier return lots, and opening stock is most of a new shop's first lots.
+    - The table costs nothing on a sale and one small row per deleted lot.
+  - Migration 40 took 34 ms on the full-size store (peak working set 72 MiB). `MigrationRunner.LatestVersion` is 40, and the update window's estimate uses its default rate for the step.
+  - Regressions in `TaxSnapshotTests` (the three return tests fail on the previous build):
+    - `ReturnLot_TakesTheRateLabelAndPercentOfTheLotTheUnitsWereSoldFrom` (Regular mode) returns three units:
+      - one from a purchase lot bought at 18% and deleted;
+      - one from a direct lot bought at 18% and deleted;
+      - one from a 12% lot that still exists but has a new price.
+      - It checks each new lot's five values, the `deleted_lot_tax` rows and a clean reconciliation.
+    - `ReturnLot_InCompositionMode_KeepsThePurchaseLabel_InTheProductChosenForADeletedOne`: the product is deleted too. The first unit goes into the product the operator chose, and a later return follows it. Both lots get GST 5% and Tax/unit 5.00 at a booked cost of 105.
+    - `ReturnLot_OfALotDeletedBeforeSchema40_TakesItsPurchaseLinesLabel_OrNone` builds the store on schema 39, deletes a purchase lot and a direct lot, upgrades, and returns one unit of each: GST 18% from the purchase line, and no label with the tax kept.
+    - `LotTriggers_RejectInconsistentTaxValues_AndAnyChangeToCostOrTax` now also checks the trigger, that a lot without tax values keeps nothing, and that the rows cannot be changed or deleted.
+    - `UpgradeTests.UpgradeFromAnyEarlierVersion_EndsWithTheSchemaOfANewStore` now also starts from 39.
+    - On screen, `PhaseZeroSmokeTests.VerifyNextLotAndReturnTax` shows the product's Lots tab after a unit came back from a deleted 18% lot: GST 18%, 100.00 + 18.00 = 118.00, in English and Gujarati.
+  - Both guides' Sales history text says what a return lot keeps. Their headers, both release notes and the release checklist say schema 40, and the notes' Billing point mentions the batch price.
