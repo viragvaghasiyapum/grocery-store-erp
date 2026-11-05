@@ -270,8 +270,8 @@ public partial class App : Application
             ReleaseNotesService releaseNotesService = _host.Services.GetRequiredService<ReleaseNotesService>();
             if (releaseNotesService.GetUnseen(TranslationSource.Instance.UiCulture) is { } releaseNotes)
             {
-                MessageBox.Show(releaseNotes.Markdown, TranslationSource.Instance["ReleaseNotes_Title"],
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                // A message box cannot scroll, so long notes would run off a 1366×768 screen.
+                new ReleaseNotesWindow(releaseNotes.Text) { Owner = shell }.ShowDialog();
                 await releaseNotesService.MarkSeenAsync(releaseNotes.Version);
             }
             _maintenanceCancellation = new CancellationTokenSource();

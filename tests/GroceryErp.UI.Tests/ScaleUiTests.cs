@@ -93,6 +93,10 @@ public sealed class ScaleUiTests
                          window.FindFirstDescendant(cf => cf.ByAutomationId("BackupStatusButton")) is null))
                 other.FindFirstDescendant(cf => cf.ByName("OK"))?.Press();
             await Task.Delay(2000, TestContext.Current.CancellationToken);
+            // A new version's release notes open once, owned by the shell, so UI Automation lists them under it.
+            foreach (Window notes in shell.ModalWindows.Where(window =>
+                         window.FindFirstDescendant(cf => cf.ByAutomationId("CloseButton")) is not null))
+                notes.FindFirstDescendant(cf => cf.ByAutomationId("CloseButton"))!.AsButton().Invoke();
             foreach (Window other in app.GetAllTopLevelWindows(automation).Where(window =>
                          window.FindFirstDescendant(cf => cf.ByAutomationId("BackupStatusButton")) is null))
                 other.FindFirstDescendant(cf => cf.ByName("Later"))?.Press();

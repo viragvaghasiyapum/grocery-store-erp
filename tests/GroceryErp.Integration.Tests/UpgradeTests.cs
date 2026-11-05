@@ -108,6 +108,7 @@ public sealed class UpgradeTests
 
     // Every schema an installed version can have left, including the version-specific steps (16's
     // monthly rebuild, 19's dashboard window, 29's snapshots, 33's cutover, 36's ledger removal).
+    // Release 1.1.0 left schema 37.
     [Theory]
     [InlineData(1)]
     [InlineData(4)]
@@ -120,6 +121,7 @@ public sealed class UpgradeTests
     [InlineData(33)]
     [InlineData(35)]
     [InlineData(36)]
+    [InlineData(37)]
     [InlineData(38)]
     public void UpgradeFromAnyEarlierVersion_EndsWithTheSchemaOfANewStore(int version)
     {

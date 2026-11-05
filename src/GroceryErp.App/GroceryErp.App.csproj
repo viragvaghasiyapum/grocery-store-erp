@@ -8,8 +8,10 @@
   <ItemGroup>
     <ApplicationDefinition Remove="App.xaml" />
     <Page Include="App.xaml" />
-    <EmbeddedResource Include="CHANGELOG.en.md" />
-    <EmbeddedResource Include="CHANGELOG.gu.md" />
+    <!-- WithCulture="false": without it MSBuild reads ".en"/".gu" as a resource culture and moves each
+         file into a satellite assembly, where ReleaseNotesService cannot find it. -->
+    <EmbeddedResource Include="CHANGELOG.en.md" WithCulture="false" />
+    <EmbeddedResource Include="CHANGELOG.gu.md" WithCulture="false" />
     <Resource Include="../../logo/logo.jpeg" Link="Assets/logo.jpeg" />
     <InternalsVisibleTo Include="GroceryErp.UI.Tests" />
   </ItemGroup>

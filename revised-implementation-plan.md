@@ -115,7 +115,7 @@ Most §13.2 matrix items were already covered by existing suites. New tests cove
 - the category preview counts and batching;
 - accessible names.
 
-In the final run 270 tests ran and 268 passed; the two opt-in journeys passed separately. On the full-size store, after all profiling writes, every check passed: report-day, last-sale, hourly and dashboard projections, integrity, foreign keys, every lot against its source documents (41.5 s), sale lines after lot expiry and interrupted writes. A process killed after its lot update and before commit left nothing behind. A verified backup took 20.4 s; restored into an empty data root in 18.8 s, it passed the same ten checks. The packaged operator journey passed four times on 1.1.0 portable builds, including the final package. Evidence: `docs/perf/1.1.0.md`, `artifacts/data/revision-phase9-rehearsal` and `artifacts/data/revision-phase9-ui`; `docs/release-checklist.md` lists every release gate and its state.
+In the final run 270 tests ran and 268 passed; the two opt-in journeys passed separately. On the full-size store, after all profiling writes, every check passed: report-day, last-sale, hourly and dashboard projections, integrity, foreign keys, every lot against its source documents (41.5 s), sale lines after lot expiry and interrupted writes. A process killed after its lot update and before commit left nothing behind. A verified backup took 20.4 s; restored into an empty data root in 18.8 s, it passed the same ten checks. The packaged operator journey passed four times on 1.1.0 portable builds, including the final package. Evidence: `docs/perf/1.1.0.md`, `artifacts/data/revision-phase9-rehearsal` and `artifacts/data/revision-phase9-ui`; `docs/release-checklist-1.1.0.md` lists every 1.1.0 release gate and its state.
 
 There is no remaining Phase 9 code or fixture work. These still require the target hardware or people:
 
@@ -233,6 +233,16 @@ Open-issue fixes (from 26 October 2026): the review items in `revised-plan-issue
   - The **Stock value** tile counts archived products' stock, as the current unsold stock report it opens does; low stock still counts active products.
   - The Products Expiring filter checks each product's earliest unexpired lot when the list is narrowed, or when a broad page will fill quickly because more than 500 lots are expiring; otherwise it reads the expiring lots as one set. On the full-size store, alternating with the previous build: the expiring products' count fell from 364 to 15 ms, the bulk IDs from 599 to 17 ms, the first page from 17 to 7 ms, and a page with only 10 expiring products from 660 to 2 ms. On a copy seeded with wider alert windows the dashboard fell from 166 to 66 ms. Details in `revised-plan-issues.md`, P8-1. No schema change.
   - Three Gujarati texts that were cut off on screen now fit: the Expiring filter, **Any status** (**બધી સ્થિતિ**, also on Money out and Vendors), and the Lots tab's expiry labels (the Expiry column is wider).
+- **Phase 9 (5 November 2026).** Everything after 1.1.0 is release **1.2.0** on schema 39.
+  - The release notes, shown once after sign-in, described 1.1.0 on schema 37. They now describe 1.2.0 in both languages: tax on every line and lot, purchases, Billing, the table footer and detail panel, the seven reports, the dashboard and expiry windows, returns, and refusal reasons.
+  - No release notes had ever been shown, 1.1.0's included. MSBuild took the `.en` and `.gu` in the file names as resource cultures and moved both files into satellite assemblies, where the app did not look. Both files now stay in the main assembly.
+  - Once shown, the notes did not fit a message box, which cannot scroll: the Gujarati box measured 733 px tall at 100%, above the 728 px a 1366×768 screen has over the taskbar. They now open in a small window owned by the shell, no taller than the work area, with the notes scrolling and **Close** always in view. The UI smoke journey checks it in both languages at 1366×768 and at 150% scaling, and it was captured in the running app.
+  - The Gujarati notes carry their `MT – needs review` marker as an HTML comment, which the app drops before showing them.
+  - `scripts/build-release.ps1` refuses to package a version the notes do not name. A test ties the notes' schema line to the latest migration, so the next schema change fails it until the notes are rewritten.
+  - `docs/release-checklist.md` is now the 1.2.0 checklist, and 1.1.0's moved to `docs/release-checklist-1.1.0.md`. Every gate that 1.1.0 left to hardware or people is carried over open, with the open §15 items, the full-size upgrade from schema 37, the packages and the packaged journey.
+  - The upgrade test now also starts from schema 37, the schema 1.1.0 left.
+  - CLAUDE.md no longer names `PasswordHashTool`, which was never in git; ScaleAudit `ui-setup` sets a store's login.
+  - No schema change.
 
 ## 1. Product contract and precedence
 

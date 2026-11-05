@@ -12,6 +12,16 @@ $releases = Join-Path $repository 'artifacts\Releases'
 $dotnet = Join-Path $repository '.tools\dotnet\dotnet.exe'
 if (-not (Test-Path -LiteralPath $dotnet)) { $dotnet = 'dotnet' }
 
+# The package shows these notes once after sign-in, so they must describe this version.
+foreach ($language in 'en', 'gu') {
+    $notes = Join-Path $repository "src\GroceryErp.App\CHANGELOG.$language.md"
+    $title = Get-Content -LiteralPath $notes -Encoding UTF8 |
+        Where-Object { $_.Trim() -and -not $_.TrimStart().StartsWith('<!--') } | Select-Object -First 1
+    if ($title -cne "Grocery ERP $Version") {
+        throw "CHANGELOG.$language.md begins '$title', not 'Grocery ERP $Version'. Write the release notes for $Version first."
+    }
+}
+
 & $dotnet tool restore
 if ($LASTEXITCODE -ne 0) { throw 'Tool restore failed.' }
 & $dotnet publish (Join-Path $repository 'src\GroceryErp.App\GroceryErp.App.csproj') `

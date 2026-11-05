@@ -218,6 +218,7 @@ public sealed class PhaseZeroSmokeTests
                 VerifyPhaseSevenScreens(translations);
                 VerifyOperatorMessages(translations);
                 VerifyExpiryTiles(translations);
+                VerifyReleaseNotes(translations);
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 DisplayFormatter formatter = new();
                 ShellViewModel viewModel = new(translations, formatter);
@@ -2333,6 +2334,43 @@ public sealed class PhaseZeroSmokeTests
     // list each expiry tile opens (with the filters the tile asks for) and two products' lot labels, in
     // both languages; captured when GROCERY_MESSAGE_SCREENSHOT_DIR is set. Pages hosted without the app
     // read the machine date, so the store's clock does too.
+    // The release notes open once after sign-in, in the operator's language. A message box could not
+    // scroll, so at 1366x768 (728 px above the taskbar) or 150% scaling (488 px) the notes ran off the
+    // screen. The window stays inside the work area, the notes scroll and Close stays in view.
+    // Captured in both languages when GROCERY_MESSAGE_SCREENSHOT_DIR is set.
+    private static void VerifyReleaseNotes(TranslationSource translations)
+    {
+        foreach ((string culture, string file) in new[] { ("en-IN", "release-notes.en.png"), ("gu-IN", "release-notes.gu.png") })
+        {
+            translations.UiCulture = CultureInfo.GetCultureInfo(culture);
+            string notes = GroceryErp.App.ReleaseNotesService.Read(translations.UiCulture).ShouldNotBeNull();
+            foreach (double workArea in new[] { 728d, 488d })
+            {
+                var window = new ReleaseNotesWindow(notes, workArea) { Language = AppLanguage };
+                window.Show();
+                window.UpdateLayout();
+                var content = (FrameworkElement)window.Content;
+                var scroll = (ScrollViewer)window.FindName("NotesScroll");
+                var close = (Button)window.FindName("CloseButton");
+                window.ActualHeight.ShouldBeLessThanOrEqualTo(workArea);
+                close.TranslatePoint(new Point(0, close.ActualHeight), content).Y.ShouldBeLessThanOrEqualTo(content.ActualHeight);
+                close.IsDefault.ShouldBeTrue();
+                close.IsCancel.ShouldBeTrue();
+                close.Content.ShouldBe(translations["Common_Close"]);
+                window.Title.ShouldBe(translations["ReleaseNotes_Title"]);
+                ((TextBlock)window.FindName("VersionText")).Text.ShouldMatch(@"^Grocery ERP \d+\.\d+\.\d+$");
+                string text = ((TextBlock)window.FindName("NotesText")).Text;
+                text.ShouldEndWith($": {MigrationRunner.LatestVersion}.");
+                text.ShouldNotContain("<!--");
+                // Every line of the notes can be scrolled into view.
+                scroll.ExtentHeight.ShouldBeGreaterThanOrEqualTo(((TextBlock)window.FindName("NotesText")).ActualHeight);
+                if (workArea == 488d) scroll.ScrollableHeight.ShouldBeGreaterThan(0);
+                else CaptureMessage(window, file);
+                window.Close();
+            }
+        }
+    }
+
     private static void VerifyExpiryTiles(TranslationSource translations)
     {
         string root = Path.Combine(Path.GetTempPath(), $"grocery-erp-ui-expiry-{Guid.NewGuid():N}");

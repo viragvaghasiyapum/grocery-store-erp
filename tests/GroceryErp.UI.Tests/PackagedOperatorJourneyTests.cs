@@ -59,10 +59,15 @@ public sealed class PackagedOperatorJourneyTests
             shell.FindFirstDescendant(cf => cf.ByAutomationId("UpdateButton")).ShouldNotBeNull();
             shell.FindFirstDescendant(cf => cf.ByAutomationId("LockButton")).ShouldNotBeNull();
 
-            // Release notes are shown on first launch and must be dismissed before using the shell.
-            foreach (Window other in app.GetAllTopLevelWindows(automation).Where(window =>
-                         window.FindFirstDescendant(cf => cf.ByAutomationId("BackupStatusButton")) is null))
-                other.FindFirstDescendant(cf => cf.ByName("OK"))?.Click();
+            // The first sign-in after installing shows the release notes, owned by the shell, so UI
+            // Automation lists them under it. They name the release and must be closed first.
+            Window? notes = null;
+            await WaitUntilAsync(() => (notes = shell.ModalWindows.FirstOrDefault(window =>
+                window.FindFirstDescendant(cf => cf.ByAutomationId("CloseButton")) is not null)) is not null,
+                TimeSpan.FromSeconds(15));
+            Find(notes!, "VersionText").Name.ShouldStartWith("Grocery ERP ");
+            Invoke(notes!, "CloseButton");
+            await WaitUntilAsync(() => shell.ModalWindows.Length == 0, TimeSpan.FromSeconds(10));
 
             ClickNamed(shell, "Products");
             await WaitUntilAsync(() => shell.FindFirstDescendant(cf => cf.ByAutomationId("SearchBox")) is not null,
