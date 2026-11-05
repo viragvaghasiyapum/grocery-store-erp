@@ -2,7 +2,7 @@
 
 Progress (5 November 2026): B-1, C-1 (release 1.2.0 now on schema 41), D-1 to D-5 and the found B-2 are fixed. Of G-6, the tiles and the weekly-check notice were tried in the running app; `RestoreProductWindow` from the three restore paths was not. G-1 to G-5 were deferred on 5 November 2026, and drive D: is nearly full, which packaging (G-3, G-4) needs cleared first. The owner decisions remain open.
 
-Verified after these fixes: `dotnet format --verify-no-changes` passed; Release builds of the solution, ScaleAudit and DataGen had no warnings; 325 tests ran: 278 integration (276 before), 32 core, 2 architecture, 13 UI, with 323 passed and the 2 opt-in journeys skipped. Nothing is committed yet.
+Verified after these fixes: `dotnet format --verify-no-changes` passed; Release builds of the solution, ScaleAudit and DataGen had no warnings; 325 tests ran: 278 integration (276 before), 32 core, 2 architecture, 13 UI, with 323 passed and the 2 opt-in journeys skipped. Committed as 7ed8707 on `revised`.
 
 Status: review of `revised-implementation-plan.md` and `revised-plan-issues.md` against the code, 5 November 2026, release 1.2.0 on schema 40. Every item in `revised-plan-issues.md` is closed with a regression test; this file lists what the review found beyond them.
 
@@ -60,7 +60,7 @@ The gates that need the target PC, store hardware or people (WPF memory on the r
 
 `docs/release-checklist.md` says not to release with an unchecked software item. These can be run on the development PC. CLAUDE.md's "What remains are human gates" does not hold until they are done.
 
-- [ ] **G-1 Full-size upgrade from 1.1.0**: a schema-37 copy of the full-size store upgraded to 40, then the ten store checks after profiling writes (checklist line 24). Only schema 36→39 has been rehearsed.
+- [ ] **G-1 Full-size upgrade from 1.1.0**: a schema-37 copy of the full-size store upgraded to 41, then the store checks after profiling writes: eight from schema 41, which dropped what the other two checked (checklist line 25). Rehearsed so far: 36→39, and for C-1, 36→40 (10.3 s) and 40→41 with the eight checks passing, without profiling writes.
 - [ ] **G-2 Same-machine profile of 1.1.0 against 1.2.0** for every §13.1 hot path, with mixed readers, writers and a backup (checklist line 25). Only schema 38 against 39 and the per-fix timings exist.
 - [ ] **G-3 Build the 1.2.0 packages** with `scripts/build-release.ps1 -Version 1.2.0`: setup, portable zip, full package and the 1.1.0 → 1.2.0 delta (checklist line 26). `artifacts/Releases` holds only 1.1.0.
 - [ ] **G-4 Packaged operator journey on the 1.2.0 portable build** (`GROCERY_PACKAGED_UI_TEST=1`), including the release notes window on first sign-in (checklist lines 14 and 27). It last ran on 1.1.0, before the schema-38 purchase form, the table footer, the detail panel, the tax columns and the notes window.
@@ -71,7 +71,7 @@ The gates that need the target PC, store hardware or people (WPF memory on the r
     - Result: after exactly the 10-minute idle window the weekly check ran. The notice under the title bar read "The weekly stock check found 1 lots whose quantity differs from their documents." with **Show differences**. Clicking it opened Reports at **Purchased vs used reconciliation**, **Differences only**, listing that one lot (L0000001). Screen: `artifacts/data/revised-plan-bugs/g6-screens/app-weekly-notice-show-differences.png`.
     - The first attempt, on a DataGen store before the B-2 fix, showed the general "A background safety check failed" notice with **Settings** instead, because due depreciation failed in the same session (see B-2).
     - Wording seen on screen, not changed: with one lot the text says "1 lots" (`Error_LotsDifferFromDocuments`, English and Gujarati); a count-neutral wording would need the Gujarati review too.
-  - `RestoreProductWindow` from a return, a damage correction and a vendor-return cancel (P3-F3);
+  - [ ] `RestoreProductWindow` from a return, a damage correction and a vendor-return cancel (P3-F3): not yet tried in the running app.
   - [x] the Low stock and Payables tiles' destinations: clicked through in the running app on 5 Nov 2026 (see B-1).
 
 ## Document drift
