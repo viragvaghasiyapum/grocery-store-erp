@@ -321,7 +321,7 @@ Open-issue fixes (from 26 October 2026): the review items in `revised-plan-issue
       - The packages (G-3), whose executable reads 1.2.0+6f6b52b.
       - The packaged journey (G-4, 32 s). The release notes end "Database schema: 42.".
       - The large-store journey (G-5): update 37→42 in 30.4 s, round ends 269–289 MiB, process peak 325 MiB, export 26.1 s, all in line with schema 41.
-    - Still to redo on schema 42: G-1's writes, crash, backup and restore steps.
+    - G-1 finished on schema 42, 6 November 2026 (record in `revised-plan-bugs.md` G-1). A fresh schema-37 copy was upgraded to 42 and took the 1.2.0 profile's writes (300 bills, no errors, no lot mismatches). Then came the eight store checks, a bill killed before commit that left nothing behind, a verified backup and a restore into an empty data root; both stores passed the eight checks. The PC ran 2.5–4 times slower than on 5 November, on reads with unchanged SQL too, so the times are not compared. Evidence: `artifacts/data/revised-plan-bugs/g1-c2`.
 
 ## 1. Product contract and precedence
 

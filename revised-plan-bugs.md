@@ -4,7 +4,7 @@ Progress (6 November 2026):
 - Fixed: B-1, C-1 (schema 41), D-1 to D-5, and B-2 to B-7, which were found while fixing. Then C-2, the cleanup of code, views and triggers that nothing uses, put release 1.2.0 on schema 42.
   - B-3 was a High bug: the restore-product window could not open in the running app.
   - G-5 found B-5 to B-7. B-6 and B-7 were 1.2.0 regressions: page actions folded under **More** at any window width, and opening a bill or an asset's timeline kept that page in memory for the rest of the session. Over ten rounds the app reached 375 MiB against the 350 MiB gate; with the fix it stays at about 280 MiB.
-- Release gates that run on the development PC: G-1 to G-6 were done. B-5 to B-7 changed the app after G-3 and G-4 first ran, so on 6 November the packages were rebuilt from commit 0be0113 and the packaged journey passed on them. C-2 then changed the schema and the code, so G-1, G-3, G-4 and G-5 had to run again on schema 42. G-3, G-4 and G-5 were redone the same day on commit 6f6b52b. Of G-1, the upgrade and the eight store checks are redone; the profiling writes, the killed bill and the backup and restore are not.
+- Release gates that run on the development PC: G-1 to G-6 were done. B-5 to B-7 changed the app after G-3 and G-4 first ran, so on 6 November the packages were rebuilt from commit 0be0113 and the packaged journey passed on them. C-2 then changed the schema and the code, so G-1, G-3, G-4 and G-5 had to run again on schema 42. G-3, G-4 and G-5 were redone the same day on commit 6f6b52b, and then all of G-1: the upgrade, the profiling writes, the eight store checks, the killed bill, and the backup and restore passed on schema 42.
 - Drive D: was cleared before this work (199 GB free), so packaging was not blocked.
 - Owner decisions, 6 November: O-1, O-2, O-4 and O-5 kept as built, and schema 41 approved (O-6). O-3, the review of the recorded decisions, waits for the owner to go through `docs/owner-review-1.2.0.md`.
 
@@ -13,12 +13,11 @@ Verified on commit 6f6b52b (C-2, schema 42), 6 November:
 - 327 tests ran, with 325 passed and the 2 opt-in journeys skipped, one test project at a time. Side by side with the integration tests, the A4 pagination check reached its 30 s guard again (see G-3). No test method was added for B-5 to B-7; their checks extend the UI smoke test, each shown to fail on the previous code. The large-store journey passed on its own (G-5).
 - The fixes are committed on `revised`: B-1, C-1, B-2 and D-1 to D-5 as 7ed8707, B-3 to B-7 with the gate records as 13944a4, and C-2 as 6f6b52b.
 
-Done 6 November: the 1.2.0 packages were rebuilt from 0be0113 (B-5 to B-7), then from 6f6b52b (C-2, schema 42), so the embedded commit matches (G-3). The packaged journey passed on each new portable build (G-4), and the large-store journey on the schema-42 publish (G-5).
+Done 6 November: the 1.2.0 packages were rebuilt from 0be0113 (B-5 to B-7), then from 6f6b52b (C-2, schema 42), so the embedded commit matches (G-3). The packaged journey passed on each new portable build (G-4), and the large-store journey on the schema-42 publish (G-5). G-1 then ran in full on schema 42: after the profile's writes the eight store checks passed, a killed bill left nothing behind, and the backup restored into an empty data root and passed them too.
 
 Still to do, in order:
-1. Finish G-1 on schema 42: on an upgraded copy of the full-size store, the profiling writes, then the store checks, the killed bill, and the backup and restore.
-2. Retake the guide's Purchases page pictures (`purchases-page.en/.gu.png`) with the vendor and status lists loaded; they still show the folded **More** (B-6).
-3. The human gates in `docs/release-checklist.md`, including the owner's review of the recorded decisions (O-3).
+1. Retake the guide's Purchases page pictures (`purchases-page.en/.gu.png`) with the vendor and status lists loaded; they still show the folded **More** (B-6).
+2. The human gates in `docs/release-checklist.md`, including the owner's review of the recorded decisions (O-3).
 
 Status: review of `revised-implementation-plan.md` and `revised-plan-issues.md` against the code, 5 November 2026, release 1.2.0 on schema 40. Every item in `revised-plan-issues.md` is closed with a regression test; this file lists what the review found beyond them.
 
@@ -72,7 +71,7 @@ The gates that need the target PC, store hardware or people (WPF memory on the r
     - The history documents, the one-off restore-crash script and the untracked old stores, backups and logs in `artifacts/` were deleted. The full-size fixtures, the release feed, the SQLite tools and this file's gate evidence were kept.
     - Verified 6 November: format gate, Release build without warnings, full suite with one test-data fix and two intermittent UI smoke checks (both pass alone; see the plan's C-2 record).
     - On the full-size store, migration 42 alone took about 10 ms. The upgrade from 37 shows no regression against the base build (23.0–27.5 s against 25.3–28.6 s, alternating). All eight store checks passed on schema 42. Evidence: `artifacts/data/revised-plan-bugs/c2`.
-    - G-1, G-3, G-4 and G-5 ran on schema 41 and had to run again on schema 42. G-3, G-4 and G-5 were redone on commit 6f6b52b the same day (their records below). G-1's upgrade and store checks are in the line above; its writes, killed bill, backup and restore are still to run.
+    - G-1, G-3, G-4 and G-5 ran on schema 41 and had to run again on schema 42. G-3, G-4 and G-5 were redone on commit 6f6b52b the same day (their records below). G-1's upgrade and store checks are in the line above; its writes, killed bill, backup and restore passed later that day (G-1 record below).
 
 ## Found while fixing
 
@@ -127,6 +126,13 @@ The gates that need the target PC, store hardware or people (WPF memory on the r
   - On the last copy, after the 1.2.0 `phase9-profile` writes (300 bills with voids and returns, purchase posts and voids, damage, counts, vendor returns and cancels, a verified backup during the bills), all eight store checks passed: report-day and dashboard projections, integrity (45 s), foreign keys, every lot against its source documents (40 s at 73 MiB), sale lines after lot expiry and interrupted writes.
   - Then, on the same copy: a bill killed after its lot update and before commit left no sale rows, no foreign-key violations and no lot mismatches, and `quick_check` was ok. A verified backup took 15.9 s (542 MB zip). Restored into an empty data root it took 18.6 s, and the restored store passed the eight checks. The eight checks passed again on the original afterwards.
   - Evidence: `artifacts/data/revised-plan-bugs/g1-g2` (`run-ab.sh`, `migrate-*`, `verify-after-profile`, `crash*`, `backup`, `restore*`, `verify-final`). The store copies were deleted after the run.
+  - **Redone on schema 42, 6 Nov 2026**, because C-2 changed the schema. ScaleAudit was built from commit 6f6b52b and ran on a fresh copy of the same schema-37 store.
+    - 37 → 42 took 29.4 s (peak 70 MiB). The 1.2.0 `phase9-profile` then wrote 300 bills with voids and returns and the back-office documents, with a verified backup during the bills. There were no errors and no lot mismatches. Bill commit p95 was 26.5 ms, scan to line p95 20.2 ms, the WAL peak 28 MB and the process peak 142 MiB.
+    - All eight store checks passed after the writes. A bill killed after its lot update and before commit left no sale rows, no foreign-key violations and no lot mismatches, and `quick_check` was ok.
+    - A verified backup took 41.3 s (542 MB zip) and the restore into an empty data root 67.3 s. The restored store passed the eight checks, and the original passed them again.
+    - Every time was 2.5–4 times that of 5 November, including reads whose SQL C-2 did not change (dashboard p50 188 ms against 43, integrity check 171–205 s against 45 s). The base build's upgrade was as slow that morning (C-2 record), so the PC was slower, not the build. None of these times is a gate, and the mixed-load gates passed with room.
+    - The first attempt named its store folders without "rehearsal", so ScaleAudit refused the profile and the killed bill, and the script went on. It was rerun with the names fixed and a script that stops on any unexpected exit. The refused run's logs are kept apart and do not count.
+    - Evidence: `artifacts/data/revised-plan-bugs/g1-c2` (`run-g1.sh`, `README.md`, every step's JSON and log). The store copies were deleted after the run.
 - [x] **G-2 Same-machine profile of 1.1.0 against 1.2.0** for every §13.1 hot path, with mixed readers, writers and a backup (checklist line 25). Only schema 38 against 39 and the per-fix timings exist.
   - **Done 5 Nov 2026; no regression.** `phase9-profile` alternated 1.1.0 (commit 05b8f26, built in a scratch worktree) on schema 37 and 1.2.0 on its own 37→41 upgrade, each on a fresh copy of the full-size store at 37. There were three rounds right after the copy and upgrade, then two more where every copy first waited 120 s. Tables are in `docs/perf/1.2.0.md`; evidence in `artifacts/data/revised-plan-bugs/g1-g2`.
   - Mixed load (300 bills with voids and returns, four readers, back-office writes and a verified backup at once), all ten runs: no errors and no lot mismatches. Bill commit p95 was 9.4–11.2 ms on 1.1.0 and 10.2–10.3 ms on 1.2.0 (gate 100 ms); scan to bill line p95 was 10.1–13.8 and 9.8–12.3 ms (gate 50 ms). WAL peaks were 9–11 MB and process peaks 135–145 MiB in both.
