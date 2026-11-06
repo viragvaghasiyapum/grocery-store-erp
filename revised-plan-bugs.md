@@ -4,19 +4,19 @@ Progress (6 November 2026):
 - Fixed: B-1, C-1 (schema 41), D-1 to D-5, and B-2 to B-7, which were found while fixing. Then C-2, the cleanup of code, views and triggers that nothing uses, put release 1.2.0 on schema 42.
   - B-3 was a High bug: the restore-product window could not open in the running app.
   - G-5 found B-5 to B-7. B-6 and B-7 were 1.2.0 regressions: page actions folded under **More** at any window width, and opening a bill or an asset's timeline kept that page in memory for the rest of the session. Over ten rounds the app reached 375 MiB against the 350 MiB gate; with the fix it stays at about 280 MiB.
-- Release gates that run on the development PC: G-1 to G-6 were done. B-5 to B-7 changed the app after G-3 and G-4 first ran, so on 6 November the packages were rebuilt from commit 0be0113 and the packaged journey passed on them. C-2 then changed the schema and the code, so G-1, G-3, G-4 and G-5 have to run again on schema 42.
+- Release gates that run on the development PC: G-1 to G-6 were done. B-5 to B-7 changed the app after G-3 and G-4 first ran, so on 6 November the packages were rebuilt from commit 0be0113 and the packaged journey passed on them. C-2 then changed the schema and the code, so G-1, G-3, G-4 and G-5 had to run again on schema 42. G-3, G-4 and G-5 were redone the same day on commit 6f6b52b. Of G-1, the upgrade and the eight store checks are redone; the profiling writes, the killed bill and the backup and restore are not.
 - Drive D: was cleared before this work (199 GB free), so packaging was not blocked.
 - Owner decisions, 6 November: O-1, O-2, O-4 and O-5 kept as built, and schema 41 approved (O-6). O-3, the review of the recorded decisions, waits for the owner to go through `docs/owner-review-1.2.0.md`.
 
-Verified on the current working tree, 6 November:
-- `dotnet format --verify-no-changes` passed. The Release build of the solution had no warnings; ScaleAudit and DataGen have not changed since they built without warnings on 5 November.
-- 327 tests ran, with 325 passed and the 2 opt-in journeys skipped. No test method was added for B-5 to B-7; their checks extend the UI smoke test, each shown to fail on the previous code. The large-store journey passed on its own (G-5).
-- The fixes are committed on `revised`: B-1, C-1, B-2 and D-1 to D-5 as 7ed8707, and B-3 to B-7 with the gate records as 13944a4.
+Verified on commit 6f6b52b (C-2, schema 42), 6 November:
+- `dotnet format --verify-no-changes` passed. The Release build of the solution, ScaleAudit and DataGen had no warnings.
+- 327 tests ran, with 325 passed and the 2 opt-in journeys skipped, one test project at a time. Side by side with the integration tests, the A4 pagination check reached its 30 s guard again (see G-3). No test method was added for B-5 to B-7; their checks extend the UI smoke test, each shown to fail on the previous code. The large-store journey passed on its own (G-5).
+- The fixes are committed on `revised`: B-1, C-1, B-2 and D-1 to D-5 as 7ed8707, B-3 to B-7 with the gate records as 13944a4, and C-2 as 6f6b52b.
 
-Done 6 November: the 1.2.0 packages were rebuilt from 0be0113, so the embedded commit matches and B-5 to B-7 are in them (G-3), and the packaged journey passed on the new portable build (G-4).
+Done 6 November: the 1.2.0 packages were rebuilt from 0be0113 (B-5 to B-7), then from 6f6b52b (C-2, schema 42), so the embedded commit matches (G-3). The packaged journey passed on each new portable build (G-4), and the large-store journey on the schema-42 publish (G-5).
 
 Still to do, in order:
-1. Run G-1, G-3 (from the commit that holds C-2), G-4 and G-5 again on schema 42.
+1. Finish G-1 on schema 42: on an upgraded copy of the full-size store, the profiling writes, then the store checks, the killed bill, and the backup and restore.
 2. Retake the guide's Purchases page pictures (`purchases-page.en/.gu.png`) with the vendor and status lists loaded; they still show the folded **More** (B-6).
 3. The human gates in `docs/release-checklist.md`, including the owner's review of the recorded decisions (O-3).
 
@@ -72,7 +72,7 @@ The gates that need the target PC, store hardware or people (WPF memory on the r
     - The history documents, the one-off restore-crash script and the untracked old stores, backups and logs in `artifacts/` were deleted. The full-size fixtures, the release feed, the SQLite tools and this file's gate evidence were kept.
     - Verified 6 November: format gate, Release build without warnings, full suite with one test-data fix and two intermittent UI smoke checks (both pass alone; see the plan's C-2 record).
     - On the full-size store, migration 42 alone took about 10 ms. The upgrade from 37 shows no regression against the base build (23.0–27.5 s against 25.3–28.6 s, alternating). All eight store checks passed on schema 42. Evidence: `artifacts/data/revised-plan-bugs/c2`.
-    - G-1, G-3, G-4 and G-5 ran on schema 41 and have to run again on schema 42; the release checklist marks them.
+    - G-1, G-3, G-4 and G-5 ran on schema 41 and had to run again on schema 42. G-3, G-4 and G-5 were redone on commit 6f6b52b the same day (their records below). G-1's upgrade and store checks are in the line above; its writes, killed bill, backup and restore are still to run.
 
 ## Found while fixing
 
@@ -152,6 +152,12 @@ The gates that need the target PC, store hardware or people (WPF memory on the r
     - The script ran in 90 s and produced the same four packages at the same sizes: 90.0, 82.5, 82.5 and 2.26 MB. The delta again patches 19 files, leaves 291 unchanged and removes 2.
     - The executable's product version reads `1.2.0+0be011366c1c39a1e882115f1790e85256525bb0`, in `artifacts/publish` and in the portable zip's `current` folder. The zip's `sq.version` is 1.2.0.
     - The regenerated `releases.win.json` lists the same 27 entries, 0.1.0 to 1.2.0. Velopack again reports 307 files unsigned.
+  - **Rebuilt again 6 Nov 2026** from commit 6f6b52b, which holds C-2 (schema 42).
+    - Before packaging, on that commit: the format gate passed, and the solution, ScaleAudit and DataGen built without warnings.
+    - The full suite with the test projects side by side had one failure, the same A4 pagination timeout; the UI project took 4 min 22 s there. Rerun with one project at a time (`--max-parallel-test-modules 1`), all 327 tests ran: 325 passed and the 2 opt-in journeys skipped, and the UI project took 1 min 5 s.
+    - The 0be0113 files were moved out of `artifacts/Releases` first and deleted after the journey passed (G-4). `artifacts/publish` was already empty.
+    - The script ran in 85 s: setup 90.0 MB, portable zip and full package 82.4 MB, delta 2.28 MB. The delta again patches 19 files, leaves 291 unchanged and removes 2.
+    - The executable's product version reads `1.2.0+6f6b52b59bc535f7aeb4377cd08fce5a105ecaf6`, in `artifacts/publish` and in the portable zip's `current` folder. The zip's `sq.version` is 1.2.0. The feed again lists 27 entries, and Velopack reports 307 files unsigned.
 - [x] **G-4 Packaged operator journey on the 1.2.0 portable build** (`GROCERY_PACKAGED_UI_TEST=1`), including the release notes window on first sign-in (checklist lines 14 and 27). It last ran on 1.1.0, before the schema-38 purchase form, the table footer, the detail panel, the tax columns and the notes window.
   - **Passed 5 Nov 2026** in 30 s on the 1.2.0 portable zip, extracted to a temporary folder with an empty store and no network use.
   - The journey covers first-run setup, a product and vendor, a purchase whose cells are found by column header, every page, a cash sale, Gujarati, lock and unlock, and manual and close backups.
@@ -161,6 +167,9 @@ The gates that need the target PC, store hardware or people (WPF memory on the r
     - Its seven screens were checked by eye. The release notes again end "Database schema: 41".
     - The purchase step shows the Purchases title row with all five actions. On the 5 November package, **Return history** was under **More ▾** (B-6), so the rebuilt package has the fix.
     - Screens and log: `artifacts/data/revised-plan-bugs/g4-rebuild`.
+  - **Passed on schema 42, 6 Nov 2026,** in 32 s on the portable zip rebuilt from 6f6b52b (G-3).
+    - The release notes end "Database schema: 42.". Its seven screens were checked by eye, and the Purchases title row again shows all five actions.
+    - Screens and log: `artifacts/data/revised-plan-bugs/g4-c2`.
 - [x] **G-5 Large-store WPF journey on the published 1.2.0 build** (`ScaleUiTests`): the update window from schema 37, every page over three rounds, the detail panels and a full-history export, with the working set recorded (checklist lines 28 and 44). Memory was last measured on 1.1.0 (296 MiB peak), before the detail panel.
   - **Done 6 Nov 2026**, after it found B-5, B-6 and B-7. The final run is on the 1.2.0 build with all three fixed: the release script's own self-contained ReadyToRun publish of the working tree, version 1.2.0. The packages were rebuilt from the same code after the commit (G-3, 6 Nov).
   - The runner is `artifacts/data/revised-plan-bugs/g5/run-journey.sh <root> <exe> <label> [details] [rounds]`. It takes a fresh copy of the schema-37 full-size store into `%TEMP%\grocery-erp-packaged-ui-*` and sets the login with the 1.1.0 build's ScaleAudit `ui-setup`. It runs the rounds, the export of all 871,876 bills and, with `details`, the detail panels. It keeps the JSON, logs and screens, then deletes the copy. `summarize.mjs` and `roundends.mjs` print the figures below.
@@ -187,6 +196,11 @@ The gates that need the target PC, store hardware or people (WPF memory on the r
   - Export time varied 25.9–32.3 s across the 1.2.0 runs and was 25.0 s on 1.1.0, all far under its 15-minute limit; it was not profiled further.
   - Seen, not changed: the bill panel's Expiry column reads "2027-10-18" (`ExpiryDisplay`), unlike the other tables' "18 Oct 2026"; it was the same at 1.1.0. With the timeline open, Assets' narrower title row puts **Post depreciation now** under **More**, because it does not fit there (the smoke test checks this).
   - Runs kept under `g5`: `v120` (first run, stopped at Assets, a journey fault); `v120d` and `v120p` (stopped at the export: B-6); `v120f`, `v120g` and `v110` (passed; panels before B-7); `v120n` (stopped when the terminal covered the app) and `v120n2`; `v120t10` (ten rounds before B-7); `v120x10` (the final run). Two screens from `v120p` that showed another program's window instead of the app were deleted.
+  - **Redone on schema 42, 6 Nov 2026** (`v120c2x10`), on the release script's publish of commit 6f6b52b (G-3): ten rounds with every panel, then the export, as in `v120x10`. It passed in 6 min 5 s.
+    - The update window read "data version 37 to 42", about 2 minutes, 3.62 GB needed of 47.83 GB free, and a verified backup first. The update took 30.4 s (29.5 s on schema 41).
+    - Working set at the round ends 272, 269, 282, 285, then 277–289 MiB (schema 41: 267–285). Highest private bytes 211 MiB and process peak 325 MiB (214 and 325). Panels showed in 330–521 ms. The export took 26.1 s, and the bill's panel after it 268 ms.
+    - Seen, not investigated: the sign-in window came 37.2 s after launch, against 32.8 s, while the update itself took only 0.9 s longer. So the update window took about 3.5 s longer to appear.
+    - Every capture is the app. The panels were checked by eye; the other pages match `v120x10`'s checked captures in at least 98% of sampled pixels.
 - [x] **G-6 Behaviour never tried in the running app**, each noted in its own record (all three tried by 5 Nov 2026):
   - [x] the weekly-check notice and **Show differences** (P6-1): tried in the running app on 5 Nov 2026.
     - Setup: a fresh DataGen store (schema 41, B-2 fixed) with one lot's quantity lowered by 5 in SQL, the only way to make a lot differ from its documents on fresh data. Release build, driven by UI Automation (`artifacts/data/revised-plan-bugs/weekly-journey.ps1`). Nothing was touched after sign-in.

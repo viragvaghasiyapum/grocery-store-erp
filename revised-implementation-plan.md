@@ -316,7 +316,12 @@ Open-issue fixes (from 26 October 2026): the review items in `revised-plan-issue
     - Full suite: 327 tests, 322 passed and the 2 opt-in journeys skipped. The three failures were the new migration-42 test's seed data (a category name the store already has; fixed, and `UpgradeTests` then passed 29 of 29) and two UI smoke checks: the A4 pagination timeout and the scroll-wheel check in `Shell_LoadsAndSwitchesToGujarati`.
     - Both UI checks failed while the integration tests ran beside them, in two full runs, and passed when run alone. Of two runs of the UI project on its own, one failed the shell test and one passed clean. The wheel check reads the live Shift key and none of its code changed; it stays a known intermittent failure.
     - Full-size store (copies of the schema-37 rehearsal store): migration 42 alone took about 10 ms. From 37, the base build (0be0113) took 25.3–28.6 s and the cleanup build 23.0–27.5 s, alternating on the same disk, so there is no regression. G-1's 10.0 s of 5 November was the PC's state then. On the schema-42 copy, all eight store checks passed. Evidence: `artifacts/data/revised-plan-bugs/c2`.
-    - Still to redo on schema 42: G-1's writes, crash, backup and restore steps; G-3 from a commit; G-4; and G-5.
+    - Redone on commit 6f6b52b, 6 November 2026 (records in `revised-plan-bugs.md` G-3 to G-5):
+      - The full suite: 327 tests, 325 passed and the 2 opt-in journeys skipped, with one test project at a time. Side by side with the integration tests, the A4 timeout came back.
+      - The packages (G-3), whose executable reads 1.2.0+6f6b52b.
+      - The packaged journey (G-4, 32 s). The release notes end "Database schema: 42.".
+      - The large-store journey (G-5): update 37→42 in 30.4 s, round ends 269–289 MiB, process peak 325 MiB, export 26.1 s, all in line with schema 41.
+    - Still to redo on schema 42: G-1's writes, crash, backup and restore steps.
 
 ## 1. Product contract and precedence
 
