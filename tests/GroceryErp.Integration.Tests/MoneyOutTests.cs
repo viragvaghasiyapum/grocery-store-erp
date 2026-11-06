@@ -3,7 +3,6 @@ using GroceryErp.Assets;
 using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
-using GroceryErp.Data.Backup;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
 using GroceryErp.Expenses;
@@ -25,8 +24,7 @@ public sealed class MoneyOutTests
         long damageId = await fixture.MoneyOut.RecordDamageAsync(
             new(fixture.LotId, fixture.Today, new Quantity(2), "BROKEN", Money.Zero, "Handling"),
             OperationGuard.NewId(), ct);
-        DamageItem original = (await fixture.MoneyOut.GetDamagesAsync(fixture.Today,
-            fixture.Today, ct)).Single();
+        DamageItem original = (await fixture.MoneyOut.GetDamagePageAsync(new(fixture.Today, fixture.Today), null, null, cancellationToken: ct)).Items.Single();
         await fixture.MoneyOut.CorrectDamageAsync(original,
             new(Quantity.One, Money.Zero, "BROKEN", null), "Recount", OperationGuard.NewId(), ct);
         using (var db = fixture.Factory.Open())
@@ -67,7 +65,7 @@ public sealed class MoneyOutTests
         long damageId = await fixture.MoneyOut.RecordDamageAsync(
             new(fixture.LotId, fixture.Today, new Quantity(2), "BROKEN", new Money(10), "Original"),
             OperationGuard.NewId(), ct);
-        DamageItem original = (await fixture.MoneyOut.GetDamagesAsync(fixture.Today, fixture.Today, ct)).Single();
+        DamageItem original = (await fixture.MoneyOut.GetDamagePageAsync(new(fixture.Today, fixture.Today), null, null, cancellationToken: ct)).Items.Single();
         (await fixture.MoneyOut.PreviewCorrectionAsync(original.Date, ct)).Treatment.ShouldBe(PeriodTreatment.OpenPeriod);
         string operation = OperationGuard.NewId();
         long correctionId = await fixture.MoneyOut.CorrectDamageAsync(original,
@@ -87,8 +85,8 @@ public sealed class MoneyOutTests
             new { correctionId }).ShouldBe("OPEN_PERIOD");
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM v_pnl_entry WHERE head_code='STOCK_ADJUSTMENT'").ShouldBe(0L);
         var reports = new ReportService(fixture.Database, fixture.Settings, fixture.Clock);
-        (await reports.GetPnlAsync(fixture.Today, fixture.Today, ct)).TotalExpenses.ShouldBe(new Money(45));
-        DamageItem corrected = (await fixture.MoneyOut.GetDamagesAsync(fixture.Today, fixture.Today, ct)).Single();
+        (await reports.GetPnlReportAsync(ReportService.CustomPeriod(fixture.Today, fixture.Today), ct)).Statement.TotalExpenses.ShouldBe(new Money(45));
+        DamageItem corrected = (await fixture.MoneyOut.GetDamagePageAsync(new(fixture.Today, fixture.Today), null, null, cancellationToken: ct)).Items.Single();
         corrected.Quantity.ShouldBe(new Quantity(1));
         corrected.Notes.ShouldBeNull();
         corrected.Status.ShouldBe("CORRECTED");
@@ -98,10 +96,12 @@ public sealed class MoneyOutTests
             new(new Quantity(3), Money.Zero, "BROKEN", null), "Stale", OperationGuard.NewId(), ct)))
             .Code.ShouldBe(ErrorCode.EntryChanged);
 
-        await fixture.MoneyOut.VoidDamageAsync(corrected, "Not damaged", OperationGuard.NewId(), ct);
+        // Void is a correction to zero, as the damage's Void action sends it.
+        await fixture.MoneyOut.CorrectDamageAsync(corrected, new(Quantity.Zero, Money.Zero, corrected.Reason, corrected.Notes),
+            "Not damaged", OperationGuard.NewId(), ct);
         connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@id", new { id = fixture.LotId }).ShouldBe(10000L);
         connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='DAMAGES'").ShouldBe(0L);
-        (await fixture.MoneyOut.GetDamagesAsync(fixture.Today, fixture.Today, ct)).Single().Status.ShouldBe("VOID");
+        (await fixture.MoneyOut.GetDamagePageAsync(new(fixture.Today, fixture.Today), null, null, cancellationToken: ct)).Items.Single().Status.ShouldBe("VOID");
         await fixture.Database.WriteAsync(tx => LotSourceReconciliation.CheckAll(tx.Connection, tx.Transaction).ToArray().ShouldBeEmpty(), ct);
     }
 
@@ -123,7 +123,7 @@ public sealed class MoneyOutTests
         frozen.Status.ShouldBe("FINALIZED");
         frozen.Statement.TotalExpenses.ShouldBe(new Money(100));
 
-        DamageItem original = (await fixture.MoneyOut.GetDamagesAsync(damageDate, damageDate, ct)).Single();
+        DamageItem original = (await fixture.MoneyOut.GetDamagePageAsync(new(damageDate, damageDate), null, null, cancellationToken: ct)).Items.Single();
         CorrectionDating dating = await fixture.MoneyOut.PreviewCorrectionAsync(damageDate, ct);
         dating.Treatment.ShouldBe(PeriodTreatment.CurrentDated);
         dating.FiscalLocked.ShouldBeTrue();
@@ -160,7 +160,7 @@ public sealed class MoneyOutTests
         using var connection = fixture.Factory.Open();
         long product = connection.ExecuteScalar<long>("SELECT product_id FROM product_lot WHERE id=@id", new { id = fixture.LotId });
         connection.Execute("DELETE FROM product_lot WHERE id=@id", new { id = fixture.LotId });
-        DamageItem original = (await fixture.MoneyOut.GetDamagesAsync(fixture.Today, fixture.Today, ct)).Single();
+        DamageItem original = (await fixture.MoneyOut.GetDamagePageAsync(new(fixture.Today, fixture.Today), null, null, cancellationToken: ct)).Items.Single();
 
         await fixture.MoneyOut.CorrectDamageAsync(original, new(new Quantity(6), Money.Zero, "SPOILED", null),
             "Four were fine", OperationGuard.NewId(), ct);
@@ -196,7 +196,7 @@ public sealed class MoneyOutTests
         long readded = Product("MONEY-2", 1, "SALEABLE");
         long archived = Product("MONEY-OLD", 0, "SALEABLE");
         long internalUse = Product("MONEY-RAW", 1, "INTERNAL");
-        DamageItem damage = (await fixture.MoneyOut.GetDamagesAsync(fixture.Today, fixture.Today, ct)).Single();
+        DamageItem damage = (await fixture.MoneyOut.GetDamagePageAsync(new(fixture.Today, fixture.Today), null, null, cancellationToken: ct)).Items.Single();
 
         RestoreDraft draft = (await fixture.MoneyOut.GetDamageRestoreDraftAsync(damage.Id, new Quantity(4), ct))!;
         draft.DocumentNumber.ShouldBe("D2627-000001");
@@ -232,7 +232,7 @@ public sealed class MoneyOutTests
         (await fixture.MoneyOut.GetDamageRestoreDraftAsync(damage.Id, Quantity.One, ct)).ShouldBeNull();
 
         // The next correction finds the units in the restored lot of the chosen product.
-        damage = (await fixture.MoneyOut.GetDamagesAsync(fixture.Today, fixture.Today, ct)).Single();
+        damage = (await fixture.MoneyOut.GetDamagePageAsync(new(fixture.Today, fixture.Today), null, null, cancellationToken: ct)).Items.Single();
         await Correct(4, null);
         connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@restored", new { restored })
             .ShouldBe(6000L);
@@ -320,18 +320,6 @@ public sealed class MoneyOutTests
     }
 
     [Fact]
-    public void ExpiryAlertView_IncludesLocalNameAndExcludesBlockedLots()
-    {
-        using var fixture = new Fixture(expiry: new DateOnly(2026, 8, 1));
-        using var connection = fixture.Factory.Open();
-        // The Expiry report and the Products badge read this view.
-        connection.ExecuteScalar<string>("SELECT name_local FROM v_expiry_alert WHERE bucket='EXPIRED'")
-            .ShouldBe("પરીક્ષણ ઉત્પાદન");
-        connection.Execute("UPDATE product_lot SET is_active=0 WHERE id=@id", new { id = fixture.LotId });
-        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM v_expiry_alert WHERE bucket='EXPIRED'").ShouldBe(0L);
-    }
-
-    [Fact]
     public async Task ActionableExpiryCount_MatchesAlertViewAcrossThresholdChanges()
     {
         using var fixture = new Fixture();
@@ -412,7 +400,7 @@ public sealed class MoneyOutTests
         connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='SALARIES' AND entry_date=@date",
             new { date = Iso(month.LastDay) }).ShouldBe(900_000L);
         var reports = new ReportService(fixture.Database, fixture.Settings, fixture.Clock);
-        (await reports.GetPnlAsync(month.FirstDay, month.LastDay, ct)).TotalExpenses.ShouldBe(new Money(900));
+        (await reports.GetPnlReportAsync(ReportService.CustomPeriod(month.FirstDay, month.LastDay), ct)).Statement.TotalExpenses.ShouldBe(new Money(900));
         SalaryPaymentItem corrected = (await fixture.MoneyOut.GetSalaryRegisterAsync(month, month, ct)).Single();
         corrected.Amount.ShouldBe(new Money(900));
         corrected.Mode.ShouldBe("CASH");
@@ -441,7 +429,7 @@ public sealed class MoneyOutTests
         await fixture.MoneyOut.RecordExpenseAsync(
             new(fixture.Today, category, new Money(500), "UPI", "Power Co", "OLD", null),
             OperationGuard.NewId(), ct);
-        ExpenseItem original = (await fixture.MoneyOut.GetExpensesAsync(fixture.Today, fixture.Today, ct)).Single();
+        ExpenseItem original = (await fixture.MoneyOut.GetExpensePageAsync(new(fixture.Today, fixture.Today), null, null, cancellationToken: ct)).Items.Single();
         string operation = OperationGuard.NewId();
         var replacement = new ExpenseInput(fixture.Today, category, new Money(450), "BANK", "Power Co", "FIXED",
             "Invoice correction");
@@ -460,7 +448,7 @@ public sealed class MoneyOutTests
         Should.Throw<Microsoft.Data.Sqlite.SqliteException>(() =>
             connection.Execute("DELETE FROM expense WHERE id=@id", new { id = original.Id }));
 
-        ExpenseItem corrected = (await fixture.MoneyOut.GetExpensesAsync(fixture.Today, fixture.Today, ct)).Single();
+        ExpenseItem corrected = (await fixture.MoneyOut.GetExpensePageAsync(new(fixture.Today, fixture.Today), null, null, cancellationToken: ct)).Items.Single();
         corrected.Status.ShouldBe("CORRECTED");
         DateOnly moved = fixture.Today.AddDays(-3);
         await fixture.MoneyOut.CorrectExpenseAsync(corrected, replacement with { Date = moved },
@@ -469,12 +457,12 @@ public sealed class MoneyOutTests
             new { date = Iso(fixture.Today) }).ShouldBe(0L);
         connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='EXPENSE_CATEGORY' AND entry_date=@date",
             new { date = Iso(moved) }).ShouldBe(450_000L);
-        (await fixture.MoneyOut.GetExpensesAsync(fixture.Today, fixture.Today, ct)).ShouldBeEmpty();
-        ExpenseItem movedItem = (await fixture.MoneyOut.GetExpensesAsync(moved, moved, ct)).Single();
+        (await fixture.MoneyOut.GetExpensePageAsync(new(fixture.Today, fixture.Today), null, null, cancellationToken: ct)).Items.ShouldBeEmpty();
+        ExpenseItem movedItem = (await fixture.MoneyOut.GetExpensePageAsync(new(moved, moved), null, null, cancellationToken: ct)).Items.Single();
 
         await fixture.MoneyOut.VoidExpenseAsync(movedItem, "Duplicate entry", OperationGuard.NewId(), ct);
         connection.ExecuteScalar<long>("SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='EXPENSE_CATEGORY'").ShouldBe(0L);
-        ExpenseItem voided = (await fixture.MoneyOut.GetExpensesAsync(moved, moved, ct)).Single();
+        ExpenseItem voided = (await fixture.MoneyOut.GetExpensePageAsync(new(moved, moved), null, null, cancellationToken: ct)).Items.Single();
         voided.Status.ShouldBe("VOID");
         (await Should.ThrowAsync<DomainException>(() => fixture.MoneyOut.VoidExpenseAsync(voided, "Again",
             OperationGuard.NewId(), ct))).Code.ShouldBe(ErrorCode.EntryVoided);
@@ -571,7 +559,7 @@ public sealed class MoneyOutTests
 
         var revised = original with { Cost = new Money(48000), Name = "Main freezer", Notes = "Back room" };
         await fixture.Assets.SaveAssetAsync(id, revised, ct);
-        (await fixture.Assets.GetAssetsAsync(cancellationToken: ct)).Single().Name.ShouldBe("Main freezer");
+        (await fixture.Assets.GetAssetPageAsync(cancellationToken: ct)).Items.Single().Name.ShouldBe("Main freezer");
         AssetChangePreview blocked = await fixture.Assets.PreviewChangeAsync(id, revised with { Cost = new Money(50000) }, null, ct);
         blocked.Treatment.ShouldBe("BLOCKED");
         (await Should.ThrowAsync<DomainException>(() => fixture.Assets.SaveAssetAsync(id,

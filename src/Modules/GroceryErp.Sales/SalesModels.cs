@@ -112,7 +112,6 @@ public sealed record ReturnableSaleLine(SaleLine Line, Quantity Remaining)
     public Quantity AlreadyReturned => Line.Quantity - Remaining;
     public Money Refundable { get; init; }
     public Money RemainingRefund { get; init; }
-    public Money AlreadyRefunded => Refundable - RemainingRefund;
     public bool OriginalLotAvailable { get; init; }
     // The lot that would take the units back has expired, so they can only be damaged.
     public bool ResaleExpired { get; init; }

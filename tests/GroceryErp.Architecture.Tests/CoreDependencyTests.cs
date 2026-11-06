@@ -1,4 +1,4 @@
-using GroceryErp.Core.Localization;
+using GroceryErp.Core.Errors;
 using Shouldly;
 using Xunit;
 
@@ -9,7 +9,7 @@ public sealed class CoreDependencyTests
     [Fact]
     public void Core_HasOnlyFrameworkAssemblyReferences()
     {
-        List<string> foreignReferences = typeof(LanguageChangedMessage).Assembly
+        List<string> foreignReferences = typeof(DomainException).Assembly
             .GetReferencedAssemblies()
             .Select(reference => reference.Name)
             .Where(name => name is not null)

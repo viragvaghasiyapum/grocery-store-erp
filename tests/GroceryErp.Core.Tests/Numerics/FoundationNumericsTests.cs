@@ -88,8 +88,6 @@ public sealed class FoundationNumericsTests
             Percent rate = new(random.Next(0, 29));
             (Money taxable, Money tax) = Tax.FromInclusive(gross, rate);
             (taxable + tax).ShouldBe(gross);
-            (Money cgst, Money sgst) = Tax.SplitIntraState(tax);
-            (cgst + sgst).ShouldBe(tax);
         }
     }
 }

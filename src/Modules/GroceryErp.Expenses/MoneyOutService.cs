@@ -1,7 +1,5 @@
-using CommunityToolkit.Mvvm.Messaging;
 using Dapper;
 using GroceryErp.Core.Errors;
-using GroceryErp.Core.Messages;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
@@ -40,34 +38,10 @@ public sealed partial class MoneyOutService(
             new { today = periods.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) }),
             cancellationToken);
 
-    public Task<IReadOnlyList<DamageItem>> GetDamagesAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
-    {
-        EnsureRange(from, to);
-        return database.ReadAsync(connection => (IReadOnlyList<DamageItem>)connection.Query<DamageRow>("""
-            SELECT d.id AS Id,d.doc_no AS DocumentNumber,d.damage_date AS Date,
-                   COALESCE(d.product_name_snapshot,'Legacy unknown') AS ProductName,
-                   COALESCE(d.lot_code_snapshot,'Legacy unknown') AS LotCode,
-                   COALESCE(dc.new_qty,d.qty) AS Quantity,d.unit_cost AS UnitCost,
-                   CAST(ROUND(COALESCE(dc.new_qty,d.qty)*d.unit_cost/1000.0) AS INTEGER) AS CostValue,
-                   COALESCE(dc.new_recovered,d.recovered_amount) AS RecoveredAmount,
-                   COALESCE(dc.new_reason,d.reason) AS Reason,
-                   CASE WHEN dc.id IS NULL THEN d.notes ELSE dc.new_notes END AS Notes,
-                   CASE WHEN dc.id IS NULL THEN 'ACTIVE' WHEN dc.new_qty=0 THEN 'VOID' ELSE 'CORRECTED' END AS Status
-            FROM damage d
-            LEFT JOIN damage_correction dc ON dc.id=(SELECT MAX(id) FROM damage_correction WHERE damage_id=d.id)
-            WHERE d.damage_date BETWEEN @from AND @to ORDER BY d.damage_date DESC,d.id DESC
-            """, new { from, to }).Select(static row => row.ToModel()).ToList(), cancellationToken);
-    }
-
-    public Task<DamagePage> GetDamagePageAsync(DateOnly from, DateOnly to, DateOnly? beforeDate = null,
-        long? beforeId = null, int limit = 100, CancellationToken cancellationToken = default) =>
-        GetDamagePageAsync(new DamageFilter(from, to), beforeDate, beforeId, limit, cancellationToken);
-
     public async Task<long> RecordDamageAsync(DamageInput input, string operationId, CancellationToken cancellationToken = default)
     {
         ValidateDamage(input);
-        long productId = 0;
-        long result = await database.WriteAsync(transaction =>
+        return await database.WriteAsync(transaction =>
         {
             OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.Damage);
             if (replay is not null) return replay.RefId ?? 0;
@@ -78,7 +52,7 @@ public sealed partial class MoneyOutService(
                 """, new { id = input.LotId }, transaction.Transaction);
             if (lot is null) throw new DomainException(ErrorCode.NotFound, "lot", input.LotId);
             if (input.Quantity.Scaled > lot.OnHand) throw new DomainException(ErrorCode.InsufficientStock, input.Quantity);
-            productId = lot.ProductId;
+            long productId = lot.ProductId;
             Money unitCost = Money.FromScaled(lot.UnitCost);
             Money cost = unitCost * input.Quantity;
             string document = numbers.Next(transaction, DocType.Damage, input.Date);
@@ -110,8 +84,6 @@ public sealed partial class MoneyOutService(
             OperationGuard.Complete(transaction, operationId, "damage", id);
             return id;
         }, cancellationToken);
-        if (productId > 0) WeakReferenceMessenger.Default.Send(new StockChangedMessage([productId]));
-        return result;
     }
 
     public Task<IReadOnlyList<ExpenseCategoryItem>> GetExpenseCategoriesAsync(bool includeInactive = false, CancellationToken cancellationToken = default) =>
@@ -169,18 +141,6 @@ public sealed partial class MoneyOutService(
                x.status AS Status
         FROM current x JOIN expense_category c ON c.id=x.category_id
         """;
-
-    public Task<IReadOnlyList<ExpenseItem>> GetExpensesAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
-    {
-        EnsureRange(from, to);
-        return database.ReadAsync(connection => (IReadOnlyList<ExpenseItem>)connection.Query<ExpenseRow>(
-            CurrentExpenseSql + CurrentExpenseColumns + " ORDER BY x.date DESC,x.id DESC",
-            new { from, to }).Select(static row => row.ToModel()).ToList(), cancellationToken);
-    }
-
-    public Task<ExpensePage> GetExpensePageAsync(DateOnly from, DateOnly to, DateOnly? beforeDate = null,
-        long? beforeId = null, int limit = 100, CancellationToken cancellationToken = default) =>
-        GetExpensePageAsync(new ExpenseFilter(from, to), beforeDate, beforeId, limit, cancellationToken);
 
     public Task<long> RecordExpenseAsync(ExpenseInput input, string operationId, CancellationToken cancellationToken = default)
     {

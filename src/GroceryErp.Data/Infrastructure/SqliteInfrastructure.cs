@@ -418,7 +418,6 @@ public static class SqliteErrorMapper
 {
     private static readonly (string Fragment, ErrorCode Code)[] Rules =
     [
-        ("insufficient stock in lot", ErrorCode.InsufficientStock),
         ("direct stock forbids negative stock", ErrorCode.InsufficientStock),
         ("return exceeds original sale", ErrorCode.ReturnQtyExceedsSold),
         ("completed sale values are immutable", ErrorCode.SaleFinalized),

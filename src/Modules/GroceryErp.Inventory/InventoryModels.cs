@@ -41,9 +41,6 @@ public sealed record LotItem(
 public sealed record LotDetailsEdit(long LotId, long ExpectedVersion, Money SellingPrice,
     Money? Mrp, DateOnly? ExpiryDate);
 
-public sealed record LotDeletionPreview(long LotId, string LotCode, Quantity OnHand,
-    bool CanDelete, string? BlockReason);
-
 /// <summary>Server-side lot filters. Status: ALL, AVAILABLE, ZERO or BLOCKED. Expiry: ALL, EXPIRED, EXPIRING or NONE.</summary>
 public sealed record LotFilter
 {

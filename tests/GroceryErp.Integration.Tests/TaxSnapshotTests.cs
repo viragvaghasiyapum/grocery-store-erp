@@ -7,7 +7,6 @@ using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
 using GroceryErp.Expenses;
 using GroceryErp.Inventory;
-using GroceryErp.Inventory.Contracts;
 using GroceryErp.Purchasing;
 using GroceryErp.Reports;
 using GroceryErp.Sales;
@@ -205,7 +204,7 @@ public sealed class TaxSnapshotTests
             Money.Zero, null), OperationGuard.NewId(), ct);
         using (SqliteConnection db = fixture.Factory.Open())
             db.Execute("DELETE FROM product_lot WHERE id=@productRate", new { productRate });
-        DamageItem damage = (await fixture.MoneyOut.GetDamagesAsync(fixture.Today, fixture.Today, ct)).Single();
+        DamageItem damage = (await fixture.MoneyOut.GetDamagePageAsync(new(fixture.Today, fixture.Today), null, null, cancellationToken: ct)).Items.Single();
         await fixture.Catalog.UpdateTaxRateAsync(fixture.Gst5, "GST 5% new", 5m, true, ct);
         await fixture.MoneyOut.CorrectDamageAsync(damage, new(new Quantity(9), Money.Zero, "BROKEN", null),
             "One was fine", OperationGuard.NewId(), ct);
@@ -379,7 +378,7 @@ public sealed class TaxSnapshotTests
         (await fixture.Sales.GetAsync(saleId, ct)).Totals.GrandTotal.ShouldBe(new Money(158));
         await fixture.Sales.HoldAsync(saleId, "Across the upgrade", ct);
 
-        await fixture.Sales.ResumeAsync(saleId, ct);
+        await fixture.Sales.ResumeReviewedAsync(await fixture.Sales.GetHeldBillReviewAsync(saleId, ct), ct);
 
         (await fixture.Sales.GetAsync(saleId, ct)).Totals.GrandTotal.ShouldBe(new Money(150));
         using SqliteConnection check = fixture.Factory.Open();
@@ -402,14 +401,11 @@ public sealed class TaxSnapshotTests
         await fixture.Sales.SetLineQuantityAsync(saleId, lineId, new Quantity(2), ct);
         Money total = (await fixture.Sales.GetAsync(saleId, ct)).Totals.GrandTotal;
         await fixture.Sales.CompleteAsync(new(saleId, [new(PaymentMode.Cash, total)], OperationGuard.NewId()), ct);
+        await fixture.DeleteEmptyLotAsync(lot, ct);
         using (SqliteConnection db = fixture.Factory.Open())
-        {
-            long version = db.ExecuteScalar<long>("SELECT detail_version FROM product_lot WHERE id=@lot", new { lot });
-            await fixture.Inventory.DeleteZeroLotAsync(lot, version, ct);
             // The product's other lots are gone too, so it can be deleted.
             db.Execute("DELETE FROM product_lot WHERE product_id=@id AND qty_on_hand=0", new { id = fixture.ProductId });
-        }
-        (await fixture.Catalog.RemoveAsync(fixture.ProductId, ct)).ShouldBe(ProductRemoval.Deleted);
+        (await fixture.RemoveProductAsync(fixture.ProductId, ct)).ShouldBeTrue();
 
         await fixture.Sales.ReturnAsync(new(saleId, fixture.Today, "Returned", RefundMode.Cash,
             [new(lineId, Quantity.One, true)], OperationGuard.NewId()), ct);
@@ -533,8 +529,7 @@ public sealed class TaxSnapshotTests
         using (SqliteConnection db = fixture.Factory.Open())
         {
             foreach (long lot in new[] { bought, direct })
-                await fixture.Inventory.DeleteZeroLotAsync(lot,
-                    db.ExecuteScalar<long>("SELECT detail_version FROM product_lot WHERE id=@lot", new { lot }), ct);
+                await fixture.DeleteEmptyLotAsync(lot, ct);
             await fixture.Inventory.EditLotDetailsAsync(new(edited,
                 db.ExecuteScalar<long>("SELECT detail_version FROM product_lot WHERE id=@edited", new { edited }),
                 new Money(155), new Money(160), null), ct);
@@ -576,17 +571,16 @@ public sealed class TaxSnapshotTests
         line.TaxLabel.ShouldBeNull();
         line.UnitCostTax.ShouldBe(new Money(5));
         long chosen;
+        await fixture.DeleteEmptyLotAsync(lot, ct);
         using (SqliteConnection db = fixture.Factory.Open())
         {
-            await fixture.Inventory.DeleteZeroLotAsync(lot,
-                db.ExecuteScalar<long>("SELECT detail_version FROM product_lot WHERE id=@lot", new { lot }), ct);
             chosen = db.ExecuteScalar<long>("""
                 INSERT INTO product(sku,name,category_id,uom_id,hsn_code,tax_rate_id,track_expiry,
                     default_selling_price,default_mrp)
                 VALUES ('TAX-NEW','Tax product again',@CategoryId,@UnitId,'1006',@Gst18,0,140000,160000) RETURNING id
                 """, new { fixture.CategoryId, fixture.UnitId, fixture.Gst18 });
         }
-        (await fixture.Catalog.RemoveAsync(fixture.ProductId, ct)).ShouldBe(ProductRemoval.Deleted);
+        (await fixture.RemoveProductAsync(fixture.ProductId, ct)).ShouldBeTrue();
 
         await fixture.Sales.ReturnAsync(new(saleId, fixture.Today, "Returned", RefundMode.Cash,
             [new(line.Id, Quantity.One, true, new RestoreProductChoice(chosen, null, new Money(140), new Money(160)))],
@@ -623,10 +617,8 @@ public sealed class TaxSnapshotTests
             preferredLotId: bought, cancellationToken: ct);
         await fixture.Sales.AddProductAsync(saleId, fixture.ProductId, Quantity.One, preferredLotId: direct, cancellationToken: ct);
         await fixture.Sales.CompleteAsync(new(saleId, [new(PaymentMode.Cash, new Money(300))], OperationGuard.NewId()), ct);
-        using (SqliteConnection db = fixture.Factory.Open())
-            foreach (long lot in new[] { bought, direct })
-                await fixture.Inventory.DeleteZeroLotAsync(lot,
-                    db.ExecuteScalar<long>("SELECT detail_version FROM product_lot WHERE id=@lot", new { lot }), ct);
+        foreach (long lot in new[] { bought, direct })
+            await fixture.DeleteEmptyLotAsync(lot, ct);
 
         fixture.Upgrade();
         IReadOnlyList<SaleLine> lines = (await fixture.Sales.GetAsync(saleId, ct)).Lines;
@@ -719,6 +711,20 @@ public sealed class TaxSnapshotTests
         }
 
         public string Root { get; }
+        // The Products page's "Remove selected": deletes a product nothing needs, archives one still in use.
+        public async Task<bool> RemoveProductAsync(long id, CancellationToken ct)
+        {
+            (await Catalog.RunBulkBatchAsync(new(CatalogBulkAction.Archive), [id], OperationGuard.NewId(), ct))
+                .Single().Outcome.ShouldBe(BulkItemOutcome.Changed);
+            using var db = Factory.Open();
+            return db.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE id=@id", new { id }) == 0;
+        }
+
+        // The lot view's "Delete selected empty lots".
+        public async Task DeleteEmptyLotAsync(long lot, CancellationToken ct) =>
+            (await Inventory.RunLotBulkBatchAsync(LotBulkAction.DeleteZero, [lot], OperationGuard.NewId(), ct))
+                .Single().Outcome.ShouldBe(BulkItemOutcome.Changed);
+
         public SqliteConnectionFactory Factory { get; }
         public DbExecutor Database { get; }
         public SettingsService Settings { get; }

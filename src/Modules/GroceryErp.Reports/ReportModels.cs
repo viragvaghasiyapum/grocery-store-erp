@@ -32,8 +32,6 @@ public sealed record PnlStatement(
     Money NetProfit,
     Percent NetMargin);
 
-public sealed record PnlComparison(PnlStatement Current, PnlStatement Previous);
-
 public sealed record PnlMatrixRow(string Section, string HeadCode, long? ReferenceId, string Label,
     IReadOnlyList<Money> Months, Money Total);
 

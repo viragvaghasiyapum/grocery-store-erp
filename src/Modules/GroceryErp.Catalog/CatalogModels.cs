@@ -134,8 +134,6 @@ public sealed record BarcodeOwner(long ProductId, string ProductName);
 
 public sealed record CategoryInput(string Name, string? NameLocal, long? ParentId, int? ExpiryAlertDays);
 
-public enum ProductRemoval { Deleted, Archived }
-
 public enum CatalogBulkAction { Archive, Restore, Category, Tax, Classification, Labels, Barcode }
 
 /// <summary>One bulk action and its target value (category, tax rate, classification or barcode prefix).</summary>

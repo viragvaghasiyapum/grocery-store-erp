@@ -1,10 +1,7 @@
 using System.Data;
-using CommunityToolkit.Mvvm.Messaging;
 using Dapper;
 using GroceryErp.Core.Errors;
-using GroceryErp.Core.Messages;
 using GroceryErp.Core.Numerics;
-using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
 using GroceryErp.Inventory;
@@ -194,8 +191,7 @@ public sealed partial class MoneyOutService
             throw new DomainException(ErrorCode.Validation, "Invalid damage correction.");
         string correctionReason = Required(reason, 240);
         string? notes = Optional(replacement.Notes, 500);
-        long productId = 0;
-        long result = await database.WriteAsync(transaction =>
+        return await database.WriteAsync(transaction =>
         {
             OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.DamageCorrection);
             if (replay is not null) return replay.RefId ?? 0;
@@ -207,7 +203,6 @@ public sealed partial class MoneyOutService
                 current.UnitCost != original.UnitCost.Scaled || current.Reason != original.Reason || current.Notes != original.Notes)
                 throw new DomainException(ErrorCode.EntryChanged);
             CorrectionDating dating = periods.DateCorrection(transaction, current.DamageDate);
-            productId = current.ProductId;
             Money unitCost = Money.FromScaled(current.UnitCost);
             Money previousLoss = unitCost * Quantity.FromScaled(current.Quantity) - Money.FromScaled(current.RecoveredAmount);
             Money newLoss = unitCost * replacement.Quantity - replacement.RecoveredAmount;
@@ -215,7 +210,6 @@ public sealed partial class MoneyOutService
             (long LotId, long ProductId, RestoredProduct? Chosen)? recreated = restored > Quantity.Zero && !current.LotExists
                 ? RecreateDamagedLot(transaction, current, restored, correctionReason, replacement.Restore) : null;
             long? restoredLot = recreated?.LotId;
-            if (recreated is { } lot) productId = lot.ProductId;
             long id = transaction.Connection.ExecuteScalar<long>("""
                 INSERT INTO damage_correction(damage_id,correction_date,effective_date,treatment,previous_qty,new_qty,
                     previous_recovered,new_recovered,new_reason,new_notes,expense_delta,restored_lot_id,correction_reason)
@@ -255,16 +249,6 @@ public sealed partial class MoneyOutService
             OperationGuard.Complete(transaction, operationId, "damage_correction", id);
             return id;
         }, cancellationToken);
-        if (productId > 0) WeakReferenceMessenger.Default.Send(new StockChangedMessage([productId]));
-        return result;
-    }
-
-    public Task<long> VoidDamageAsync(DamageItem original, string reason, string operationId,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(original);
-        return CorrectDamageAsync(original, new(Quantity.Zero, Money.Zero, original.Reason, original.Notes),
-            reason, operationId, cancellationToken);
     }
 
     private (long LotId, long ProductId, RestoredProduct? Chosen) RecreateDamagedLot(DbTx transaction,

@@ -7,10 +7,7 @@ namespace GroceryErp.App.Presentation;
 internal sealed record BulkCandidate(long Id, string Label, bool Eligible, string? SkipReasonKey = null, long Weight = 0);
 
 /// <summary>The server-resolved rows of a bulk action and a localized description of its effect.</summary>
-internal sealed record BulkPlan(IReadOnlyList<BulkCandidate> Candidates, string? Effect = null)
-{
-    public int EligibleCount => Candidates.Count(static candidate => candidate.Eligible);
-}
+internal sealed record BulkPlan(IReadOnlyList<BulkCandidate> Candidates, string? Effect = null);
 
 /// <summary>
 /// Describes a reviewed bulk action: how to resolve and preview the selection on the server and

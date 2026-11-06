@@ -3,7 +3,6 @@ using System.Windows;
 using System.Windows.Controls;
 using GroceryErp.Catalog;
 using GroceryErp.Core;
-using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Services;
 using GroceryErp.Inventory;

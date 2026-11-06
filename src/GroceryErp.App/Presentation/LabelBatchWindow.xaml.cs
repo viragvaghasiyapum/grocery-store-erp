@@ -5,7 +5,6 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using GroceryErp.Catalog;
-using GroceryErp.Catalog.Barcodes;
 using GroceryErp.Core;
 using GroceryErp.Data.Services;
 using GroceryErp.Inventory;
@@ -19,7 +18,7 @@ namespace GroceryErp.App.Presentation;
 
 public sealed class LabelBatchRow(
     string name, string? localName, string source, string barcode, decimal price, decimal? mrp, string copiesText,
-    bool isSelected, bool isLot = false, bool isPrintable = true) : INotifyPropertyChanged
+    bool isSelected, bool isPrintable = true) : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
     public string Name { get; } = name;
@@ -30,7 +29,6 @@ public sealed class LabelBatchRow(
     public decimal? Mrp { get; } = mrp;
     public string CopiesText { get; set; } = copiesText;
     public bool IsSelected { get; set; } = isSelected;
-    public bool IsLot { get; } = isLot;
     public bool IsPrintable { get; } = isPrintable;
     public ObservableCollection<LabelBatchRow> Lots { get; } = [];
     private bool _isLotsExpanded;
@@ -280,7 +278,7 @@ public partial class LabelBatchWindow : Window
         string barcode = await _catalog.EnsureLotBarcodeAsync(lot.Id, _settings.Current.LotPrefix);
         row = new LabelBatchRow(product.Product.Name, product.Product.NameLocal,
             $"{TranslationSource.Instance["Stock_LotCode"]} {lot.LotCode}", barcode,
-            lot.SellingPrice.Value, lot.Mrp?.Value, "1", isSelected, isLot: true);
+            lot.SellingPrice.Value, lot.Mrp?.Value, "1", isSelected);
         _lotRows.Add(lot.Id, row);
         return row;
     }

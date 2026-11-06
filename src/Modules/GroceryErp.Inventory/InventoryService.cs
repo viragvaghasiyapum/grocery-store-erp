@@ -1,7 +1,5 @@
-using CommunityToolkit.Mvvm.Messaging;
 using Dapper;
 using GroceryErp.Core.Errors;
-using GroceryErp.Core.Messages;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
@@ -202,7 +200,7 @@ public sealed partial class InventoryService(
         string note = Required(reason, 500, nameof(reason));
         string? batch = Optional(line.BatchNumber, 120);
         periods.EnsureOpen(line.ReceivedDate);
-        long lotId = await database.WriteAsync(transaction =>
+        return await database.WriteAsync(transaction =>
         {
             OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.DirectEntry);
             if (replay?.RefId is long previous) return previous;
@@ -240,8 +238,6 @@ public sealed partial class InventoryService(
             OperationGuard.Complete(transaction, operationId, "product_lot", id);
             return id;
         }, cancellationToken);
-        WeakReferenceMessenger.Default.Send(new StockChangedMessage([line.ProductId]));
-        return lotId;
     }
 
     public async Task<long> ImportOpeningStockAsync(
@@ -261,7 +257,6 @@ public sealed partial class InventoryService(
         ImportJobState state = await database.WriteAsync(tx => ImportJobs.Start(tx, operationId,
             "OPENING_STOCK", fingerprint, batches.Length), cancellationToken);
         if (state.Completed) return state.ResultId;
-        var changed = new HashSet<long>();
         for (int batchNo = 0; batchNo < batches.Length; batchNo++)
         {
             int number = batchNo;
@@ -301,16 +296,13 @@ public sealed partial class InventoryService(
                 })), transaction.Transaction);
                 stock.Change(transaction, new(line.ReceivedDate, line.ProductId, lotId, LotChangeKind.Opening, line.Quantity));
                 firstLot = firstLot == 0 ? lotId : firstLot;
-                changed.Add(line.ProductId);
             }
             audit.Write(transaction, "opening_stock", firstLot, "IMPORT_BATCH", new { rows = batch.Length, batchNo = number });
             ImportJobs.RecordBatch(transaction, operationId, number, created: batch.Length, firstLot: firstLot);
         }, cancellationToken);
         }
-        long result = (await database.WriteAsync(tx => ImportJobs.Complete(tx, operationId,
+        return (await database.WriteAsync(tx => ImportJobs.Complete(tx, operationId,
             batches.Length, openingStock: true), cancellationToken)).ResultId;
-        if (changed.Count > 0) WeakReferenceMessenger.Default.Send(new StockChangedMessage(changed.ToArray()));
-        return result;
     }
 
     private static void ThrowLotEditConflict(DbTx transaction, long lotId)

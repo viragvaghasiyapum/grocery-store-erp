@@ -223,7 +223,7 @@ public sealed class PhaseZeroSmokeTests
                 VerifyReleaseNotes(translations);
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 DisplayFormatter formatter = new();
-                ShellViewModel viewModel = new(translations, formatter);
+                ShellViewModel viewModel = new(translations);
                 ShellWindow shell = new(viewModel);
 
                 shell.Show();
@@ -231,9 +231,8 @@ public sealed class PhaseZeroSmokeTests
                 ((Button)shell.FindName("LockButton")).Content.ShouldBe("Lock");
 
                 translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
-                translations["Demo_Title"].ShouldBe("તમારી દુકાન, વ્યવસાય માટે તૈયાર");
-                viewModel.SampleAmount.ShouldBe("₹1,23,45,678.900");
-                viewModel.SampleAmount.ShouldNotContain("૧");
+                // Gujarati text, but amounts keep English digits and Indian grouping.
+                formatter.Number(12345678.9m).ShouldBe("1,23,45,678.900");
                 ((Button)shell.FindName("LockButton")).Content.ShouldBe("લૉક");
 
                 var paths = new AppPaths(new SettingsBootstrap(root));
@@ -243,14 +242,6 @@ public sealed class PhaseZeroSmokeTests
                 using var settings = new SettingsService(database, paths, new AuditLog());
                 settings.LoadAsync().GetAwaiter().GetResult();
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
-                var welcome = new DemoPage { DataContext = viewModel };
-                var welcomeHost = new Window { Content = welcome, Width = 960, Height = 640 };
-                welcomeHost.Show();
-                Capture(welcomeHost, "welcome.en.png");
-                translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
-                Capture(welcomeHost, "welcome.gu.png");
-                translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
-                welcomeHost.Close();
                 var login = new LoginWindow(new AuthenticationService(database, new PasswordHasher(),
                     new SystemClock(settings), new AuditLog()));
                 login.Show();
@@ -500,11 +491,11 @@ public sealed class PhaseZeroSmokeTests
                 var secondProductLabel = new LabelBatchRow("Second salt", null, "Product",
                     "2000000000022", 30m, 35m, "1", true);
                 var firstLotLabel = new LabelBatchRow("Tata Salt 1 kg", "ટાટા મીઠું 1 kg", "Lot L000001",
-                    "2000000000015", 27.5m, 30m, "1", false, isLot: true);
+                    "2000000000015", 27.5m, 30m, "1", false);
                 var secondLotLabel = new LabelBatchRow("Second salt", null, "Lot L000002",
-                    "2000000000022", 30m, 35m, "1", false, isLot: true);
+                    "2000000000022", 30m, 35m, "1", false);
                 var nextLotLabel = new LabelBatchRow("Tata Salt 1 kg", "ટાટા મીઠું 1 kg", "Lot L000003",
-                    "2000000000039", 28m, 30m, "1", false, isLot: true);
+                    "2000000000039", 28m, 30m, "1", false);
                 batch.Rows.Add(productLabel);
                 batch.Rows.Add(secondProductLabel);
                 var productRows = (Dictionary<long, LabelBatchRow>)typeof(LabelBatchWindow)
@@ -671,17 +662,6 @@ public sealed class PhaseZeroSmokeTests
                 Capture(productImport, "product-import.narrow.gu.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 productImport.Close();
-
-                var label = new ProductLabelWindow(new ProductDetails(1,
-                    new ProductInput("SALT001", "Tata Salt 1 kg", "ટાટા મીઠું 1 kg", "salt",
-                        1, null, 1, "1001", 1, false, null, true, null, 7,
-                        new Quantity(5), new Money(27.5m), new Money(30m),
-                        [new ProductBarcodeInput("4006381333931", Quantity.One, "EAN13", true)]), true),
-                    "Test printer", "60x40");
-                label.Show();
-                ((System.Windows.Controls.Image)label.FindName("BarcodeImage")).Source.ShouldNotBeNull();
-                Capture(label, "product-label.en.png");
-                label.Close();
 
                 var purchasing = new PurchasingService(database, new LotQuantities(settings),
                     new DocNumberService(settings), new PeriodGuard(settings, new SystemClock(settings)), settings, new AuditLog());
@@ -1463,7 +1443,7 @@ public sealed class PhaseZeroSmokeTests
             Run(() => moneyOut.PostSalaryRunAsync(new(new YearMonth(2026, 9), new DateOnly(2026, 10, 5), "BANK",
                 [new(employee, new Money(12000), Money.Zero, Money.Zero, new Money(500), "September")]), OperationGuard.NewId()));
             Run(() => assets.PostDueDepreciationAsync()).CurrentDatedPeriods.Count.ShouldBe(2);
-            ExpenseItem february = Run(() => moneyOut.GetExpensesAsync(new DateOnly(2026, 2, 10), new DateOnly(2026, 2, 10))).Single();
+            ExpenseItem february = Run(() => moneyOut.GetExpensePageAsync(new(new DateOnly(2026, 2, 10), new DateOnly(2026, 2, 10)), null, null)).Items.Single();
             Run(() => moneyOut.CorrectExpenseAsync(february, new ExpenseInput(february.Date, february.CategoryId, new Money(1650),
                 february.Mode, february.PaidTo, february.Reference, "Late fee"),
                 "Bill had a late fee", OperationGuard.NewId()));
@@ -2298,7 +2278,7 @@ public sealed class PhaseZeroSmokeTests
                 new DateOnly(2026, 4, 1), null, new Money(9000), true, null)));
             Run(() => moneyOut.RecordDamageAsync(new DamageInput(riceLot, clock.BusinessDate, new Quantity(2), "BROKEN",
                 Money.Zero, null), OperationGuard.NewId()));
-            DamageItem damage = Run(() => moneyOut.GetDamagesAsync(clock.BusinessDate, clock.BusinessDate)).Single();
+            DamageItem damage = Run(() => moneyOut.GetDamagePageAsync(new(clock.BusinessDate, clock.BusinessDate), null, null)).Items.Single();
             CorrectionDating damageDating = Run(() => moneyOut.PreviewCorrectionAsync(damage.Date));
             IReadOnlyList<TaxRateItem> taxRates = Run(() => catalog.GetTaxRatesAsync());
             var click = new RoutedEventArgs(ButtonBase.ClickEvent);
@@ -2526,7 +2506,8 @@ public sealed class PhaseZeroSmokeTests
             Run(() => inventory.RunLotBulkBatchAsync(LotBulkAction.Block, [oilLot], OperationGuard.NewId()));
             long soap = AddProduct("SOAP1", "Bath soap", staples);
             AddLot(soap, -3, "S-EXP");                   // Expired, then its product archived
-            Run(() => catalog.RemoveAsync(soap)).ShouldBe(ProductRemoval.Archived);
+            Run(() => catalog.RunBulkBatchAsync(new(CatalogBulkAction.Archive), [soap], OperationGuard.NewId()))
+                .Single().Outcome.ShouldBe(BulkItemOutcome.Changed);
             AddLot(AddProduct("DAL1", "Toor dal 1 kg", staples), 200, "D-200");
             decimal stockTotal = Run(() => reports.GetReportAsync(ReportKind.StockValue, new ReportFilter(IncludeExpired: true)))
                 .Totals["CostValue"];
@@ -2649,7 +2630,8 @@ public sealed class PhaseZeroSmokeTests
             AddProduct("DAL1", "Toor dal 1 kg", 0);                  // no reorder level
             long cola = AddProduct("COLA1", "Old cola 600 ml", 5);
             AddLot(cola, 2);                                         // low, then its product archived
-            Run(() => catalog.RemoveAsync(cola)).ShouldBe(ProductRemoval.Archived);
+            Run(() => catalog.RunBulkBatchAsync(new(CatalogBulkAction.Archive), [cola], OperationGuard.NewId()))
+                .Single().Outcome.ShouldBe(BulkItemOutcome.Changed);
 
             long AddVendor(string name, decimal opening) => Run(() => purchasing.CreateVendorAsync(new(name,
                 null, null, null, null, null, null, null, null, null, null, null, null, 0, new Money(opening), null)));
@@ -2792,9 +2774,8 @@ public sealed class PhaseZeroSmokeTests
             OnDispatcher(() => sales.CompleteAsync(new(saleId, [new(PaymentMode.Cash, new Money(250))], OperationGuard.NewId())));
             SaleLine soldLine = Run(() => sales.GetAsync(saleId)).Lines.Single();
             soldLine.TaxLabel.ShouldBe("GST 5%");
-            using (var connection = factory.Open())
-                Run(() => inventory.DeleteZeroLotAsync(sold,
-                    connection.ExecuteScalar<long>("SELECT detail_version FROM product_lot WHERE id=@sold", new { sold })));
+            Run(() => inventory.RunLotBulkBatchAsync(LotBulkAction.DeleteZero, [sold], OperationGuard.NewId()))
+                .Single().Outcome.ShouldBe(BulkItemOutcome.Changed);
             OnDispatcher(() => sales.ReturnAsync(new(saleId, today, "Unopened", RefundMode.Cash,
                 [new(soldLine.Id, Quantity.One, true)], OperationGuard.NewId())));
             var importer = new ProductExcelImporter(database, new AuditLog(), settings);

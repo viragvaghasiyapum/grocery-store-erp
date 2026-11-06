@@ -9,7 +9,6 @@
     <ProjectReference Include="../GroceryErp.Inventory/GroceryErp.Inventory.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="Dapper" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>

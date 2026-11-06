@@ -1,8 +1,6 @@
 using System.Data;
-using CommunityToolkit.Mvvm.Messaging;
 using Dapper;
 using GroceryErp.Core.Errors;
-using GroceryErp.Core.Messages;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Validation;
 using GroceryErp.Data.Infrastructure;
@@ -47,33 +45,6 @@ public sealed partial class PurchasingService(
                 row.Address, row.City, row.State, row.Pincode, row.Gstin, row.Pan, row.UpiId,
                 row.BankDetails, row.PaymentTermsDays, Money.FromScaled(row.OpeningBalance), row.Notes);
         }, cancellationToken);
-
-    public Task<IReadOnlyList<PurchaseListItem>> GetPurchasesAsync(int limit = 500, CancellationToken cancellationToken = default)
-    {
-        if (limit is < 1 or > 5000) throw new DomainException(ErrorCode.Validation, nameof(limit));
-        return database.ReadAsync(connection => (IReadOnlyList<PurchaseListItem>)connection.Query<PurchaseListRow>("""
-            SELECT p.id AS Id,p.doc_no AS DocumentNumber,v.name AS VendorName,
-                   p.vendor_invoice_no AS VendorInvoiceNumber,p.received_date AS ReceivedDate,
-                   p.status AS Status,p.grand_total AS GrandTotal,p.vendor_bill_total AS VendorBillTotal
-            FROM purchase p JOIN vendor v ON v.id=p.vendor_id
-            ORDER BY p.received_date DESC,p.id DESC LIMIT @limit
-            """, new { limit }).Select(static row => row.ToModel()).ToList(), cancellationToken);
-    }
-
-    public Task<PurchasePage> GetPurchasesPageAsync(DateOnly? beforeDate = null, long? beforeId = null,
-        DateOnly? from = null, DateOnly? to = null, long? vendorId = null, int limit = 100,
-        string? productQuery = null,
-        string? status = null, string? lineKind = null,
-        CancellationToken cancellationToken = default) =>
-        GetPurchasePageAsync(new PurchaseFilter
-        {
-            From = from,
-            To = to,
-            VendorId = vendorId,
-            ProductQuery = productQuery,
-            Status = status,
-            LineKind = lineKind,
-        }, beforeDate, beforeId, limit, cancellationToken);
 
     public Task<PurchaseInvoice> GetInvoiceAsync(long purchaseId, CancellationToken cancellationToken = default) =>
         database.ReadAsync(connection =>
@@ -286,8 +257,7 @@ public sealed partial class PurchasingService(
 
     public async Task<PostedPurchase> PostAsync(long purchaseId, string operationId, CancellationToken cancellationToken = default)
     {
-        var changedProducts = new HashSet<long>();
-        PostedPurchase posted = await database.WriteAsync(transaction =>
+        return await database.WriteAsync(transaction =>
         {
             OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.PurchasePost);
             if (replay is not null)
@@ -439,7 +409,6 @@ public sealed partial class PurchasingService(
                     """, new { lotCode, lotId, id = row.Id }, transaction.Transaction);
                 stock.Change(transaction, new(header.ReceivedDate, row.ProductId, lotId, LotChangeKind.Purchase, received));
                 lotIds.Add(lotId);
-                changedProducts.Add(row.ProductId);
             }
             transaction.Connection.Execute("""
                 UPDATE purchase SET status='POSTED',doc_no=@docNo,
@@ -465,13 +434,10 @@ public sealed partial class PurchasingService(
                 new(subtotal, discounts, taxTotal, otherCharges, roundOff, grandTotal,
                     header.VendorBillTotal is null ? null : Money.FromScaled(header.VendorBillTotal.Value)), lotIds);
         }, cancellationToken);
-        if (changedProducts.Count > 0) WeakReferenceMessenger.Default.Send(new StockChangedMessage(changedProducts.ToArray()));
-        return posted;
     }
 
     public async Task CancelAsync(long purchaseId, DateOnly cancellationDate, string operationId, CancellationToken cancellationToken = default)
     {
-        var products = new HashSet<long>();
         await database.WriteAsync(transaction =>
         {
             OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.PurchaseCancel);
@@ -490,10 +456,9 @@ public sealed partial class PurchasingService(
             List<CancelLotRow> lots = VoidLots(transaction.Connection, purchaseId, transaction.Transaction);
             if (!IsUntouched(transaction.Connection, purchaseId, lots, transaction.Transaction))
                 throw new DomainException(ErrorCode.CancelNotAllowed, purchaseId);
-            ApplyVoid(transaction, purchaseId, cancellationDate, lots, products);
+            ApplyVoid(transaction, purchaseId, cancellationDate, lots);
             OperationGuard.Complete(transaction, operationId, "purchase", purchaseId);
         }, cancellationToken);
-        if (products.Count > 0) WeakReferenceMessenger.Default.Send(new StockChangedMessage(products.ToArray()));
     }
 
     // "Untouched" means no posted document ever used the lot, even if its
@@ -526,15 +491,13 @@ public sealed partial class PurchasingService(
             !lots.Any(static lot => lot.OnHand != lot.Received || lot.Touched);
     }
 
-    private void ApplyVoid(DbTx transaction, long purchaseId, DateOnly cancellationDate, List<CancelLotRow> lots,
-        HashSet<long> products)
+    private void ApplyVoid(DbTx transaction, long purchaseId, DateOnly cancellationDate, List<CancelLotRow> lots)
     {
         foreach (CancelLotRow lot in lots)
         {
             stock.Change(transaction, new(cancellationDate, lot.ProductId, lot.LotId, LotChangeKind.PurchaseVoid,
                 Quantity.FromScaled(-lot.Received)));
             transaction.Connection.Execute("UPDATE product_lot SET is_active=0 WHERE id=@LotId", lot, transaction.Transaction);
-            products.Add(lot.ProductId);
         }
         transaction.Connection.Execute("""
             INSERT INTO purchase_expense_reversal(expense_id,purchase_id,reversal_date,amount)
@@ -663,45 +626,6 @@ public sealed partial class PurchasingService(
         }, cancellationToken);
     }
 
-    public Task<IReadOnlyList<VendorLedgerItem>> GetVendorLedgerAsync(long vendorId, CancellationToken cancellationToken = default) =>
-        database.ReadAsync(connection =>
-        {
-            long opening = connection.QuerySingleOrDefault<long?>("SELECT opening_balance FROM vendor WHERE id=@vendorId", new { vendorId })
-                ?? throw new DomainException(ErrorCode.NotFound, "vendor", vendorId);
-            var entries = connection.Query<LedgerRow>("""
-                SELECT received_date AS Date,'PURCHASE' AS Kind,doc_no AS Reference,grand_total AS Debit,0 AS Credit,id AS SortId
-                  FROM purchase WHERE vendor_id=@vendorId AND (status='POSTED' OR cancelled_date IS NOT NULL)
-                UNION ALL
-                SELECT cancelled_date,'PURCHASE_VOID',doc_no,0,grand_total,id
-                  FROM purchase WHERE vendor_id=@vendorId AND cancelled_date IS NOT NULL
-                UNION ALL
-                SELECT pay_date AS Date,'PAYMENT' AS Kind,reference AS Reference,0 AS Debit,amount AS Credit,id AS SortId
-                  FROM vendor_payment WHERE vendor_id=@vendorId
-                UNION ALL
-                SELECT return_date AS Date,'VENDOR_RETURN' AS Kind,doc_no AS Reference,0 AS Debit,
-                       credit_total AS Credit,id AS SortId
-                  FROM vendor_return WHERE vendor_id=@vendorId
-                UNION ALL
-                SELECT c.cancellation_date,'VENDOR_RETURN_CANCEL',vr.doc_no,vr.credit_total,0,vr.id
-                  FROM vendor_return_cancellation c JOIN vendor_return vr ON vr.id=c.vendor_return_id
-                  WHERE vr.vendor_id=@vendorId
-                ORDER BY Date,Kind,SortId
-                """, new { vendorId }).ToList();
-            Money balance = Money.FromScaled(opening);
-            var result = new List<VendorLedgerItem>(entries.Count + 1)
-            {
-                new(DateOnly.MinValue, "OPENING", null, balance, Money.Zero, balance),
-            };
-            foreach (LedgerRow row in entries)
-            {
-                Money debit = Money.FromScaled(row.Debit);
-                Money credit = Money.FromScaled(row.Credit);
-                balance += debit - credit;
-                result.Add(new(row.Date, row.Kind, row.Reference, debit, credit, balance));
-            }
-            return (IReadOnlyList<VendorLedgerItem>)result;
-        }, cancellationToken);
-
     public Task<IReadOnlyList<VendorReturnLot>> GetVendorReturnLotsAsync(long purchaseId,
         CancellationToken cancellationToken = default) => database.ReadAsync<IReadOnlyList<VendorReturnLot>>(connection =>
     {
@@ -744,8 +668,7 @@ public sealed partial class PurchasingService(
         string reason = Required(input.Reason, 500, nameof(input.Reason));
         if (input.Lines.Count == 0 || input.Lines.Select(static line => line.LotId).Distinct().Count() != input.Lines.Count)
             throw new DomainException(ErrorCode.Validation, "Select distinct lots to return.");
-        var changedProducts = new HashSet<long>();
-        PostedVendorReturn result = await database.WriteAsync(transaction =>
+        return await database.WriteAsync(transaction =>
         {
             OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.VendorReturn);
             if (replay?.RefId is { } oldId)
@@ -783,7 +706,6 @@ public sealed partial class PurchasingService(
                 beforeTax += line.CreditBeforeTax;
                 tax += line.TaxCredit;
                 cost += Money.FromScaled(lot.UnitCost) * line.Quantity;
-                changedProducts.Add(lot.ProductId);
             }
             string document = numbers.Next(transaction, DocType.VendorReturn, input.Date);
             long returnId = transaction.Connection.ExecuteScalar<long>("""
@@ -847,9 +769,6 @@ public sealed partial class PurchasingService(
             OperationGuard.Complete(transaction, operationId, "vendor_return", returnId);
             return new PostedVendorReturn(returnId, document, beforeTax + tax, cost);
         }, cancellationToken);
-        if (!result.WasReplay && changedProducts.Count > 0)
-            WeakReferenceMessenger.Default.Send(new StockChangedMessage(changedProducts.ToArray()));
-        return result;
     }
 
     public Task CancelVendorReturnAsync(long returnId, DateOnly date, string reason,
@@ -865,7 +784,6 @@ public sealed partial class PurchasingService(
     {
         ArgumentNullException.ThrowIfNull(restores);
         string cleanReason = Required(reason, 500, nameof(reason));
-        var changedProducts = new HashSet<long>();
         await database.WriteAsync(transaction =>
         {
             OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.VendorReturnCancel);
@@ -895,7 +813,6 @@ public sealed partial class PurchasingService(
                 {
                     stock.Change(transaction, new(date, line.ProductId, line.LotId, LotChangeKind.VendorReturnCancel,
                         Quantity.FromScaled(line.Quantity)));
-                    changedProducts.Add(line.ProductId);
                     continue;
                 }
                 (long lotId, long productId, RestoredProduct? chosen) = RecreateReturnedLot(transaction, line.Id, date,
@@ -903,7 +820,6 @@ public sealed partial class PurchasingService(
                 restoredLots.Add(lotId);
                 if (chosen is not null)
                     restoredProducts.Add(new { returnLineId = line.Id, productId, createdProduct = chosen.Created });
-                changedProducts.Add(productId);
             }
             transaction.Connection.Execute("""
                 INSERT INTO vendor_return_cancellation(vendor_return_id,operation_id,cancellation_date,reason)
@@ -912,8 +828,6 @@ public sealed partial class PurchasingService(
             audit.Write(transaction, "vendor_return", returnId, "CANCEL", new { cleanReason, restoredLots, restoredProducts });
             OperationGuard.Complete(transaction, operationId, "vendor_return", returnId);
         }, cancellationToken);
-        if (changedProducts.Count > 0)
-            WeakReferenceMessenger.Default.Send(new StockChangedMessage(changedProducts.ToArray()));
     }
 
     private const string ReturnedLotSql = """
@@ -1081,16 +995,6 @@ public sealed partial class PurchasingService(
             ORDER BY pl.line_no
             """, new { purchaseId }, transaction).ToArray();
 
-    public Task<IReadOnlyList<VendorPurchaseChoice>> GetVendorPurchaseChoicesAsync(long vendorId,
-        CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
-            (IReadOnlyList<VendorPurchaseChoice>)connection.Query<VendorPurchaseChoiceRow>("""
-                SELECT id AS Id,doc_no AS DocumentNumber,vendor_invoice_no AS InvoiceNumber
-                FROM purchase WHERE vendor_id=@vendorId AND status='POSTED'
-                ORDER BY received_date DESC,id DESC LIMIT 500
-                """, new { vendorId }).Select(static row => new VendorPurchaseChoice(row.Id,
-                string.IsNullOrWhiteSpace(row.InvoiceNumber) ? row.DocumentNumber : $"{row.DocumentNumber} · {row.InvoiceNumber}"))
-                .ToList(), cancellationToken);
-
     public Task<VendorPurchasePage> GetVendorPurchasePageAsync(long vendorId, string? query = null,
         DateOnly? beforeDate = null, long? beforeId = null, int limit = 100,
         CancellationToken cancellationToken = default)
@@ -1146,16 +1050,6 @@ public sealed partial class PurchasingService(
                 Quantity.FromScaled(row.OnHand))).ToList(), hasMore, last?.ReceivedDate, last?.Id);
         }, cancellationToken);
     }
-
-    public Task<IReadOnlyList<VendorLotItem>> GetVendorLotsAsync(long vendorId,
-        CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
-            (IReadOnlyList<VendorLotItem>)connection.Query<VendorLotRow>("""
-                SELECT p.name AS ProductName,l.lot_code AS LotCode,l.batch_no AS BatchNumber,
-                       l.received_date AS ReceivedDate,l.expiry_date AS ExpiryDate,l.qty_on_hand AS OnHand
-                FROM product_lot l JOIN product p ON p.id=l.product_id
-                WHERE l.vendor_id=@vendorId ORDER BY l.received_date DESC,l.id DESC
-                """, new { vendorId }).Select(static row => new VendorLotItem(row.ProductName, row.LotCode,
-                row.BatchNumber, row.ReceivedDate, row.ExpiryDate, Quantity.FromScaled(row.OnHand))).ToList(), cancellationToken);
 
     // Lines typed including tax are validated as typed, then stored before tax with the typed
     // rate and discount kept beside them. The draft also saves each line's tax label and per-piece

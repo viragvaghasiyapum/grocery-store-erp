@@ -7,9 +7,7 @@
     <ProjectReference Include="../GroceryErp.Localization/GroceryErp.Localization.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-    <PackageReference Include="WPF-UI" />
   </ItemGroup>
 </Project>
 

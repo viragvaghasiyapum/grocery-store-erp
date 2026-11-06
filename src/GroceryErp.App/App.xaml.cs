@@ -18,7 +18,6 @@ using GroceryErp.Data.Security;
 using GroceryErp.Data.Services;
 using GroceryErp.Expenses;
 using GroceryErp.Inventory;
-using GroceryErp.Inventory.Contracts;
 using GroceryErp.Localization;
 using GroceryErp.Purchasing;
 using GroceryErp.Reports;

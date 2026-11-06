@@ -11,7 +11,6 @@ using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
 using GroceryErp.Data.Services;
-using GroceryErp.Inventory;
 using GroceryErp.Inventory.Contracts;
 
 namespace GroceryErp.Sales;
@@ -385,9 +384,6 @@ public sealed partial class SalesService(
                 new { label = Clean(label), saleId }, transaction.Transaction);
         }, cancellationToken);
 
-    public Task ResumeAsync(long saleId, CancellationToken cancellationToken = default) =>
-        ResumeCoreAsync(saleId, null, cancellationToken);
-
     public Task ResumeReviewedAsync(HeldBillReview review, CancellationToken cancellationToken = default) =>
         ResumeCoreAsync(review.SaleId, review.Lines, cancellationToken);
 
@@ -400,14 +396,13 @@ public sealed partial class SalesService(
             return new HeldBillReview(saleId, LoadHeldReviewLines(connection, saleId));
         }, cancellationToken);
 
-    private Task ResumeCoreAsync(long saleId, IReadOnlyList<HeldBillReviewLine>? accepted,
+    private Task ResumeCoreAsync(long saleId, IReadOnlyList<HeldBillReviewLine> accepted,
         CancellationToken cancellationToken) => database.WriteAsync(transaction =>
         {
             string? status = transaction.Connection.QuerySingleOrDefault<string>(
                 "SELECT status FROM sale WHERE id=@saleId", new { saleId }, transaction.Transaction);
             if (status != "HELD") throw new DomainException(ErrorCode.SaleFinalized, saleId);
-            if (accepted is not null && !LoadHeldReviewLines(transaction.Connection, saleId)
-                    .SequenceEqual(accepted))
+            if (!LoadHeldReviewLines(transaction.Connection, saleId).SequenceEqual(accepted))
                 throw new DomainException(ErrorCode.EntryChanged, saleId);
             RevalidateStock(transaction, saleId);
             // Resuming takes each lot's current price, which includes tax, and its cost-side tax.
@@ -436,13 +431,6 @@ public sealed partial class SalesService(
                 Money.FromScaled(row.CurrentPrice), row.PreviousMrp is null ? null : Money.FromScaled(row.PreviousMrp.Value),
                 row.CurrentMrp is null ? null : Money.FromScaled(row.CurrentMrp.Value),
                 Money.FromScaled(row.CurrentCost), Quantity.FromScaled(row.Available), row.IsActive, row.ExpiryDate)).ToArray();
-
-    public Task<IReadOnlyList<HeldSale>> GetHeldAsync(CancellationToken cancellationToken = default) =>
-        database.ReadAsync<IReadOnlyList<HeldSale>>(connection => connection.Query<HeldRow>("""
-            SELECT id AS Id,created_at AS CreatedAt,notes AS Label,line_count AS ItemCount,grand_total AS Total
-            FROM sale WHERE status='HELD' ORDER BY created_at,id
-            """).Select(static row => new HeldSale(row.Id, row.CreatedAt, row.Label, row.ItemCount,
-                Money.FromScaled(row.Total))).ToArray(), cancellationToken);
 
     public Task<IReadOnlyList<HeldSale>> GetRecentHeldAsync(int limit = 10, CancellationToken cancellationToken = default)
     {
@@ -497,14 +485,6 @@ public sealed partial class SalesService(
                 last?.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture), last?.Id);
         }, cancellationToken);
     }
-
-    public Task<IReadOnlyList<HeldSale>> GetDraftsAsync(CancellationToken cancellationToken = default) =>
-        database.ReadAsync<IReadOnlyList<HeldSale>>(connection => connection.Query<HeldRow>("""
-            SELECT id AS Id,created_at AS CreatedAt,notes AS Label,line_count AS ItemCount,grand_total AS Total
-            FROM sale WHERE status='DRAFT' AND (line_count>0 OR customer_id IS NOT NULL)
-            ORDER BY created_at DESC,id DESC
-            """).Select(static row => new HeldSale(row.Id, row.CreatedAt, row.Label, row.ItemCount,
-                Money.FromScaled(row.Total))).ToArray(), cancellationToken);
 
     public Task<IReadOnlyList<ReturnableSaleLine>> GetReturnableLinesAsync(long saleId,
         CancellationToken cancellationToken = default) => database.ReadAsync<IReadOnlyList<ReturnableSaleLine>>(connection =>

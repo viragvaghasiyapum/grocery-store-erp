@@ -1,8 +1,6 @@
-using CommunityToolkit.Mvvm.Messaging;
 using Dapper;
 using GroceryErp.Catalog.Barcodes;
 using GroceryErp.Core.Errors;
-using GroceryErp.Core.Messages;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
@@ -252,7 +250,7 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
             lot.BatchNumber?.Length > 120)
             throw new DomainException(ErrorCode.Validation, "Invalid first lot.");
         periods.EnsureOpen(lot.ReceivedDate);
-        long id = await database.WriteAsync(transaction =>
+        return await database.WriteAsync(transaction =>
         {
             OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.DirectEntry);
             if (replay?.RefId is long previous) return previous;
@@ -295,8 +293,6 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
             OperationGuard.Complete(transaction, operationId, "product", productId);
             return productId;
         }, cancellationToken);
-        WeakReferenceMessenger.Default.Send(new StockChangedMessage([id]));
-        return id;
     }
 
     // Every selling price and MRP includes tax, so price_includes_tax keeps its default of 1.
@@ -409,19 +405,10 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
         }, cancellationToken);
     }
 
-    public Task<ProductRemoval> RemoveAsync(long id, CancellationToken cancellationToken = default) =>
-        database.WriteAsync(transaction =>
-        {
-            long exists = transaction.Connection.ExecuteScalar<long>(
-                "SELECT COUNT(*) FROM product WHERE id=@id", new { id }, transaction.Transaction);
-            if (exists == 0) throw new DomainException(ErrorCode.NotFound, "product", id);
-            return Remove(transaction, id);
-        }, cancellationToken);
-
     // Posted documents carry their own snapshots, so history never blocks deletion.
     // Stock, an unfinished bill or a draft purchase still needs the live product,
     // which is then archived instead.
-    private ProductRemoval Remove(DbTx transaction, long id)
+    private void Remove(DbTx transaction, long id)
     {
         bool inUse = transaction.Connection.ExecuteScalar<long>("""
             SELECT EXISTS(SELECT 1 FROM product_lot WHERE product_id=@id AND qty_on_hand<>0)
@@ -439,24 +426,13 @@ public sealed partial class CatalogService(DbExecutor database, IAuditLog audit,
                 new { id }, transaction.Transaction);
             transaction.Connection.Execute("DELETE FROM product WHERE id=@id", new { id }, transaction.Transaction);
             audit.Write(transaction, "product", id, "DELETE", new { zeroLots = lots });
-            return ProductRemoval.Deleted;
+            return;
         }
         transaction.Connection.Execute(
             "UPDATE product SET is_active=0, updated_at=datetime('now','localtime') WHERE id=@id",
             new { id }, transaction.Transaction);
         audit.Write(transaction, "product", id, "ARCHIVE", null);
-        return ProductRemoval.Archived;
     }
-
-    public Task RestoreAsync(long id, CancellationToken cancellationToken = default) =>
-        database.WriteAsync(transaction =>
-        {
-            int changed = transaction.Connection.Execute(
-                "UPDATE product SET is_active=1, updated_at=datetime('now','localtime') WHERE id=@id AND is_active=0",
-                new { id }, transaction.Transaction);
-            if (changed == 0) throw new DomainException(ErrorCode.NotFound, "archived product", id);
-            audit.Write(transaction, "product", id, "RESTORE", null);
-        }, cancellationToken);
 
     public Task SetActiveAsync(long id, bool active, bool expectedActive,
         CancellationToken cancellationToken = default) => database.WriteAsync(transaction =>

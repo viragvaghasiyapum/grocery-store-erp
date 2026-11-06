@@ -8,7 +8,6 @@
     <ProjectReference Include="../../src/Modules/GroceryErp.Catalog/GroceryErp.Catalog.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="BenchmarkDotNet" />
     <PackageReference Include="ClosedXML" />
   </ItemGroup>
 </Project>

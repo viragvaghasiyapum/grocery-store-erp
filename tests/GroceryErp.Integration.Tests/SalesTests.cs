@@ -215,7 +215,7 @@ public sealed class SalesTests
         foreach (Func<Task> print in new Func<Task>[]
                  {
                      () => printer.PrintAsync(receipt), () => printer.QueueReceiptAsync(receipt),
-                     printer.QueueDrawerAsync, printer.OpenDrawerAsync,
+                     printer.QueueDrawerAsync,
                  })
             (await Should.ThrowAsync<DomainException>(print)).Code.ShouldBe(ErrorCode.PrinterNotConfigured);
         journal.ReviewCount().ShouldBe(0);
@@ -431,8 +431,8 @@ public sealed class SalesTests
         posted.Refund.Scaled.ShouldBe(expectedRefund);
         (await fixture.Sales.GetAsync(saleId, ct)).Status.ShouldBe(SaleStatus.Refunded);
         // The refund includes the bill's round-off, so the day's net sales return to zero.
-        PnlStatement day = await new ReportService(fixture.Database, fixture.Settings, fixture.Clock)
-            .GetPnlAsync(fixture.Clock.BusinessDate, fixture.Clock.BusinessDate, ct);
+        PnlStatement day = (await new ReportService(fixture.Database, fixture.Settings, fixture.Clock)
+            .GetPnlReportAsync(ReportService.CustomPeriod(fixture.Clock.BusinessDate, fixture.Clock.BusinessDate), ct)).Statement;
         day.NetSales.Scaled.ShouldBe(0L);
     }
 
@@ -465,12 +465,8 @@ public sealed class SalesTests
         await directSales.CompleteAsync(new(saleId,
             [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
         SaleDetails original = await directSales.GetAsync(saleId, ct);
-        long version;
-        using (var db = fixture.Factory.Open())
-            version = db.ExecuteScalar<long>(
-                "SELECT detail_version FROM product_lot WHERE id=@lotId", new { lotId });
-        await fixture.Inventory.DeleteZeroLotAsync(lotId, version, ct);
-        (await fixture.Catalog.RemoveAsync(productId, ct)).ShouldBe(ProductRemoval.Deleted);
+        await fixture.DeleteEmptyLotAsync(lotId, ct);
+        (await fixture.RemoveProductAsync(productId, ct)).ShouldBeTrue();
 
         CompletedReturn result = await directSales.ReturnAsync(new(saleId,
             fixture.Clock.BusinessDate, "Refund", RefundMode.Cash,
@@ -522,7 +518,7 @@ public sealed class SalesTests
         (long saleId, long lineId, long productId) = await fixture.SellThenDeleteAsync("RESTORE-1", new Quantity(2),
             expiry: new DateOnly(2026, 12, 31), deleteProduct: false, ct);
         (await fixture.Sales.GetReturnRestoreDraftAsync(lineId, Quantity.One, ct)).ShouldBeNull();
-        (await fixture.Catalog.RemoveAsync(productId, ct)).ShouldBe(ProductRemoval.Deleted);
+        (await fixture.RemoveProductAsync(productId, ct)).ShouldBeTrue();
 
         RestoreDraft draft = (await fixture.Sales.GetReturnRestoreDraftAsync(lineId, Quantity.One, ct))!;
         draft.Key.ShouldBe(lineId);
@@ -795,7 +791,7 @@ public sealed class SalesTests
         long saleId = await fixture.Sales.AddProductAsync(null, productId, Quantity.One, cancellationToken: ct);
         await fixture.Sales.CompleteAsync(new(saleId,
             [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
-        await fixture.Inventory.DeleteZeroLotAsync(lots[0], fixture.DetailVersion(lots[0]), ct);
+        await fixture.DeleteEmptyLotAsync(lots[0], ct);
         (await Should.ThrowAsync<DomainException>(() => fixture.Sales.VoidAsync(saleId, "Mistake",
             OperationGuard.NewId(), ct))).Code.ShouldBe(ErrorCode.VoidNotAllowed);
         (await fixture.Sales.GetAsync(saleId, ct)).Status.ShouldBe(SaleStatus.Completed);
@@ -813,8 +809,8 @@ public sealed class SalesTests
         await fixture.Sales.CompleteAsync(new(saleId,
             [new(PaymentMode.Cash, draft.Totals.GrandTotal)], OperationGuard.NewId()), ct);
         foreach (long lot in lots)
-            await fixture.Inventory.DeleteZeroLotAsync(lot, fixture.DetailVersion(lot), ct);
-        (await fixture.Catalog.RemoveAsync(productId, ct)).ShouldBe(ProductRemoval.Deleted);
+            await fixture.DeleteEmptyLotAsync(lot, ct);
+        (await fixture.RemoveProductAsync(productId, ct)).ShouldBeTrue();
         SaleDetails sold = await fixture.Sales.GetAsync(saleId, ct);
         (await fixture.Sales.GetReturnableLinesAsync(saleId, ct)).All(static line => !line.OriginalLotAvailable)
             .ShouldBeTrue();
@@ -920,7 +916,7 @@ public sealed class SalesTests
         {
             long id = await moneyOut.RecordExpenseAsync(new(date, category, new Money(amount), mode, null, null, null),
                 OperationGuard.NewId(), ct);
-            return (await moneyOut.GetExpensesAsync(date, date, ct)).Single(item => item.Id == id);
+            return (await moneyOut.GetExpensePageAsync(new(date, date), null, null, cancellationToken: ct)).Items.Single(item => item.Id == id);
         }
         Task Correct(ExpenseItem item, ExpenseInput replacement) =>
             moneyOut.CorrectExpenseAsync(item, replacement, "Entered wrongly", OperationGuard.NewId(), ct);
@@ -941,7 +937,7 @@ public sealed class SalesTests
         await Correct(movedHere, Same(movedHere) with { Date = today });
         ExpenseItem twice = await Record(today, 40, "CASH");
         await Correct(twice, Same(twice) with { Amount = new Money(45) });
-        twice = (await moneyOut.GetExpensesAsync(today, today, ct)).Single(item => item.Id == twice.Id);
+        twice = (await moneyOut.GetExpensePageAsync(new(today, today), null, null, cancellationToken: ct)).Items.Single(item => item.Id == twice.Id);
         await Correct(twice, Same(twice) with { Amount = new Money(35) });
         await Record(today, 10, "CASH");
 
@@ -991,11 +987,13 @@ public sealed class SalesTests
         using var fixture = new SalesFixture();
         CancellationToken ct = TestContext.Current.CancellationToken;
         long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
-        (await fixture.Sales.GetDraftsAsync(ct)).Single().Id.ShouldBe(saleId);
+        (await fixture.Sales.GetSavedBillPageAsync(includeDrafts: true, cancellationToken: ct)).Items.Single().Id.ShouldBe(saleId);
         await fixture.Sales.HoldAsync(saleId, "Pickup", ct);
-        (await fixture.Sales.GetDraftsAsync(ct)).ShouldBeEmpty();
-        (await fixture.Sales.GetHeldAsync(ct)).Single().Label.ShouldBe("Pickup");
-        await fixture.Sales.ResumeAsync(saleId, ct);
+        HeldSale held = (await fixture.Sales.GetSavedBillPageAsync(includeDrafts: true, cancellationToken: ct)).Items.Single();
+        held.IsHeld.ShouldBeTrue();
+        held.Label.ShouldBe("Pickup");
+        (await fixture.Sales.GetRecentHeldAsync(cancellationToken: ct)).Single().Id.ShouldBe(saleId);
+        await fixture.Sales.ResumeReviewedAsync(await fixture.Sales.GetHeldBillReviewAsync(saleId, ct), ct);
         (await fixture.Sales.GetAsync(saleId, ct)).Status.ShouldBe(SaleStatus.Draft);
     }
 
@@ -1086,7 +1084,7 @@ public sealed class SalesTests
         long saleId = await started.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
         await started.HoldAsync(saleId, "Pickup", ct);
 
-        await nextDay.ResumeAsync(saleId, ct);
+        await nextDay.ResumeReviewedAsync(await nextDay.GetHeldBillReviewAsync(saleId, ct), ct);
         (await nextDay.GetAsync(saleId, ct)).SaleDate.ShouldBe(new DateOnly(2027, 4, 1));
         CompletedSale completed = await nextDay.CompleteAsync(new(saleId,
             [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
@@ -1112,7 +1110,7 @@ public sealed class SalesTests
         await started.HoldAsync(heldId, "Pickup", ct);
         long openId = await started.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
 
-        await locked.ResumeAsync(heldId, ct);
+        await locked.ResumeReviewedAsync(await locked.GetHeldBillReviewAsync(heldId, ct), ct);
         await locked.CompleteAsync(new(heldId, [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
         await locked.CompleteAsync(new(openId, [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
 
@@ -1278,9 +1276,8 @@ public sealed class SalesTests
             long saleId = await Sales.AddProductAsync(null, productId, quantity, cancellationToken: ct);
             SaleDetails bill = await Sales.GetAsync(saleId, ct);
             await Sales.CompleteAsync(new(saleId, [new(PaymentMode.Cash, bill.Totals.GrandTotal)], OperationGuard.NewId()), ct);
-            LotItem lot = (await Inventory.GetLotsByIdsAsync([lotId], ct)).Single();
-            await Inventory.DeleteZeroLotAsync(lotId, lot.DetailVersion, ct);
-            if (deleteProduct) (await Catalog.RemoveAsync(productId, ct)).ShouldBe(ProductRemoval.Deleted);
+            await DeleteEmptyLotAsync(lotId, ct);
+            if (deleteProduct) (await RemoveProductAsync(productId, ct)).ShouldBeTrue();
             return (saleId, bill.Lines.Single().Id, productId);
         }
 
@@ -1316,14 +1313,22 @@ public sealed class SalesTests
             return (productId, ids);
         }
 
-        public long DetailVersion(long lotId)
-        {
-            using var db = Factory.Open();
-            return db.ExecuteScalar<long>("SELECT detail_version FROM product_lot WHERE id=@lotId", new { lotId });
-        }
-
         public SalesService ServiceAt(DateTime now) => new(Database, _ledger, new DocNumberService(Settings),
             new PeriodGuard(Settings, new FixedClock(now)), Settings, new AuditLog(), new FixedClock(now));
+
+        // The Products page's "Remove selected": deletes a product nothing needs, archives one still in use.
+        public async Task<bool> RemoveProductAsync(long id, CancellationToken ct)
+        {
+            (await Catalog.RunBulkBatchAsync(new(CatalogBulkAction.Archive), [id], OperationGuard.NewId(), ct))
+                .Single().Outcome.ShouldBe(BulkItemOutcome.Changed);
+            using var db = Factory.Open();
+            return db.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE id=@id", new { id }) == 0;
+        }
+
+        // The lot view's "Delete selected empty lots".
+        public async Task DeleteEmptyLotAsync(long lot, CancellationToken ct) =>
+            (await Inventory.RunLotBulkBatchAsync(LotBulkAction.DeleteZero, [lot], OperationGuard.NewId(), ct))
+                .Single().Outcome.ShouldBe(BulkItemOutcome.Changed);
 
         public SqliteConnectionFactory Factory { get; }
         public DbExecutor Database { get; }

@@ -52,12 +52,12 @@ public sealed class OperatorErrorTests
             new(draft, [new(PaymentMode.Cash, total)], OperationGuard.NewId()), ct))).Arguments.ShouldBe([lotCode]);
         fixture.Execute("UPDATE product_lot SET is_active=1 WHERE id=@lot", new { lot });
 
-        // A batch emptied by another bill cannot be deleted while an open bill still uses it.
+        // A batch emptied by another bill is skipped by "Delete selected empty lots" while an open bill still uses it.
         long other = await fixture.Sales.AddProductAsync(null, fixture.ProductId, new Quantity(3), lot, cancellationToken: ct);
         Money otherTotal = (await fixture.Sales.GetAsync(other, ct)).Totals.GrandTotal;
         await fixture.Sales.CompleteAsync(new(other, [new(PaymentMode.Cash, otherTotal)], OperationGuard.NewId()), ct);
-        await Refused(ErrorCode.LotOnOpenBill, () =>
-            fixture.Inventory.DeleteZeroLotAsync(lot, fixture.DetailVersion(lot), ct));
+        (await fixture.Inventory.RunLotBulkBatchAsync(LotBulkAction.DeleteZero, [lot], OperationGuard.NewId(), ct))
+            .Single().ReasonKey.ShouldBe("Stock_DeleteOpenBill");
 
         // A price label needs a batch with a price to divide by.
         long labelled = fixture.Product("LABEL", trackExpiry: false);

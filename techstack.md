@@ -304,8 +304,8 @@ for later phases remain unpinned until they are actually added.
 
 | Package | Line | Project(s) | License |
 |---|---|---|---|
-| `WPF-UI` | **4.3.0** | App, UI.Common, modules | MIT |
-| `CommunityToolkit.Mvvm` | **8.4.2** | App, UI.Common, modules | MIT |
+| `WPF-UI` | **4.3.0** | App | MIT |
+| `CommunityToolkit.Mvvm` | **8.4.2** | App, Sales (sale-completed message) | MIT |
 | `Microsoft.Extensions.Hosting` | **10.0.12** | App | MIT |
 | `Microsoft.Extensions.DependencyInjection.Abstractions` | **10.0.12** | UI.Common, modules | MIT |
 | `Microsoft.Data.Sqlite` | 10.x | Data | MIT |
@@ -320,7 +320,7 @@ for later phases remain unpinned until they are actually added.
 | `Microsoft.CodeAnalysis.BannedApiAnalyzers` | **5.6.0** | Core (build only) | MIT |
 | `Verify.XunitV3`, `FsCheck` (+ its xUnit v3 integration) | latest when introduced | tests | MIT/BSD |
 | `FlaUI.UIA3` | **5.0.0** | UI tests | MIT |
-| `BenchmarkDotNet`, `Bogus` | **0.15.8**, **35.6.5** | tools | MIT |
+| `Bogus` | **35.6.5** | tools (DataGen) | MIT |
 
 Check each license again at pin time; licenses of popular .NET packages have changed before.
 

@@ -125,6 +125,7 @@ public sealed class UpgradeTests
     [InlineData(38)]
     [InlineData(39)]
     [InlineData(40)]
+    [InlineData(41)]
     public void UpgradeFromAnyEarlierVersion_EndsWithTheSchemaOfANewStore(int version)
     {
         using var fresh = new Store();
@@ -297,6 +298,45 @@ public sealed class UpgradeTests
         upgraded.ExecuteScalar<long>("SELECT bills FROM pnl_day WHERE day='2026-09-10'").ShouldBe(0L);
         upgraded.ExecuteScalar<string>("PRAGMA integrity_check").ShouldBe("ok");
     }
+
+    [Fact]
+    public void Migration42_DropsUnreadViewsAndDuplicateGuards_AndTheirRulesStillHold()
+    {
+        using var store = new Store();
+        store.Runner.RunTo(41);
+        using (SqliteConnection db = store.Factory.Open())
+            foreach (string name in Migration42Dropped)
+                db.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_schema WHERE name=@name", new { name }).ShouldBe(1L, name);
+
+        store.Runner.Run();
+
+        using SqliteConnection upgraded = store.Factory.Open();
+        foreach (string name in Migration42Dropped)
+            upgraded.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_schema WHERE name=@name OR instr(sql,@name)>0",
+                new { name }).ShouldBe(0L, name);
+        upgraded.Execute("""
+            INSERT INTO category(name) VALUES ('Demo');
+            INSERT INTO product(id,sku,name,category_id,uom_id,tax_rate_id,default_selling_price,default_mrp)
+            VALUES (1,'RICE','Rice',(SELECT id FROM category WHERE name='Demo'),(SELECT id FROM uom WHERE code='PCS'),
+                    (SELECT id FROM tax_rate WHERE rate_pct=5000),100000,110000);
+            INSERT INTO product_lot(id,product_id,lot_code,received_date,unit_cost,selling_price,mrp,qty_received,direct_reason)
+            VALUES (1,1,'L1','2026-09-01',60000,100000,110000,2000,'Opening');
+            INSERT INTO expense_category(name) VALUES ('Migration 42 check');
+            INSERT INTO expense(expense_date,category_id,amount,mode)
+            VALUES ('2026-09-01',(SELECT id FROM expense_category WHERE name='Migration 42 check'),500000,'CASH');
+            """);
+        // trg_direct_qty_nonnegative still refuses negative stock, with the message the app maps.
+        SqliteErrorMapper.Map(Should.Throw<SqliteException>(() =>
+                upgraded.Execute("UPDATE product_lot SET qty_on_hand=-1000 WHERE id=1")))
+            .ShouldBeOfType<DomainException>().Code.ShouldBe(ErrorCode.InsufficientStock);
+        // The schema-34 guards still keep every expense, a purchase's included, unchanged.
+        Should.Throw<SqliteException>(() => upgraded.Execute("UPDATE expense SET amount=1"));
+        Should.Throw<SqliteException>(() => upgraded.Execute("DELETE FROM expense"));
+        upgraded.ExecuteScalar<string>("PRAGMA integrity_check").ShouldBe("ok");
+    }
+
+    private static readonly string[] Migration42Dropped =
+        ["v_daily_sales", "v_expiry_alert", "trg_lot_no_negative", "trg_purchase_expense_no_update", "trg_purchase_expense_no_delete"];
 
     [Fact]
     public void BarcodeLotIndex_ServesTheLotDetachAndTheForeignKeyCheck()

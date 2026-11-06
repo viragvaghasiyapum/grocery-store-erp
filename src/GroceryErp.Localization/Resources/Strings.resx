@@ -33,10 +33,6 @@
   <data name="Settings_HardwareRendering" xml:space="preserve"><value>Use the graphics card for drawing</value></data>
   <data name="Settings_HardwareRenderingHelp" xml:space="preserve"><value>The app draws its screens in software, which uses less memory. Turn this on only if screens feel slow on this computer. The change applies after the app restarts.</value></data>
   <data name="Settings_DisplaySaved" xml:space="preserve"><value>Display setting saved. Restart the app to apply it.</value></data>
-  <data name="Demo_Title" xml:space="preserve"><value>Your store, ready for business</value></data>
-  <data name="Demo_Body" xml:space="preserve"><value>Use the menu to manage your store. The amount and date below are formatting examples.</value></data>
-  <data name="Demo_AmountLabel" xml:space="preserve"><value>Sample amount</value></data>
-  <data name="Demo_DateLabel" xml:space="preserve"><value>Sample date</value></data>
   <data name="Setup_Title" xml:space="preserve"><value>Set up Hare Krushna</value></data>
   <data name="Setup_StepLanguage" xml:space="preserve"><value>1  Language</value></data>
   <data name="Setup_Language" xml:space="preserve"><value>Language</value></data>
@@ -166,13 +162,10 @@
   <data name="Error_Unknown" xml:space="preserve"><value>The action could not be completed. Please try again.</value></data>
   <data name="Error_ExpiredLot" xml:space="preserve"><value>This stock lot has expired and cannot be used.</value></data>
   <data name="Error_SaleFinalized" xml:space="preserve"><value>A completed or voided sale cannot be edited.</value></data>
-  <data name="Error_LedgerAppendOnly" xml:space="preserve"><value>Posted stock movements cannot be changed.</value></data>
   <data name="Error_LotProductMismatch" xml:space="preserve"><value>The selected lot belongs to a different product.</value></data>
   <data name="Error_InvalidDate" xml:space="preserve"><value>Enter a valid date.</value></data>
   <data name="Error_BarcodeNotFound" xml:space="preserve"><value>No product was found for this barcode.</value></data>
-  <data name="Error_CreditNeedsCustomer" xml:space="preserve"><value>Select a customer before using credit payment.</value></data>
   <data name="Error_DiscountExceedsLine" xml:space="preserve"><value>The discount cannot exceed the line amount.</value></data>
-  <data name="Error_ClockBehindLastBill" xml:space="preserve"><value>The computer date is earlier than the last bill date. Check the clock.</value></data>
   <data name="Error_StockCountReviewChanged" xml:space="preserve"><value>Stock changed since this count was reviewed. Refresh and review it again.</value></data>
   <data name="Common_Save" xml:space="preserve"><value>Save</value></data>
   <data name="Common_Cancel" xml:space="preserve"><value>Cancel</value></data>
@@ -231,9 +224,6 @@
   <data name="Catalog_ImportComplete" xml:space="preserve"><value>Import complete: {0} created, {1} updated, {2} skipped.</value></data>
   <data name="Catalog_PrintLabels" xml:space="preserve"><value>Print labels</value></data>
   <data name="Catalog_LabelPreview" xml:space="preserve"><value>Label preview</value></data>
-  <data name="Catalog_LabelBarcodeRequired" xml:space="preserve"><value>Add a barcode before printing labels.</value></data>
-  <data name="Catalog_LabelCopiesRange" xml:space="preserve"><value>Copies must be between 1 and 999.</value></data>
-  <data name="Catalog_LabelPriceRequired" xml:space="preserve"><value>Set a default selling price before printing labels.</value></data>
   <data name="Catalog_PrinterName" xml:space="preserve"><value>Windows printer name</value></data>
   <data name="Catalog_Copies" xml:space="preserve"><value>Copies</value></data>
   <data name="Catalog_SavePrintFile" xml:space="preserve"><value>Save .prn</value></data>
@@ -338,7 +328,6 @@
   <data name="Stock_Counted" xml:space="preserve"><value>Counted</value></data>
   <data name="Stock_Difference" xml:space="preserve"><value>Difference</value></data>
   <data name="Purchasing_CancelPurchase" xml:space="preserve"><value>Void purchase</value></data>
-  <data name="Purchasing_ViewInvoice" xml:space="preserve"><value>View invoice</value></data>
   <data name="Purchasing_CancelConfirm" xml:space="preserve"><value>Cancel this purchase and reverse its untouched stock?</value></data>
   <data name="Purchasing_CancelBlocked" xml:space="preserve"><value>Stock from this purchase was used, so it cannot be voided. Use a vendor return to send back what is left.</value></data>
   <data name="Stock_Source" xml:space="preserve"><value>Source</value></data>
@@ -807,7 +796,6 @@
   <data name="Reports_Column_LocalName" xml:space="preserve"><value>Local name</value></data>
   <data name="Reports_Column_Lot" xml:space="preserve"><value>Lot</value></data>
   <data name="Reports_Column_Margin" xml:space="preserve"><value>Margin</value></data>
-  <data name="Reports_Column_MarginPercent" xml:space="preserve"><value>Margin %</value></data>
   <data name="Reports_Column_MrpValue" xml:space="preserve"><value>MRP value</value></data>
   <data name="Reports_Column_OtherCharges" xml:space="preserve"><value>Other charges</value></data>
   <data name="Reports_Column_PaymentMode" xml:space="preserve"><value>Payment mode</value></data>
@@ -990,7 +978,6 @@
   <data name="Error_ExpiryRequired" xml:space="preserve"><value>This product tracks expiry. Enter the expiry date.</value></data>
   <data name="Error_TooManyRows" xml:space="preserve"><value>This takes at most {0} rows at a time. Narrow the filters and try again.</value></data>
   <data name="Error_FilterRangeReversed" xml:space="preserve"><value>A filter's From value is after its To value.</value></data>
-  <data name="Error_LotOnOpenBill" xml:space="preserve"><value>An open or held bill still uses this batch. Complete that bill or remove the line first.</value></data>
   <data name="Error_ExpiredReasonNeedsExpiredLot" xml:space="preserve"><value>The Expired reason is only for batches whose expiry date is before the damage date.</value></data>
   <data name="Error_CountLotDiffersFromDocuments" xml:space="preserve"><value>Batch {0} already differs from its documents, so a count cannot be posted for it.</value></data>
   <data name="Error_TaxRateInactive" xml:space="preserve"><value>The tax rate {0} is no longer active. Choose an active rate.</value></data>

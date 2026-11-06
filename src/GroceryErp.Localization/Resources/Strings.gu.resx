@@ -33,10 +33,6 @@
   <data name="Settings_HardwareRendering" xml:space="preserve"><value>સ્ક્રીન દોરવા માટે ગ્રાફિક્સ કાર્ડ વાપરો</value><comment>MT – needs review</comment></data>
   <data name="Settings_HardwareRenderingHelp" xml:space="preserve"><value>એપ તેની સ્ક્રીન સૉફ્ટવેરથી દોરે છે, જેમાં ઓછી મેમરી વપરાય છે. આ કમ્પ્યુટર પર સ્ક્રીન ધીમી લાગે તો જ આ ચાલુ કરો. ફેરફાર એપ ફરી શરૂ થયા પછી લાગુ થશે.</value><comment>MT – needs review</comment></data>
   <data name="Settings_DisplaySaved" xml:space="preserve"><value>ડિસ્પ્લે સેટિંગ સાચવ્યું. તેને લાગુ કરવા માટે એપ ફરી શરૂ કરો.</value><comment>MT – needs review</comment></data>
-  <data name="Demo_Title" xml:space="preserve"><value>તમારી દુકાન, વ્યવસાય માટે તૈયાર</value><comment>MT – needs review</comment></data>
-  <data name="Demo_Body" xml:space="preserve"><value>દુકાનનું કામ સંભાળવા માટે મેનૂનો ઉપયોગ કરો. નીચેની રકમ અને તારીખ ફોર્મેટના ઉદાહરણો છે.</value><comment>MT – needs review</comment></data>
-  <data name="Demo_AmountLabel" xml:space="preserve"><value>નમૂનાની રકમ</value><comment>MT – needs review</comment></data>
-  <data name="Demo_DateLabel" xml:space="preserve"><value>નમૂનાની તારીખ</value><comment>MT – needs review</comment></data>
   <data name="Setup_Title" xml:space="preserve"><value>ગ્રોસરી ERP સેટ કરો</value><comment>MT - needs review</comment></data>
   <data name="Setup_StepLanguage" xml:space="preserve"><value>1  ભાષા</value></data>
   <data name="Setup_Language" xml:space="preserve"><value>ભાષા</value></data>
@@ -166,13 +162,10 @@
   <data name="Error_Unknown" xml:space="preserve"><value>કાર્ય પૂર્ણ થઈ શક્યું નથી. કૃપા કરીને ફરી પ્રયાસ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Error_ExpiredLot" xml:space="preserve"><value>આ સ્ટોક બેચની મુદત પૂરી થઈ ગઈ છે અને તેનો ઉપયોગ કરી શકાતો નથી.</value><comment>MT - needs review</comment></data>
   <data name="Error_SaleFinalized" xml:space="preserve"><value>પૂર્ણ થયેલું અથવા રદ થયેલું વેચાણ બદલી શકાતું નથી.</value><comment>MT - needs review</comment></data>
-  <data name="Error_LedgerAppendOnly" xml:space="preserve"><value>નોંધાયેલી સ્ટોક હિલચાલ બદલી શકાતી નથી.</value><comment>MT - needs review</comment></data>
   <data name="Error_LotProductMismatch" xml:space="preserve"><value>પસંદ કરેલી બેચ બીજા ઉત્પાદનની છે.</value><comment>MT - needs review</comment></data>
   <data name="Error_InvalidDate" xml:space="preserve"><value>માન્ય તારીખ દાખલ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Error_BarcodeNotFound" xml:space="preserve"><value>આ બારકોડ માટે કોઈ ઉત્પાદન મળ્યું નથી.</value><comment>MT - needs review</comment></data>
-  <data name="Error_CreditNeedsCustomer" xml:space="preserve"><value>ઉધાર ચુકવણી માટે ગ્રાહક પસંદ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Error_DiscountExceedsLine" xml:space="preserve"><value>છૂટ લાઇનની રકમ કરતાં વધુ હોઈ શકતી નથી.</value><comment>MT - needs review</comment></data>
-  <data name="Error_ClockBehindLastBill" xml:space="preserve"><value>કમ્પ્યુટરની તારીખ છેલ્લા બિલની તારીખ પહેલાંની છે. ઘડિયાળ તપાસો.</value><comment>MT - needs review</comment></data>
   <data name="Error_StockCountReviewChanged" xml:space="preserve"><value>સ્ટોક ગણતરીની સમીક્ષા પછી સ્ટોક બદલાયો છે. ફરી તાજું કરીને સમીક્ષા કરો.</value><comment>MT - needs review</comment></data>
   <data name="Common_Save" xml:space="preserve"><value>સાચવો</value><comment>MT - needs review</comment></data>
   <data name="Common_Cancel" xml:space="preserve"><value>રદ કરો</value><comment>MT - needs review</comment></data>
@@ -231,9 +224,6 @@
   <data name="Catalog_ImportComplete" xml:space="preserve"><value>આયાત પૂર્ણ: {0} બનાવ્યા, {1} અપડેટ કર્યા, {2} છોડ્યા.</value><comment>MT - needs review</comment></data>
   <data name="Catalog_PrintLabels" xml:space="preserve"><value>લેબલ છાપો</value><comment>MT - needs review</comment></data>
   <data name="Catalog_LabelPreview" xml:space="preserve"><value>લેબલ પૂર્વદર્શન</value><comment>MT - needs review</comment></data>
-  <data name="Catalog_LabelBarcodeRequired" xml:space="preserve"><value>લેબલ છાપતા પહેલાં બારકોડ ઉમેરો.</value><comment>MT - needs review</comment></data>
-  <data name="Catalog_LabelCopiesRange" xml:space="preserve"><value>નકલો 1 થી 999 વચ્ચે હોવી જોઈએ.</value><comment>MT - needs review</comment></data>
-  <data name="Catalog_LabelPriceRequired" xml:space="preserve"><value>લેબલ છાપતા પહેલાં મૂળ વેચાણ કિંમત સેટ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Catalog_PrinterName" xml:space="preserve"><value>Windows પ્રિન્ટર નામ</value><comment>MT - needs review</comment></data>
   <data name="Catalog_Copies" xml:space="preserve"><value>નકલો</value><comment>MT - needs review</comment></data>
   <data name="Catalog_SavePrintFile" xml:space="preserve"><value>.prn સાચવો</value><comment>MT - needs review</comment></data>
@@ -338,7 +328,6 @@
   <data name="Stock_Counted" xml:space="preserve"><value>ગણેલ</value><comment>MT - needs review</comment></data>
   <data name="Stock_Difference" xml:space="preserve"><value>તફાવત</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_CancelPurchase" xml:space="preserve"><value>ખરીદી રદ કરો</value><comment>MT - needs review</comment></data>
-  <data name="Purchasing_ViewInvoice" xml:space="preserve"><value>ઇન્વૉઇસ જુઓ</value></data>
   <data name="Purchasing_CancelConfirm" xml:space="preserve"><value>આ ખરીદી રદ કરીને બાકી રહેલો અસ્પર્શિત સ્ટોક પાછો ફેરવવો છે?</value><comment>MT - needs review</comment></data>
   <data name="Purchasing_CancelBlocked" xml:space="preserve"><value>આ ખરીદીનો સ્ટોક વપરાયો છે, તેથી તે રદ થઈ શકતી નથી. બાકી રહેલો માલ પાછો મોકલવા વિક્રેતાને પરત વાપરો.</value><comment>MT – needs review</comment></data>
   <data name="Stock_Source" xml:space="preserve"><value>સ્ત્રોત</value><comment>MT - needs review</comment></data>
@@ -807,7 +796,6 @@
   <data name="Reports_Column_LocalName" xml:space="preserve"><value>સ્થાનિક નામ</value></data>
   <data name="Reports_Column_Lot" xml:space="preserve"><value>બેચ</value><comment>MT - needs review</comment></data>
   <data name="Reports_Column_Margin" xml:space="preserve"><value>માર્જિન</value></data>
-  <data name="Reports_Column_MarginPercent" xml:space="preserve"><value>માર્જિન %</value></data>
   <data name="Reports_Column_MrpValue" xml:space="preserve"><value>MRP મૂલ્ય</value></data>
   <data name="Reports_Column_OtherCharges" xml:space="preserve"><value>અન્ય ખર્ચ</value></data>
   <data name="Reports_Column_PaymentMode" xml:space="preserve"><value>ચુકવણી પદ્ધતિ</value></data>
@@ -990,7 +978,6 @@
   <data name="Error_ExpiryRequired" xml:space="preserve"><value>આ પ્રોડક્ટની સમાપ્તિ તારીખ રખાય છે. સમાપ્તિ તારીખ દાખલ કરો.</value><comment>MT – needs review</comment></data>
   <data name="Error_TooManyRows" xml:space="preserve"><value>આ એક સાથે વધુમાં વધુ {0} હરોળ લે છે. ફિલ્ટર સાંકડા કરીને ફરી પ્રયાસ કરો.</value><comment>MT – needs review</comment></data>
   <data name="Error_FilterRangeReversed" xml:space="preserve"><value>ફિલ્ટરની શરૂઆતની કિંમત તેના અંતની કિંમત પછીની છે.</value><comment>MT – needs review</comment></data>
-  <data name="Error_LotOnOpenBill" xml:space="preserve"><value>ખુલ્લું અથવા હોલ્ડ કરેલું બિલ હજુ આ બેચ વાપરે છે. પહેલાં તે બિલ પૂર્ણ કરો અથવા તેની લાઇન કાઢી નાખો.</value><comment>MT – needs review</comment></data>
   <data name="Error_ExpiredReasonNeedsExpiredLot" xml:space="preserve"><value>સમાપ્ત કારણ ફક્ત એવી બેચ માટે છે જેની સમાપ્તિ તારીખ નુકસાનની તારીખ પહેલાંની હોય.</value><comment>MT – needs review</comment></data>
   <data name="Error_CountLotDiffersFromDocuments" xml:space="preserve"><value>બેચ {0} નો જથ્થો પહેલેથી તેના દસ્તાવેજોથી અલગ છે, તેથી તેની ગણતરી પોસ્ટ કરી શકાતી નથી.</value><comment>MT – needs review</comment></data>
   <data name="Error_TaxRateInactive" xml:space="preserve"><value>કર દર {0} હવે સક્રિય નથી. સક્રિય દર પસંદ કરો.</value><comment>MT – needs review</comment></data>

@@ -1,5 +1,4 @@
 using Dapper;
-using GroceryErp.Catalog;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Backup;
@@ -58,13 +57,14 @@ public sealed class FreshStoreReconciliationTests
         // Damage, a correction, and a correction that recreates a deleted zero lot.
         await fixture.MoneyOut.RecordDamageAsync(new(direct, today, Quantity.One, "BROKEN", Money.Zero, null),
             OperationGuard.NewId(), ct);
-        DamageItem damage = (await fixture.MoneyOut.GetDamagesAsync(today, today, ct)).Single(item => item.Reason == "BROKEN");
+        DamageItem damage = (await fixture.MoneyOut.GetDamagePageAsync(new(today, today), null, null, cancellationToken: ct)).Items.Single(item => item.Reason == "BROKEN");
         await fixture.MoneyOut.CorrectDamageAsync(damage, new(new Quantity(2), Money.Zero, "BROKEN", null),
             "Two were broken", OperationGuard.NewId(), ct);
         await fixture.MoneyOut.RecordDamageAsync(new(opening, today, new Quantity(10), "SPOILED", Money.Zero, null),
             OperationGuard.NewId(), ct);
-        await fixture.Inventory.DeleteZeroLotAsync(opening, fixture.DetailVersion(opening), ct);
-        damage = (await fixture.MoneyOut.GetDamagesAsync(today, today, ct)).Single(item => item.Reason == "SPOILED");
+        (await fixture.Inventory.RunLotBulkBatchAsync(LotBulkAction.DeleteZero, [opening], OperationGuard.NewId(), ct))
+            .Single().Outcome.ShouldBe(BulkItemOutcome.Changed);
+        damage = (await fixture.MoneyOut.GetDamagePageAsync(new(today, today), null, null, cancellationToken: ct)).Items.Single(item => item.Reason == "SPOILED");
         await fixture.MoneyOut.CorrectDamageAsync(damage, new(new Quantity(9), Money.Zero, "SPOILED", null),
             "One was fine", OperationGuard.NewId(), ct);
         await fixture.MoneyOut.RecordBulkDamageAsync([new(direct, fixture.OnHand(direct), fixture.DetailVersion(direct),

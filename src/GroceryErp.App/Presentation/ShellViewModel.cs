@@ -8,14 +8,9 @@ namespace GroceryErp.App.Presentation;
 
 public sealed partial class ShellViewModel(
     TranslationSource translations,
-    DisplayFormatter formatter,
     SettingsService? settings = null)
     : ObservableObject
 {
-    public string SampleAmount { get; } = $"₹{formatter.Number(12345678.9m)}";
-
-    public string SampleDate { get; } = formatter.Date(new DateOnly(2026, 9, 22));
-
     [RelayCommand]
     private Task UseEnglishAsync() => UseLanguageAsync("en-IN");
 

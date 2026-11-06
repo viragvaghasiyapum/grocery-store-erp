@@ -21,7 +21,7 @@ public sealed class NullMigrationBackup : IMigrationBackup
 
 public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMigrationBackup backup)
 {
-    public const int LatestVersion = 41;
+    public const int LatestVersion = 42;
 
     /// <summary>Backup reason for the last store that still holds the stock ledger; rotation keeps it.</summary>
     public const string LedgerArchiveReason = "pre-ledger-removal";
@@ -134,28 +134,6 @@ public sealed partial class MigrationRunner(SqliteConnectionFactory factory, IMi
         {
             using SqliteConnection connection = factory.OpenExclusive();
             RebuildPnlDays(connection);
-        }
-        finally
-        {
-            factory.EndExclusive();
-        }
-    }
-
-    // Offline repair for a drifted top-products cache. The transaction either
-    // replaces the complete window or leaves the previous one intact.
-    public void RebuildDashboardTop(DateOnly through)
-    {
-        using (SqliteConnection check = factory.Open())
-            if (!IsCurrentOperationalSchema(check))
-                throw new InvalidOperationException("Migrate the database before rebuilding dashboard products.");
-        backup.CreateBeforeMigration("pre-dashboard-top-rebuild");
-        factory.BeginExclusive();
-        try
-        {
-            using SqliteConnection connection = factory.OpenExclusive();
-            using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
-            DashboardTopProjection.Rebuild(connection, transaction, through);
-            transaction.Commit();
         }
         finally
         {

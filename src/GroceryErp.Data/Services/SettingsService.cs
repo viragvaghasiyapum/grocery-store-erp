@@ -1,9 +1,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
-using CommunityToolkit.Mvvm.Messaging;
 using Dapper;
 using GroceryErp.Core.Errors;
-using GroceryErp.Core.Messages;
 using GroceryErp.Core.Time;
 using GroceryErp.Data.Infrastructure;
 
@@ -21,11 +19,8 @@ public sealed record AppSettings(
     public string StoreAddress => Get("store.address", "");
     public string StorePhone => Get("store.phone", "");
     public string StoreGstin => Get("store.gstin", "");
-    public string StoreState => Get("store.state", "");
     public string TaxMode => Get("tax.mode", "REGULAR");
-    public bool PricesIncludeTax => GetBool("tax.prices_include_tax", true);
     public int BillRoundTo => GetInt("bill.round_to", 1000, 0, int.MaxValue);
-    public int ExpiryDefaultAlertDays => GetInt("expiry.default_alert_days", 30, 0, 3650);
     public bool BlockExpiredLots => GetBool("pos.block_expired", true);
     public bool VoidSameDayOnly => GetBool("pos.void_same_day_only", true);
     public string LotPrefix => Get("barcode.lot_prefix", "20");
@@ -34,11 +29,8 @@ public sealed record AppSettings(
     public int ScannerMinLength => GetInt("scanner.min_length", 6, 1, 100);
     public string ScannerComPort => Get("scanner.com_port", "");
     public string UiLanguage => Get("ui.language", "en-IN");
-    public string UiTheme => Get("ui.theme", "Light");
-    public string UiBackdrop => Get("ui.backdrop", "None");
     // Software drawing keeps the graphics driver's memory out of the process; the owner can opt into the GPU.
     public bool HardwareRendering => GetBool("ui.hardware_rendering", false);
-    public bool AlwaysShowThreeDecimals => GetBool("format.always_3dp", true);
     public string PrintLanguage => Get("print.language", "en-IN");
     public bool PrintBilingualNames => GetBool("print.bilingual_names", true);
     public string ReceiptPrinterName => Get("printer.receipt.name", "");
@@ -122,7 +114,6 @@ public sealed class SettingsService(DbExecutor database, AppPaths paths, IAuditL
         {
             _mutationGate.Release();
         }
-        WeakReferenceMessenger.Default.Send(new SettingsChangedMessage(changes.Keys.ToArray()));
     }
 
     public void Dispose() => _mutationGate.Dispose();

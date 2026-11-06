@@ -20,20 +20,6 @@ public sealed class AssetService(
     IAuditLog audit,
     IClock clock)
 {
-    public Task<IReadOnlyList<AssetItem>> GetAssetsAsync(bool includeDisposed = true, CancellationToken cancellationToken = default) =>
-        database.ReadAsync(connection => (IReadOnlyList<AssetItem>)connection.Query<AssetRow>("""
-            SELECT a.id AS Id,a.name AS Name,a.category AS Category,a.purchase_date AS PurchaseDate,
-                   a.in_use_from AS InUseFrom,a.cost AS Cost,a.vendor_id AS VendorId,v.name AS VendorName,
-                   a.method AS Method,a.rate_pct AS Rate,a.salvage_value AS SalvageValue,
-                   a.disposed_date AS DisposedDate,a.disposal_value AS DisposalValue,a.notes AS Notes,
-                   COALESCE((SELECT SUM(d.amount) FROM asset_depreciation d WHERE d.asset_id=a.id),0) AS Accumulated,
-                   COALESCE((SELECT d.closing_value FROM asset_depreciation d WHERE d.asset_id=a.id
-                             ORDER BY d.period_month DESC LIMIT 1),a.cost) AS BookValue
-            FROM asset a LEFT JOIN vendor v ON v.id=a.vendor_id
-            WHERE @includeDisposed=1 OR a.disposed_date IS NULL
-            ORDER BY a.disposed_date IS NOT NULL,a.name COLLATE NOCASE
-            """, new { includeDisposed = includeDisposed ? 1 : 0 }).Select(static row => row.ToModel()).ToList(), cancellationToken);
-
     public Task<AssetPage> GetAssetPageAsync(string? query = null, bool includeDisposed = true,
         bool? afterDisposed = null, string? afterName = null, long? afterId = null,
         int limit = 100, CancellationToken cancellationToken = default)

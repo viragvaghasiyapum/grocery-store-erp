@@ -98,30 +98,6 @@ public sealed partial class ReportService
         }, cancellationToken, operation).ConfigureAwait(false);
     }
 
-    public Task<PnlStatement> GetPnlAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
-    {
-        DateRange period = new(from, to);
-        string operation = to.DayNumber - from.DayNumber > 45 ? "pnl.long-range" : "pnl.short-range";
-        return database.ReadAsync(connection =>
-        {
-            long started = Stopwatch.GetTimestamp();
-            List<PnlReportLine> lines = LiveLines(connection, from, to, cancellationToken);
-            Record(operation + ".entries", started, lines.Count);
-            long buildStarted = Stopwatch.GetTimestamp();
-            PnlStatement statement = BuildStatement(period, lines);
-            PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(buildStarted).TotalMilliseconds,
-                new KeyValuePair<string, object?>("operation", operation + ".build"));
-            return statement;
-        }, cancellationToken, operation);
-    }
-
-    public Task<PnlMatrix> GetPnlMatrixAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
-    {
-        DateRange period = new(from, to);
-        return database.ReadAsync(connection =>
-            BuildMatrix(period, LiveLines(connection, from, to, cancellationToken)), cancellationToken);
-    }
-
     // Writes exactly the displayed report. A finalized year carries only saved values
     // and metadata, so its file is identical every time it is exported.
     public Task ExportPnlCsvAsync(PnlReport report, bool byMonth, string path, CancellationToken cancellationToken = default)

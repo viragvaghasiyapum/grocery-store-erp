@@ -11,4 +11,4 @@ This version saves the tax of every purchase, lot and bill line, and makes purch
 • Returns: returned units of a deleted product go into a product you pick or create. Cancelling a vendor return whose lot was deleted puts the units in a new lot. Day end counts voided and edited cash expenses at their current amounts.
 • Messages: a refused action now says why. When the weekly stock check finds lots that differ from their documents, a notice under the title bar offers Show differences.
 
-Database schema: 41.
+Database schema: 42.

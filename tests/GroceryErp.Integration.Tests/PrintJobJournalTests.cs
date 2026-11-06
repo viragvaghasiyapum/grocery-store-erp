@@ -201,7 +201,7 @@ public sealed class PrintJobJournalTests
         Task labelTask = printer.PrintLabelsAsync("test-printer", labels, useDriver: false);
         Assert.True(await Task.Run(() => firstChunkEntered.Wait(TimeSpan.FromSeconds(5))));
         Task receiptTask = printer.PrintAsync(SampleReceipt());
-        Task drawerTask = printer.OpenDrawerAsync();
+        Task drawerTask = printer.QueueDrawerAsync();
         releaseFirstChunk.Set();
         await Task.WhenAll(labelTask, receiptTask, drawerTask);
         string[] sent = order.ToArray();

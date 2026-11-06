@@ -132,8 +132,8 @@ public sealed class StockInTests
                 "DELETE FROM expense WHERE purchase_line_id IN (SELECT id FROM purchase_line WHERE purchase_id=@id)", new { id }));
         }
         (await fixture.Purchasing.GetInvoiceAsync(id, ct)).Lines[3].ExpenseCategoryName.ShouldBe("Freight");
-        (await fixture.Purchasing.GetPurchasesPageAsync(status: "POSTED", lineKind: "EXPENSE",
-            cancellationToken: ct)).Items.Select(static item => item.Id).ShouldContain(id);
+        (await fixture.Purchasing.GetPurchasePageAsync(new PurchaseFilter { Status = "POSTED", LineKind = "EXPENSE" },
+            null, null, cancellationToken: ct)).Items.Select(static item => item.Id).ShouldContain(id);
         await fixture.Purchasing.CancelAsync(id, fixture.Date, OperationGuard.NewId(), ct);
         using var verify = fixture.Factory.Open();
         verify.ExecuteScalar<long>("SELECT COUNT(*) FROM purchase_expense_reversal WHERE purchase_id=@id", new { id }).ShouldBe(1);
@@ -367,7 +367,10 @@ public sealed class StockInTests
             "PH3-CN-DEL", "Discontinued", [new(lotId, new Quantity(11), new Money(400), new Money(20))]),
             OperationGuard.NewId(), ct);
         var catalog = new CatalogService(fixture.Database, new AuditLog(), fixture.Settings, new SystemClock(fixture.Settings));
-        (await catalog.RemoveAsync(fixture.ProductId, ct)).ShouldBe(ProductRemoval.Deleted);
+        (await catalog.RunBulkBatchAsync(new(CatalogBulkAction.Archive), [fixture.ProductId], OperationGuard.NewId(), ct))
+            .Single().Outcome.ShouldBe(BulkItemOutcome.Changed);
+        using (var removed = fixture.Factory.Open())
+            removed.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE id=@id", new { id = fixture.ProductId }).ShouldBe(0);
 
         DomainException refused = await Should.ThrowAsync<DomainException>(() =>
             fixture.Purchasing.CancelVendorReturnAsync(returned.Id, fixture.Date, "Credit refused",
@@ -392,7 +395,10 @@ public sealed class StockInTests
             "PH3-CN-F3", "Discontinued", [new(lotId, new Quantity(11), new Money(400), new Money(20))]),
             OperationGuard.NewId(), ct);
         var catalog = new CatalogService(fixture.Database, new AuditLog(), fixture.Settings, new SystemClock(fixture.Settings));
-        (await catalog.RemoveAsync(fixture.ProductId, ct)).ShouldBe(ProductRemoval.Deleted);
+        (await catalog.RunBulkBatchAsync(new(CatalogBulkAction.Archive), [fixture.ProductId], OperationGuard.NewId(), ct))
+            .Single().Outcome.ShouldBe(BulkItemOutcome.Changed);
+        using (var removed = fixture.Factory.Open())
+            removed.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE id=@id", new { id = fixture.ProductId }).ShouldBe(0);
 
         RestoreDraft draft = (await fixture.Purchasing.GetVendorReturnRestoreDraftsAsync(returned.Id, ct)).Single();
         using var db = fixture.Factory.Open();
@@ -622,26 +628,25 @@ public sealed class StockInTests
         (await fixture.Purchasing.GetVendorLotPageAsync(fixture.VendorId, lots.NextDate,
             lots.NextId, limit: 2, cancellationToken: ct)).Items.Count.ShouldBe(2);
 
-        PurchasePage firstPurchases = await fixture.Purchasing.GetPurchasesPageAsync(limit: 2,
-            cancellationToken: ct);
+        PurchasePage firstPurchases = await fixture.Purchasing.GetPurchasePageAsync(new PurchaseFilter(), null, null,
+            limit: 2, cancellationToken: ct);
         long newerDraft = await fixture.Purchasing.SaveDraftAsync(null, fixture.Purchase("INV-NEW"), ct);
         PostedPurchase newer = await fixture.Purchasing.PostAsync(newerDraft, OperationGuard.NewId(), ct);
-        PurchasePage middle = await fixture.Purchasing.GetPurchasesPageAsync(
-            firstPurchases.NextDate, firstPurchases.NextId, vendorId: fixture.VendorId,
-            limit: 2, cancellationToken: ct);
+        PurchasePage middle = await fixture.Purchasing.GetPurchasePageAsync(new PurchaseFilter { VendorId = fixture.VendorId },
+            firstPurchases.NextDate, firstPurchases.NextId, limit: 2, cancellationToken: ct);
         middle.Items.Select(static item => item.Id).ShouldContain(posted[0].Id);
         middle.Items.Select(static item => item.Id).ShouldNotContain(newer.Id);
-        PurchasePage dated = await fixture.Purchasing.GetPurchasesPageAsync(
-            from: fixture.Date, to: fixture.Date, vendorId: fixture.VendorId,
-            limit: 2, cancellationToken: ct);
+        PurchasePage dated = await fixture.Purchasing.GetPurchasePageAsync(
+            new PurchaseFilter { From = fixture.Date, To = fixture.Date, VendorId = fixture.VendorId },
+            null, null, limit: 2, cancellationToken: ct);
         dated.Items.Count.ShouldBe(2);
-        PurchasePage productMatches = await fixture.Purchasing.GetPurchasesPageAsync(
-            productQuery: "phase three", limit: 2, cancellationToken: ct);
+        PurchasePage productMatches = await fixture.Purchasing.GetPurchasePageAsync(
+            new PurchaseFilter { ProductQuery = "phase three" }, null, null, limit: 2, cancellationToken: ct);
         productMatches.Items.Count.ShouldBe(2);
         productMatches.HasMore.ShouldBeTrue();
-        (await fixture.Purchasing.GetPurchasesPageAsync(productQuery: "PH3-001", limit: 2,
-            cancellationToken: ct)).Items.Count.ShouldBe(2);
-        (await fixture.Purchasing.GetPurchasesPageAsync(productQuery: "missing product",
+        (await fixture.Purchasing.GetPurchasePageAsync(new PurchaseFilter { ProductQuery = "PH3-001" }, null, null,
+            limit: 2, cancellationToken: ct)).Items.Count.ShouldBe(2);
+        (await fixture.Purchasing.GetPurchasePageAsync(new PurchaseFilter { ProductQuery = "missing product" }, null, null,
             cancellationToken: ct)).Items.ShouldBeEmpty();
     }
 
@@ -681,8 +686,8 @@ public sealed class StockInTests
         defaults.TaxRate.ShouldBe(new Percent(5));
         defaults.Mrp.ShouldBe(new Money(350));
         defaults.SellingPrice.ShouldBe(new Money(300));
-        VendorLotItem suppliedLot = (await fixture.Purchasing.GetVendorLotsAsync(fixture.VendorId,
-            TestContext.Current.CancellationToken)).Single();
+        VendorLotItem suppliedLot = (await fixture.Purchasing.GetVendorLotPageAsync(fixture.VendorId,
+            cancellationToken: TestContext.Current.CancellationToken)).Items.Single();
         suppliedLot.OnHand.ShouldBe(new Quantity(11));
         suppliedLot.BatchNumber.ShouldBe("BATCH");
 
@@ -710,8 +715,8 @@ public sealed class StockInTests
 
         await fixture.Purchasing.RecordPaymentAsync(new(fixture.VendorId, purchaseId, fixture.Date, new Money(500), "UPI", "TX1", null),
             OperationGuard.NewId(), TestContext.Current.CancellationToken);
-        (await fixture.Purchasing.GetVendorLedgerAsync(fixture.VendorId, TestContext.Current.CancellationToken))[^1].Balance
-            .ShouldBe(new Money(2325));
+        (await fixture.Purchasing.GetVendorLedgerPageAsync(fixture.VendorId,
+            cancellationToken: TestContext.Current.CancellationToken)).Items[0].Balance.ShouldBe(new Money(2325));
 
         await fixture.Purchasing.CancelAsync(purchaseId, fixture.Date, OperationGuard.NewId(), TestContext.Current.CancellationToken);
         using (var connection = fixture.Factory.Open())
@@ -790,7 +795,7 @@ public sealed class StockInTests
         posted.DocumentNumber.ShouldStartWith("V2627-");
         posted.CreditTotal.ShouldBe(new Money(210));
         replay.WasReplay.ShouldBeTrue();
-        (await fixture.Purchasing.GetVendorLedgerAsync(fixture.VendorId, ct))[^1].Kind.ShouldBe("VENDOR_RETURN");
+        (await fixture.Purchasing.GetVendorLedgerPageAsync(fixture.VendorId, cancellationToken: ct)).Items[0].Kind.ShouldBe("VENDOR_RETURN");
         await Should.ThrowAsync<DomainException>(() => fixture.Purchasing.CancelAsync(
             purchaseId, fixture.Date, OperationGuard.NewId(), ct));
         await Should.ThrowAsync<DomainException>(() => fixture.Purchasing.PostVendorReturnAsync(
@@ -900,8 +905,9 @@ public sealed class StockInTests
         VendorInput updated = await fixture.Purchasing.GetVendorAsync(fixture.VendorId, TestContext.Current.CancellationToken);
         updated.Name.ShouldBe("Supplier Updated");
         updated.PaymentTermsDays.ShouldBe(45);
-        (await fixture.Purchasing.GetVendorLedgerAsync(fixture.VendorId, TestContext.Current.CancellationToken))[0]
-            .Balance.ShouldBe(new Money(100));
+        (await fixture.Purchasing.GetVendorPageAsync(new VendorFilter(), null, null,
+            cancellationToken: TestContext.Current.CancellationToken)).Items
+            .Single(item => item.Id == fixture.VendorId).BalanceDue.ShouldBe(new Money(100));
     }
 
     [Fact]
@@ -1027,13 +1033,13 @@ public sealed class StockInTests
         long lotId = await fixture.Inventory.ImportOpeningStockAsync(
             [new(fixture.ProductId, Quantity.One, new Money(20), new Money(30), new Money(35),
                 fixture.Date.AddMonths(2), "DELETE", fixture.Date)], OperationGuard.NewId(), ct);
-        LotItem lot = (await fixture.Inventory.GetLotPageAsync(fixture.ProductId,
-            cancellationToken: ct)).Items.Single();
-        LotDeletionPreview withStock = await fixture.Inventory.PreviewDeleteZeroLotAsync(lotId, ct);
-        withStock.CanDelete.ShouldBeFalse();
-        withStock.BlockReason.ShouldBe("Stock_DeleteHasStock");
-        await Should.ThrowAsync<DomainException>(() => fixture.Inventory.DeleteZeroLotAsync(
-            lotId, lot.DetailVersion, ct));
+        // Each attempt is "Delete selected empty lots": a lot with stock or on an open bill is skipped.
+        async Task<string?> DeleteAsync() =>
+            (await fixture.Inventory.RunLotBulkBatchAsync(LotBulkAction.DeleteZero, [lotId], OperationGuard.NewId(), ct))
+                .Single().ReasonKey;
+        (await fixture.Inventory.PreviewLotBulkAsync([lotId], LotBulkAction.DeleteZero, ct)).Single()
+            .ReasonKey.ShouldBe("Stock_DeleteHasStock");
+        (await DeleteAsync()).ShouldBe("Stock_DeleteHasStock");
         await fixture.CountAsync(lotId, Quantity.Zero, "Test zero", ct);
         long heldSale;
         using (var connection = fixture.Factory.Open())
@@ -1048,13 +1054,11 @@ public sealed class StockInTests
                 VALUES (@heldSale,1,@product,@lotId,'Held',1000,30000,30000,0,30000,20000,20000)
                 """, new { heldSale, product = fixture.ProductId, lotId });
         }
-        (await fixture.Inventory.PreviewDeleteZeroLotAsync(lotId, ct)).BlockReason.ShouldBe("Stock_DeleteOpenBill");
-        await Should.ThrowAsync<DomainException>(() => fixture.Inventory.DeleteZeroLotAsync(
-            lotId, lot.DetailVersion, ct));
+        (await DeleteAsync()).ShouldBe("Stock_DeleteOpenBill");
         using (var connection = fixture.Factory.Open())
             connection.Execute("DELETE FROM sale WHERE id=@heldSale", new { heldSale });
-        (await fixture.Inventory.PreviewDeleteZeroLotAsync(lotId, ct)).CanDelete.ShouldBeTrue();
-        await fixture.Inventory.DeleteZeroLotAsync(lotId, lot.DetailVersion, ct);
+        (await fixture.Inventory.PreviewLotBulkAsync([lotId], LotBulkAction.DeleteZero, ct)).Single().Eligible.ShouldBeTrue();
+        (await DeleteAsync()).ShouldBeNull();
         using var after = fixture.Factory.Open();
         after.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot WHERE id=@lotId", new { lotId }).ShouldBe(0);
         after.ExecuteScalar<long>("SELECT COUNT(*) FROM direct_stock_origin WHERE lot_id=@lotId", new { lotId }).ShouldBe(1);
@@ -1217,14 +1221,10 @@ public sealed class StockInTests
                     counted.Scaled, Date, reason, OperationGuard.NewId());
             }, ct);
 
-        public async Task DeleteZeroLotAsync(long lotId, CancellationToken ct)
-        {
-            long version;
-            using (var connection = Factory.Open())
-                version = connection.ExecuteScalar<long>(
-                    "SELECT detail_version FROM product_lot WHERE id=@lotId", new { lotId });
-            await Inventory.DeleteZeroLotAsync(lotId, version, ct);
-        }
+        // The lot view's "Delete selected empty lots".
+        public async Task DeleteZeroLotAsync(long lotId, CancellationToken ct) =>
+            (await Inventory.RunLotBulkBatchAsync(LotBulkAction.DeleteZero, [lotId], OperationGuard.NewId(), ct))
+                .Single().Outcome.ShouldBe(BulkItemOutcome.Changed);
 
         public PurchaseDraftInput Purchase(string invoice = "INV-1") => new(
             VendorId, invoice, Date, Date, new Money(2725), new Money(100), null,

@@ -52,10 +52,4 @@ public static class Tax
 
     public static (Money Taxable, Money Tax) FromExclusive(Money taxable, Percent rate) =>
         (taxable, taxable.PercentOf(rate));
-
-    public static (Money Cgst, Money Sgst) SplitIntraState(Money tax)
-    {
-        var cgst = new Money(tax.Value / 2m);
-        return (cgst, tax - cgst);
-    }
 }

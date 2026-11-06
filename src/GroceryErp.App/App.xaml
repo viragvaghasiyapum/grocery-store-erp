@@ -84,23 +84,6 @@
           </Setter.Value>
         </Setter>
       </Style>
-      <Style x:Key="ExpiryBucketStyle" TargetType="TextBlock">
-        <Setter Property="FontWeight" Value="SemiBold"/>
-        <Style.Triggers>
-          <DataTrigger Binding="{Binding ExpiryBucketCode}" Value="EXPIRED">
-            <Setter Property="Foreground" Value="{StaticResource ExpiryExpiredBrush}"/>
-          </DataTrigger>
-          <DataTrigger Binding="{Binding ExpiryBucketCode}" Value="CRITICAL">
-            <Setter Property="Foreground" Value="{StaticResource ExpiryCriticalBrush}"/>
-          </DataTrigger>
-          <DataTrigger Binding="{Binding ExpiryBucketCode}" Value="SOON">
-            <Setter Property="Foreground" Value="{StaticResource ExpirySoonBrush}"/>
-          </DataTrigger>
-          <DataTrigger Binding="{Binding ExpiryBucketCode}" Value="FRESH">
-            <Setter Property="Foreground" Value="{StaticResource ExpiryReadyBrush}"/>
-          </DataTrigger>
-        </Style.Triggers>
-      </Style>
       <!-- The same colours for a status shown inline after a date. -->
       <Style x:Key="ExpiryBucketRunStyle" TargetType="Run">
         <Setter Property="FontWeight" Value="SemiBold"/>

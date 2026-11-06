@@ -172,12 +172,14 @@ public sealed class CatalogTests
 
         string barcode = await fixture.Service.GenerateInternalBarcodeAsync(productId, "21", TestContext.Current.CancellationToken);
         Ean.IsValid(barcode).ShouldBeTrue();
-        ProductRemoval removal = await fixture.Service.RemoveAsync(productId, TestContext.Current.CancellationToken);
-        removal.ShouldBe(ProductRemoval.Deleted);
+        (await fixture.RemoveProductAsync(productId, TestContext.Current.CancellationToken)).ShouldBeTrue();
 
         using var connection = fixture.Factory.Open();
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE id=@productId", new { productId }).ShouldBe(0L);
-        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity='product'").ShouldBe(3L);
+        // Create, barcode, delete, and the bulk batch's own entry.
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM audit_log WHERE entity='product'").ShouldBe(4L);
+        connection.ExecuteScalar<string>("SELECT action FROM audit_log WHERE entity='product' AND entity_id=@productId ORDER BY id DESC LIMIT 1",
+            new { productId }).ShouldBe("DELETE");
     }
 
     [Fact]
@@ -210,12 +212,13 @@ public sealed class CatalogTests
                 """, new { sale, historic, historicLot });
         }
 
-        (await fixture.Service.RemoveAsync(productId, ct)).ShouldBe(ProductRemoval.Archived);
+        (await fixture.RemoveProductAsync(productId, ct)).ShouldBeFalse();
         (await fixture.Service.SearchAsync(new ProductSearchFilter("Fresh", IncludeArchived: false), ct)).ShouldBeEmpty();
-        await fixture.Service.RestoreAsync(productId, ct);
+        (await fixture.Service.RunBulkBatchAsync(new(CatalogBulkAction.Restore), [productId], OperationGuard.NewId(), ct))
+            .Single().Outcome.ShouldBe(BulkItemOutcome.Changed);
         (await fixture.Service.SearchAsync(new ProductSearchFilter("Fresh"), ct)).Count.ShouldBe(1);
 
-        (await fixture.Service.RemoveAsync(historic, ct)).ShouldBe(ProductRemoval.Deleted);
+        (await fixture.RemoveProductAsync(historic, ct)).ShouldBeTrue();
         using var check = fixture.Factory.Open();
         check.ExecuteScalar<long>("SELECT COUNT(*) FROM product_lot WHERE id=@historicLot", new { historicLot }).ShouldBe(0);
         check.ExecuteScalar<string>("SELECT product_name FROM sale_line WHERE lot_id=@historicLot",
@@ -708,6 +711,15 @@ public sealed class CatalogTests
 
         public string Root { get; }
         public AppPaths Paths { get; }
+        // The Products page's "Remove selected": deletes a product nothing needs, archives one still in use.
+        public async Task<bool> RemoveProductAsync(long id, CancellationToken ct)
+        {
+            (await Service.RunBulkBatchAsync(new(CatalogBulkAction.Archive), [id], OperationGuard.NewId(), ct))
+                .Single().Outcome.ShouldBe(BulkItemOutcome.Changed);
+            using var db = Factory.Open();
+            return db.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE id=@id", new { id }) == 0;
+        }
+
         public SqliteConnectionFactory Factory { get; }
         public DbExecutor Database { get; }
         public SettingsService Settings { get; }

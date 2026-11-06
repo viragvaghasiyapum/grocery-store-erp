@@ -99,32 +99,6 @@ public sealed class ReportOutputService(ISettings settings, TranslationSource? t
         finally { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); }
     }
 
-    public void ExportPnlExcel(PnlStatement statement, string path) =>
-        ExportPnlExcel(statement, path, null, CancellationToken.None);
-
-    public void ExportPnlExcel(PnlStatement statement, string path,
-        IProgress<int>? progress, CancellationToken cancellationToken)
-        => ExportExcel(BuildPnlReport(statement), path, progress, cancellationToken);
-
-    public TabularReport BuildPnlReport(PnlStatement statement)
-    {
-        ArgumentNullException.ThrowIfNull(statement);
-        var rows = new List<ReportRow>();
-        AddSection(rows, "Reports_Section_Income", "Income", statement.Income);
-        rows.Add(PnlRow(Text("Reports_Section_NetSales", "Net sales"), statement.NetSales));
-        AddSection(rows, "Reports_Section_Cogs", "Cost of goods sold", statement.CostOfGoodsSold);
-        rows.Add(PnlRow(Text("Reports_Section_GrossProfit", "Gross profit"), statement.GrossProfit, statement.GrossMargin));
-        AddSection(rows, "Reports_Section_Expenses", "Operating expenses", statement.Expenses);
-        rows.Add(PnlRow(Text("Reports_Section_TotalExpenses", "Total expenses"), statement.TotalExpenses));
-        AddSection(rows, "Reports_Section_OtherIncome", "Other income", statement.OtherIncome);
-        rows.Add(PnlRow(Text("Reports_Section_NetProfit", "Net profit"), statement.NetProfit, statement.NetMargin));
-        return new TabularReport(Text("Reports_Kind_ProfitAndLoss", "Profit and loss"), statement.Period,
-            [new("Label", Text("Reports_Particulars", "Particulars"), ReportValueKind.Text),
-                new("Amount", Text("Reports_Amount", "Amount"), ReportValueKind.Money),
-                new("Margin", Text("Reports_Column_MarginPercent", "Margin %"), ReportValueKind.Percent)],
-            rows, new Dictionary<string, decimal> { ["Amount"] = statement.NetProfit.Value });
-    }
-
     // The displayed P&L version: every head, category and total, optionally by month,
     // with its open or finalized status, cutoff, version and checksum.
     public TabularReport BuildPnlReport(PnlReport report, bool byMonth)
@@ -330,18 +304,6 @@ public sealed class ReportOutputService(ISettings settings, TranslationSource? t
         };
     }
 
-    private void AddSection(List<ReportRow> rows, string key, string fallback, IEnumerable<PnlLine> lines)
-    {
-        rows.Add(new ReportRow(new Dictionary<string, object?> { ["Label"] = Text(key, fallback) }));
-        rows.AddRange(lines.Select(line => PnlRow("  " + line.Label, line.Amount)));
-    }
-    private static ReportRow PnlRow(string label, Money amount, Percent? margin = null) =>
-        new(new Dictionary<string, object?>
-        {
-            ["Label"] = label,
-            ["Amount"] = amount.Scaled,
-            ["Margin"] = margin?.Scaled
-        });
     private static string SafeSheetName(string title)
     {
         string safe = string.Concat(title.Where(static character => character is not ':' and not '\\' and not '/' and not '?' and not '*' and not '[' and not ']'));

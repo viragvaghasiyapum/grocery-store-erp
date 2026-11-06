@@ -245,7 +245,7 @@ public sealed class ListFilterTests
         long soap = Product("SOAP", fixture.Grains);
         long soapSoon = await Lot(soap, 4);
         long soapExpired = await Lot(soap, -3);
-        (await fixture.Catalog.RemoveAsync(soap, ct)).ShouldBe(ProductRemoval.Archived);
+        (await fixture.RemoveProductAsync(soap, ct)).ShouldBeFalse();
         // The Products filter checks each product's earliest unexpired active lot: a blocked lot ahead
         // of it is skipped either way, and a lot expiring today still counts.
         long ghee = Product("GHEE", fixture.Grains);
@@ -617,6 +617,15 @@ public sealed class ListFilterTests
 
         public DateOnly Today { get; } = new(2026, 9, 26);
         public string Root { get; }
+        // The Products page's "Remove selected": deletes a product nothing needs, archives one still in use.
+        public async Task<bool> RemoveProductAsync(long id, CancellationToken ct)
+        {
+            (await Catalog.RunBulkBatchAsync(new(CatalogBulkAction.Archive), [id], OperationGuard.NewId(), ct))
+                .Single().Outcome.ShouldBe(BulkItemOutcome.Changed);
+            using var db = Factory.Open();
+            return db.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE id=@id", new { id }) == 0;
+        }
+
         public SqliteConnectionFactory Factory { get; }
         public DbExecutor Database { get; }
         public SettingsService Settings { get; }

@@ -3,10 +3,8 @@ using System.Windows.Controls;
 using System.Windows.Threading;
 using GroceryErp.Core;
 using GroceryErp.Core.Numerics;
-using GroceryErp.Core.Time;
 using GroceryErp.Data.Services;
 using GroceryErp.Purchasing;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace GroceryErp.App.Presentation;
 

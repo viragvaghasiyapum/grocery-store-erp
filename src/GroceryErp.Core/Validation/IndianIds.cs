@@ -16,5 +16,4 @@ public static partial class IndianIds
     public static bool IsGstin(string value) => !string.IsNullOrWhiteSpace(value) && GstinPattern().IsMatch(value);
     public static bool IsPan(string value) => !string.IsNullOrWhiteSpace(value) && PanPattern().IsMatch(value);
     public static bool IsPincode(string value) => !string.IsNullOrWhiteSpace(value) && PinPattern().IsMatch(value);
-    public static string StateCodeOf(string gstin) => IsGstin(gstin) ? gstin[..2] : throw new ArgumentException("Invalid GSTIN.", nameof(gstin));
 }

@@ -267,7 +267,7 @@ public sealed class ReportsTests
                    (new DateOnly(2025, 12, 15), new DateOnly(2026, 4, 15)),
                    (new DateOnly(2030, 1, 1), new DateOnly(2030, 1, 31)) })
         {
-            PnlStatement actual = await fixture.Reports.GetPnlAsync(from, to, TestContext.Current.CancellationToken);
+            PnlStatement actual = (await fixture.Reports.GetPnlReportAsync(ReportService.CustomPeriod(from, to), TestContext.Current.CancellationToken)).Statement;
             var lines = actual.Income.Concat(actual.CostOfGoodsSold).Concat(actual.Expenses)
                 .Concat(actual.OtherIncome).ToDictionary(
                     line => $"{line.Section}:{line.HeadCode}:{line.ReferenceId}", line => line.Amount.Scaled);
@@ -313,7 +313,7 @@ public sealed class ReportsTests
                    (new DateOnly(2026, 9, 15), new DateOnly(2026, 9, 30)),
                    (new DateOnly(2030, 1, 1), new DateOnly(2030, 1, 31)) })
         {
-            PnlMatrix actual = await fixture.Reports.GetPnlMatrixAsync(from, to, TestContext.Current.CancellationToken);
+            PnlMatrix actual = (await fixture.Reports.GetPnlReportAsync(ReportService.CustomPeriod(from, to), TestContext.Current.CancellationToken)).Matrix;
             using var connection = fixture.Factory.Open();
             var expected = connection.Query<PnlMatrixReferenceRow>("""
                 SELECT section AS Section,head_code AS HeadCode,NULLIF(category_id,0) AS ReferenceId,
@@ -353,10 +353,8 @@ public sealed class ReportsTests
                        ('2026-09-21',1,1,1000,100000,'CUTOVER_BALANCE','Upgrade'),
                        ('2026-09-22',1,1,1000,100000,'DAMAGE_CORRECTION','Recount');
                 """);
-        PnlStatement pnl = await fixture.Reports.GetPnlAsync(new(2026, 9, 20), new(2026, 9, 22),
-            TestContext.Current.CancellationToken);
-        PnlMatrix matrix = await fixture.Reports.GetPnlMatrixAsync(new(2026, 9, 20), new(2026, 9, 22),
-            TestContext.Current.CancellationToken);
+        PnlStatement pnl = (await fixture.Reports.GetPnlReportAsync(ReportService.CustomPeriod(new(2026, 9, 20), new(2026, 9, 22)), TestContext.Current.CancellationToken)).Statement;
+        PnlMatrix matrix = (await fixture.Reports.GetPnlReportAsync(ReportService.CustomPeriod(new(2026, 9, 20), new(2026, 9, 22)), TestContext.Current.CancellationToken)).Matrix;
         using var check = fixture.Factory.Open();
         check.ExecuteScalar<long>("""
             SELECT SUM(amount) FROM v_pnl_entry WHERE head_code='STOCK_ADJUSTMENT'
@@ -398,21 +396,18 @@ public sealed class ReportsTests
         beforeVoidDashboard.Trend.Count.ShouldBe(1);
         beforeVoidDashboard.Trend[0].Sales.Scaled.ShouldBe(100000);
         beforeVoidDashboard.Trend[0].GrossProfit.Scaled.ShouldBe(40000);
-        PnlStatement beforeVoid = await fixture.Reports.GetPnlAsync(new(2026, 8, 1), new(2026, 9, 30),
-            TestContext.Current.CancellationToken);
+        PnlStatement beforeVoid = (await fixture.Reports.GetPnlReportAsync(ReportService.CustomPeriod(new(2026, 8, 1), new(2026, 9, 30)), TestContext.Current.CancellationToken)).Statement;
         beforeVoid.NetSales.Scaled.ShouldBe(75000);
 
         connection.Execute("UPDATE sale SET status='VOID',void_reason='Correction' WHERE id=900");
         connection.QuerySingle<long>("SELECT bills FROM pnl_day WHERE day='2026-09-01'").ShouldBe(0);
         connection.QuerySingle<long>("SELECT sales FROM pnl_day WHERE day='2026-09-01'").ShouldBe(0);
         (await fixture.Reports.GetDashboardAsync(TestContext.Current.CancellationToken)).Trend.Count.ShouldBe(0);
-        PnlStatement afterVoid = await fixture.Reports.GetPnlAsync(new(2026, 8, 1), new(2026, 9, 30),
-            TestContext.Current.CancellationToken);
+        PnlStatement afterVoid = (await fixture.Reports.GetPnlReportAsync(ReportService.CustomPeriod(new(2026, 8, 1), new(2026, 9, 30)), TestContext.Current.CancellationToken)).Statement;
         afterVoid.NetSales.Scaled.ShouldBe(-25000);
         connection.Execute("DELETE FROM sale_return WHERE id=901");
         connection.QuerySingle<long>("SELECT returns FROM pnl_day WHERE day='2026-08-31'").ShouldBe(0);
-        PnlStatement afterDelete = await fixture.Reports.GetPnlAsync(new(2026, 8, 1), new(2026, 9, 30),
-            TestContext.Current.CancellationToken);
+        PnlStatement afterDelete = (await fixture.Reports.GetPnlReportAsync(ReportService.CustomPeriod(new(2026, 8, 1), new(2026, 9, 30)), TestContext.Current.CancellationToken)).Statement;
         afterDelete.NetSales.Scaled.ShouldBe(0);
     }
 
@@ -461,16 +456,6 @@ public sealed class ReportsTests
             .TopProductsByRevenue.ShouldBeEmpty();
         (await fixture.Reports.GetDashboardAsync(TestContext.Current.CancellationToken))
             .TopProductsByRevenue.ShouldBeEmpty();
-        connection.Execute("""
-            INSERT INTO dashboard_top_summary
-              (product_id,name,local_name,local_is_null,movements,qty,revenue,cost)
-            VALUES (1,'Stale','',1,1,1000,100000,60000)
-            """);
-        connection.Dispose();
-        new MigrationRunner(fixture.Factory, NullMigrationBackup.Instance)
-            .RebuildDashboardTop(new(2026, 10, 20));
-        (await later.GetDashboardAsync(TestContext.Current.CancellationToken))
-            .TopProductsByRevenue.ShouldBeEmpty();
     }
 
     [Fact]
@@ -479,8 +464,10 @@ public sealed class ReportsTests
         using var fixture = new ReportFixture();
         fixture.SeedGoldenScenario();
 
-        PnlStatement statement = await fixture.Reports.GetPnlAsync(new(2026, 9, 1), new(2026, 9, 30), TestContext.Current.CancellationToken);
-        PnlMatrix matrix = await fixture.Reports.GetPnlMatrixAsync(new(2026, 9, 1), new(2026, 9, 30), TestContext.Current.CancellationToken);
+        PnlReport report = await fixture.Reports.GetPnlReportAsync(ReportService.CustomPeriod(new(2026, 9, 1), new(2026, 9, 30)),
+            TestContext.Current.CancellationToken);
+        PnlStatement statement = report.Statement;
+        PnlMatrix matrix = report.Matrix;
         TabularReport sales = await fixture.Reports.GetReportAsync(ReportKind.SalesRegister,
             new(From: new(2026, 9, 1), To: new(2026, 9, 30)), TestContext.Current.CancellationToken);
 
@@ -494,13 +481,14 @@ public sealed class ReportsTests
         matrix.Rows.Single(static row => row.HeadCode == "NET_PROFIT").Total.Value.ShouldBe(265m);
         matrix.Rows.Single(static row => row.HeadCode == "GROSS_PROFIT").Months[0].Value.ShouldBe(360m);
         sales.Rows.Count.ShouldBe(1);
+        // Export writes the displayed report: label and amount per row.
         string pnlPath = Path.Combine(fixture.Root, "pnl.xlsx");
-        fixture.Output.ExportPnlExcel(statement, pnlPath);
+        fixture.Output.ExportExcel(fixture.Output.BuildPnlReport(report, byMonth: false), pnlPath);
         using var pnlWorkbook = new XLWorkbook(pnlPath);
         IXLWorksheet pnlSheet = pnlWorkbook.Worksheet(1);
         int grossRow = pnlSheet.RowsUsed().Single(row => row.Cell(1).GetString() == "Gross profit").RowNumber();
-        pnlSheet.Cell(grossRow, 3).GetDouble().ShouldBe(40d);
-        pnlSheet.Cell(grossRow, 3).Style.NumberFormat.Format.ShouldBe("#,##0.000");
+        pnlSheet.Cell(grossRow, 2).GetDouble().ShouldBe(360d);
+        pnlSheet.Cell(grossRow, 2).Style.NumberFormat.Format.ShouldBe("#,##0.000");
     }
 
     [Fact]
@@ -845,13 +833,14 @@ public sealed class ReportsTests
             report.Rows.Single().Values["Status"].ShouldBe(translations["Reports_StatusCompleted"]);
             report.Rows.Single().Values["Total"].ShouldBe(1000000L);
 
-            PnlStatement statement = await service.GetPnlAsync(new(2026, 9, 1), new(2026, 9, 30),
+            PnlReport pnl = await service.GetPnlReportAsync(ReportService.CustomPeriod(new(2026, 9, 1), new(2026, 9, 30)),
                 TestContext.Current.CancellationToken);
             string path = Path.Combine(fixture.Root, "pnl-gu.xlsx");
-            new ReportOutputService(fixture.Settings, translations).ExportPnlExcel(statement, path);
+            var output = new ReportOutputService(fixture.Settings, translations);
+            output.ExportExcel(output.BuildPnlReport(pnl, byMonth: false), path);
             using var workbook = new XLWorkbook(path);
             IXLWorksheet sheet = workbook.Worksheet(1);
-            sheet.Cell(1, 1).GetString().ShouldBe(translations["Reports_Kind_ProfitAndLoss"]);
+            sheet.Cell(1, 1).GetString().ShouldStartWith(translations["Reports_Kind_ProfitAndLoss"]);
             sheet.RowsUsed().Select(static row => row.Cell(1).GetString())
                 .ShouldContain(translations["Reports_Section_GrossProfit"]);
         }
@@ -876,7 +865,7 @@ public sealed class ReportsTests
                 """);
 
         var stopwatch = Stopwatch.StartNew();
-        PnlStatement statement = await fixture.Reports.GetPnlAsync(new(2025, 4, 1), new(2026, 3, 31), TestContext.Current.CancellationToken);
+        PnlStatement statement = (await fixture.Reports.GetPnlReportAsync(ReportService.CustomPeriod(new(2025, 4, 1), new(2026, 3, 31)), TestContext.Current.CancellationToken)).Statement;
         stopwatch.Stop();
 
         statement.NetSales.Value.ShouldBe(2_000_000m);

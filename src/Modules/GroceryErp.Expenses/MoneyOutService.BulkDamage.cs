@@ -1,7 +1,5 @@
-using CommunityToolkit.Mvvm.Messaging;
 using Dapper;
 using GroceryErp.Core.Errors;
-using GroceryErp.Core.Messages;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Services;
 using GroceryErp.Inventory.Contracts;
@@ -19,8 +17,7 @@ public sealed partial class MoneyOutService
             lines.Select(static line => line.LotId).Distinct().Count() != lines.Count ||
             reason is not ("EXPIRED" or "BROKEN" or "SPOILED" or "PEST" or "LOST" or "OTHER"))
             throw new DomainException(ErrorCode.Validation, "Select 1 to 50 valid lot quantities.");
-        var products = new HashSet<long>();
-        IReadOnlyList<long> result = await database.WriteAsync(tx =>
+        return await database.WriteAsync(tx =>
         {
             OperationRef? replay = OperationGuard.Claim(tx, operationId, OpType.DamageSelection);
             if (replay is not null)
@@ -77,13 +74,10 @@ public sealed partial class MoneyOutService
                     Cost = cost.Scaled
                 });
                 ids.Add(id);
-                products.Add(lot.ProductId);
             }
             OperationGuard.Complete(tx, operationId, "damage", ids[0]);
             return (IReadOnlyList<long>)ids;
         }, cancellationToken);
-        if (products.Count > 0) WeakReferenceMessenger.Default.Send(new StockChangedMessage(products.ToArray()));
-        return result;
     }
 
     /// <summary>Most expired lots one reviewed write-off may resolve; larger sets must be narrowed.</summary>
@@ -137,8 +131,7 @@ public sealed partial class MoneyOutService
         DateOnly date, string batchOperationId, CancellationToken cancellationToken = default)
     {
         long[] ids = BulkBatch.ValidateIds(lotIds);
-        var products = new HashSet<long>();
-        IReadOnlyList<BulkItemResult> results = await database.WriteAsync(tx =>
+        return await database.WriteAsync(tx =>
         {
             if (BulkBatch.Claim(tx, batchOperationId, ids) is { } replay) return replay;
             periods.EnsureOpen(tx, date);
@@ -188,12 +181,9 @@ public sealed partial class MoneyOutService
                 stock.Change(tx, new(date, lot.ProductId, lotId, LotChangeKind.Damage, new Quantity(-quantity.Value)));
                 audit.Write(tx, "damage", id, "CREATE", new { document, bulk = batchOperationId, quantity = quantity.Scaled });
                 outcome.Add(new BulkItemResult(lotId, BulkItemOutcome.Changed));
-                products.Add(lot.ProductId);
             }
             return BulkBatch.Complete(tx, batchOperationId, outcome);
         }, cancellationToken);
-        if (products.Count > 0) WeakReferenceMessenger.Default.Send(new StockChangedMessage(products.ToArray()));
-        return results;
     }
 
     private sealed class ExpiredLotRow

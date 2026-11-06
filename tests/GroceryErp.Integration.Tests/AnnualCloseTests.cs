@@ -34,7 +34,7 @@ public sealed class AnnualCloseTests
         frozen.Statement.TotalExpenses.ShouldBe(new Money(1000));
         byte[] frozenCsv = await fixture.ExportAsync(frozen, ct);
 
-        ExpenseItem original = (await fixture.MoneyOut.GetExpensesAsync(february, february, ct)).Single();
+        ExpenseItem original = (await fixture.MoneyOut.GetExpensePageAsync(new(february, february), null, null, cancellationToken: ct)).Items.Single();
         CorrectionDating dating = await fixture.MoneyOut.PreviewCorrectionAsync(february, ct);
         dating.Treatment.ShouldBe(PeriodTreatment.CurrentDated);
         (dating.CalendarLocked, dating.FiscalLocked).ShouldBe((false, true));
@@ -82,7 +82,7 @@ public sealed class AnnualCloseTests
         (await fixture.Closes.EnsureFinalizedAsync(ct)).ShouldBe(1);
         PnlReport frozen = await fixture.Reports.GetPnlReportAsync(fixture.Reports.CalendarYearPeriod(2026), ct);
         frozen.Status.ShouldBe("FINALIZED");
-        ExpenseItem original = (await fixture.MoneyOut.GetExpensesAsync(october, october, ct)).Single();
+        ExpenseItem original = (await fixture.MoneyOut.GetExpensePageAsync(new(october, october), null, null, cancellationToken: ct)).Items.Single();
         CorrectionDating dating = await fixture.MoneyOut.PreviewCorrectionAsync(october, ct);
         (dating.Treatment, dating.CalendarLocked, dating.FiscalLocked)
             .ShouldBe((PeriodTreatment.CurrentDated, true, false));
@@ -341,7 +341,7 @@ public sealed class AnnualCloseTests
 
         public async Task CorrectSingleAsync(DateOnly date, decimal amount, CancellationToken cancellationToken)
         {
-            ExpenseItem current = (await MoneyOut.GetExpensesAsync(date, date, cancellationToken)).Single();
+            ExpenseItem current = (await MoneyOut.GetExpensePageAsync(new(date, date), null, null, cancellationToken: cancellationToken)).Items.Single();
             await MoneyOut.CorrectExpenseAsync(current, new(date, current.CategoryId, new Money(amount), "CASH", null, null, null),
                 "Corrected amount", OperationGuard.NewId(), cancellationToken);
         }

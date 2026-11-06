@@ -1,7 +1,6 @@
 using Dapper;
 using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
-using GroceryErp.Data.Infrastructure;
 
 namespace GroceryErp.Inventory;
 
@@ -42,35 +41,6 @@ public sealed partial class InventoryService
         }, cancellationToken);
     }
 
-    public Task<LotDeletionPreview> PreviewDeleteZeroLotAsync(long lotId,
-        CancellationToken cancellationToken = default) => database.ReadAsync(connection =>
-    {
-        LotDeleteRow? lot = connection.QuerySingleOrDefault<LotDeleteRow>("""
-            SELECT lot_code AS LotCode,qty_on_hand AS Quantity FROM product_lot WHERE id=@lotId
-            """, new { lotId });
-        if (lot is null) throw new DomainException(ErrorCode.NotFound, "lot", lotId);
-        string? reason = lot.Quantity != 0 ? "Stock_DeleteHasStock" :
-            IsOnOpenBill(connection, lotId) ? "Stock_DeleteOpenBill" : null;
-        return new LotDeletionPreview(lotId, lot.LotCode, Quantity.FromScaled(lot.Quantity), reason is null, reason);
-    }, cancellationToken);
-
-    public Task DeleteZeroLotAsync(long lotId, long expectedVersion,
-        CancellationToken cancellationToken = default) => database.WriteAsync(tx =>
-    {
-        if (lotId <= 0 || expectedVersion <= 0) throw new DomainException(ErrorCode.Validation, "Invalid lot.");
-        long? productId = tx.Connection.QuerySingleOrDefault<long?>("""
-            SELECT product_id FROM product_lot WHERE id=@lotId AND qty_on_hand=0 AND detail_version=@expectedVersion
-            """, new { lotId, expectedVersion }, tx.Transaction);
-        if (productId is null) ThrowLotEditConflict(tx, lotId);
-        if (IsOnOpenBill(tx.Connection, lotId, tx.Transaction))
-            throw new DomainException(ErrorCode.LotOnOpenBill, lotId);
-        int changed = tx.Connection.Execute("""
-            DELETE FROM product_lot WHERE id=@lotId AND qty_on_hand=0 AND detail_version=@expectedVersion
-            """, new { lotId, expectedVersion }, tx.Transaction);
-        if (changed != 1) ThrowLotEditConflict(tx, lotId);
-        audit.Write(tx, "product_lot", lotId, "DELETE_ZERO", new { productId });
-    }, cancellationToken);
-
     // Posted documents keep their own snapshots, so history never blocks deleting a
     // zero lot. An unfinished bill still points at the live lot it will sell from.
     internal static bool IsOnOpenBill(System.Data.IDbConnection connection, long lotId,
@@ -84,11 +54,5 @@ public sealed partial class InventoryService
         public DateOnly ReceivedDate { get; init; }
         public bool TrackExpiry { get; init; }
         public long ProductId { get; init; }
-    }
-
-    private sealed class LotDeleteRow
-    {
-        public string LotCode { get; init; } = string.Empty;
-        public long Quantity { get; init; }
     }
 }

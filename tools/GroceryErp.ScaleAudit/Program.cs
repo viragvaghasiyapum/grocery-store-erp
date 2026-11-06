@@ -873,8 +873,8 @@ switch (mode)
         var operations = new (string Name, Func<Task<int>> Run)[]
         {
             ("dashboard-populated", async () => { await reports.GetDashboardAsync(); return 1; }),
-            ("pnl-month", async () => (await reports.GetPnlAsync(monthStart, end)).Income.Count),
-            ("pnl-fiscal", async () => (await reports.GetPnlAsync(fiscalStart, end)).Income.Count),
+            ("pnl-month", async () => (await reports.GetPnlReportAsync(ReportService.CustomPeriod(monthStart, end))).Statement.Income.Count),
+            ("pnl-fiscal", async () => (await reports.GetPnlReportAsync(ReportService.CustomPeriod(fiscalStart, end))).Statement.Income.Count),
             ("history-first", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(Limit: 50))).Count),
             ("history-current", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(From: monthStart, To: end, Limit: 50))).Count),
             ("history-old", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(From: new(2025, 4, 1), To: new(2025, 4, 30), Limit: 50))).Count),
@@ -937,8 +937,7 @@ switch (mode)
     {
         CapturePlan("startup-last-sale-actual",
             "SELECT MAX(sale_date) FROM sale WHERE status = 'COMPLETED'");
-        CapturePlan("expiry-badge-actual",
-            "SELECT COUNT(*) FROM v_expiry_alert WHERE bucket IN ('EXPIRED','CRITICAL')");
+        CapturePlan("expiry-badge-actual", ExpiryBadgeSourceSql(), new { today = "2026-09-26" });
         CapturePlan("dashboard-core-actual", """
             WITH today_sales AS MATERIALIZED (
               SELECT sales,bills,taxable,taxable-cost AS gross_profit
@@ -1032,8 +1031,8 @@ switch (mode)
             ("catalog-fts-ui8", async () => (await catalog.SearchPageAsync(new ProductSearchFilter("grocery item", Limit: 8))).Items.Count),
             ("history-recent", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(From: monthStart, To: end))).Count),
             ("expiry-badge", () => moneyOut.GetActionableExpiryCountAsync()),
-            ("pnl-month", async () => (await reports.GetPnlAsync(monthStart, end)).Income.Count),
-            ("pnl-fiscal", async () => (await reports.GetPnlAsync(fiscalStart, end)).Income.Count),
+            ("pnl-month", async () => (await reports.GetPnlReportAsync(ReportService.CustomPeriod(monthStart, end))).Statement.Income.Count),
+            ("pnl-fiscal", async () => (await reports.GetPnlReportAsync(ReportService.CustomPeriod(fiscalStart, end))).Statement.Income.Count),
             ("dashboard", async () => { await reports.GetDashboardAsync(); return 1; }),
         };
         foreach (var operation in operations)
@@ -1291,7 +1290,7 @@ switch (mode)
             ("catalog-low-stock", async () => (await catalog.SearchPageAsync(new ProductSearchFilter(LowStockOnly: true, Limit: 100))).Items.Count),
             ("history-recent", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(From: monthStart, To: end))).Count),
             ("expiry-badge", () => moneyOut.GetActionableExpiryCountAsync()),
-            ("pnl-month", async () => (await reports.GetPnlAsync(monthStart, end)).Income.Count),
+            ("pnl-month", async () => (await reports.GetPnlReportAsync(ReportService.CustomPeriod(monthStart, end))).Statement.Income.Count),
             ("dashboard", async () => { await reports.GetDashboardAsync(); return 1; }),
         };
         if (combined)
@@ -1396,7 +1395,7 @@ switch (mode)
             """, new { match = "\"grocery\" \"item\"" });
         CapturePlan("history-recent", "SELECT id FROM sale WHERE sale_date BETWEEN @from AND @to ORDER BY sale_date DESC,id DESC LIMIT 50", new { from = "2026-09-01", to = "2026-09-26" });
         CapturePlan("pnl-day-range", "SELECT SUM(bills),SUM(taxable),SUM(rounding),SUM(cost),SUM(returns),SUM(return_taxable),SUM(return_cost) FROM pnl_day WHERE day BETWEEN @from AND @to", new { from = "2026-09-01", to = "2026-09-26" });
-        CapturePlan("expiry-first-page", "SELECT lot_id FROM v_expiry_alert WHERE bucket='EXPIRED' ORDER BY expiry_date,lot_id LIMIT 100");
+        CapturePlan("expiry-first-page", ExpiredPageSql(), new { today = "2026-09-26" });
         break;
     }
     case "shape-profile":
@@ -1441,13 +1440,12 @@ switch (mode)
             ("customer-no-match", async () => (await sales.SearchCustomersAsync("zzzz-missing")).Count),
             ("vendor-list", async () => (await purchasing.GetVendorsAsync()).Count),
             ("vendor-all", async () => (await purchasing.GetVendorsAsync(includeInactive: true)).Count),
-            ("vendor-ledger", async () => (await purchasing.GetVendorLedgerAsync(1)).Count),
-            ("vendor-lots", async () => (await purchasing.GetVendorLotsAsync(1)).Count),
-            ("vendor-purchase-choices", async () => (await purchasing.GetVendorPurchaseChoicesAsync(1)).Count),
-            ("purchase-page", async () => (await purchasing.GetPurchasesPageAsync()).Items.Count),
-            ("purchase-filtered", async () => (await purchasing.GetPurchasesPageAsync(from: monthStart, to: end, vendorId: 1)).Items.Count),
-            ("purchase-cursor", async () => { PurchasePage first = await purchasing.GetPurchasesPageAsync(limit: 20); return first.NextDate is null ? 0 : (await purchasing.GetPurchasesPageAsync(beforeDate: first.NextDate, beforeId: first.NextId, limit: 20)).Items.Count; }),
-            ("purchase-legacy-cap", async () => (await purchasing.GetPurchasesAsync(5000)).Count),
+            ("vendor-ledger", async () => (await purchasing.GetVendorLedgerPageAsync(1)).Items.Count),
+            ("vendor-lots", async () => (await purchasing.GetVendorLotPageAsync(1)).Items.Count),
+            ("vendor-purchase-choices", async () => (await purchasing.GetVendorPurchasePageAsync(1)).Items.Count),
+            ("purchase-page", async () => (await purchasing.GetPurchasePageAsync(new PurchaseFilter(), null, null)).Items.Count),
+            ("purchase-filtered", async () => (await purchasing.GetPurchasePageAsync(new PurchaseFilter { From = monthStart, To = end, VendorId = 1 }, null, null)).Items.Count),
+            ("purchase-cursor", async () => { PurchasePage first = await purchasing.GetPurchasePageAsync(new PurchaseFilter(), null, null, 20); return first.NextDate is null ? 0 : (await purchasing.GetPurchasePageAsync(new PurchaseFilter(), first.NextDate, first.NextId, 20)).Items.Count; }),
             ("lot-page", async () => (await inventory.GetLotPageAsync()).Items.Count),
             ("lot-product", async () => (await inventory.GetLotPageAsync(productId: productId)).Items.Count),
             ("lot-available", async () => (await inventory.GetLotPageAsync(availableOnly: true)).Items.Count),
@@ -1462,23 +1460,22 @@ switch (mode)
             ("saved-bills", async () => (await sales.GetSavedBillPageAsync(includeDrafts: true)).Items.Count),
             ("saved-bills-search", async () => (await sales.GetSavedBillPageAsync(includeDrafts: true, query: "Scale")).Items.Count),
             ("saved-bills-cursor", async () => { SavedBillPage first = await sales.GetSavedBillPageAsync(includeDrafts: true, limit: 20); return first.NextCreatedAt is null ? 0 : (await sales.GetSavedBillPageAsync(includeDrafts: true, beforeCreatedAt: first.NextCreatedAt, beforeId: first.NextId, limit: 20)).Items.Count; }),
-            ("held-bills", async () => (await sales.GetHeldAsync()).Count),
+            ("held-bills", async () => (await sales.GetRecentHeldAsync()).Count),
             ("held-recent", async () => (await sales.GetRecentHeldAsync()).Count),
-            ("draft-bills", async () => (await sales.GetDraftsAsync()).Count),
+            ("draft-bills", async () => (await sales.GetSavedBillPageAsync(true)).Items.Count),
             ("expiry-badge", () => moneyOut.GetActionableExpiryCountAsync()),
-            ("damage-page", async () => (await moneyOut.GetDamagePageAsync(monthStart, end)).Items.Count),
-            ("expense-page", async () => (await moneyOut.GetExpensePageAsync(monthStart, end)).Items.Count),
+            ("damage-page", async () => (await moneyOut.GetDamagePageAsync(new DamageFilter(monthStart, end), null, null)).Items.Count),
+            ("expense-page", async () => (await moneyOut.GetExpensePageAsync(new ExpenseFilter(monthStart, end), null, null)).Items.Count),
             ("asset-page", async () => (await assets.GetAssetPageAsync()).Items.Count),
             ("asset-search", async () => (await assets.GetAssetPageAsync(query: "Scale")).Items.Count),
             ("asset-active", async () => (await assets.GetAssetPageAsync(includeDisposed: false)).Items.Count),
             ("asset-cursor", async () => { AssetPage first = await assets.GetAssetPageAsync(limit: 20); return first.NextName is null ? 0 : (await assets.GetAssetPageAsync(afterDisposed: first.NextDisposed, afterName: first.NextName, afterId: first.NextId, limit: 20)).Items.Count; }),
-            ("asset-unbounded", async () => (await assets.GetAssetsAsync()).Count),
             ("asset-schedule", async () => (await assets.GetScheduleAsync(41)).Count),
             ("employee-list", async () => (await moneyOut.GetEmployeesAsync(includeInactive: true)).Count),
             ("salary-register-month", async () => (await moneyOut.GetSalaryRegisterAsync(new YearMonth(2025, 10), new YearMonth(2025, 10))).Count),
             ("startup-health", async () => { await maintenance.CheckBeforeShellAsync(); return 1; }),
-            ("pnl-month", async () => (await reports.GetPnlAsync(monthStart, end)).Income.Count),
-            ("pnl-fiscal", async () => (await reports.GetPnlAsync(fiscalStart, end)).Income.Count),
+            ("pnl-month", async () => (await reports.GetPnlReportAsync(ReportService.CustomPeriod(monthStart, end))).Statement.Income.Count),
+            ("pnl-fiscal", async () => (await reports.GetPnlReportAsync(ReportService.CustomPeriod(fiscalStart, end))).Statement.Income.Count),
             ("dashboard", async () => { await reports.GetDashboardAsync(); return 1; }),
             ("report-sales", async () => (await reports.GetReportAsync(ReportKind.SalesRegister, new ReportFilter(From: monthStart, To: end, Limit: 100))).Rows.Count),
             ("report-item", async () => (await reports.GetReportAsync(ReportKind.ItemSales, new ReportFilter(From: monthStart, To: end, ProductId: productId, Limit: 100))).Rows.Count),
@@ -1691,7 +1688,7 @@ switch (mode)
             }), static rows => rows.Count);
             CapturePlan("matrix-source-" + name, sourceSql, new { from = fromIso, to = toIso });
             await Measure("matrix-projected-" + name, async () =>
-                matrix = await reports.GetPnlMatrixAsync(from, to), static value => value.Rows.Count);
+                matrix = (await reports.GetPnlReportAsync(ReportService.CustomPeriod(from, to))).Matrix, static value => value.Rows.Count);
             var expected = source.ToDictionary(row => (row.Section, row.HeadCode, row.ReferenceId, row.Month),
                 row => row.Amount);
             var allCells = matrix!.Rows
@@ -2786,13 +2783,13 @@ switch (mode)
         await returnSales.CompleteAsync(new(deletedSale,
             [new(PaymentMode.Cash, new Money(2))], OperationGuard.NewId()));
         SaleDetails deletedOriginal = await returnSales.GetAsync(deletedSale);
-        long detailVersion;
+        if ((await inventory.RunLotBulkBatchAsync(LotBulkAction.DeleteZero, [deleted.Lot], OperationGuard.NewId()))
+                .Single().Outcome != BulkItemOutcome.Changed)
+            throw new InvalidDataException("The zero-stock lot was not deleted.");
+        await catalog.RunBulkBatchAsync(new(CatalogBulkAction.Archive), [deleted.Product], OperationGuard.NewId());
         using (var connection = factory.Open())
-            detailVersion = connection.ExecuteScalar<long>(
-                "SELECT detail_version FROM product_lot WHERE id=@id", new { id = deleted.Lot });
-        await inventory.DeleteZeroLotAsync(deleted.Lot, detailVersion);
-        if (await catalog.RemoveAsync(deleted.Product) != ProductRemoval.Deleted)
-            throw new InvalidDataException("The zero-stock historical product was not deleted.");
+            if (connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE id=@id", new { id = deleted.Product }) != 0)
+                throw new InvalidDataException("The zero-stock historical product was not deleted.");
         CompletedReturn recreated = await returnSales.ReturnAsync(new(deletedSale, returnClock.BusinessDate,
             "Return after deletion", RefundMode.Cash,
             [new ReturnLineInput(deletedOriginal.Lines.Single().Id, Quantity.One, true)],
@@ -2920,13 +2917,13 @@ switch (mode)
         }
         if (vendorId <= 0 || productTerm.Length == 0)
             throw new InvalidDataException("The purchasing read fixture needs a posted purchase and product snapshot.");
-        await Measure("purchase-first-page", () => purchasing.GetPurchasesPageAsync(limit: 50),
+        await Measure("purchase-first-page", () => purchasing.GetPurchasePageAsync(new PurchaseFilter(), null, null, 50),
             static page => page.Items.Count);
-        await Measure("purchase-vendor-status-type", () => purchasing.GetPurchasesPageAsync(
-            vendorId: vendorId, status: "POSTED", lineKind: "PRODUCT", limit: 50),
+        await Measure("purchase-vendor-status-type", () => purchasing.GetPurchasePageAsync(
+            new PurchaseFilter { VendorId = vendorId, Status = "POSTED", LineKind = "PRODUCT" }, null, null, 50),
             static page => page.Items.Count);
-        await Measure("purchase-product-search", () => purchasing.GetPurchasesPageAsync(
-            productQuery: productTerm, limit: 50), static page => page.Items.Count);
+        await Measure("purchase-product-search", () => purchasing.GetPurchasePageAsync(
+            new PurchaseFilter { ProductQuery = productTerm }, null, null, 50), static page => page.Items.Count);
         await Measure("vendor-ledger-first-page", () => purchasing.GetVendorLedgerPageAsync(vendorId,
             limit: 50), static page => page.Items.Count);
         break;
@@ -2961,7 +2958,7 @@ switch (mode)
             await Measure("expiry-badge-source", () => Task.Run(() =>
             {
                 using var connection = factory.Open();
-                return connection.ExecuteScalar<int>("SELECT COUNT(*) FROM v_expiry_alert WHERE bucket IN ('EXPIRED','CRITICAL')");
+                return connection.ExecuteScalar<int>(ExpiryBadgeSourceSql(), new { today = periods.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) });
             }), static x => x);
             await Measure("expiry-badge-indexed", () => moneyOut.GetActionableExpiryCountAsync(), static x => x);
             await Measure("vendors-projected", () => purchasing.GetVendorsAsync(includeInactive: true), static x => x.Count);
@@ -2969,8 +2966,8 @@ switch (mode)
         }
         using (var connection = factory.Open())
         {
-            int sourceExpiry = connection.ExecuteScalar<int>(
-                "SELECT COUNT(*) FROM v_expiry_alert WHERE bucket IN ('EXPIRED','CRITICAL')");
+            int sourceExpiry = connection.ExecuteScalar<int>(ExpiryBadgeSourceSql(),
+                new { today = periods.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) });
             int indexedExpiry = await moneyOut.GetActionableExpiryCountAsync();
             if (sourceExpiry != indexedExpiry)
                 throw new InvalidDataException($"Expiry badge differs: source {sourceExpiry}, indexed {indexedExpiry}.");
@@ -3007,11 +3004,11 @@ switch (mode)
         await Measure("catalog-low-stock-page", () => catalog.SearchPageAsync(new ProductSearchFilter(LowStockOnly: true, Limit: 100)), static x => x.Items.Count);
         await Measure("lots-first-page", () => inventory.GetLotPageAsync(), static x => x.Items.Count);
         await Measure("expiry-badge-count", () => moneyOut.GetActionableExpiryCountAsync(), static x => x);
-        await Measure("purchases-first-page", () => purchasing.GetPurchasesPageAsync(), static x => x.Items.Count);
+        await Measure("purchases-first-page", () => purchasing.GetPurchasePageAsync(new PurchaseFilter(), null, null), static x => x.Items.Count);
         await Measure("saved-bills-first-page", () => sales.GetSavedBillPageAsync(includeDrafts: true), static x => x.Items.Count);
         await Measure("assets-first-page", () => assets.GetAssetPageAsync(), static x => x.Items.Count);
-        await Measure("pnl-month", () => reports.GetPnlAsync(monthStart, end), static x => x.Income.Count + x.CostOfGoodsSold.Count + x.Expenses.Count);
-        await Measure("pnl-fiscal", () => reports.GetPnlAsync(fiscalStart, end), static x => x.Income.Count + x.CostOfGoodsSold.Count + x.Expenses.Count);
+        await Measure("pnl-month", () => reports.GetPnlReportAsync(ReportService.CustomPeriod(monthStart, end)), static x => x.Statement.Income.Count + x.Statement.CostOfGoodsSold.Count + x.Statement.Expenses.Count);
+        await Measure("pnl-fiscal", () => reports.GetPnlReportAsync(ReportService.CustomPeriod(fiscalStart, end)), static x => x.Statement.Income.Count + x.Statement.CostOfGoodsSold.Count + x.Statement.Expenses.Count);
         await Measure("dashboard", () => reports.GetDashboardAsync(), static _ => 1);
         await Measure("stock-projection-mismatches", () => Task.Run(() =>
         {
@@ -3027,7 +3024,7 @@ switch (mode)
         }), static x => x);
         CapturePlan("saved-bills", "SELECT id FROM sale WHERE status IN ('HELD','DRAFT') AND (status='HELD' OR (status='DRAFT' AND line_count>0)) ORDER BY created_at DESC,id DESC LIMIT 50");
         CapturePlan("purchase-page", "SELECT id FROM purchase ORDER BY received_date DESC,id DESC LIMIT 100");
-        CapturePlan("expiry-page", "SELECT lot_id FROM v_expiry_alert WHERE bucket='EXPIRED' ORDER BY expiry_date,lot_id LIMIT 100");
+        CapturePlan("expiry-page", ExpiredPageSql(), new { today = "2026-09-26" });
         break;
     case "gap-scan":
     {
@@ -3400,15 +3397,14 @@ switch (mode)
         await Measure("search-combined", () => catalog.SearchAsync(new ProductSearchFilter("grocery", CategoryId: 1, LowStockOnly: true, Limit: 30)), static x => x.Count);
 
         await Measure("vendors-all", () => purchasing.GetVendorsAsync(includeInactive: true), static x => x.Count);
-        await Measure("vendor-purchase-choices", () => purchasing.GetVendorPurchaseChoicesAsync(1), static x => x.Count);
-        await Measure("purchases-5000", () => purchasing.GetPurchasesAsync(5000), static x => x.Count);
+        await Measure("vendor-purchase-choices", () => purchasing.GetVendorPurchasePageAsync(1), static x => x.Items.Count);
         await Measure("customer-empty", () => sales.SearchCustomersAsync(), static x => x.Count);
         await Measure("customer-contains-miss", () => sales.SearchCustomersAsync("son"), static x => x.Count);
         await Measure("customer-contains-match", () => sales.SearchCustomersAsync("Scale Customer 4"), static x => x.Count);
         await Measure("customer-phone", () => sales.SearchCustomersAsync("9000040000"), static x => x.Count);
-        await Measure("held-bills", () => sales.GetHeldAsync(), static x => x.Count);
-        await Measure("saved-drafts", () => sales.GetDraftsAsync(), static x => x.Count);
-        await Measure("assets-all", () => assets.GetAssetsAsync(), static x => x.Count);
+        await Measure("held-bills", () => sales.GetRecentHeldAsync(), static x => x.Count);
+        await Measure("saved-drafts", () => sales.GetSavedBillPageAsync(true), static x => x.Items.Count);
+        await Measure("assets-all", () => assets.GetAssetPageAsync(), static x => x.Items.Count);
         await Measure("asset-schedule-posted", () => assets.GetScheduleAsync(41), static x => x.Count);
 
         await Measure("history-date", () => sales.GetHistoryAsync(new SaleHistoryFilter(From: monthStart, To: end)), static x => x.Count);
@@ -3418,8 +3414,8 @@ switch (mode)
         await Measure("history-invoice", () => sales.GetHistoryAsync(new SaleHistoryFilter(InvoiceNumber: "2026")), static x => x.Count);
         await Measure("history-combined", () => sales.GetHistoryAsync(new SaleHistoryFilter(From: fiscalStart, To: end, Status: SaleStatus.Completed, PaymentMode: PaymentMode.Cash, MinimumAmount: new Money(100), Limit: 100)), static x => x.Count);
 
-        await Measure("damages-year", () => moneyOut.GetDamagesAsync(end.AddYears(-1), end), static x => x.Count);
-        await Measure("expenses-year", () => moneyOut.GetExpensesAsync(end.AddYears(-1), end), static x => x.Count);
+        await Measure("damages-year", () => moneyOut.GetDamagePageAsync(new DamageFilter(end.AddYears(-1), end), null, null, 200), static x => x.Items.Count);
+        await Measure("expenses-year", () => moneyOut.GetExpensePageAsync(new ExpenseFilter(end.AddYears(-1), end), null, null, 200), static x => x.Items.Count);
         await Measure("employees-all", () => moneyOut.GetEmployeesAsync(includeInactive: true), static x => x.Count);
         await Measure("salary-register-year", () => moneyOut.GetSalaryRegisterAsync(new YearMonth(2025, 10), new YearMonth(2026, 9)), static x => x.Count);
 
@@ -3495,7 +3491,7 @@ switch (mode)
                 to = currentFiscal.End.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) });
         await Measure("annual-close-first-launch", () => closes.EnsureFinalizedAsync(), static count => count);
         await Measure("annual-close-repeat", () => closes.EnsureFinalizedAsync(), static count => count);
-        IReadOnlyList<AnnualCloseInfo> finalized = await closes.GetClosesAsync();
+        IReadOnlyList<AnnualCloseInfo> finalized = await database.ReadAsync(connection => AnnualCloseService.Closes(connection, null));
         foreach (AnnualCloseInfo close in finalized)
             Console.WriteLine($"FINALIZED {close.Period.Code} {close.Period.Label} lines={close.LineCount} net={close.NetProfit} checksum={close.Checksum}");
         var annualPeriods = new List<(string Name, PnlPeriod Period)>
@@ -3706,15 +3702,15 @@ switch (mode)
         await Measure("catalog-broad-30", () => catalog.SearchAsync(new ProductSearchFilter(Limit: 30)), static x => x.Count);
         await Measure("catalog-broad-20000", () => catalog.SearchAsync(new ProductSearchFilter(Limit: 20_000)), static x => x.Count);
         await Measure("catalog-low-stock", () => catalog.SearchAsync(new ProductSearchFilter(LowStockOnly: true, Limit: 20_000)), static x => x.Count);
-        await Measure("purchases-first", () => purchasing.GetPurchasesAsync(), static x => x.Count);
-        await Measure("vendor-ledger", () => purchasing.GetVendorLedgerAsync(1), static x => x.Count);
-        await Measure("vendor-lots", () => purchasing.GetVendorLotsAsync(1), static x => x.Count);
+        await Measure("purchases-first", () => purchasing.GetPurchasePageAsync(new PurchaseFilter(), null, null), static x => x.Items.Count);
+        await Measure("vendor-ledger", () => purchasing.GetVendorLedgerPageAsync(1), static x => x.Items.Count);
+        await Measure("vendor-lots", () => purchasing.GetVendorLotPageAsync(1), static x => x.Items.Count);
         await Measure("sales-history-first", () => sales.GetHistoryAsync(new SaleHistoryFilter(Limit: 100)), static x => x.Count);
         await Measure("sale-receipt", () => sales.GetReceiptAsync(1), static _ => 1);
-        await Measure("assets-list", () => assets.GetAssetsAsync(), static x => x.Count);
-        await Measure("pnl-month", () => reports.GetPnlAsync(monthStart, end), static x => x.Income.Count + x.CostOfGoodsSold.Count + x.Expenses.Count);
-        await Measure("pnl-fiscal", () => reports.GetPnlAsync(fiscalStart, end), static x => x.Income.Count + x.CostOfGoodsSold.Count + x.Expenses.Count);
-        await Measure("pnl-matrix", () => reports.GetPnlMatrixAsync(fiscalStart, end), static x => x.Rows.Count);
+        await Measure("assets-list", () => assets.GetAssetPageAsync(), static x => x.Items.Count);
+        await Measure("pnl-month", () => reports.GetPnlReportAsync(ReportService.CustomPeriod(monthStart, end)), static x => x.Statement.Income.Count + x.Statement.CostOfGoodsSold.Count + x.Statement.Expenses.Count);
+        await Measure("pnl-fiscal", () => reports.GetPnlReportAsync(ReportService.CustomPeriod(fiscalStart, end)), static x => x.Statement.Income.Count + x.Statement.CostOfGoodsSold.Count + x.Statement.Expenses.Count);
+        await Measure("pnl-matrix", () => reports.GetPnlReportAsync(ReportService.CustomPeriod(fiscalStart, end)), static x => x.Matrix.Rows.Count);
         await Measure("dashboard", () => reports.GetDashboardAsync(), static _ => 1);
         foreach (ReportKind kind in Enum.GetValues<ReportKind>())
         {
@@ -4205,7 +4201,9 @@ switch (mode)
         }
         async Task DeleteAsync(long product)
         {
-            if (await todayCatalog.RemoveAsync(product) != ProductRemoval.Deleted)
+            await todayCatalog.RunBulkBatchAsync(new(CatalogBulkAction.Archive), [product], OperationGuard.NewId());
+            using SqliteConnection check = factory.Open();
+            if (check.ExecuteScalar<long>("SELECT COUNT(*) FROM product WHERE id=@product", new { product }) != 0)
                 throw new InvalidOperationException($"Product {product} was archived, not deleted.");
         }
 
@@ -4579,6 +4577,18 @@ static long CountDashboardTopDrift(SqliteConnection connection) => connection.Ex
       )
     )
     """, commandTimeout: 120);
+// The expiry badge's rule (ExpiryAlert) without the app's index hints: every expired lot with stock
+// plus the critical lots of active products, as of @today.
+static string ExpiryBadgeSourceSql() => $"""
+    SELECT (SELECT COUNT(*) FROM product_lot l WHERE {ExpiryAlert.ExpiredSql("l", "@today")})
+         + (SELECT COUNT(*) FROM product_lot l JOIN product p ON p.id=l.product_id
+            WHERE {ExpiryAlert.ExpiringSql("l", "p", "@today")}
+              AND l.expiry_date<={ExpiryAlert.CriticalEndSql("@today")} AND p.is_active=1)
+    """;
+
+static string ExpiredPageSql() =>
+    $"SELECT l.id FROM product_lot l WHERE {ExpiryAlert.ExpiredSql("l", "@today")} ORDER BY l.expiry_date,l.id LIMIT 100";
+
 static double Percentile(double[] sorted, double fraction) => sorted.Length == 0 ? 0 :
     sorted[(int)Math.Ceiling(fraction * sorted.Length) - 1];
 

@@ -2,10 +2,6 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <FontFamily x:Key="AppFont">Segoe UI, Nirmala UI</FontFamily>
-  <sys:Double x:Key="SpaceXs" xmlns:sys="clr-namespace:System;assembly=System.Runtime">4</sys:Double>
-  <sys:Double x:Key="SpaceSm" xmlns:sys="clr-namespace:System;assembly=System.Runtime">8</sys:Double>
-  <sys:Double x:Key="SpaceMd" xmlns:sys="clr-namespace:System;assembly=System.Runtime">16</sys:Double>
-  <sys:Double x:Key="SpaceLg" xmlns:sys="clr-namespace:System;assembly=System.Runtime">24</sys:Double>
   <Thickness x:Key="PagePadding">24</Thickness>
   <SolidColorBrush x:Key="ExpiryExpiredBrush" Color="#B42318"/>
   <SolidColorBrush x:Key="ExpiryCriticalBrush" Color="#B54708"/>

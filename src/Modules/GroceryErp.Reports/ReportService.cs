@@ -31,18 +31,6 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
         };
     }
 
-    public async Task<PnlComparison> GetPnlComparisonAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
-    {
-        DateRange current = new(from, to);
-        int days = current.To.DayNumber - current.From.DayNumber + 1;
-        DateOnly previousTo = current.From.AddDays(-1);
-        DateOnly previousFrom = previousTo.AddDays(1 - days);
-        Task<PnlStatement> currentTask = GetPnlAsync(current.From, current.To, cancellationToken);
-        Task<PnlStatement> previousTask = GetPnlAsync(previousFrom, previousTo, cancellationToken);
-        await Task.WhenAll(currentTask, previousTask).ConfigureAwait(false);
-        return new(await currentTask, await previousTask);
-    }
-
     // Each tile counts exactly what the list it opens shows (ExpiryAlert). Expired counts every
     // expired lot with stock, blocked or not and of any product, from the expiry index alone; its tile
     // opens Products at any status. Critical and Soon count the expiring lots of active products, as

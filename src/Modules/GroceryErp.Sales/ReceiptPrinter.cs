@@ -118,14 +118,6 @@ public sealed class ReceiptPrinter
         await EnqueueSavedAsync(SaveReceipt(receipt), completion);
     }
 
-    public async Task OpenDrawerAsync()
-    {
-        EnsureConfigured();
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        await QueueAsync(new PrintJob(openDrawer, completion, Retryable: false), urgent: true);
-        await completion.Task;
-    }
-
     public async Task<bool> RetryFailedAsync(long? reviewJobId = null)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

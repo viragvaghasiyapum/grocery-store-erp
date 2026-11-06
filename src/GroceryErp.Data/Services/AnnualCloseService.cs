@@ -45,9 +45,6 @@ public sealed class AnnualCloseService(DbExecutor database, PeriodGuard periods,
         return created;
     }
 
-    public Task<IReadOnlyList<AnnualCloseInfo>> GetClosesAsync(CancellationToken cancellationToken = default) =>
-        database.ReadAsync(connection => Closes(connection, null), cancellationToken);
-
     // Years that are locked on the business date and hold or follow the first P&L entry.
     public static IReadOnlyList<AnnualPeriod> Missing(IDbConnection connection, IDbTransaction? transaction,
         DateOnly businessDate, int fiscalStartMonth)

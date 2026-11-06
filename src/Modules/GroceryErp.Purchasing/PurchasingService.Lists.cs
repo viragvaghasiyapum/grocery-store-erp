@@ -1,7 +1,5 @@
-using CommunityToolkit.Mvvm.Messaging;
 using Dapper;
 using GroceryErp.Core.Errors;
-using GroceryErp.Core.Messages;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Data.Services;
 
@@ -111,8 +109,7 @@ public sealed partial class PurchasingService
         DateOnly date, string batchOperationId, CancellationToken cancellationToken = default)
     {
         long[] ids = BulkBatch.ValidateIds(purchaseIds, 20);
-        var products = new HashSet<long>();
-        IReadOnlyList<BulkItemResult> results = await database.WriteAsync(tx =>
+        return await database.WriteAsync(tx =>
         {
             if (BulkBatch.Claim(tx, batchOperationId, ids) is { } replay) return replay;
             periods.EnsureOpen(tx, date);
@@ -140,13 +137,11 @@ public sealed partial class PurchasingService
                     outcome.Add(new BulkItemResult(id, BulkItemOutcome.NotEligible, "Bulk_Reason_PurchaseTouched"));
                     continue;
                 }
-                ApplyVoid(tx, id, date, lots, products);
+                ApplyVoid(tx, id, date, lots);
                 outcome.Add(new BulkItemResult(id, BulkItemOutcome.Changed));
             }
             return BulkBatch.Complete(tx, batchOperationId, outcome);
         }, cancellationToken);
-        if (products.Count > 0) WeakReferenceMessenger.Default.Send(new StockChangedMessage(products.ToArray()));
-        return results;
     }
 
     /// <summary>Reads one keyset page of vendors by name, with balance due.</summary>

@@ -67,7 +67,6 @@ Captures use synthetic example records. Gujarati screenshots are used where avai
 - [product-import.en.png](screenshots/product-import.en.png)
 - [product-import.narrow.en.png](screenshots/product-import.narrow.en.png)
 - [product-import.narrow.gu.png](screenshots/product-import.narrow.gu.png)
-- [product-label.en.png](screenshots/product-label.en.png)
 - [product-lots.en.png](screenshots/product-lots.en.png)
 - [product-lots.gu.png](screenshots/product-lots.gu.png)
 - [product-panel.en.png](screenshots/product-panel.en.png)
@@ -134,5 +133,3 @@ Captures use synthetic example records. Gujarati screenshots are used where avai
 - [vendors-page.en.png](screenshots/vendors-page.en.png)
 - [vendors-page.gu.png](screenshots/vendors-page.gu.png)
 - [void.en.png](screenshots/void.en.png)
-- [welcome.en.png](screenshots/welcome.en.png)
-- [welcome.gu.png](screenshots/welcome.gu.png)
