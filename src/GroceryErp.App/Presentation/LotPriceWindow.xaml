@@ -4,11 +4,14 @@
         xmlns:p="clr-namespace:GroceryErp.App.Presentation"
         Title="{l:Tr Stock_EditDetails}" Width="480" Height="430" MinHeight="380" WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
-        NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+        NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European" p:ScreenHelp.Topic="lot-price">
   <Grid Margin="20">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <StackPanel>
-      <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr Stock_EditDetails}"/>
+      <DockPanel>
+        <p:HelpButton DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top"/>
+        <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr Stock_EditDetails}"/>
+      </DockPanel>
       <TextBlock x:Name="LotText" Style="{StaticResource FormContext}"/>
     </StackPanel>
     <p:FormErrorSummary x:Name="Summary" Grid.Row="1"/>
@@ -16,7 +19,7 @@
       <StackPanel x:Name="Fields" Margin="0,0,8,0">
         <UniformGrid Columns="2">
           <p:FormField x:Name="PriceField" Label="{l:Tr Catalog_Price}" IsRequired="True"><TextBox x:Name="PriceBox"/></p:FormField>
-          <p:FormField x:Name="MrpField" Label="{l:Tr Catalog_Mrp}"><TextBox x:Name="MrpBox"/></p:FormField>
+          <p:FormField x:Name="MrpField" Label="{l:Tr Stock_Mrp}"><TextBox x:Name="MrpBox"/></p:FormField>
           <p:FormField x:Name="ExpiryField" Label="{l:Tr Stock_Expiry}"><DatePicker x:Name="ExpiryBox" SelectedDateFormat="Short"/></p:FormField>
         </UniformGrid>
         <TextBlock Style="{StaticResource FormContext}" Text="{l:Tr Stock_CompletedBillPrices}"/>

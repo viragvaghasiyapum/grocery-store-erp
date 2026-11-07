@@ -2,7 +2,8 @@
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
- Title="{l:Tr Dashboard_Title}">
+ xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+ Title="{l:Tr Dashboard_Title}" p:ScreenHelp.Topic="dashboard">
  <Page.Resources>
   <Style x:Key="MetricTile" TargetType="Button">
    <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}"/>
@@ -26,7 +27,10 @@
   <Grid Margin="20,16,20,16">
    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="220"/><RowDefinition Height="260"/></Grid.RowDefinitions>
    <Grid>
-    <TextBlock FontSize="28" FontWeight="SemiBold" Text="{l:Tr Dashboard_Title}"/>
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+     <TextBlock FontSize="28" FontWeight="SemiBold" Margin="0,0,6,0" Text="{l:Tr Dashboard_Title}"/>
+     <p:HelpButton/>
+    </StackPanel>
     <Button HorizontalAlignment="Right" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
    </Grid>
    <UniformGrid Grid.Row="1" Columns="4" Margin="0,16,0,16">

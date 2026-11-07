@@ -38,14 +38,12 @@ public sealed record AppSettings(
     public string ReceiptPrinterMode => Get("printer.receipt.mode", "RASTER");
     public string LabelPrinterName => Get("printer.label.name", "");
     public string LabelSize => Get("printer.label.size", "50x25");
-    public string A4PrinterName => Get("printer.a4.name", "");
     public string ReceiptFooter => Get("receipt.footer", "");
     public string GujaratiReceiptFooter => Get("receipt.footer.gu", "");
     public string LastUsbExport => Get("backup.last_usb_export", "");
     public int UsbReminderDays => GetInt("backup.usb_reminder_days", 7, 1, 365);
     public string ScaleRule => Get("barcode.scale_rule", "");
     public bool GujaratiKeyboardAvailable => GetBool("setup.keyboard.gujarati_available", false);
-    public string StartChoice => Get("setup.start_choice", "EMPTY");
 
     private string Get(string key, string fallback) => Values.TryGetValue(key, out string? value) ? value : fallback;
     private int GetInt(string key, int fallback, int minimum, int maximum)

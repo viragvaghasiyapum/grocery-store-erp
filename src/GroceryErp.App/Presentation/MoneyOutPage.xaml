@@ -7,11 +7,13 @@
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
     Title="{l:Tr MoneyOut_Title}" FontFamily="{StaticResource AppFont}"
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European"
-    ScrollViewer.CanContentScroll="False">
+    ScrollViewer.CanContentScroll="False" p:ScreenHelp.Topic="money-out">
   <Page.Resources>
     <p:EntryStatusConverter x:Key="EntryStatus"/>
     <p:EmployeeStatusConverter x:Key="EmployeeStatus"/>
     <p:DamageReasonConverter x:Key="DamageReason"/>
+    <p:MoneyModeConverter x:Key="MoneyMode"/>
+    <p:SalaryKindConverter x:Key="SalaryKind"/>
   </Page.Resources>
   <Grid Margin="14,8,14,8">
     <TabControl x:Name="MoneyOutTabs" Style="{StaticResource PageTabs}" SelectionChanged="Tabs_OnSelectionChanged"
@@ -26,7 +28,7 @@
             <DatePicker x:Name="DamageFromBox" SelectedDateFormat="Short" Width="132" Margin="0,0,6,4" SelectedDateChanged="Date_OnChanged" AutomationProperties.Name="{l:Tr Reports_From}"/>
             <TextBlock Style="{StaticResource FilterLabel}" Text="{l:Tr Reports_To}"/>
             <DatePicker x:Name="DamageToBox" SelectedDateFormat="Short" Width="132" Margin="0,0,6,4" SelectedDateChanged="Date_OnChanged" AutomationProperties.Name="{l:Tr Reports_To}"/>
-            <ComboBox x:Name="DamageStatusFilter" Width="120" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged" AutomationProperties.Name="{l:Tr Reports_Status}">
+            <ComboBox x:Name="DamageStatusFilter" Width="140" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged" AutomationProperties.Name="{l:Tr Reports_Status}">
               <ComboBoxItem Tag="" Content="{l:Tr Purchasing_AnyStatus}"/>
               <ComboBoxItem Tag="ACTIVE" Content="{l:Tr MoneyOut_Status_ACTIVE}"/>
               <ComboBoxItem Tag="CORRECTED" Content="{l:Tr MoneyOut_Status_CORRECTED}"/>
@@ -77,7 +79,7 @@
             <DatePicker x:Name="ExpenseToBox" SelectedDateFormat="Short" Width="132" Margin="0,0,6,4" SelectedDateChanged="Date_OnChanged" AutomationProperties.Name="{l:Tr Reports_To}"/>
             <ComboBox x:Name="ExpenseCategoryFilter" Width="160" Margin="0,0,6,4" DisplayMemberPath="Name" SelectedValuePath="Id"
                       SelectionChanged="Filter_OnChanged" AutomationProperties.Name="{l:Tr Catalog_Category}"/>
-            <ComboBox x:Name="ExpenseStatusFilter" Width="130" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged" AutomationProperties.Name="{l:Tr Reports_Status}">
+            <ComboBox x:Name="ExpenseStatusFilter" Width="140" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged" AutomationProperties.Name="{l:Tr Reports_Status}">
               <ComboBoxItem Tag="" Content="{l:Tr Purchasing_AnyStatus}"/>
               <ComboBoxItem Tag="ACTIVE" Content="{l:Tr MoneyOut_Status_ACTIVE}"/>
               <ComboBoxItem Tag="CORRECTED" Content="{l:Tr MoneyOut_Status_CORRECTED}"/>
@@ -94,7 +96,7 @@
                 <DataGridTextColumn Width="108" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date, StringFormat=dd MMM yyyy}"/>
                 <DataGridTextColumn Width="*" MinWidth="140" Header="{l:Tr Catalog_Category}" Binding="{Binding CategoryName}"/>
                 <DataGridTextColumn Width="110" Header="{l:Tr MoneyOut_Amount}" Binding="{Binding Amount}"/>
-                <DataGridTextColumn Width="90" Header="{l:Tr Purchasing_Mode}" Binding="{Binding Mode}"/>
+                <DataGridTextColumn Width="90" Header="{l:Tr Purchasing_Mode}" Binding="{Binding Mode, Converter={StaticResource MoneyMode}}"/>
                 <DataGridTextColumn Width="*" MinWidth="120" Header="{l:Tr MoneyOut_PaidTo}" Binding="{Binding PaidTo}"/>
                 <DataGridTextColumn Width="110" Header="{l:Tr Reports_Status}" Binding="{Binding Status, Converter={StaticResource EntryStatus}}"/>
               </DataGrid.Columns>
@@ -111,7 +113,7 @@
           <WrapPanel>
             <ui:TextBox x:Name="EmployeeSearch" Width="220" Margin="0,0,6,4" PlaceholderText="{l:Tr MoneyOut_EmployeeSearch}"
                         TextChanged="Search_OnTextChanged" AutomationProperties.Name="{l:Tr MoneyOut_EmployeeSearch}"/>
-            <ComboBox x:Name="EmployeeStatusFilter" Width="130" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged" AutomationProperties.Name="{l:Tr Reports_Status}">
+            <ComboBox x:Name="EmployeeStatusFilter" Width="140" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged" AutomationProperties.Name="{l:Tr Reports_Status}">
               <ComboBoxItem Tag="ACTIVE" Content="{l:Tr MoneyOut_EmployeeWorking}"/>
               <ComboBoxItem Tag="INACTIVE" Content="{l:Tr MoneyOut_EmployeeRelieved}"/>
               <ComboBoxItem Tag="ALL" Content="{l:Tr Catalog_AnyStatus}"/>
@@ -149,7 +151,7 @@
                      AutomationProperties.Name="{l:Tr Reports_To}"/>
             <ComboBox x:Name="SalaryEmployeeFilter" Width="180" Margin="0,0,6,4" DisplayMemberPath="Name" SelectedValuePath="Id"
                       SelectionChanged="Filter_OnChanged" AutomationProperties.Name="{l:Tr MoneyOut_EmployeeName}"/>
-            <ComboBox x:Name="SalaryStatusFilter" Width="120" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged" AutomationProperties.Name="{l:Tr Reports_Status}">
+            <ComboBox x:Name="SalaryStatusFilter" Width="140" Margin="0,0,6,4" SelectedIndex="0" SelectionChanged="Filter_OnChanged" AutomationProperties.Name="{l:Tr Reports_Status}">
               <ComboBoxItem Tag="" Content="{l:Tr Purchasing_AnyStatus}"/>
               <ComboBoxItem Tag="ACTIVE" Content="{l:Tr MoneyOut_Status_ACTIVE}"/>
               <ComboBoxItem Tag="CORRECTED" Content="{l:Tr MoneyOut_Status_CORRECTED}"/>
@@ -165,9 +167,9 @@
                 <DataGridTextColumn Width="2*" MinWidth="150" Header="{l:Tr MoneyOut_EmployeeName}" Binding="{Binding EmployeeName}"/>
                 <DataGridTextColumn Width="90" Header="{l:Tr Assets_Period}" Binding="{Binding Period}"/>
                 <DataGridTextColumn Width="105" Header="{l:Tr MoneyOut_PayDate}" Binding="{Binding PayDate, StringFormat=dd MMM yyyy}"/>
-                <DataGridTextColumn Width="95" Header="{l:Tr MoneyOut_Reason}" Binding="{Binding Kind}"/>
-                <DataGridTextColumn Width="110" Header="{l:Tr MoneyOut_Salary}" Binding="{Binding Amount}"/>
-                <DataGridTextColumn Width="100" Header="{l:Tr Purchasing_Mode}" Binding="{Binding Mode}"/>
+                <DataGridTextColumn Width="95" Header="{l:Tr MoneyOut_PaymentType}" Binding="{Binding Kind, Converter={StaticResource SalaryKind}}"/>
+                <DataGridTextColumn Width="110" Header="{l:Tr MoneyOut_Amount}" Binding="{Binding Amount}"/>
+                <DataGridTextColumn Width="100" Header="{l:Tr Purchasing_Mode}" Binding="{Binding Mode, Converter={StaticResource MoneyMode}}"/>
                 <DataGridTextColumn Width="100" Header="{l:Tr Reports_Status}" Binding="{Binding Status, Converter={StaticResource EntryStatus}}"/>
                 <DataGridTextColumn Width="*" MinWidth="120" Header="{l:Tr Purchasing_Notes}" Binding="{Binding Notes}"/>
               </DataGrid.Columns>
@@ -183,6 +185,8 @@
          important first; Expenses folds its last ones into More. Status and page arrows are in each
          tab's footer. -->
     <Grid x:Name="TabActions" Panel.ZIndex="1" VerticalAlignment="Top">
+      <!-- The tabs are the title, so the screen's help follows them. -->
+      <p:HelpButton x:Name="TabHelp" HorizontalAlignment="Left" VerticalAlignment="Center"/>
       <DockPanel x:Name="DamageActions" LastChildFill="False">
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
           <Button Style="{StaticResource ToolbarButton}" Margin="0" Click="RecordDamage_OnClick" Content="{l:Tr MoneyOut_RecordDamage}" FontWeight="SemiBold"/>

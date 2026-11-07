@@ -12,7 +12,10 @@
    <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
   </Grid.RowDefinitions>
   <StackPanel>
-   <TextBlock x:Name="TitleText" Style="{StaticResource FormTitle}"/>
+   <DockPanel>
+    <p:HelpButton DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top"/>
+    <TextBlock x:Name="TitleText" Style="{StaticResource FormTitle}"/>
+   </DockPanel>
    <TextBlock x:Name="ContextText" Style="{StaticResource FormContext}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
   </StackPanel>
   <p:FormErrorSummary x:Name="Summary" Grid.Row="1"/>
@@ -23,9 +26,9 @@
    </p:FormField>
    <p:FormField x:Name="RefundModeField" Grid.Column="1" Width="190" Margin="0,0,0,10" Label="{l:Tr Sales_RefundMode}">
     <ComboBox x:Name="RefundModeBox" SelectedIndex="0">
-     <ComboBoxItem Content="{l:Tr Sales_CashLabel}" Tag="Cash"/>
-     <ComboBoxItem Content="{l:Tr Sales_UpiLabel}" Tag="Upi"/>
-     <ComboBoxItem Content="{l:Tr Sales_CardLabel}" Tag="Card"/>
+     <ComboBoxItem Content="{l:Tr Receipt_RefundModeCash}" Tag="Cash"/>
+     <ComboBoxItem Content="{l:Tr Receipt_RefundModeUpi}" Tag="Upi"/>
+     <ComboBoxItem Content="{l:Tr Receipt_RefundModeCard}" Tag="Card"/>
     </ComboBox>
    </p:FormField>
   </Grid>

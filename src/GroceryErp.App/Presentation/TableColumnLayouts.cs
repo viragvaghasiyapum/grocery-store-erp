@@ -279,9 +279,13 @@ internal static class TableColumnLayouts
             if (_restoring || _pendingRestore || grid.Columns.Count == 0) return;
             grid.UpdateLayout();
             // A filling (star) column is saved as its negative share so it keeps filling the table
-            // at other window sizes; other columns keep the width the user gave them.
+            // at other window sizes; other columns keep the width the user gave them. A pixel column
+            // saves that width, not the narrower one the table squeezes it to while space is short
+            // (a panel beside the list, a narrow window), so the squeeze never becomes the layout.
             double?[] widths = grid.Columns.Select(column =>
                 column.Width.IsStar && double.IsFinite(column.Width.Value) && column.Width.Value > 0 ? -column.Width.Value
+                : column.Width.IsAbsolute && double.IsFinite(column.Width.Value) && column.Width.Value >= 24
+                    ? column.Width.Value
                 : double.IsFinite(column.ActualWidth) && column.ActualWidth >= 24
                     ? (double?)column.ActualWidth : null).ToArray();
             if (widths.All(static width => width is null)) return;

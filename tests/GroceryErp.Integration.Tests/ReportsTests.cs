@@ -551,6 +551,21 @@ public sealed class ReportsTests
             filter with { ProductId = selectedProduct }, selectedCsv,
             cancellationToken: TestContext.Current.CancellationToken)).ShouldBe(1);
         File.ReadLines(selectedCsv).Count().ShouldBe(4);
+        // The filter line names the chosen product and shows codes as words, never its ID or COMPLETED.
+        var worded = new ReportService(fixture.Database, fixture.Settings, new FixedClock(new DateOnly(2026, 9, 27)),
+            TranslationSource.Instance);
+        string namedCsv = Path.Combine(fixture.Root, "named-item-sales.csv");
+        await worded.ExportCsvAsync(ReportKind.ItemSales, filter with { ProductId = selectedProduct, ProductName = "Basmati rice" },
+            namedCsv, cancellationToken: TestContext.Current.CancellationToken);
+        string named = File.ReadLines(namedCsv).First();
+        named.ShouldContain("Basmati rice");
+        named.ShouldNotContain($": {selectedProduct}");
+        string statusCsv = Path.Combine(fixture.Root, "status-sales.csv");
+        await worded.ExportCsvAsync(ReportKind.SalesRegister, filter with { Status = "COMPLETED", PaymentMode = "CASH" },
+            statusCsv, cancellationToken: TestContext.Current.CancellationToken);
+        string statusLine = File.ReadLines(statusCsv).First();
+        statusLine.ShouldNotContain("COMPLETED", Case.Sensitive);
+        statusLine.ShouldNotContain("CASH", Case.Sensitive);
         projected.Rows[0].Values["Product"].ShouldBe("New rice");
         Convert.ToInt64(projected.Rows[0].Values["Revenue"], System.Globalization.CultureInfo.InvariantCulture)
             .ShouldBe(75000);

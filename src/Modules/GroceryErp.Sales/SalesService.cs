@@ -840,11 +840,16 @@ public sealed partial class SalesService(
         if (productPattern is not null && product![0] is not ('%' or '_'))
         {
             const int productIndexThreshold = 5000;
+            // "Product or SKU": the name as sold, or the product's current SKU, from its start.
             int matches = connection.ExecuteScalar<int>("""
                 SELECT COUNT(*) FROM (
                     SELECT 1 FROM sale_snapshot_name_product n
                     JOIN sale_line sl INDEXED BY ix_sale_line_product ON sl.product_id=n.product_id
                     WHERE n.name LIKE @productPattern AND sl.product_name LIKE @productPattern
+                    UNION ALL
+                    SELECT 1 FROM product p
+                    JOIN sale_line sl INDEXED BY ix_sale_line_product ON sl.product_id=p.id
+                    WHERE p.sku LIKE @productPattern
                     LIMIT @probeLimit
                 )
                 """, new { productPattern, probeLimit = productIndexThreshold + 1 });
@@ -860,8 +865,14 @@ public sealed partial class SalesService(
         else if (status is not null) conditions.Add("s.status=@status");
         if (payment is not null) conditions.Add("EXISTS(SELECT 1 FROM sale_payment p WHERE p.sale_id=s.id AND p.mode=@payment)");
         if (product is not null) conditions.Add(selectiveProduct
-            ? "s.id IN (SELECT sl.sale_id FROM sale_snapshot_name_product n JOIN sale_line sl INDEXED BY ix_sale_line_product ON sl.product_id=n.product_id WHERE n.name LIKE @productPattern AND sl.product_name LIKE @productPattern)"
-            : "EXISTS(SELECT 1 FROM sale_line sl WHERE sl.sale_id=s.id AND sl.product_name LIKE @productPattern)");
+            ? """
+              s.id IN (SELECT sl.sale_id FROM sale_snapshot_name_product n JOIN sale_line sl INDEXED BY ix_sale_line_product ON sl.product_id=n.product_id WHERE n.name LIKE @productPattern AND sl.product_name LIKE @productPattern
+                       UNION SELECT sl.sale_id FROM product p JOIN sale_line sl INDEXED BY ix_sale_line_product ON sl.product_id=p.id WHERE p.sku LIKE @productPattern)
+              """
+            : """
+              EXISTS(SELECT 1 FROM sale_line sl WHERE sl.sale_id=s.id AND (sl.product_name LIKE @productPattern
+                     OR sl.product_id IN (SELECT p.id FROM product p WHERE p.sku LIKE @productPattern)))
+              """);
         if (customer is not null) conditions.Add("s.customer_id IN (SELECT c.id FROM customer c WHERE c.name LIKE @customerPattern OR c.phone LIKE @customerPattern)");
         if (filter.MinimumAmount is not null) conditions.Add("s.grand_total>=@minimum");
         if (filter.MaximumAmount is not null) conditions.Add("s.grand_total<=@maximum");

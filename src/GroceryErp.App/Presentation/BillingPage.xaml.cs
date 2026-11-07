@@ -521,8 +521,8 @@ public partial class BillingPage : Page, IDisposable
     private async void Price_OnClick(object sender, RoutedEventArgs e)
     {
         if (_saleId is null || BillGrid.SelectedItem is not SaleLine line) return;
-        var dialog = new QuantityWindow(new Quantity(line.UnitPrice.Value), titleKey: "Sales_PriceOverride")
-        { Owner = Window.GetWindow(this) };
+        QuantityWindow dialog = QuantityWindow.ForPrice(line.UnitPrice);
+        dialog.Owner = Window.GetWindow(this);
         if (dialog.ShowDialog() != true) { ScanBox.Focus(); return; }
         try
         {

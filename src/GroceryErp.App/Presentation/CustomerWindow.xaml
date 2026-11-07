@@ -5,11 +5,14 @@
  xmlns:p="clr-namespace:GroceryErp.App.Presentation"
  Title="{l:Tr Sales_Customer}" Width="760" Height="590" MinWidth="670" MinHeight="520"
  WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
- NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+ NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European" p:ScreenHelp.Topic="customer">
  <Grid Margin="20">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <TextBlock Style="{StaticResource FormTitle}" Margin="0,0,0,10" Text="{l:Tr Sales_Customer}"/>
+  <DockPanel>
+    <p:HelpButton DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top"/>
+    <TextBlock Style="{StaticResource FormTitle}" Margin="0,0,0,10" Text="{l:Tr Sales_Customer}"/>
+  </DockPanel>
   <Grid Grid.Row="1">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <Grid>

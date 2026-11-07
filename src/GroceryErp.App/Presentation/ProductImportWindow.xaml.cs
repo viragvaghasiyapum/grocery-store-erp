@@ -24,7 +24,7 @@ public partial class ProductImportWindow : Window
     {
         var dialog = new OpenFileDialog
         {
-            Filter = "Excel workbook (*.xlsx)|*.xlsx",
+            Filter = TranslationSource.Instance["Common_ExcelFileFilter"],
             CheckFileExists = true,
             Multiselect = false,
         };
@@ -58,7 +58,7 @@ public partial class ProductImportWindow : Window
     {
         var dialog = new SaveFileDialog
         {
-            Filter = "Excel workbook (*.xlsx)|*.xlsx",
+            Filter = TranslationSource.Instance["Common_ExcelFileFilter"],
             FileName = "product-import-template.xlsx",
             AddExtension = true,
             DefaultExt = ".xlsx",
@@ -80,7 +80,7 @@ public partial class ProductImportWindow : Window
         if (_preview is null || _preview.ErrorCount == 0) return;
         var dialog = new SaveFileDialog
         {
-            Filter = "Excel workbook (*.xlsx)|*.xlsx",
+            Filter = TranslationSource.Instance["Common_ExcelFileFilter"],
             FileName = "product-import-errors.xlsx",
             AddExtension = true,
             DefaultExt = ".xlsx",

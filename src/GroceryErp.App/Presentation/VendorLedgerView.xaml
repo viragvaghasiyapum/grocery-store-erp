@@ -6,6 +6,9 @@
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
   <!-- A vendor's purchases, payments, returns, ledger and lots supplied, in the Vendors detail panel.
        Each tab keeps its own page; the footer pages the open tab. -->
+  <UserControl.Resources>
+    <p:VendorLedgerKindConverter x:Key="LedgerKind"/>
+  </UserControl.Resources>
   <Grid>
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TextBlock Style="{StaticResource FormContext}" Margin="0,0,0,8" Text="{l:Tr Purchasing_LedgerHint}"/>
@@ -44,7 +47,7 @@
         <DataGrid x:Name="LedgerGrid" Style="{StaticResource CompactTableGrid}">
           <DataGrid.Columns>
             <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Date}" Binding="{Binding Date, StringFormat=dd MMM yyyy}"/>
-            <DataGridTextColumn Width="120" Header="{l:Tr Purchasing_Mode}" Binding="{Binding Kind}"/>
+            <DataGridTextColumn Width="140" Header="{l:Tr Purchasing_LedgerEntry}" Binding="{Binding Kind, Converter={StaticResource LedgerKind}}"/>
             <DataGridTextColumn Width="180" Header="{l:Tr Purchasing_Document}" Binding="{Binding Reference}"/>
             <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Debit}" Binding="{Binding Debit}"/>
             <DataGridTextColumn Width="130" Header="{l:Tr Purchasing_Credit}" Binding="{Binding Credit}"/>

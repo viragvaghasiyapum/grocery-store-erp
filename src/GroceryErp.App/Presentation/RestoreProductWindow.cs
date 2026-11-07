@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
@@ -83,6 +84,7 @@ public sealed class RestoreProductWindow : Window
         _search = search;
         _skuInUse = skuInUse;
         Title = Tr("Stock_RestoreTitle");
+        ScreenHelp.SetTopic(this, "restore-product");
         Width = 760;
         Height = 760;
         MinWidth = 620;
@@ -101,6 +103,7 @@ public sealed class RestoreProductWindow : Window
 
         _query.Text = draft.ProductName;
         _query.ToolTip = Tr("Stock_RestoreSearch");
+        AutomationProperties.SetName(_query, Tr("Stock_RestoreSearch"));
         _query.TextChanged += async (_, _) => { if (IsLoaded) await SearchAsync(); };
         _results.SetResourceReference(StyleProperty, "CatalogGrid");
         _results.Columns.Add(Column("Catalog_Sku", nameof(ProductListItem.Sku), 110));
@@ -161,7 +164,12 @@ public sealed class RestoreProductWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var heading = new StackPanel();
-        heading.Children.Add(Styled(new TextBlock { Text = Title }, "FormTitle"));
+        var titleRow = new DockPanel();
+        var help = new HelpButton { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Top };
+        DockPanel.SetDock(help, Dock.Right);
+        titleRow.Children.Add(help);
+        titleRow.Children.Add(Styled(new TextBlock { Text = Title }, "FormTitle"));
+        heading.Children.Add(titleRow);
         heading.Children.Add(Styled(new TextBlock
         {
             Text = TranslationSource.Instance.Format("Stock_RestoreIntro", draft.ProductName,

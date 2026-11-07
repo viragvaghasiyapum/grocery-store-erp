@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using GroceryErp.Localization;
 using GroceryErp.Sales;
 
 namespace GroceryErp.App.Presentation;
@@ -53,7 +54,7 @@ public partial class SavedBillsWindow : Window
             _cursor = (createdAt, id);
             BillsGrid.ItemsSource = page.Items;
             BillsGrid.SelectedIndex = page.Items.Count > 0 ? 0 : -1;
-            StatusText.Text = page.Items.Count == 0 ? "No saved bills found." : string.Empty;
+            StatusText.Text = page.Items.Count == 0 ? TranslationSource.Instance["Sales_NoSavedBills"] : string.Empty;
         }
         catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
         finally

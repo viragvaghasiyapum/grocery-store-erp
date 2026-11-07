@@ -6,7 +6,7 @@
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
     Title="{l:Tr Purchasing_Title}" FontFamily="{StaticResource AppFont}"
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European"
-    ScrollViewer.CanContentScroll="False">
+    ScrollViewer.CanContentScroll="False" p:ScreenHelp.Topic="purchases">
   <Grid x:Name="Layout" Margin="14,8,14,8">
     <Grid.ColumnDefinitions><ColumnDefinition Width="*" MinWidth="320"/><ColumnDefinition Width="0"/></Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
@@ -26,7 +26,10 @@
           <MenuItem x:Name="MoreActions" Header="{l:Tr Common_MoreActions}"/>
         </Menu>
       </StackPanel>
-      <TextBlock x:Name="TitleText" Style="{StaticResource PageTitle}" Text="{l:Tr Purchasing_Title}"/>
+      <StackPanel x:Name="TitleHeader" Orientation="Horizontal">
+        <TextBlock x:Name="TitleText" Style="{StaticResource PageTitle}" Text="{l:Tr Purchasing_Title}" Margin="0,0,6,0"/>
+        <p:HelpButton VerticalAlignment="Center"/>
+      </StackPanel>
     </DockPanel>
     <WrapPanel x:Name="FilterBar" Grid.Row="1" Margin="0,0,0,2">
       <ui:TextBox x:Name="DocumentFilter" Width="190" Margin="0,0,6,4" PlaceholderText="{l:Tr Purchasing_DocumentFilter}"

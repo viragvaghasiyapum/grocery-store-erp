@@ -86,9 +86,9 @@ public sealed record FirstRunRequest(
     string Gstin, string State, string TaxMode, string Language, string BackupDirectory,
     string LotPrefix = "20", string ProductPrefix = "21",
     string ReceiptPrinterName = "", int ReceiptWidthDots = 576,
-    string LabelPrinterName = "", string LabelSize = "50x25", string A4PrinterName = "",
+    string LabelPrinterName = "", string LabelSize = "50x25",
     int UsbReminderDays = 7, string ScaleRule = "", bool GujaratiKeyboardAvailable = false,
-    string StartChoice = "EMPTY", IReadOnlyDictionary<string, string>? SeedLocalNames = null,
+    IReadOnlyDictionary<string, string>? SeedLocalNames = null,
     string ReceiptMode = "RASTER");
 
 public sealed class FirstRunService(DbExecutor database, PasswordHasher hasher)
@@ -146,11 +146,9 @@ public sealed class FirstRunService(DbExecutor database, PasswordHasher hasher)
             settings["printer.receipt.mode"] = request.ReceiptMode;
             settings["printer.label.name"] = request.LabelPrinterName.Trim();
             settings["printer.label.size"] = request.LabelSize.Trim();
-            settings["printer.a4.name"] = request.A4PrinterName.Trim();
             settings["backup.usb_reminder_days"] = request.UsbReminderDays.ToString(System.Globalization.CultureInfo.InvariantCulture);
             settings["barcode.scale_rule"] = request.ScaleRule.Trim();
             settings["setup.keyboard.gujarati_available"] = request.GujaratiKeyboardAvailable ? "1" : "0";
-            settings["setup.start_choice"] = request.StartChoice;
             foreach ((string key, string value) in settings)
                 transaction.Connection.Execute("""
                     INSERT INTO setting(key, value) VALUES (@key, @value)
@@ -193,7 +191,6 @@ public sealed class FirstRunService(DbExecutor database, PasswordHasher hasher)
         if (request.ReceiptWidthDots is not (384 or 576)) throw new DomainException(ErrorCode.Validation, "Receipt width must be 58 or 80 mm.");
         if (request.ReceiptMode is not ("RASTER" or "TEXT")) throw new DomainException(ErrorCode.Validation, "Invalid receipt mode.");
         if (request.UsbReminderDays is < 1 or > 365) throw new DomainException(ErrorCode.Validation, "USB reminder must be between 1 and 365 days.");
-        if (request.StartChoice is not ("EMPTY" or "IMPORT")) throw new DomainException(ErrorCode.Validation, "Invalid start choice.");
         if (string.IsNullOrWhiteSpace(request.BackupDirectory))
             throw new DomainException(ErrorCode.Validation, "Backup directory is required.");
         AppPaths.RejectCloudSynchronizedPath(request.BackupDirectory);

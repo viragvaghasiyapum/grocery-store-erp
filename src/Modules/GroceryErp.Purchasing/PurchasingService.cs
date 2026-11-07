@@ -542,6 +542,33 @@ public sealed partial class PurchasingService(
         }, cancellationToken);
     }
 
+    // Every entry of a vendor's ledger, or of one kind when @filterKind is set; ledger order is
+    // date, then kind, then the document's id.
+    private const string VendorLedgerEntriesSql = """
+        SELECT received_date AS Date,'PURCHASE' AS Kind,doc_no AS Reference,
+               grand_total AS Debit,0 AS Credit,id AS SortId
+        FROM purchase WHERE vendor_id=@vendorId AND
+            (status='POSTED' OR cancelled_date IS NOT NULL)
+            AND (@filterKind IS NULL OR @filterKind='PURCHASE')
+        UNION ALL
+        SELECT cancelled_date,'PURCHASE_VOID',doc_no,0,grand_total,id
+        FROM purchase WHERE vendor_id=@vendorId AND cancelled_date IS NOT NULL
+            AND (@filterKind IS NULL OR @filterKind='PURCHASE_VOID')
+        UNION ALL
+        SELECT pay_date,'PAYMENT',reference,0,amount,id
+        FROM vendor_payment WHERE vendor_id=@vendorId
+            AND (@filterKind IS NULL OR @filterKind='PAYMENT')
+        UNION ALL
+        SELECT return_date,'VENDOR_RETURN',doc_no,0,credit_total,id
+        FROM vendor_return WHERE vendor_id=@vendorId
+            AND (@filterKind IS NULL OR @filterKind='VENDOR_RETURN')
+        UNION ALL
+        SELECT c.cancellation_date,'VENDOR_RETURN_CANCEL',vr.doc_no,vr.credit_total,0,vr.id
+        FROM vendor_return_cancellation c JOIN vendor_return vr ON vr.id=c.vendor_return_id
+        WHERE vr.vendor_id=@vendorId
+            AND (@filterKind IS NULL OR @filterKind='VENDOR_RETURN_CANCEL')
+        """;
+
     public Task<VendorLedgerPage> GetVendorLedgerPageAsync(long vendorId, DateOnly? beforeDate = null,
         string? beforeKind = null, long? beforeId = null, int limit = 100, string? filterKind = null,
         CancellationToken cancellationToken = default)
@@ -556,31 +583,8 @@ public sealed partial class PurchasingService(
             long opening = connection.QuerySingleOrDefault<long?>(
                 "SELECT opening_balance FROM vendor WHERE id=@vendorId", new { vendorId })
                 ?? throw new DomainException(ErrorCode.NotFound, "vendor", vendorId);
-            List<LedgerRow> rows = connection.Query<LedgerRow>("""
-                SELECT * FROM (
-                    SELECT received_date AS Date,'PURCHASE' AS Kind,doc_no AS Reference,
-                           grand_total AS Debit,0 AS Credit,id AS SortId
-                    FROM purchase WHERE vendor_id=@vendorId AND
-                        (status='POSTED' OR cancelled_date IS NOT NULL)
-                        AND (@filterKind IS NULL OR @filterKind='PURCHASE')
-                    UNION ALL
-                    SELECT cancelled_date,'PURCHASE_VOID',doc_no,0,grand_total,id
-                    FROM purchase WHERE vendor_id=@vendorId AND cancelled_date IS NOT NULL
-                        AND (@filterKind IS NULL OR @filterKind='PURCHASE_VOID')
-                    UNION ALL
-                    SELECT pay_date,'PAYMENT',reference,0,amount,id
-                    FROM vendor_payment WHERE vendor_id=@vendorId
-                        AND (@filterKind IS NULL OR @filterKind='PAYMENT')
-                    UNION ALL
-                    SELECT return_date,'VENDOR_RETURN',doc_no,0,credit_total,id
-                    FROM vendor_return WHERE vendor_id=@vendorId
-                        AND (@filterKind IS NULL OR @filterKind='VENDOR_RETURN')
-                    UNION ALL
-                    SELECT c.cancellation_date,'VENDOR_RETURN_CANCEL',vr.doc_no,vr.credit_total,0,vr.id
-                    FROM vendor_return_cancellation c JOIN vendor_return vr ON vr.id=c.vendor_return_id
-                    WHERE vr.vendor_id=@vendorId
-                        AND (@filterKind IS NULL OR @filterKind='VENDOR_RETURN_CANCEL')
-                )
+            List<LedgerRow> rows = connection.Query<LedgerRow>($"""
+                SELECT * FROM ({VendorLedgerEntriesSql})
                 WHERE @beforeDate IS NULL OR Date<@beforeDate
                    OR (Date=@beforeDate AND (Kind<@beforeKind OR (Kind=@beforeKind AND SortId<@beforeId)))
                 ORDER BY Date DESC,Kind DESC,SortId DESC LIMIT @take
@@ -613,15 +617,34 @@ public sealed partial class PurchasingService(
                         (c.cancellation_date<@date OR (c.cancellation_date=@date AND
                          ('VENDOR_RETURN_CANCEL'<@kind OR ('VENDOR_RETURN_CANCEL'=@kind AND vr.id<=@id))))),0)
                 """, new { vendorId, date = first.Date, kind = first.Kind, id = first.SortId });
-            var items = new List<VendorLedgerItem>(rows.Count);
-            long balance = firstBalance;
-            foreach (LedgerRow row in rows)
-            {
-                items.Add(new(row.Date, row.Kind, row.Reference, Money.FromScaled(row.Debit),
-                    Money.FromScaled(row.Credit), Money.FromScaled(balance)));
-                balance -= row.Debit - row.Credit;
-            }
             LedgerRow last = rows[^1];
+            // Each row shows the vendor's balance after it. A tab of one kind steps back through every
+            // entry between its first and last rows, so a payment between two purchases still counts.
+            List<LedgerRow> entries = filterKind is null || rows.Count == 1 ? rows : connection.Query<LedgerRow>($"""
+                SELECT * FROM ({VendorLedgerEntriesSql})
+                WHERE (Date<@firstDate OR (Date=@firstDate AND (Kind<@firstKind OR (Kind=@firstKind AND SortId<=@firstId))))
+                  AND (Date>@lastDate OR (Date=@lastDate AND (Kind>@lastKind OR (Kind=@lastKind AND SortId>=@lastId))))
+                ORDER BY Date DESC,Kind DESC,SortId DESC
+                """, new
+            {
+                vendorId,
+                filterKind = (string?)null,
+                firstDate = first.Date,
+                firstKind = first.Kind,
+                firstId = first.SortId,
+                lastDate = last.Date,
+                lastKind = last.Kind,
+                lastId = last.SortId,
+            }).ToList();
+            var balances = new Dictionary<(DateOnly Date, string Kind, long Id), long>(entries.Count);
+            long balance = firstBalance;
+            foreach (LedgerRow entry in entries)
+            {
+                balances[(entry.Date, entry.Kind, entry.SortId)] = balance;
+                balance -= entry.Debit - entry.Credit;
+            }
+            var items = rows.Select(row => new VendorLedgerItem(row.Date, row.Kind, row.Reference, Money.FromScaled(row.Debit),
+                Money.FromScaled(row.Credit), Money.FromScaled(balances[(row.Date, row.Kind, row.SortId)]))).ToList();
             return new VendorLedgerPage(items, hasMore, last.Date, last.Kind, last.SortId);
         }, cancellationToken);
     }

@@ -2,15 +2,19 @@
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    xmlns:p="clr-namespace:GroceryErp.App.Presentation"
  Title="{l:Tr Sales_SavedBills}" Width="660" Height="460" MinWidth="560" MinHeight="380"
- WindowStartupLocation="CenterOwner" NumberSubstitution.Substitution="European">
+ WindowStartupLocation="CenterOwner" NumberSubstitution.Substitution="European" p:ScreenHelp.Topic="saved-bills">
  <Grid Margin="24">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <StackPanel>
-   <TextBlock FontSize="22" FontWeight="SemiBold" Text="{l:Tr Sales_SelectSavedBill}"/>
+   <DockPanel>
+     <p:HelpButton DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top"/>
+     <TextBlock FontSize="22" FontWeight="SemiBold" Text="{l:Tr Sales_SelectSavedBill}"/>
+   </DockPanel>
    <WrapPanel Margin="0,8,0,0">
-    <TextBox x:Name="SearchBox" Width="210" Margin="0,0,6,0" ToolTip="Bill ID or label"/>
-    <Button x:Name="SearchButton" Click="Search_OnClick" Content="Search"/>
+    <TextBox x:Name="SearchBox" Width="210" Margin="0,0,6,0" ToolTip="{l:Tr Sales_SavedBillSearch}" AutomationProperties.Name="{l:Tr Sales_SavedBillSearch}"/>
+    <Button x:Name="SearchButton" Click="Search_OnClick" Content="{l:Tr Sales_Search}"/>
    </WrapPanel>
   </StackPanel>
   <DataGrid x:Name="BillsGrid" Grid.Row="1" Margin="0,16,0,16" Style="{StaticResource CatalogGrid}"

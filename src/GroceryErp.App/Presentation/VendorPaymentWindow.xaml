@@ -5,11 +5,14 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         Title="{l:Tr Purchasing_Payment}" Width="520" Height="600" MinWidth="440" MinHeight="480"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
-        NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+        NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European" p:ScreenHelp.Topic="vendor-payment">
   <Grid Margin="20">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <StackPanel>
-      <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr Purchasing_Payment}"/>
+      <DockPanel>
+        <p:HelpButton DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top"/>
+        <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr Purchasing_Payment}"/>
+      </DockPanel>
       <TextBlock Style="{StaticResource FormContext}" Text="{l:Tr Purchasing_PaymentContext}"/>
     </StackPanel>
     <p:FormErrorSummary x:Name="Summary" Grid.Row="1"/>

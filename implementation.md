@@ -3636,7 +3636,7 @@ Phase 7 checklist:
 
 | Keys | Action |
 |---|---|
-| F1 | Shortcut overlay for this page |
+| F1 | Help for this screen, opened at the focused field (revised plan §16) |
 | Ctrl+K | Go to… (command palette: pages, products, recent bills) |
 | Ctrl+1 … Ctrl+9 | Navigation items 1–9 (1 = Dashboard, 2 = Billing, …) |
 | Ctrl+Shift+L | Lock |
@@ -3749,7 +3749,6 @@ Seeded by migrations (001/002) or defaulted in code.
 | `print.bilingual_names` | `1` | Print Gujarati names under English |
 | `printer.receipt.name` / `.width_dots` / `.mode` | — / `576` / `RASTER` | Receipt printer |
 | `printer.label.name` / `.size` | — / `50x25` | Label printer |
-| `printer.a4.name` | — | A4 printer |
 | `receipt.footer`, `receipt.footer.gu` | — | Footer text in English / Gujarati |
 | `security.idle_lock_minutes` | `15` | Auto-lock |
 | `backup.dir` / `backup.keep` | data root / `30` | Backup location and rotation |

@@ -2,14 +2,18 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    xmlns:p="clr-namespace:GroceryErp.App.Presentation"
     Title="{l:Tr Pos_UnknownBarcodeTitle}" Width="780" Height="480" MinWidth="680" MinHeight="460"
     WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
     FontFamily="{StaticResource AppFont}"
-    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European" p:ScreenHelp.Topic="unknown-barcode">
   <Grid Margin="22">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <StackPanel Margin="0,0,0,16">
-      <TextBlock Style="{StaticResource SectionTitle}" Text="{l:Tr Pos_UnknownBarcodeTitle}"/>
+      <DockPanel>
+        <p:HelpButton DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top"/>
+        <TextBlock Style="{StaticResource SectionTitle}" Text="{l:Tr Pos_UnknownBarcodeTitle}"/>
+      </DockPanel>
       <TextBlock x:Name="BarcodeText" Margin="0,6,0,0" FontFamily="Consolas" FontSize="16"/>
     </StackPanel>
     <TabControl x:Name="OptionsTabs" Grid.Row="1">

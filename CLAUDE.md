@@ -64,6 +64,7 @@ Opt-in UI tests: `PackagedOperatorJourneyTests` needs `GROCERY_PACKAGED_UI_TEST=
 - Modules are flat: `XxxModule.cs` (`IModule.Register` for DI, plus nav items), `XxxService*.cs` (services and their SQL together) and `XxxModels.cs` (DTOs). Partial classes split large services, e.g. `SalesService.ReturnRecreation.cs`.
 - Every WPF page and window lives in `src/GroceryErp.App/Presentation/` with code-behind. Modules hold no views.
 - All UI text is in one shared pair of files: `src/GroceryErp.Localization/Resources/Strings.resx` and `Strings.gu.resx`. Every module's `IModule.Strings` returns `SharedStrings.ResourceManager`. XAML uses `{l:Tr Key}`, and code uses `TranslationSource.Instance["Key"]`.
+- Screen help is the exception (revised plan §16): `docs/user-guide/help/{en,gu}/{topic}.md`, embedded by the App csproj, is shown by the ⓘ `HelpButton` beside a title and by F1 for the screen whose root sets `p:ScreenHelp.Topic`. The bold names in a help table must be labels the screen shows, in both languages (`ScreenHelpTests`), and every column and filter of a page needs a row (`VerifyPageHelp` in the UI smoke test); change the help with the label. A screen with tabs has a section per tab, named as the tab, and the help opens at the open tab. All ten pages and all 47 dialogs have help (index in `docs/user-guide/help/README.md`). A window built in code, or one window serving two purposes (Return/Void, Quantity/Change price), sets its topic with `ScreenHelp.SetTopic(this, "topic")` with the name written out, since `ScreenHelpTests` reads topics from those calls; a new dialog needs a topic, an ⓘ and both help files, and `VerifyDialogHelp` checks each dialog the smoke test captures. The guides' rework and screenshots with the ⓘ are next. This is on branch `screen-help`, for the release after 1.2.0.
 
 Follow the structure that exists. Don't create the PLANS.md folders for one feature.
 
@@ -126,6 +127,7 @@ Triggers also enforce immutability: completed sale financials, posted purchase a
 These are the full rules from PLANS.md, condensed.
 
 - **Banned APIs** (`BannedSymbols.txt`, enforced at build): `DateTime.Now`/`Today` (use `IClock`), and `decimal`/`Math.Round` without a `MidpointRounding` argument (use `Fx3.Round`). `double`/`float` are banned for business values. Use `Money`/`Quantity`/`Percent` from `Core/Numerics`.
+- Never show a stored code (CASH, PURCHASE, SALARY, REGULAR…) as it is: bind it through a converter such as `MoneyModeConverter` or `EntryStatusConverter`, and head every column with what it holds. Two labels on one screen must not read the same in either language (B-9, B-11).
 - Numbers always display in English digits. Format through `DisplayFormatter`/`TranslationSource.FormatCulture`, never the UI culture.
 - Every new string goes in **both** resx files. Mark machine-drafted Gujarati with the comment `MT – needs review`. Batch/lot is **બેચ**, never લોટ.
 - Windows PowerShell 5.1 corrupts BOM-less UTF-8. Don't script edits to `.resx` or Gujarati text with it; use the Edit tool or pass `-Encoding utf8`.

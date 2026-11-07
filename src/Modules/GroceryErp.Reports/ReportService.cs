@@ -368,10 +368,11 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
             if (value is not null && value.ToString() is { Length: > 0 } text)
                 parts.Add($"{Text(key, fallback)}: {Convert.ToString(text, CultureInfo.InvariantCulture)}");
         }
-        Add("Reports_FilterProduct", "Product", filter.ProductId);
-        Add("Reports_FilterVendor", "Vendor", filter.VendorId);
-        Add("Reports_Status", "Status", filter.Status);
-        Add("Reports_Payment", "Payment", filter.PaymentMode);
+        // Names and words, not the stored IDs and codes.
+        Add("Reports_FilterProduct", "Product", filter.ProductName ?? (object?)filter.ProductId);
+        Add("Reports_FilterVendor", "Vendor", filter.VendorName ?? (object?)filter.VendorId);
+        Add("Reports_Status", "Status", filter.Status is null ? null : TranslateCode(filter.Status));
+        Add("Reports_Payment", "Payment", filter.PaymentMode is null ? null : TranslateCode(filter.PaymentMode));
         if (kind == ReportKind.StockValue && !filter.IncludeExpired)
             parts.Add(Text("Reports_ExcludesExpired", "Expired lots excluded"));
         if (kind == ReportKind.StockReconciliation && filter.MismatchesOnly)

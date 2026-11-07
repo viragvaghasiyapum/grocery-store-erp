@@ -6,11 +6,14 @@
     Title="{l:Tr Pos_QuickAdd}" Width="650" Height="560" MinWidth="580" MinHeight="500"
     WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
     FontFamily="{StaticResource AppFont}"
-    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European" p:ScreenHelp.Topic="quick-product">
   <Grid Margin="22">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <StackPanel>
-      <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr Pos_QuickAdd}"/>
+      <DockPanel>
+        <p:HelpButton DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top"/>
+        <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr Pos_QuickAdd}"/>
+      </DockPanel>
       <TextBlock Style="{StaticResource FormContext}" Text="{l:Tr Pos_QuickProductHint}"/>
     </StackPanel>
     <p:FormErrorSummary x:Name="Summary" Grid.Row="1"/>

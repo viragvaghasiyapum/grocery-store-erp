@@ -22,6 +22,7 @@ public partial class SaleActionWindow : Window
         _isReturn = isReturn;
         Title = TranslationSource.Instance[isReturn ? "Sales_Return" : "Sales_Void"];
         TitleText.Text = Title;
+        ScreenHelp.SetTopic(this, isReturn ? "sale-return" : "sale-void");
         ContextText.Text = context ?? string.Empty;
         ContextText.Visibility = context is null ? Visibility.Collapsed : Visibility.Visible;
         if (!isReturn)

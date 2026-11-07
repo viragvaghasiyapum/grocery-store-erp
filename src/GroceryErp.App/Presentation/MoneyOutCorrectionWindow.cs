@@ -37,6 +37,7 @@ public sealed class MoneyOutCorrectionWindow : Window
         : this(service, dating, voidEntry, voidEntry ? "MoneyOut_VoidDamage" : "MoneyOut_CorrectDamage")
     {
         _damage = damage;
+        ScreenHelp.SetTopic(this, "damage-correction");
         if (!voidEntry)
         {
             AddField("Stock_Quantity", _quantity, damage.Quantity.Value.ToString("0.###", TranslationSource.FormatCulture), required: true);
@@ -59,6 +60,7 @@ public sealed class MoneyOutCorrectionWindow : Window
         : this(service, dating, voidEntry, voidEntry ? "MoneyOut_VoidSalary" : "MoneyOut_CorrectSalary")
     {
         _salary = salary;
+        ScreenHelp.SetTopic(this, "salary-correction");
         if (!voidEntry)
         {
             AddField("MoneyOut_Salary", _amount, salary.Amount.Value.ToString("0.###", TranslationSource.FormatCulture), required: true);
@@ -80,6 +82,7 @@ public sealed class MoneyOutCorrectionWindow : Window
         : this(service, dating, voidEntry, voidEntry ? "MoneyOut_VoidExpense" : "MoneyOut_CorrectExpense")
     {
         _expense = expense;
+        ScreenHelp.SetTopic(this, "expense-correction");
         if (!voidEntry)
         {
             AddField("Purchasing_Date", _date, required: true);
@@ -120,7 +123,9 @@ public sealed class MoneyOutCorrectionWindow : Window
         title.SetResourceReference(StyleProperty, "FormTitle");
         var treatment = new TextBlock { Text = CorrectionDetailsPanel.Describe(dating), FontWeight = FontWeights.SemiBold };
         treatment.SetResourceReference(StyleProperty, "FormContext");
-        var header = new StackPanel { Children = { title, treatment } };
+        var help = new HelpButton { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Top };
+        DockPanel.SetDock(help, Dock.Right);
+        var header = new StackPanel { Children = { new DockPanel { Children = { help, title } }, treatment } };
         if (voidEntry)
         {
             var explanation = new TextBlock { Text = T("MoneyOut_VoidExplanation") };

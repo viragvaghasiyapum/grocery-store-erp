@@ -25,7 +25,16 @@ public partial class PurchaseInvoiceView : UserControl
         ChargesText.Text = invoice.Totals.OtherCharges.ToString();
         RoundOffText.Text = invoice.Totals.RoundOff.ToString();
         TotalText.Text = invoice.Totals.GrandTotal.ToString();
-        TaxModeText.Text = $"{text["Purchasing_TaxMode"]}: {invoice.TaxMode ?? "—"}";
+        // The mode saved with the purchase, named as Setup names it.
+        string taxMode = invoice.TaxMode switch
+        {
+            "REGULAR" => text["Setup_TaxRegular"],
+            "COMPOSITION" => text["Setup_TaxComposition"],
+            "NONE" => text["Setup_TaxNone"],
+            null => "—",
+            { } code => code,
+        };
+        TaxModeText.Text = $"{text["Purchasing_TaxMode"]}: {taxMode}";
         BillTotalText.Text = $"{text["Purchasing_BillTotal"]}: {invoice.Totals.VendorBillTotal?.ToString() ?? "—"}";
         DifferenceText.Text = invoice.Totals.Difference is { } difference
             ? $"{text["Purchasing_Difference"]}: {difference}"

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Windows;
+using System.Windows.Automation;
 using GroceryErp.Core;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Localization;
@@ -18,6 +19,15 @@ public partial class QuantityWindow : Window
         Quantity = quantity;
         ValueBox.Text = quantity.Value.ToString("0.###", CultureInfo.GetCultureInfo("en-IN"));
         Loaded += (_, _) => { ValueBox.SelectAll(); ValueBox.Focus(); };
+    }
+
+    /// <summary>The same box for Change price: a line's price, tax included, with its own help.</summary>
+    public static QuantityWindow ForPrice(Money price)
+    {
+        var window = new QuantityWindow(new Quantity(price.Value), titleKey: "Sales_PriceOverride");
+        AutomationProperties.SetName(window.ValueBox, TranslationSource.Instance["Pos_Price"]);
+        ScreenHelp.SetTopic(window, "price-change");
+        return window;
     }
 
     public Quantity Quantity { get; private set; }

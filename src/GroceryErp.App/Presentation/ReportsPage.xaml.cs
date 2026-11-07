@@ -7,9 +7,11 @@ using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Xps.Packaging;
+using GroceryErp.Catalog;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
 using GroceryErp.Localization;
+using GroceryErp.Purchasing;
 using GroceryErp.Reports;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Win32;
@@ -24,6 +26,11 @@ public partial class ReportsPage : Page
     private readonly IClock _clock;
     private readonly DisplayFormatter _formatter;
     private readonly ReportNavigationState _navigation;
+    private readonly CatalogService _catalog;
+    private readonly PurchasingService _purchasing;
+    // The product chosen in the product search; the box shows its name, and editing the box drops it.
+    private (long Id, string Name)? _product;
+    private bool _showingProduct;
     private readonly HashSet<string> _expandedHeads = new(StringComparer.Ordinal);
     private TabularReport? _currentReport;
     private PnlReport? _currentPnl;
@@ -40,11 +47,14 @@ public partial class ReportsPage : Page
         ((App)Application.Current).Services.GetRequiredService<ReportOutputService>(),
         ((App)Application.Current).Services.GetRequiredService<IClock>(),
         ((App)Application.Current).Services.GetRequiredService<DisplayFormatter>(),
-        ((App)Application.Current).Services.GetRequiredService<ReportNavigationState>())
+        ((App)Application.Current).Services.GetRequiredService<ReportNavigationState>(),
+        ((App)Application.Current).Services.GetRequiredService<CatalogService>(),
+        ((App)Application.Current).Services.GetRequiredService<PurchasingService>())
     { }
 
     public ReportsPage(ReportService reports, ReportOutputService output, IClock clock,
-        DisplayFormatter formatter, ReportNavigationState navigation, bool loadOnShow = true)
+        DisplayFormatter formatter, ReportNavigationState navigation, CatalogService catalog,
+        PurchasingService purchasing, bool loadOnShow = true)
     {
         InitializeComponent();
         _loadOnShow = loadOnShow;
@@ -53,6 +63,8 @@ public partial class ReportsPage : Page
         _clock = clock;
         _formatter = formatter;
         _navigation = navigation;
+        _catalog = catalog;
+        _purchasing = purchasing;
         _suppressRefresh = true;
         ReportPicker.ItemsSource = ReportChoices();
         ReportPicker.SelectedIndex = 0;
@@ -91,7 +103,11 @@ public partial class ReportsPage : Page
         if (loadOnShow) Loaded += async (_, _) =>
         {
             TranslationSource.Instance.PropertyChanged += OnTranslationChanged;
-            try { _periodRange = await _reports.GetPnlPeriodRangeAsync(); }
+            try
+            {
+                _periodRange = await _reports.GetPnlPeriodRangeAsync();
+                await LoadVendorsAsync();
+            }
             catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
             if (_navigation.Consume() is { } request)
             {
@@ -104,7 +120,8 @@ public partial class ReportsPage : Page
                 UpdateFilterAvailability();
                 SelectChoice(StatusPicker, request.Status);
                 SelectChoice(PaymentPicker, request.PaymentMode);
-                ProductFilter.Text = request.ProductId?.ToString(CultureInfo.InvariantCulture) ?? "";
+                ShowProduct(request.ProductId is { } productId
+                    ? (productId, request.ProductName ?? productId.ToString(CultureInfo.InvariantCulture)) : null);
                 MismatchesCheck.IsChecked = request.MismatchesOnly;
                 _suppressRefresh = false;
             }
@@ -164,13 +181,7 @@ public partial class ReportsPage : Page
                 return;
             }
             ReportKind kind = ((ReportChoice)ReportPicker.SelectedItem).Kind!.Value;
-            string? status = ((FilterChoice?)StatusPicker.SelectedItem)?.Code;
-            string? payment = ((FilterChoice?)PaymentPicker.SelectedItem)?.Code;
-            TabularReport report2 = await _reports.GetReportAsync(kind, new(From: from, To: to,
-                ProductId: ParseId(ProductFilter.Text), VendorId: ParseId(VendorFilter.Text),
-                Status: status, PaymentMode: payment,
-                Limit: 500, IncludeExpired: IncludeExpiredCheck.IsChecked == true,
-                MismatchesOnly: MismatchesCheck.IsChecked == true),
+            TabularReport report2 = await _reports.GetReportAsync(kind, CurrentFilter(kind, from, to, limit: 500),
                 cancellation.Token);
             if (version != _refreshVersion) return;
             _currentReport = report2 with { Title = ((ReportChoice)ReportPicker.SelectedItem).ToString() };
@@ -472,10 +483,108 @@ public partial class ReportsPage : Page
             SelectChoice(StatusPicker, status);
             PaymentPicker.ItemsSource = PaymentChoices();
             SelectChoice(PaymentPicker, payment);
+            if (VendorFilter.ItemsSource is IReadOnlyList<VendorChoice> vendors)
+                ShowVendors(vendors.Skip(1), VendorFilter.SelectedValue as long?);
             UpdateFilterAvailability();
         }
         finally { _suppressRefresh = wasSuppressed; }
     }
+
+    // The filters the chosen report uses: a product for item-wise sales and the reconciliation, a
+    // vendor for the purchase register, and status and payment for the sales register.
+    private ReportFilter CurrentFilter(ReportKind kind, DateOnly from, DateOnly to, int limit = 5000)
+    {
+        (long Id, string Name)? product = kind is ReportKind.ItemSales or ReportKind.StockReconciliation ? _product : null;
+        VendorChoice? vendor = kind == ReportKind.PurchaseRegister && VendorFilter.SelectedItem is VendorChoice { Id: not null } chosen
+            ? chosen : null;
+        bool sales = kind == ReportKind.SalesRegister;
+        return new ReportFilter(From: from, To: to, ProductId: product?.Id, VendorId: vendor?.Id,
+            Status: sales ? ((FilterChoice?)StatusPicker.SelectedItem)?.Code : null,
+            PaymentMode: sales ? ((FilterChoice?)PaymentPicker.SelectedItem)?.Code : null,
+            Limit: limit, IncludeExpired: IncludeExpiredCheck.IsChecked == true,
+            MismatchesOnly: MismatchesCheck.IsChecked == true, ProductName: product?.Name, VendorName: vendor?.Name);
+    }
+
+    private async Task LoadVendorsAsync()
+    {
+        IReadOnlyList<VendorItem> vendors = await _purchasing.GetVendorsAsync(includeInactive: true);
+        ShowVendors(vendors.Select(static vendor => new VendorChoice(vendor.Id, vendor.Name)), selected: null);
+    }
+
+    // Every vendor, inactive ones included, after All vendors.
+    private void ShowVendors(IEnumerable<VendorChoice> vendors, long? selected)
+    {
+        bool wasSuppressed = _suppressRefresh;
+        _suppressRefresh = true;
+        try
+        {
+            VendorChoice[] choices = [new VendorChoice(null, TranslationSource.Instance["Purchasing_AllVendors"]), .. vendors];
+            VendorFilter.ItemsSource = choices;
+            VendorFilter.SelectedItem = choices.FirstOrDefault(choice => choice.Id == selected) ?? choices[0];
+        }
+        finally { _suppressRefresh = wasSuppressed; }
+    }
+
+    // Enter searches by name, SKU or barcode, archived products included: one match is chosen, several
+    // are listed under the box.
+    private async void ProductFilter_OnKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Down && ProductChoices.IsOpen)
+        {
+            e.Handled = true;
+            ProductChoices.FocusSelected();
+            return;
+        }
+        if (e.Key != Key.Enter) return;
+        e.Handled = true;
+        string query = ProductFilter.Text.Trim();
+        if (query.Length == 0) return;
+        try
+        {
+            IReadOnlyList<ProductListItem> matches = await _catalog.SearchAsync(
+                new ProductSearchFilter(query, IncludeArchived: true, Limit: 50));
+            if (matches.Count == 1)
+            {
+                await ChooseProductAsync(matches[0]);
+                return;
+            }
+            StatusText.Text = matches.Count == 0
+                ? TranslationSource.Instance["Purchasing_NoProduct"]
+                : TranslationSource.Instance.Format("Purchasing_MatchesFound", matches.Count);
+            if (matches.Count > 1) ProductChoices.Open(matches);
+        }
+        catch (Exception exception) { StatusText.Text = UserError.Message(exception); }
+    }
+
+    private async void ProductChoices_OnPicked(object? sender, ProductListItem product) => await ChooseProductAsync(product);
+
+    private void ProductChoices_OnClosed(object? sender, EventArgs e) => ProductFilter.Focus();
+
+    private async Task ChooseProductAsync(ProductListItem product)
+    {
+        ShowProduct((product.Id, product.Name));
+        if (_loadOnShow && IsLoaded && !_suppressRefresh && !IsPnl) await RefreshAsync();
+    }
+
+    private void ShowProduct((long Id, string Name)? product)
+    {
+        _product = product;
+        _showingProduct = true;
+        ProductFilter.Text = product?.Name ?? "";
+        ProductFilter.CaretIndex = ProductFilter.Text.Length;
+        _showingProduct = false;
+    }
+
+    // Typing over a chosen product drops it, so the report never filters by a product the box no
+    // longer names.
+    private async void ProductFilter_OnTextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_showingProduct || _product is null) return;
+        _product = null;
+        if (_loadOnShow && IsLoaded && !_suppressRefresh && !IsPnl) await RefreshAsync();
+    }
+
+    private sealed record VendorChoice(long? Id, string Name);
 
     private static void SelectChoice(ComboBox picker, string? code)
     {
@@ -523,7 +632,7 @@ public partial class ReportsPage : Page
     private async void Export_OnClick(object sender, RoutedEventArgs e)
     {
         if (_exportCancellation is not null || (_currentPnl is null && _currentReport is null)) return;
-        var dialog = new SaveFileDialog { Filter = "Excel workbook (*.xlsx)|*.xlsx", FileName = "report.xlsx" };
+        var dialog = new SaveFileDialog { Filter = TranslationSource.Instance["Common_ExcelFileFilter"], FileName = "report.xlsx" };
         if (dialog.ShowDialog() != true) return;
         using var cancellation = new CancellationTokenSource();
         _exportCancellation = cancellation;
@@ -584,12 +693,7 @@ public partial class ReportsPage : Page
                 ? DateOnly.FromDateTime(fromDate) : _clock.BusinessDate;
             DateOnly to = ToPicker.SelectedDate is { } toDate
                 ? DateOnly.FromDateTime(toDate) : _clock.BusinessDate;
-            var filter = new ReportFilter(From: from, To: to,
-                ProductId: ParseId(ProductFilter.Text), VendorId: ParseId(VendorFilter.Text),
-                Status: ((FilterChoice?)StatusPicker.SelectedItem)?.Code,
-                PaymentMode: ((FilterChoice?)PaymentPicker.SelectedItem)?.Code,
-                IncludeExpired: IncludeExpiredCheck.IsChecked == true,
-                MismatchesOnly: MismatchesCheck.IsChecked == true);
+            ReportFilter filter = CurrentFilter(kind, from, to);
             var progress = new Progress<long>(count =>
                 StatusText.Text = TranslationSource.Instance.Format("Reports_ExportedRows", count));
             long rows = await _reports.ExportCsvAsync(kind, filter, dialog.FileName,
@@ -692,13 +796,6 @@ public partial class ReportsPage : Page
     {
         DateOnly date = DateOnly.ParseExact(month + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture);
         return _formatter.MonthYear(date, TranslationSource.Instance.UiCulture);
-    }
-
-    private static long? ParseId(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        if (long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out long id) && id > 0) return id;
-        throw new ArgumentException(TranslationSource.Instance["Reports_InvalidFilter"]);
     }
 
     private sealed record PnlDisplayRow(PnlLayoutRow Row, string Label, string Amount, bool IsBold);

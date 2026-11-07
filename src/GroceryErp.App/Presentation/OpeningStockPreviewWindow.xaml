@@ -2,12 +2,16 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    xmlns:p="clr-namespace:GroceryErp.App.Presentation"
         Title="{l:Tr Stock_OpeningPreview}" Width="940" Height="610" MinWidth="740" MinHeight="460"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterOwner" p:ScreenHelp.Topic="opening-stock">
   <Grid Margin="20">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <StackPanel Margin="0,0,0,16">
-      <TextBlock FontSize="24" FontWeight="SemiBold" Text="{l:Tr Stock_OpeningPreview}"/>
+      <DockPanel>
+        <p:HelpButton DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top"/>
+        <TextBlock FontSize="24" FontWeight="SemiBold" Text="{l:Tr Stock_OpeningPreview}"/>
+      </DockPanel>
       <TextBlock x:Name="SummaryText" Margin="0,4,0,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
     </StackPanel>
     <DataGrid x:Name="RowsGrid" Grid.Row="1" Style="{StaticResource CatalogGrid}">

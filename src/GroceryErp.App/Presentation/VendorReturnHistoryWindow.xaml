@@ -2,18 +2,22 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    xmlns:p="clr-namespace:GroceryErp.App.Presentation"
         Title="{l:Tr Purchasing_ReturnHistory}" Width="850" Height="570"
-        MinWidth="650" MinHeight="420" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+        MinWidth="650" MinHeight="420" WindowStartupLocation="CenterOwner" ShowInTaskbar="False" p:ScreenHelp.Topic="return-history">
   <Grid Margin="14">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <TextBlock Text="{l:Tr Purchasing_ReturnHistory}" FontSize="21" FontWeight="SemiBold" Margin="0,0,0,8"/>
+    <DockPanel>
+      <p:HelpButton DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top"/>
+      <TextBlock Text="{l:Tr Purchasing_ReturnHistory}" FontSize="21" FontWeight="SemiBold" Margin="0,0,0,8"/>
+    </DockPanel>
     <DataGrid x:Name="ReturnsGrid" Grid.Row="1" Style="{StaticResource CompactTableGrid}"
               AutoGenerateColumns="False" SelectionMode="Single" SelectionChanged="ReturnsGrid_OnSelectionChanged">
       <DataGrid.Columns>
-        <DataGridTextColumn Header="{l:Tr Purchasing_Grn}" Binding="{Binding DocumentNumber}" Width="150"/>
-        <DataGridTextColumn Header="{l:Tr Purchasing_Received}" Binding="{Binding Date, StringFormat=dd MMM yyyy}" Width="125"/>
-        <DataGridTextColumn Header="{l:Tr Purchasing_Total}" Binding="{Binding CreditTotal}" Width="125"/>
+        <DataGridTextColumn Header="{l:Tr Purchasing_Document}" Binding="{Binding DocumentNumber}" Width="150"/>
+        <DataGridTextColumn Header="{l:Tr Purchasing_Date}" Binding="{Binding Date, StringFormat=dd MMM yyyy}" Width="125"/>
+        <DataGridTextColumn Header="{l:Tr Purchasing_Credit}" Binding="{Binding CreditTotal}" Width="125"/>
         <DataGridTextColumn Header="{l:Tr Purchasing_CostValue}" Binding="{Binding CostTotal}" Width="125"/>
         <DataGridCheckBoxColumn Header="{l:Tr Purchasing_ReturnCancelled}" Binding="{Binding IsCancelled}" Width="120"/>
         <DataGridTextColumn Header="{l:Tr Purchasing_ReturnCancelledDate}" Binding="{Binding CancellationDate, StringFormat=dd MMM yyyy}" Width="125"/>

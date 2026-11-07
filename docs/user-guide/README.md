@@ -3,6 +3,7 @@
 - [English guide](english.md)
 - [ગુજરાતી માર્ગદર્શિકા](gujarati.md)
 - [Screenshot index](screenshots.md)
+- [Screen help](help/README.md): the text each screen's ⓘ and F1 show in the app
 
 The guides follow the operator's path from setup through purchasing, stock, billing, money out, reports, and backup. Each chapter links the screen and its related dialogs or expanded panels. Screenshots use synthetic demonstration records. Amounts, names, and dates in them are examples.
 

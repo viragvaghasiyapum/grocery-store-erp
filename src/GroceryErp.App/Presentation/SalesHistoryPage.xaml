@@ -6,7 +6,7 @@
  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
  FontFamily="{StaticResource AppFont}" NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN"
  Title="{l:Tr Sales_History_Title}" NumberSubstitution.Substitution="European"
- ScrollViewer.CanContentScroll="False">
+ ScrollViewer.CanContentScroll="False" local:ScreenHelp.Topic="sales-history">
  <Page.Resources>
   <local:SaleStatusConverter x:Key="SaleStatusConverter"/>
   <local:LegacySnapshotTextConverter x:Key="LegacySnapshotTextConverter"/>
@@ -36,7 +36,10 @@
     <ProgressBar x:Name="ExportProgress" Width="64" Height="5" Margin="0,0,8,0" VerticalAlignment="Center" IsIndeterminate="True"/>
     <Button x:Name="CancelExportButton" Style="{StaticResource ToolbarButton}" Margin="0" IsEnabled="False" Click="CancelExport_OnClick" Content="{l:Tr Common_Cancel}"/>
    </StackPanel>
-   <TextBlock x:Name="TitleText" Style="{StaticResource PageTitle}" Text="{l:Tr Sales_History_Title}"/>
+   <StackPanel x:Name="TitleHeader" Orientation="Horizontal">
+     <TextBlock x:Name="TitleText" Style="{StaticResource PageTitle}" Text="{l:Tr Sales_History_Title}" Margin="0,0,6,0"/>
+     <local:HelpButton VerticalAlignment="Center"/>
+   </StackPanel>
   </DockPanel>
   <StackPanel Grid.Row="1" Margin="0,0,0,2">
   <WrapPanel x:Name="FilterBar">
@@ -50,7 +53,7 @@
     <ComboBoxItem Content="{l:Tr Purchasing_AnyStatus}"/><ComboBoxItem Content="{l:Tr Sales_CompletedStatus}" Tag="Completed"/>
     <ComboBoxItem Content="{l:Tr Sales_Status_PartiallyRefunded}" Tag="PartiallyRefunded"/>
     <ComboBoxItem Content="{l:Tr Sales_Status_Refunded}" Tag="Refunded"/>
-    <ComboBoxItem Content="{l:Tr Sales_Void}" Tag="Void"/>
+    <ComboBoxItem Content="{l:Tr Sales_Status_Void}" Tag="Void"/>
    </ComboBox>
    <ToggleButton x:Name="MoreFiltersToggle" Margin="0,0,6,4" MinHeight="32" Padding="10,4" Click="MoreFilters_OnClick" Content="{l:Tr Common_MoreFilters}"/>
    <Button Style="{StaticResource ToolbarButton}" Margin="0,0,6,4" Click="Refresh_OnClick" Content="{l:Tr Sales_Search}" FontWeight="SemiBold" ToolTip="Enter"/>
@@ -123,7 +126,7 @@
         <DataGridTextColumn Width="*" MinWidth="160" Header="{l:Tr Catalog_Name}" Binding="{Binding ProductName}"/>
         <DataGridTextColumn Width="110" Header="{l:Tr Stock_LotCode}" Binding="{Binding RestockLotCode}"/>
         <DataGridTextColumn Width="90" Header="{l:Tr Stock_Quantity}" Binding="{Binding Quantity}"/>
-        <DataGridTextColumn Width="110" Header="{l:Tr Receipt_RefundTotal}" Binding="{Binding Refund}"/>
+        <DataGridTextColumn Width="110" Header="{l:Tr Sales_ReturnRefundHeader}" Binding="{Binding Refund}"/>
         <DataGridTextColumn Width="135" Header="{l:Tr Sales_ReturnRestockHeader}" Binding="{Binding DispositionCode,Converter={StaticResource SaleActivityConverter}}"/>
         <DataGridTextColumn Width="150" Header="{l:Tr Stock_Reason}" Binding="{Binding Reason}"/>
        </DataGrid.Columns>

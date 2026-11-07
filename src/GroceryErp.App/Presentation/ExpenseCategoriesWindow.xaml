@@ -4,12 +4,15 @@
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     xmlns:p="clr-namespace:GroceryErp.App.Presentation"
     Title="{l:Tr MoneyOut_CategoryDetails}" Width="620" Height="480" MinWidth="520" MinHeight="380"
-    WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}">
+    WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}" p:ScreenHelp.Topic="expense-categories">
   <Grid Margin="20">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <Grid.ColumnDefinitions><ColumnDefinition Width="220"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
     <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,8">
-      <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr MoneyOut_CategoryDetails}"/>
+      <DockPanel>
+        <p:HelpButton DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top"/>
+        <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr MoneyOut_CategoryDetails}"/>
+      </DockPanel>
       <TextBlock Style="{StaticResource FormContext}" Text="{l:Tr MoneyOut_CategoriesContext}"/>
     </StackPanel>
     <ListBox x:Name="CategoryList" Grid.Row="1" DisplayMemberPath="Name" SelectionChanged="CategoryList_OnSelectionChanged"

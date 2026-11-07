@@ -5,11 +5,14 @@
         xmlns:p="clr-namespace:GroceryErp.App.Presentation"
         Title="{l:Tr Stock_AddDirectLot}" Width="560" Height="640" MinWidth="460" MinHeight="480"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
-        NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+        NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European" p:ScreenHelp.Topic="direct-lot">
   <Grid Margin="20">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <StackPanel>
-      <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr Stock_AddDirectLot}"/>
+      <DockPanel>
+        <p:HelpButton DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top"/>
+        <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr Stock_AddDirectLot}"/>
+      </DockPanel>
       <TextBlock Style="{StaticResource FormContext}" Text="{l:Tr Stock_DirectLotContext}"/>
     </StackPanel>
     <p:FormErrorSummary x:Name="Summary" Grid.Row="1"/>

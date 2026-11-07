@@ -6,11 +6,14 @@
     xmlns:p="clr-namespace:GroceryErp.App.Presentation"
     Title="{l:Tr Catalog_EditorTitle}" Width="720" Height="720" MinWidth="560" MinHeight="480"
     WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
-    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European" p:ScreenHelp.Topic="product-form">
   <Grid Margin="20">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <StackPanel Margin="0,0,0,8">
-      <TextBlock x:Name="TitleText" Style="{StaticResource FormTitle}" Text="{l:Tr Catalog_New}"/>
+      <DockPanel>
+        <p:HelpButton DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top"/>
+        <TextBlock x:Name="TitleText" Style="{StaticResource FormTitle}" Text="{l:Tr Catalog_New}"/>
+      </DockPanel>
       <TextBlock Style="{StaticResource FormContext}" Text="{l:Tr Catalog_FormContext}"/>
     </StackPanel>
     <p:ProductForm x:Name="Form" Grid.Row="1"/>

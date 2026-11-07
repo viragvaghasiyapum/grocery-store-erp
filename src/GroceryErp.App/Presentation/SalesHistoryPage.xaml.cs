@@ -58,7 +58,7 @@ public partial class SalesHistoryPage : Page
         RestoreState();
         _ = new FilterRow(FilterBar, ProductBox, MoreFiltersToggle, MoreFiltersPanel)
             .Fold(FromLabel, FromPicker, ToLabel, ToPicker).Fold(StatusBox);
-        _ = new ActionStrip(TitleRow, TitleActions, MoreActionsMenu, MoreActions, ActionStrip.TitleRow(TitleText));
+        _ = new ActionStrip(TitleRow, TitleActions, MoreActionsMenu, MoreActions, ActionStrip.TitleRow(TitleHeader));
         _fit = new FitPageSize(HistoryGrid);
         _fit.RowsChanged += async (_, _) => await RefreshAsync(reset: false);
         _detail = new DetailSplit(Layout, Detail, Detail, HistoryGrid, "SalesHistory");

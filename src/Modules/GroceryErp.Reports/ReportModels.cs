@@ -103,6 +103,8 @@ public sealed record TabularReport(string Title, DateRange? Period, IReadOnlyLis
     IReadOnlyList<ReportRow> Rows, IReadOnlyDictionary<string, decimal> Totals, bool IsTruncated = false,
     string? Summary = null, string? Filters = null);
 
+/// <param name="ProductName">The chosen product's name, for the filter line of exports; filtering uses the ID.</param>
+/// <param name="VendorName">The chosen vendor's name, for the filter line of exports; filtering uses the ID.</param>
 public sealed record ReportFilter(DateOnly? From = null, DateOnly? To = null, long? ProductId = null,
     long? VendorId = null, string? Status = null, string? PaymentMode = null, int Limit = 5000,
-    bool IncludeExpired = true, bool MismatchesOnly = false);
+    bool IncludeExpired = true, bool MismatchesOnly = false, string? ProductName = null, string? VendorName = null);

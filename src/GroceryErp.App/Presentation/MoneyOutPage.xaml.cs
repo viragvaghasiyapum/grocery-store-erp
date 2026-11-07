@@ -48,7 +48,7 @@ public partial class MoneyOutPage : Page
         _inventory = inventory ?? services!.GetRequiredService<InventoryService>();
         _clock = clock ?? services!.GetRequiredService<IClock>();
         _loadOnShow = loadOnShow;
-        _ = new ActionStrip(ExpenseActions, ExpenseButtons, ExpenseMoreMenu, ExpenseMore);
+        _ = new ActionStrip(ExpenseActions, ExpenseButtons, ExpenseMoreMenu, ExpenseMore, ActionStrip.TitleRow(TabHelp));
         DamageDetails.Follow(DamageGrid);
         ExpenseDetails.Follow(ExpenseGrid);
         EmployeeDetails.Follow(EmployeeGrid);
@@ -563,7 +563,7 @@ public partial class MoneyOutPage : Page
     private static string ExpenseHistoryText(ExpenseHistoryItem item) => HistoryText(item.Kind, item.RecordedOn,
         item.Treatment, item.AppliedOn ?? item.Date, string.Join(" · ", new[]
         {
-            Day(item.Date), item.CategoryName, $"₹{Number(item.Amount.Value)}", item.Mode, item.PaidTo,
+            Day(item.Date), item.CategoryName, $"₹{Number(item.Amount.Value)}", MoneyModeConverter.Text(item.Mode), item.PaidTo,
         }.Where(static value => !string.IsNullOrWhiteSpace(value))), item.CorrectionReason);
 
     private async void EmployeeGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -597,7 +597,7 @@ public partial class MoneyOutPage : Page
             SalaryDetails.Show($"{item.EmployeeName} · {item.Period}", dating, item.Status != "VOID",
                 history.Select(static entry => HistoryText(entry.Kind, entry.RecordedOn, entry.Treatment,
                     entry.EffectiveDate, string.Join(" · ", $"₹{Number(entry.Amount.Value)}",
-                        $"{T("MoneyOut_PayDate")} {Day(entry.PayDate)}", entry.Mode), entry.CorrectionReason)));
+                        $"{T("MoneyOut_PayDate")} {Day(entry.PayDate)}", MoneyModeConverter.Text(entry.Mode)), entry.CorrectionReason)));
         }
         catch (OperationCanceledException) when (request.Token.IsCancellationRequested) { }
         catch (Exception exception) { ShowStatus(UserError.Message(exception)); }

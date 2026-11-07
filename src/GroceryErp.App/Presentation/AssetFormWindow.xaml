@@ -5,11 +5,14 @@
     xmlns:p="clr-namespace:GroceryErp.App.Presentation"
     Title="{l:Tr Assets_Details}" Width="620" Height="640" MinWidth="500" MinHeight="480"
     WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
-    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European" p:ScreenHelp.Topic="asset-form">
   <Grid Margin="20">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <StackPanel>
-      <TextBlock x:Name="TitleText" Style="{StaticResource FormTitle}" Text="{l:Tr Assets_New}"/>
+      <DockPanel>
+        <p:HelpButton DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top"/>
+        <TextBlock x:Name="TitleText" Style="{StaticResource FormTitle}" Text="{l:Tr Assets_New}"/>
+      </DockPanel>
       <TextBlock Style="{StaticResource FormContext}" Text="{l:Tr Assets_FormContext}"/>
     </StackPanel>
     <p:FormErrorSummary x:Name="Summary" Grid.Row="1"/>

@@ -640,7 +640,7 @@ public partial class ProductsPage : Page
 
     private async void OpeningImport_OnClick(object sender, RoutedEventArgs e)
     {
-        var picker = new OpenFileDialog { Filter = "Excel workbook (*.xlsx)|*.xlsx" };
+        var picker = new OpenFileDialog { Filter = TranslationSource.Instance["Common_ExcelFileFilter"] };
         if (picker.ShowDialog() != true) return;
         try
         {
@@ -658,7 +658,7 @@ public partial class ProductsPage : Page
 
     private void OpeningTemplate_OnClick(object sender, RoutedEventArgs e)
     {
-        var picker = new SaveFileDialog { Filter = "Excel workbook (*.xlsx)|*.xlsx", FileName = "opening-stock-template.xlsx" };
+        var picker = new SaveFileDialog { Filter = TranslationSource.Instance["Common_ExcelFileFilter"], FileName = "opening-stock-template.xlsx" };
         if (picker.ShowDialog() != true) return;
         try
         {

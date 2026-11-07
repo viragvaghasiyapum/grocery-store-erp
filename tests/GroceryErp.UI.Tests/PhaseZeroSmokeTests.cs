@@ -221,6 +221,7 @@ public sealed class PhaseZeroSmokeTests
                 VerifyStockAndPayableTiles(translations);
                 VerifyNextLotAndReturnTax(translations);
                 VerifyReleaseNotes(translations);
+                VerifyHelpWindow(translations);
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 DisplayFormatter formatter = new();
                 ShellViewModel viewModel = new(translations);
@@ -265,6 +266,8 @@ public sealed class PhaseZeroSmokeTests
                 steps.SelectedIndex.ShouldBe(0);
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
                 var setupNext = (Button)setup.FindName("NextButton");
+                HelpDocument setupHelp = ScreenHelp.Read("setup", translations.UiCulture).ShouldNotBeNull();
+                HelpButton setupInfo = Descendants<HelpButton>(setup).Single();
                 for (int step = 1; step < steps.Items.Count; step++)
                 {
                     if (step == 2) ((TextBox)setup.FindName("StoreName")).Text = "Test grocery";
@@ -275,6 +278,10 @@ public sealed class PhaseZeroSmokeTests
                     }
                     setupNext.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     steps.SelectedIndex.ShouldBe(step);
+                    // The ⓘ opens the setup help at the step on screen (a section per step, after the intro).
+                    IReadOnlyList<string> openStep = ScreenHelp.Tabs(setupInfo, everywhere: true);
+                    openStep.ShouldBe([(string)((TabItem)steps.SelectedItem).Header]);
+                    new HelpWindow(setupHelp, null, openStep, 600).OpenedSection.ShouldBe(setupHelp.Sections[step + 1].Heading);
                     Capture(setup, $"onboarding-{step + 1}.en.png");
                 }
                 setup.Close();
@@ -305,6 +312,7 @@ public sealed class PhaseZeroSmokeTests
                 var settingsHost = new Window { Content = settingsPage, Width = 1000, Height = 720 };
                 settingsHost.Show();
                 VerifyAccessibleNames(settingsHost);
+                VerifyPageHelp(settingsHost, settingsPage, "settings");
                 Capture(settingsHost, "settings-top.en.png");
                 ((ScrollViewer)settingsPage.Content).ScrollToEnd();
                 Capture(settingsHost, "settings-bottom.en.png");
@@ -400,6 +408,7 @@ public sealed class PhaseZeroSmokeTests
                 ((ToggleButton)products.FindName("MoreFiltersToggle")).Content.ShouldNotBe("More filters");
                 Capture(productsWindow, "products.gu.png");
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                VerifyScreenHelp(productsWindow, products, translations);
                 VerifyStickyProductTable(productsWindow, products);
                 ((DataGrid)products.FindName("ProductsGrid")).Columns[1].Width =
                     new DataGridLength(176, DataGridLengthUnitType.Pixel);
@@ -840,6 +849,7 @@ public sealed class PhaseZeroSmokeTests
                 var purchasesHost = new Window { Content = purchasesPage, Width = 1080, Height = 700 };
                 purchasesHost.Show();
                 ((DatePicker)purchasesPage.FindName("FromBox")).IsVisible.ShouldBeTrue();
+                VerifyPageHelp(purchasesHost, purchasesPage, "purchases");
                 VerifyAccessibleNames(purchasesHost);
                 Capture(purchasesHost, "purchases-page.en.png");
                 var moreFilters = (ToggleButton)purchasesPage.FindName("MoreFiltersToggle");
@@ -906,6 +916,7 @@ public sealed class PhaseZeroSmokeTests
                 var vendorsHost = new Window { Content = vendorsPage, Width = 1080, Height = 700 };
                 vendorsHost.Show();
                 ((DataGrid)vendorsPage.FindName("VendorsGrid")).SelectedIndex = 0;
+                VerifyPageHelp(vendorsHost, vendorsPage, "vendors");
                 ((PagerBar)vendorsPage.FindName("Pager")).Status = translations.Format("Purchasing_VendorCount", 2);
                 ((FrameworkElement)vendorsPage.FindName("Selection")).Visibility.ShouldBe(Visibility.Collapsed);
                 VerifyAccessibleNames(vendorsHost);
@@ -935,6 +946,7 @@ public sealed class PhaseZeroSmokeTests
                         new Money(12000), true, null),
                 };
                 moneyOutHost.Show();
+                VerifyPageHelp(moneyOutHost, moneyOutPage, "money-out");
                 // Damage, Expenses, Employees and posted payments are separate tabs; each shows
                 // only its own actions above the tabs.
                 var moneyOutTabs = (TabControl)moneyOutPage.FindName("MoneyOutTabs");
@@ -975,6 +987,10 @@ public sealed class PhaseZeroSmokeTests
                 var assetsHost = new Window { Content = assetsPage, Width = 1120, Height = 700 };
                 assetsHost.Show();
                 // Add, edit and dispose open their own dialogs; the table keeps the page.
+                VerifyPageHelp(assetsHost, assetsPage, "assets");
+                // The earlier timeline check squeezed this table beside its panel; a squeeze is never saved
+                // as the layout, so the columns open at their own widths.
+                ((DataGrid)assetsPage.FindName("AssetGrid")).Columns[1].ActualWidth.ShouldBe(120, 1);
                 ((FrameworkElement)assetsPage.FindName("Timeline")).Visibility.ShouldBe(Visibility.Collapsed);
                 ((Button)assetsPage.FindName("EditAssetButton")).IsEnabled.ShouldBeFalse();
                 // The timeline opens from the title row for the selected asset, not a button in every row.
@@ -1041,6 +1057,7 @@ public sealed class PhaseZeroSmokeTests
                 var billingHost = new Window { Content = billing, Width = 1120, Height = 680 };
                 billingHost.Show();
                 VerifyAccessibleNames(billingHost);
+                VerifyPageHelp(billingHost, billing, "billing");
                 Capture(billingHost, "billing.en.png");
                 TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
                 ((TextBlock)billing.FindName("SavingsText")).Text = TranslationSource.Instance.Format("Sales_Savings", "4.000");
@@ -1111,6 +1128,7 @@ public sealed class PhaseZeroSmokeTests
                 var historyHost = new Window { Content = history, Width = 1120, Height = 720 };
                 historyHost.Show();
                 // Date pickers show the app's dd-MM-yyyy dates whatever the PC's region, and fit them.
+                VerifyPageHelp(historyHost, history, "sales-history");
                 var fromPicker = (DatePicker)history.FindName("FromPicker");
                 fromPicker.SelectedDate = new DateTime(2026, 10, 24);
                 historyHost.UpdateLayout();
@@ -1197,6 +1215,13 @@ public sealed class PhaseZeroSmokeTests
                 quantityDialog.Show();
                 Capture(quantityDialog, "quantity.en.png");
                 quantityDialog.Close();
+                // Change price reuses the box with its own title and help.
+                QuantityWindow priceDialog = QuantityWindow.ForPrice(new Money(28));
+                priceDialog.Show();
+                priceDialog.Title.ShouldBe("Change price");
+                ScreenHelp.GetTopic(priceDialog).ShouldBe("price-change");
+                VerifyDialogHelp(priceDialog);
+                priceDialog.Close();
 
                 var dayEnd = new DayEndWindow(new DayEndSummary(new DateOnly(2026, 10, 3), 12,
                     new Money(3720), new Money(120), new Money(3428.571m), new Money(171.429m),
@@ -1296,9 +1321,10 @@ public sealed class PhaseZeroSmokeTests
                     var reportOutput = new ReportOutputService(settings, translations);
                     var reportNavigation = new ReportNavigationState();
                     var reportsPage = new ReportsPage(reportService, reportOutput, reportClock,
-                        new DisplayFormatter(), reportNavigation, loadOnShow: false);
+                        new DisplayFormatter(), reportNavigation, catalog, purchasing, loadOnShow: false);
                     var reportsHost = new Window { Content = reportsPage, Width = 1120, Height = 700 };
                     reportsHost.Show();
+                    VerifyPageHelp(reportsHost, reportsPage, "reports", "ReportGrid");
                     ((DataGrid)reportsPage.FindName("PnlGrid")).ItemsSource = new[]
                     {
                         new { Label = "Sales (net of GST)", Amount = "90.000" },
@@ -1336,6 +1362,7 @@ public sealed class PhaseZeroSmokeTests
                     var dashboardPage = new DashboardPage(reportService, reportNavigation, loadOnShow: false);
                     var dashboardHost = new Window { Content = dashboardPage, Width = 1120, Height = 700 };
                     dashboardHost.Show();
+                    VerifyPageHelp(dashboardHost, dashboardPage, "dashboard");
                     PopulateDashboardCapture(dashboardPage, translations);
                     Capture(dashboardHost, "dashboard.gu.png");
                     dashboardHost.Width = 740;
@@ -1545,7 +1572,7 @@ public sealed class PhaseZeroSmokeTests
                 assetsHost.UpdateLayout();
                 assetsHost.UpdateLayout();
                 var row = (FrameworkElement)assetsPage.FindName("TitleRow");
-                double needed = Wide((FrameworkElement)assetsPage.FindName("TitleText")) + assetOrder.Sum(Wide);
+                double needed = Wide((FrameworkElement)assetsPage.FindName("TitleHeader")) + assetOrder.Sum(Wide);
                 bool folded = assetOrder.Any(button => button.Visibility != Visibility.Collapsed && !assetActions.Children.Contains(button));
                 folded.ShouldBe(needed > row.ActualWidth - 2, $"Assets timeline at {width}: row {row.ActualWidth:0}, needed {needed:0}");
             }
@@ -1566,7 +1593,7 @@ public sealed class PhaseZeroSmokeTests
             assetForm.Close();
 
             var reportsPage = new ReportsPage(reports, new ReportOutputService(settings, translations), clock,
-                new DisplayFormatter(), new ReportNavigationState());
+                new DisplayFormatter(), new ReportNavigationState(), new CatalogService(database, new AuditLog(), settings, clock), purchasing);
             var reportsHost = new Window { Content = reportsPage, Width = ShellPageWidth, Height = ShellPageHeight, Language = AppLanguage };
             reportsHost.Show();
             var status = (TextBlock)reportsPage.FindName("PnlStatusText");
@@ -1584,6 +1611,26 @@ public sealed class PhaseZeroSmokeTests
             PumpUntil(() => status.Text.StartsWith("અંતિમ", StringComparison.Ordinal) || !status.Text.StartsWith("Finalized", StringComparison.Ordinal));
             CaptureRevision(reportsHost, "pnl-fiscal-finalized.gu.png");
             translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+            // A report's product is found by name, SKU or barcode and shown by name, not typed as an ID
+            // nobody can see; typing over it drops it. The purchase register lists vendors by name.
+            var reportPicker = (ComboBox)reportsPage.FindName("ReportPicker");
+            reportPicker.SelectedItem = reportPicker.Items.Cast<object>()
+                .Single(choice => choice.ToString() == translations["Reports_Kind_StockReconciliation"]);
+            var productFilter = (TextBox)reportsPage.FindName("ProductFilter");
+            productFilter.Text = "salt001";
+            productFilter.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(reportsHost), 0, Key.Enter)
+            { RoutedEvent = Keyboard.KeyDownEvent });
+            PumpUntil(() => productFilter.Text == "Tata Salt 1 kg");
+            var reportGrid = (DataGrid)reportsPage.FindName("ReportGrid");
+            PumpUntil(() => reportGrid.Items.Count == 1);
+            productFilter.Text = "Tata";
+            productFilter.Text.ShouldBe("Tata");
+            var vendorFilter = (ComboBox)reportsPage.FindName("VendorFilter");
+            PumpUntil(() => vendorFilter.Items.Count > 0);
+            vendorFilter.Items[0]!.ToString()!.ShouldContain(translations["Purchasing_AllVendors"]);
+            vendorFilter.SelectedIndex.ShouldBe(0);
+            reportPicker.SelectedItem = reportPicker.Items.Cast<object>()
+                .Single(choice => choice.ToString() == translations["Reports_Kind_ProfitAndLoss"]);
             ((ComboBox)reportsPage.FindName("ScopePicker")).SelectedIndex = 1;
             PumpUntil(() => status.Text.StartsWith("Open · editable through 07-01-2027", StringComparison.Ordinal));
             ((CheckBox)reportsPage.FindName("MonthsCheck")).IsChecked = true;
@@ -1718,7 +1765,7 @@ public sealed class PhaseZeroSmokeTests
             // nothing for a lot saved without tax values.
             DataGridColumn inclColumn = grid.Columns.Single(column => Equals(column.Header, translations["Stock_CostInclTax"]));
             grid.Columns.IndexOf(inclColumn).ShouldBe(grid.Columns.IndexOf(
-                grid.Columns.Single(column => Equals(column.Header, translations["Catalog_Mrp"]))) + 1);
+                grid.Columns.Single(column => Equals(column.Header, translations["Stock_Mrp"]))) + 1);
             grid.UpdateLayout();
             ((TextBlock)inclColumn.GetCellContent(grid.Items[0])).Text.ShouldBe("262.50");
             ((TextBlock)inclColumn.GetCellContent(grid.Items[1])).Text.ShouldBe("—");
@@ -2423,6 +2470,162 @@ public sealed class PhaseZeroSmokeTests
     // scroll, so at 1366x768 (728 px above the taskbar) or 150% scaling (488 px) the notes ran off the
     // screen. The window stays inside the work area, the notes scroll and Close stays in view.
     // Captured in both languages when GROCERY_MESSAGE_SCREENSHOT_DIR is set.
+    // F1 in a field opens the screen's help scrolled to that field's row, never past the screen.
+    // Runs before the shell is shown: pumping later would start the shell's first page.
+    private static void VerifyHelpWindow(TranslationSource translations)
+    {
+        foreach ((string culture, string file) in new[] { ("en-IN", "help-products.en.png"), ("gu-IN", "help-products.gu.png") })
+        {
+            translations.UiCulture = CultureInfo.GetCultureInfo(culture);
+            HelpDocument help = ScreenHelp.Read("products", translations.UiCulture).ShouldNotBeNull();
+            // On the Lots tab, F1 in its purchase price incl. tax marks only the lots' row, and the
+            // ⓘ opens at the tab's first section.
+            new HelpWindow(help, translations["Stock_CostInclTax"], [translations["Stock_Lots"]], 600).MarkedRows.Count.ShouldBe(1);
+            var lots = new HelpWindow(help, null, [translations["Catalog_BasicsTab"], translations["Stock_Lots"]], 600);
+            lots.MarkedRows.ShouldBeEmpty();
+            lots.OpenedSection.ShouldBe(help.Sections.First(section => section.Covers(translations["Stock_Lots"])).Heading);
+            lots.OpenedSection.ShouldStartWith(translations["Stock_Lots"] + ":");
+            var window = new HelpWindow(help, translations["Stock_CostInclTax"], [], 600) { Language = AppLanguage };
+            window.Show();
+            window.UpdateLayout();
+            var scroll = (ScrollViewer)window.FindName("Scroll");
+            PumpUntil(() => scroll.VerticalOffset > 0);
+            window.Title.ShouldBe(translations.Format("Help_Title", help.Title));
+            window.ActualHeight.ShouldBeLessThanOrEqualTo(600);
+            // Products and its lots both show a purchase price incl. tax; the first is in view.
+            window.MarkedRows.Count.ShouldBe(2);
+            double top = window.MarkedRows[0].TranslatePoint(new Point(0, 0), scroll).Y;
+            top.ShouldBeInRange(0, scroll.ViewportHeight - window.MarkedRows[0].ActualHeight);
+            // The help has focus, so the arrow and page keys scroll it.
+            FocusManager.GetFocusedElement(window).ShouldBe(scroll);
+            string text = TextOf(window);
+            text.ShouldNotContain("<!--");
+            text.ShouldNotContain("screenshots");
+            CaptureMessage(window, file);
+            window.Close();
+        }
+        translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+    }
+
+    // The ⓘ beside the Products title and F1 in any of its fields open the Products help, and every
+    // filter and column on the page has a row there in both languages.
+    private static void VerifyScreenHelp(Window host, ProductsPage products, TranslationSource translations)
+    {
+        var stock = (ComboBox)products.FindName("StockFilter");
+        var grid = (DataGrid)products.FindName("ProductsGrid");
+        HelpButton button = Descendants<HelpButton>(host).Single();
+        ScreenHelp.GetTopic(button).ShouldBe("products");
+        ScreenHelp.GetTopic(grid).ShouldBe("products");
+        System.Windows.Automation.AutomationProperties.GetName(button).ShouldBe(translations["Help_Button"]);
+        ScreenHelp.Register();
+        ApplicationCommands.Help.CanExecute(null, stock).ShouldBeTrue();
+        var outside = new Window { Content = new TextBox() };
+        outside.Show();
+        ApplicationCommands.Help.CanExecute(null, (TextBox)outside.Content).ShouldBeFalse();
+        outside.Close();
+
+        Control[] filters =
+        [
+            .. LogicalTreeHelper.GetChildren((DependencyObject)products.FindName("FilterBar")).OfType<Control>(),
+            .. LogicalTreeHelper.GetChildren((DependencyObject)products.FindName("MoreFiltersPanel")).OfType<Control>(),
+        ];
+        filters.Length.ShouldBeGreaterThan(8);
+        foreach (string culture in new[] { "en-IN", "gu-IN" })
+        {
+            translations.UiCulture = CultureInfo.GetCultureInfo(culture);
+            host.UpdateLayout();
+            HelpDocument help = ScreenHelp.Read("products", translations.UiCulture).ShouldNotBeNull();
+            ScreenHelp.FieldLabel(stock).ShouldBe(translations["Catalog_Stock"]);
+            foreach (string label in filters.Select(filter => ScreenHelp.FieldLabel(filter).ShouldNotBeNull())
+                         .Concat(grid.Columns.Select(static column => column.Header).OfType<string>()))
+                help.Rows.ShouldContain(row => row.Describes(label), $"{culture}: no help row for \"{label}\"");
+        }
+        translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+    }
+
+    // The ⓘ on a page opens that page's help, and every column of its tables, its panels' and
+    // hidden tabs' included, and every field of its filter rows has a row there in both languages.
+    // Tables whose columns follow the data, such as a report's, are named in generatedGrids.
+    private static void VerifyPageHelp(Window host, FrameworkElement page, string topic, params string[] generatedGrids)
+    {
+        ScreenHelp.GetTopic(page).ShouldBe(topic);
+        ScreenHelp.GetTopic(Descendants<HelpButton>(host).Single()).ShouldBe(topic);
+        var labels = new List<(DependencyObject Target, DependencyProperty Property)>();
+        foreach (DataGrid grid in LogicalDescendants<DataGrid>(page).Where(grid => !generatedGrids.Contains(grid.Name)))
+            labels.AddRange(grid.Columns.Where(static column => column.Header is string)
+                .Select(static column => ((DependencyObject)column, DataGridColumn.HeaderProperty)));
+        foreach (string bar in new[] { "FilterBar", "MoreFiltersPanel" })
+        {
+            if (page.FindName(bar) is not Panel filters) continue;
+            foreach (Control control in filters.Children.OfType<Control>())
+                labels.Add(System.Windows.Automation.AutomationProperties.GetName(control) is { Length: > 0 }
+                    ? (control, System.Windows.Automation.AutomationProperties.NameProperty)
+                    : (control, ContentControl.ContentProperty));
+        }
+        VerifyHelpRows(topic, labels);
+    }
+
+    private static readonly HashSet<string> CheckedDialogs = new(StringComparer.Ordinal);
+
+    // A dialog with help (its window names a topic) shows its ⓘ, and every form field and every
+    // table column in it has a row in that help in both languages. The capture helpers call this, so
+    // each dialog the smoke test shows is checked once in each language it is shown in.
+    private static void VerifyDialogHelp(Window window)
+    {
+        if (window.ReadLocalValue(ScreenHelp.TopicProperty) == DependencyProperty.UnsetValue) return;
+        string topic = ScreenHelp.GetTopic(window)!;
+        if (!CheckedDialogs.Add($"{window.GetType().Name}/{topic}/{TranslationSource.Instance.UiCulture.Name}")) return;
+        window.UpdateLayout();
+        Descendants<HelpButton>(window).ShouldNotBeEmpty($"{topic}: the dialog shows its ⓘ");
+        var labels = new List<(DependencyObject Target, DependencyProperty Property)>();
+        foreach (DataGrid grid in LogicalDescendants<DataGrid>(window).Where(NotCollapsed))
+            labels.AddRange(grid.Columns.Where(static column => column.Header is string && column.Visibility == Visibility.Visible)
+                .Select(static column => ((DependencyObject)column, DataGridColumn.HeaderProperty)));
+        foreach (FormField field in LogicalDescendants<FormField>(window).Where(static field => field.Label.Length > 0 && NotCollapsed(field)))
+            labels.Add((field, FormField.LabelProperty));
+        VerifyHelpRows(topic, labels);
+    }
+
+    // Whether the dialog shows this element in its current use: nothing up to the window is
+    // collapsed. A field on a tab that is not open still counts; its tab is not collapsed.
+    private static bool NotCollapsed(DependencyObject element)
+    {
+        for (DependencyObject? node = element; node is not null; node = LogicalTreeHelper.GetParent(node))
+            if (node is UIElement { Visibility: not Visibility.Visible }) return false;
+        return true;
+    }
+
+    private static void VerifyHelpRows(string topic, IEnumerable<(DependencyObject Target, DependencyProperty Property)> labels)
+    {
+        foreach (string culture in new[] { "en-IN", "gu-IN" })
+        {
+            HelpDocument help = ScreenHelp.Read(topic, CultureInfo.GetCultureInfo(culture)).ShouldNotBeNull($"{topic}: help in {culture}");
+            foreach ((DependencyObject target, DependencyProperty property) in labels)
+            {
+                if (LabelIn(target, property, CultureInfo.GetCultureInfo(culture)) is not { } label) continue;
+                help.Rows.ShouldContain(row => row.Describes(label), $"{topic} {culture}: no help row for \"{label}\"");
+            }
+        }
+    }
+
+    // A label in either language without switching the screen's: the text its {l:Tr} binding
+    // names. Text set without a binding, such as "GSTIN" or a label a window built in code, is in the
+    // language on screen, so it is checked in that language only (null for the other).
+    private static string? LabelIn(DependencyObject target, DependencyProperty property, CultureInfo culture) =>
+        System.Windows.Data.BindingOperations.GetBinding(target, property) is { Path.Path: ['[', .. string key, ']'] }
+            ? SharedStrings.ResourceManager.GetString(key, culture) ?? $"⟦{key}⟧"
+            : culture.Name == TranslationSource.Instance.UiCulture.Name ? target.GetValue(property) as string : null;
+
+    private static IEnumerable<T> LogicalDescendants<T>(DependencyObject root) where T : DependencyObject
+    {
+        foreach (object child in LogicalTreeHelper.GetChildren(root))
+        {
+            if (child is not DependencyObject node) continue;
+            if (node is T match) yield return match;
+            foreach (T nested in LogicalDescendants<T>(node)) yield return nested;
+        }
+    }
+
     private static void VerifyReleaseNotes(TranslationSource translations)
     {
         foreach ((string culture, string file) in new[] { ("en-IN", "release-notes.en.png"), ("gu-IN", "release-notes.gu.png") })
@@ -2946,6 +3149,7 @@ public sealed class PhaseZeroSmokeTests
 
     private static void CaptureRevision(Window window, string fileName)
     {
+        VerifyDialogHelp(window);
         window.UpdateLayout();
         CaptureRevision((Visual)window.Content, window.ActualWidth, window.ActualHeight, fileName);
     }
@@ -2967,6 +3171,7 @@ public sealed class PhaseZeroSmokeTests
 
     private static void CaptureMessage(Window window, string fileName)
     {
+        VerifyDialogHelp(window);
         string? directory = Environment.GetEnvironmentVariable("GROCERY_MESSAGE_SCREENSHOT_DIR");
         if (string.IsNullOrEmpty(directory)) return;
         window.UpdateLayout();
@@ -3190,6 +3395,7 @@ public sealed class PhaseZeroSmokeTests
 
     private static void Capture(Window window, string fileName)
     {
+        VerifyDialogHelp(window);
         string? phase7Directory = Environment.GetEnvironmentVariable("GROCERY_PHASE7_SCREENSHOT_DIR");
         if (phase7Directory is not null && fileName is not ("settings-top.en.png" or "settings-bottom.en.png" or
             "settings-top.gu.png" or "restore.en.png" or "restore.gu.png" or "compaction.en.png" or "compaction.gu.png")) return;

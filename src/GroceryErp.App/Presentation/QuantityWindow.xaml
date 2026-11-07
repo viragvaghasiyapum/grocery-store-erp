@@ -2,10 +2,12 @@
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
- Title="{l:Tr Sales_Quantity}" Width="320" Height="170" WindowStartupLocation="CenterOwner">
+    xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+ Title="{l:Tr Sales_Quantity}" Width="320" Height="170" WindowStartupLocation="CenterOwner" p:ScreenHelp.Topic="quantity">
  <StackPanel Margin="20">
-  <TextBox x:Name="ValueBox" Height="36"/>
+  <TextBox x:Name="ValueBox" Height="36" AutomationProperties.Name="{l:Tr Stock_Quantity}"/>
   <StackPanel Margin="0,16,0,0" HorizontalAlignment="Right" Orientation="Horizontal">
+   <p:HelpButton Margin="0,0,8,0" VerticalAlignment="Center"/>
    <Button Width="90" IsCancel="True" Content="{l:Tr Common_Cancel}"/>
    <Button Width="90" Margin="8,0,0,0" IsDefault="True" Click="Save_OnClick" Content="{l:Tr Common_Save}"/>
   </StackPanel>

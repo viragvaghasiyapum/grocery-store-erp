@@ -867,7 +867,7 @@ public sealed class FoundationsTests
         await service.CompleteAsync(new FirstRunRequest(
             "owner", "correct horse battery staple", "Test Store", "Address", "9999999999", "", "Gujarat",
             "REGULAR", "en-IN", fixture.Paths.DefaultBackupDir, "20", "21", "Receipt", 384,
-            "Labels", "60x40", "A4", 14, "27", true, "IMPORT",
+            "Labels", "60x40", 14, "27", true,
             FirstRunService.RequiredSeedKeys.ToDictionary(key => key, key =>
                 SharedStrings.ResourceManager.GetString(key, System.Globalization.CultureInfo.GetCultureInfo("gu-IN"))!)),
             TestContext.Current.CancellationToken);
@@ -875,7 +875,8 @@ public sealed class FoundationsTests
         using var connection = fixture.Factory.Open();
         connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'printer.receipt.width_dots'").ShouldBe("384");
         connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'backup.usb_reminder_days'").ShouldBe("14");
-        connection.ExecuteScalar<string>("SELECT value FROM setting WHERE key = 'setup.start_choice'").ShouldBe("IMPORT");
+        // Setup no longer asks for a start choice or an A4 printer, which nothing read (O-8).
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM setting WHERE key IN ('setup.start_choice','printer.a4.name')").ShouldBe(0L);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM app_user").ShouldBe(1L);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM uom WHERE name_local IS NOT NULL").ShouldBe(8L);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM expense_category WHERE name_local IS NOT NULL").ShouldBe(10L);

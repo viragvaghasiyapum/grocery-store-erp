@@ -71,7 +71,6 @@
   <data name="Setup_ReceiptWidth" xml:space="preserve"><value>Receipt width</value></data>
   <data name="Setup_LabelPrinter" xml:space="preserve"><value>Label printer</value></data>
   <data name="Setup_LabelSize" xml:space="preserve"><value>Label size</value></data>
-  <data name="Setup_A4Printer" xml:space="preserve"><value>A4 printer</value></data>
   <data name="Setup_PrinterHelp" xml:space="preserve"><value>Install Windows printer drivers before setup. Use Print test to check each selected printer.</value></data>
   <data name="Setup_StepBarcodes" xml:space="preserve"><value>6  Barcodes</value></data>
   <data name="Setup_BarcodePrefixes" xml:space="preserve"><value>Internal barcode prefixes</value></data>
@@ -86,9 +85,7 @@
   <data name="Setup_KeyboardHelp" xml:space="preserve"><value>For Gujarati entry, install the Gujarati Phonetic keyboard in Windows Settings → Time &amp; language → Language &amp; region.</value></data>
   <data name="Setup_StepStart" xml:space="preserve"><value>8  Start</value></data>
   <data name="Setup_Ready" xml:space="preserve"><value>Ready to start</value></data>
-  <data name="Setup_StartHelp" xml:space="preserve"><value>Choose how to begin. Product import can be completed after setup from the Catalog module.</value></data>
-  <data name="Setup_StartEmpty" xml:space="preserve"><value>Start with an empty catalog</value></data>
-  <data name="Setup_StartImport" xml:space="preserve"><value>Import products from Excel after setup</value></data>
+  <data name="Setup_StartHelp" xml:space="preserve"><value>Finish saves the setup and takes the first backup. Then add products on the Products page, one by one or with Import Excel.</value></data>
   <data name="Setup_OpeningStockHelp" xml:space="preserve"><value>Opening stock can be entered later.</value></data>
   <data name="Setup_Back" xml:space="preserve"><value>Back</value></data>
   <data name="Setup_Next" xml:space="preserve"><value>Next</value></data>
@@ -268,7 +265,7 @@
   <data name="Purchasing_VendorLedger" xml:space="preserve"><value>Vendor ledger</value></data>
   <data name="Purchasing_Payments" xml:space="preserve"><value>Payments</value></data>
   <data name="Purchasing_LotsSupplied" xml:space="preserve"><value>Lots supplied</value></data>
-  <data name="Purchasing_LedgerHint" xml:space="preserve"><value>Opening balance, posted purchases and payments in date order.</value></data>
+  <data name="Purchasing_LedgerHint" xml:space="preserve"><value>Purchases, payments and returns, newest first. Balance due is what was owed after each entry, opening balance included.</value></data>
   <data name="Purchasing_Debit" xml:space="preserve"><value>Debit</value></data>
   <data name="Purchasing_Credit" xml:space="preserve"><value>Credit</value></data>
   <data name="Purchasing_Contact" xml:space="preserve"><value>Contact person</value></data>
@@ -451,7 +448,7 @@
   <data name="Assets_PostAllHint" xml:space="preserve"><value>Posts due depreciation for all eligible assets.</value></data>
   <data name="MoneyOut_New" xml:space="preserve"><value>New</value></data>
   <data name="MoneyOut_Active" xml:space="preserve"><value>Active</value></data>
-  <data name="MoneyOut_RepeatCategories" xml:space="preserve"><value>Choose categories to repeat (uses current category when none are selected)</value></data>
+  <data name="MoneyOut_RepeatCategories" xml:space="preserve"><value>Categories to repeat</value></data>
   <data name="MoneyOut_CategoryName" xml:space="preserve"><value>Category name</value></data>
   <data name="MoneyOut_LocalName" xml:space="preserve"><value>Gujarati name</value></data>
   <data name="MoneyOut_EmployeeName" xml:space="preserve"><value>Employee name</value></data>
@@ -510,8 +507,8 @@
   <data name="Pnl_Head_Salaries" xml:space="preserve"><value>Salaries</value></data>
   <data name="Pnl_Head_Depreciation" xml:space="preserve"><value>Depreciation</value></data>
   <data name="Pnl_Head_AssetDisposal" xml:space="preserve"><value>Asset disposal gain/(loss)</value></data>
-  <data name="Reports_FilterProduct" xml:space="preserve"><value>Product ID</value></data>
-  <data name="Reports_FilterVendor" xml:space="preserve"><value>Vendor ID</value></data>
+  <data name="Reports_FilterProduct" xml:space="preserve"><value>Product</value></data>
+  <data name="Reports_FilterVendor" xml:space="preserve"><value>Vendor</value></data>
   <data name="Settings_Update_CheckFolder" xml:space="preserve"><value>Update from USB</value></data>
   <data name="Settings_Update_SelectFolder" xml:space="preserve"><value>Select the Releases folder on the USB drive</value></data>
   <data name="Settings_Update_None" xml:space="preserve"><value>No newer version was found in this folder.</value></data>
@@ -769,7 +766,6 @@
   <data name="Reports_Status" xml:space="preserve"><value>Status</value></data>
   <data name="Reports_Payment" xml:space="preserve"><value>Payment mode</value></data>
   <data name="Reports_InvalidDates" xml:space="preserve"><value>End date must be on or after start date.</value></data>
-  <data name="Reports_InvalidFilter" xml:space="preserve"><value>Enter a valid positive filter value.</value></data>
   <data name="Reports_RowCount" xml:space="preserve"><value>{0} rows</value></data>
   <data name="Reports_Period_ThisMonth" xml:space="preserve"><value>This month</value></data>
   <data name="Reports_Period_LastMonth" xml:space="preserve"><value>Last month</value></data>
@@ -1347,4 +1343,23 @@
   <data name="Purchasing_TaxRateRequired" xml:space="preserve"><value>choose a tax rate</value></data>
   <data name="Purchasing_CostValue" xml:space="preserve"><value>Cost value</value></data>
   <data name="Stock_PurchasePriceHint" xml:space="preserve"><value>Before tax, for one piece.</value></data>
+  <data name="Help_Button" xml:space="preserve"><value>Help for this screen (F1)</value></data>
+  <data name="Help_Hint" xml:space="preserve"><value>Click, or press F1, to read what this screen and each of its fields do.</value></data>
+  <data name="Help_Title" xml:space="preserve"><value>Help: {0}</value></data>
+  <data name="Help_FieldHint" xml:space="preserve"><value>Press F1 in any field to open this help at that field.</value></data>
+  <data name="Purchasing_LedgerEntry" xml:space="preserve"><value>Entry type</value></data>
+  <data name="Purchasing_LedgerKind_PURCHASE" xml:space="preserve"><value>Purchase</value></data>
+  <data name="Purchasing_LedgerKind_PURCHASE_VOID" xml:space="preserve"><value>Voided purchase</value></data>
+  <data name="Purchasing_LedgerKind_PAYMENT" xml:space="preserve"><value>Payment</value></data>
+  <data name="Purchasing_LedgerKind_VENDOR_RETURN" xml:space="preserve"><value>Vendor return</value></data>
+  <data name="Purchasing_LedgerKind_VENDOR_RETURN_CANCEL" xml:space="preserve"><value>Cancelled return</value></data>
+  <data name="MoneyOut_PaymentType" xml:space="preserve"><value>Type</value></data>
+  <data name="Sales_SavedBillSearch" xml:space="preserve"><value>Bill # or label</value></data>
+  <data name="Shell_StoreTagline" xml:space="preserve"><value>Dairy &amp; Grocery Store</value></data>
+  <data name="Sales_NoSavedBills" xml:space="preserve"><value>No saved bills found.</value></data>
+  <data name="Common_ExcelFileFilter" xml:space="preserve"><value>Excel workbook (*.xlsx)|*.xlsx</value></data>
+  <data name="Stock_ShortageReason" xml:space="preserve"><value>Shortage reason</value></data>
+  <data name="Reports_ProductSearch" xml:space="preserve"><value>Name, SKU or barcode, then Enter</value></data>
+  <data name="Catalog_PrinterMode" xml:space="preserve"><value>Printer type</value></data>
+  <data name="Catalog_PrnFileFilter" xml:space="preserve"><value>TSPL print file (*.prn)|*.prn|All files (*.*)|*.*</value></data>
 </root>

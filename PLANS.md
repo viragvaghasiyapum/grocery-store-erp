@@ -508,6 +508,10 @@ sentences, chart axes, receipts, labels, A4 documents, PDFs and Excel exports.
 - All application-owned text lives in `.resx`: labels, buttons, menus, tooltips, accessibility names
   (`AutomationProperties.Name`), confirmations, validation, status, errors, printed labels, report
   headings, help text.
+- The one exception is screen help (revised plan §16): each screen's help is one Markdown file per
+  language in `docs/user-guide/help/{en,gu}/`, embedded in the app and shared with the user guide.
+  Tests hold it to the same rules: both languages, the same shape, English digits, and bold field
+  names that match the labels on screen.
 - `Strings.resx` holds English (neutral, the fallback); `Strings.gu.resx` holds Gujarati.
 - Keys follow `{Prefix}_{Area}_{Item}` (impl §5.2), are stable and descriptive, and are never reused
   for a different meaning.

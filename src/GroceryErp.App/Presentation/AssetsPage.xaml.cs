@@ -49,7 +49,7 @@ public partial class AssetsPage : Page
         _assets = assets ?? services!.GetRequiredService<AssetService>();
         _clock = clock ?? services!.GetRequiredService<IClock>();
         _purchasing = purchasing ?? services!.GetRequiredService<PurchasingService>();
-        _ = new ActionStrip(TitleRow, TitleActions, MoreActionsMenu, MoreActions, ActionStrip.TitleRow(TitleText));
+        _ = new ActionStrip(TitleRow, TitleActions, MoreActionsMenu, MoreActions, ActionStrip.TitleRow(TitleHeader));
         _fit = new FitPageSize(AssetGrid);
         // Method and status cells and the row count are set in code, so a reload re-renders them.
         LanguageRefresh.Attach(this, () => _ = LoadAsync(PageMove.Same));

@@ -1193,6 +1193,21 @@ public sealed class SalesTests
             [lines[0], lines[0]], OperationGuard.NewId()), ct));
     }
 
+    // "Product or SKU" finds a bill by the start of the product's name as sold or of its SKU, in
+    // any case, through the index probe for a rare term and the per-bill check ('_' skips the probe).
+    [Fact]
+    public async Task HistoryProductFilter_FindsBillsByNameOrSku()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
+        await fixture.Sales.CompleteAsync(new(saleId, [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+        foreach (string typed in new[] { "Sales Prod", "sales prod", "SALE-001", "sale-0", "_ALE-001", "_ales" })
+            (await fixture.Sales.GetHistoryAsync(new SaleHistoryFilter(Product: typed), ct)).Single().Id.ShouldBe(saleId, typed);
+        (await fixture.Sales.GetHistoryAsync(new SaleHistoryFilter(Product: "SALE-002"), ct)).ShouldBeEmpty();
+        (await fixture.Sales.GetHistoryAsync(new SaleHistoryFilter(Product: "_ALE-002"), ct)).ShouldBeEmpty();
+    }
+
     private sealed class SalesFixture : IDisposable
     {
         private readonly string _root;

@@ -1,11 +1,9 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.IO;
-using System.Printing;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 using GroceryErp.Core.Errors;
 using GroceryErp.Core.Numerics;
 using GroceryErp.Core.Time;
@@ -115,8 +113,7 @@ public partial class SetupWindow : FluentWindow
                     Username.Text, Password.Password, StoreName.Text, Address.Text, Phone.Text, Gstin.Text,
                     State.Text, taxMode, Gujarati.IsChecked == true ? "gu-IN" : "en-IN", BackupFolder.Text,
                     LotPrefix.Text, ProductPrefix.Text, ReceiptPrinter.Text, receiptWidth,
-                    LabelPrinter.Text, labelSize, A4Printer.Text, usbReminder, ScaleRule.Text,
-                    _gujaratiKeyboardAvailable, StartImport.IsChecked == true ? "IMPORT" : "EMPTY",
+                    LabelPrinter.Text, labelSize, usbReminder, ScaleRule.Text, _gujaratiKeyboardAvailable,
                     FirstRunService.RequiredSeedKeys.ToDictionary(key => key, key =>
                         SharedStrings.ResourceManager.GetString(key, CultureInfo.GetCultureInfo("gu-IN"))
                         ?? throw new InvalidOperationException($"Missing Gujarati seed translation: {key}")),
@@ -250,37 +247,6 @@ public partial class SetupWindow : FluentWindow
                 int.Parse(size[0], CultureInfo.InvariantCulture), int.Parse(size[1], CultureInfo.InvariantCulture));
             byte[] bytes = TsplLabelBuilder.Build(label);
             await Task.Run(() => RawPrinter.Send(LabelPrinter.Text.Trim(), bytes, Translate("Setup_TestDocument")));
-            ErrorText.Text = Translate("Setup_TestSent");
-        }
-        catch (Exception) { SetError("Setup_TestFailed"); }
-    }
-
-    private void A4Test_OnClick(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            ErrorText.Text = "";
-            var dialog = new PrintDialog();
-            if (!string.IsNullOrWhiteSpace(A4Printer.Text))
-                dialog.PrintQueue = new LocalPrintServer().GetPrintQueue(A4Printer.Text.Trim());
-            if (dialog.ShowDialog() != true) return;
-            var page = new Border
-            {
-                Width = dialog.PrintableAreaWidth,
-                Height = dialog.PrintableAreaHeight,
-                Padding = new Thickness(48),
-                Background = Brushes.White,
-                Child = new System.Windows.Controls.TextBlock
-                {
-                    FontFamily = new FontFamily("Nirmala UI"),
-                    FontSize = 22,
-                    Text = StoreName.Text + "\n\n" + Translate("Setup_TestDocument") + "\n" +
-                        _clock.Now.ToString("dd MMM yyyy HH:mm", TranslationSource.FormatCulture),
-                },
-            };
-            page.Measure(new Size(page.Width, page.Height));
-            page.Arrange(new Rect(0, 0, page.Width, page.Height));
-            dialog.PrintVisual(page, Translate("Setup_TestDocument"));
             ErrorText.Text = Translate("Setup_TestSent");
         }
         catch (Exception) { SetError("Setup_TestFailed"); }

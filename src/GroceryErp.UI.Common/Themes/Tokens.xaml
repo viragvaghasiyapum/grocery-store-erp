@@ -47,6 +47,12 @@
     <Setter Property="Padding" Value="6,2" />
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
+  <!-- The ⓘ beside a screen's title: an icon, lighter than the page's actions, that opens its help. -->
+  <Style x:Key="HelpButton" TargetType="Button" BasedOn="{StaticResource PagerButton}">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="Foreground" Value="{StaticResource SelectedTabTextBrush}" />
+  </Style>
   <Style x:Key="FilterLabel" TargetType="TextBlock">
     <Setter Property="VerticalAlignment" Value="Center" />
     <!-- Filter controls keep a 4 px bottom margin; matching it keeps labels on their line. -->

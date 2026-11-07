@@ -355,7 +355,7 @@ public partial class LabelBatchWindow : Window
             byte[] command = TsplLabelBuilder.BuildBatch(BuildLabels());
             var dialog = new SaveFileDialog
             {
-                Filter = "TSPL print file (*.prn)|*.prn|All files (*.*)|*.*",
+                Filter = TranslationSource.Instance["Catalog_PrnFileFilter"],
                 FileName = "labels.prn",
                 AddExtension = true,
                 DefaultExt = ".prn",

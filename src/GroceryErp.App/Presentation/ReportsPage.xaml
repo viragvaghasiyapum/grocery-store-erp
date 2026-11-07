@@ -2,7 +2,9 @@
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
- Title="{l:Tr Reports_Title}" FontFamily="{StaticResource AppFont}" ScrollViewer.CanContentScroll="False">
+ xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+ xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+ Title="{l:Tr Reports_Title}" FontFamily="{StaticResource AppFont}" ScrollViewer.CanContentScroll="False" p:ScreenHelp.Topic="reports">
  <Grid Margin="14,8,14,8">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
   <!-- One title row: the status line and the totals of the whole result, then the actions. -->
@@ -25,7 +27,10 @@
    </StackPanel>
    <TextBlock x:Name="TotalsText" DockPanel.Dock="Right" Margin="12,0,12,0" VerticalAlignment="Center" FontWeight="SemiBold"
               TextTrimming="CharacterEllipsis" MaxWidth="520" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
-   <TextBlock Style="{StaticResource PageTitle}" Text="{l:Tr Reports_Title}"/>
+   <StackPanel Orientation="Horizontal">
+    <TextBlock Style="{StaticResource PageTitle}" Margin="0,0,6,0" Text="{l:Tr Reports_Title}"/>
+    <p:HelpButton VerticalAlignment="Center"/>
+   </StackPanel>
    <TextBlock x:Name="StatusText" Style="{StaticResource StatusText}" AutomationProperties.LiveSetting="Polite"
               ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
   </DockPanel>
@@ -54,8 +59,17 @@
   <WrapPanel x:Name="MoreFiltersPanel" Grid.Row="2" Margin="0,0,0,2" Visibility="Collapsed">
     <StackPanel x:Name="StatusFilterPanel" Orientation="Horizontal"><TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_Status}"/><ComboBox x:Name="StatusPicker" Width="130" Margin="0,0,12,6" SelectionChanged="FilterPicker_OnSelectionChanged" AutomationProperties.Name="{l:Tr Reports_Status}"/></StackPanel>
     <StackPanel x:Name="PaymentFilterPanel" Orientation="Horizontal"><TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_Payment}"/><ComboBox x:Name="PaymentPicker" Width="130" Margin="0,0,12,6" SelectionChanged="FilterPicker_OnSelectionChanged" AutomationProperties.Name="{l:Tr Reports_Payment}"/></StackPanel>
-    <StackPanel x:Name="ProductFilterPanel" Orientation="Horizontal"><TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterProduct}"/><TextBox x:Name="ProductFilter" Width="90" Margin="0,0,12,6" AutomationProperties.Name="{l:Tr Reports_FilterProduct}"/></StackPanel>
-    <StackPanel x:Name="VendorFilterPanel" Orientation="Horizontal"><TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterVendor}"/><TextBox x:Name="VendorFilter" Width="90" Margin="0,0,12,6" AutomationProperties.Name="{l:Tr Reports_FilterVendor}"/></StackPanel>
+    <!-- A product is found by name, SKU or barcode; several matches are listed under the box. -->
+    <StackPanel x:Name="ProductFilterPanel" Orientation="Horizontal">
+     <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterProduct}"/>
+     <Grid Margin="0,0,12,6">
+      <ui:TextBox x:Name="ProductFilter" Width="240" PlaceholderText="{l:Tr Reports_ProductSearch}" ToolTip="{l:Tr Purchasing_ProductSearchHint}"
+                  KeyDown="ProductFilter_OnKeyDown" TextChanged="ProductFilter_OnTextChanged" AutomationProperties.Name="{l:Tr Reports_FilterProduct}"/>
+      <p:ProductChoices x:Name="ProductChoices" PlacementTarget="{Binding ElementName=ProductFilter}"
+                        Picked="ProductChoices_OnPicked" Closed="ProductChoices_OnClosed"/>
+     </Grid>
+    </StackPanel>
+    <StackPanel x:Name="VendorFilterPanel" Orientation="Horizontal"><TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterVendor}"/><ComboBox x:Name="VendorFilter" Width="220" Margin="0,0,12,6" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="FilterPicker_OnSelectionChanged" AutomationProperties.Name="{l:Tr Reports_FilterVendor}"/></StackPanel>
   </WrapPanel>
   <Border Grid.Row="3" Padding="6" CornerRadius="8" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"><Grid>
    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>

@@ -4,7 +4,7 @@
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     xmlns:p="clr-namespace:GroceryErp.App.Presentation"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-    Title="{l:Tr Catalog_Title}" FontFamily="{StaticResource AppFont}"
+    Title="{l:Tr Catalog_Title}" FontFamily="{StaticResource AppFont}" p:ScreenHelp.Topic="products"
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European"
     ScrollViewer.CanContentScroll="False">
   <Grid x:Name="Layout" Margin="14,8,14,8">
@@ -30,7 +30,10 @@
           </MenuItem>
         </Menu>
       </StackPanel>
-      <TextBlock Style="{StaticResource PageTitle}" Text="{l:Tr Catalog_Title}"/>
+      <StackPanel Orientation="Horizontal">
+        <TextBlock Style="{StaticResource PageTitle}" Margin="0,0,6,0" Text="{l:Tr Catalog_Title}"/>
+        <p:HelpButton/>
+      </StackPanel>
     </DockPanel>
 
     <WrapPanel x:Name="FilterBar" Grid.Row="1" Margin="0,0,0,2">
@@ -126,7 +129,7 @@
           </DataGridTemplateColumn>
           <!-- Selling price, MRP and purchase price incl. tax come from the lot that sells next. -->
           <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Price}" Binding="{Binding SellingPrice, Converter={StaticResource Amount}}"/>
-          <DataGridTextColumn Width="100" Header="{l:Tr Catalog_Mrp}" Binding="{Binding Mrp, Converter={StaticResource Amount}}"/>
+          <DataGridTextColumn Width="100" Header="{l:Tr Stock_Mrp}" Binding="{Binding Mrp, Converter={StaticResource Amount}}"/>
           <DataGridTextColumn Width="125" Header="{l:Tr Stock_CostInclTax}" Binding="{Binding CostInclTax, Converter={StaticResource Amount}}"/>
           <DataGridTemplateColumn Width="70" Header="{l:Tr Catalog_Active}">
             <DataGridTemplateColumn.CellTemplate><DataTemplate>

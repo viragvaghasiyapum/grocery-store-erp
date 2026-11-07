@@ -30,7 +30,7 @@
                  Source="/GroceryErp.App;component/Assets/logo.jpeg" Stretch="Uniform"/>
           <TextBlock x:Name="StoreHeading" FontSize="15" FontWeight="SemiBold" Text="Hare Krushna"
                      TextTrimming="CharacterEllipsis" VerticalAlignment="Center" MaxWidth="220"/>
-          <TextBlock x:Name="StoreTagline" Margin="8,0,0,0" FontSize="12" Opacity="0.72" Text="Dairy &amp; Grocery Store" VerticalAlignment="Center"/>
+          <TextBlock x:Name="StoreTagline" Margin="8,0,0,0" FontSize="12" Opacity="0.72" Text="{l:Tr Shell_StoreTagline}" VerticalAlignment="Center"/>
           <TextBlock x:Name="BusinessDate" Margin="10,0,0,0" FontSize="12" Opacity="0.72" VerticalAlignment="Center"/>
         </StackPanel>
       </ui:TitleBar.Header>

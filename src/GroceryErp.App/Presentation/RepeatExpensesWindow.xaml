@@ -5,12 +5,18 @@
     xmlns:p="clr-namespace:GroceryErp.App.Presentation"
     Title="{l:Tr MoneyOut_RepeatLastMonth}" Width="820" Height="560" MinWidth="640" MinHeight="420"
     WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
-    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European" p:ScreenHelp.Topic="repeat-expenses">
+  <Window.Resources>
+    <p:MoneyModeConverter x:Key="MoneyMode"/>
+  </Window.Resources>
   <Grid Margin="20">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <Grid.ColumnDefinitions><ColumnDefinition Width="210"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
     <StackPanel Grid.ColumnSpan="2">
-      <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr MoneyOut_RepeatLastMonth}"/>
+      <DockPanel>
+        <p:HelpButton DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top"/>
+        <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr MoneyOut_RepeatLastMonth}"/>
+      </DockPanel>
       <TextBlock Style="{StaticResource FormContext}" Text="{l:Tr MoneyOut_RepeatContext}"/>
     </StackPanel>
     <p:FormErrorSummary x:Name="Summary" Grid.Row="1" Grid.ColumnSpan="2"/>
@@ -29,7 +35,7 @@
         <DataGridTextColumn Width="105" Header="{l:Tr Purchasing_Date}" Binding="{Binding DateText}"/>
         <DataGridTextColumn Width="*" MinWidth="120" Header="{l:Tr Catalog_Category}" Binding="{Binding CategoryName}" IsReadOnly="True"/>
         <DataGridTextColumn Width="100" Header="{l:Tr MoneyOut_Amount}" Binding="{Binding AmountText}"/>
-        <DataGridTextColumn Width="80" Header="{l:Tr Purchasing_Mode}" Binding="{Binding Mode}" IsReadOnly="True"/>
+        <DataGridTextColumn Width="80" Header="{l:Tr Purchasing_Mode}" Binding="{Binding Mode, Converter={StaticResource MoneyMode}}" IsReadOnly="True"/>
         <DataGridTextColumn Width="130" Header="{l:Tr MoneyOut_PaidTo}" Binding="{Binding PaidTo}"/>
       </DataGrid.Columns>
     </DataGrid>

@@ -4,11 +4,11 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     xmlns:p="clr-namespace:GroceryErp.App.Presentation"
-    Title="{l:Tr Sales_Pos_Title}" ScrollViewer.CanContentScroll="False">
+    Title="{l:Tr Sales_Pos_Title}" ScrollViewer.CanContentScroll="False" p:ScreenHelp.Topic="billing">
   <Grid Margin="14,8,14,8" NumberSubstitution.Substitution="European">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <Grid>
-      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
       <Grid>
         <TextBox x:Name="ScanBox" Height="48" FontSize="20" KeyDown="ScanBox_OnKeyDown"
                  ToolTip="{l:Tr Sales_Scan_Hint}" AutomationProperties.Name="{l:Tr Sales_Scan_Hint}" />
@@ -36,6 +36,8 @@
         </StackPanel>
         <TextBlock x:Name="CustomerText" FontSize="12" TextTrimming="CharacterEllipsis"/>
       </StackPanel>
+      <!-- Billing has no title; its help sits at the end of the scan row. -->
+      <p:HelpButton Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center"/>
     </Grid>
     <Grid Grid.Row="1" Margin="0,8,0,0">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>

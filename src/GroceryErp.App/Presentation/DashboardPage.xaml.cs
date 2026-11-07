@@ -196,12 +196,14 @@ public partial class DashboardPage : Page
     private void TopProduct_OnDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (_summary is not { } summary || sender is not DataGrid { SelectedItem: TopDisplay product }) return;
-        OpenReport(ReportKind.ItemSales, summary.AsOf.AddDays(-29), summary.AsOf, productId: product.ProductId);
+        OpenReport(ReportKind.ItemSales, summary.AsOf.AddDays(-29), summary.AsOf, productId: product.ProductId,
+            productName: product.Product);
     }
 
-    private void OpenReport(ReportKind kind, DateOnly from, DateOnly to, string? status = null, long? productId = null)
+    private void OpenReport(ReportKind kind, DateOnly from, DateOnly to, string? status = null, long? productId = null,
+        string? productName = null)
     {
-        _navigation.Open(kind, from, to, status: status, productId: productId);
+        _navigation.Open(kind, from, to, status: status, productId: productId, productName: productName);
         if (Window.GetWindow(this) is ShellWindow shell) shell.OpenReports();
     }
 

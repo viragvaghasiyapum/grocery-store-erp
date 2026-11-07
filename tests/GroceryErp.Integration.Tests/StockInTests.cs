@@ -1159,6 +1159,50 @@ public sealed class StockInTests
         shortage.Code.ShouldBe(ErrorCode.InsufficientStock);
     }
 
+    // Purchases and payments alternate by date, so each one-kind tab has the other kind between its
+    // rows; every row still shows the balance the full ledger shows after that entry, across pages.
+    [Fact]
+    public async Task VendorTabs_ShowTheLedgerBalanceAfterEachEntry()
+    {
+        using var fixture = new StockInFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        for (int index = 0; index < 3; index++)
+        {
+            var date = new DateOnly(2026, 9, 10 + 4 * index);
+            PostedPurchase posted = await fixture.Purchasing.PostAsync(await fixture.Purchasing.SaveDraftAsync(null,
+                fixture.Purchase($"INV-TAB-{index}") with { VendorInvoiceDate = date, ReceivedDate = date }, ct),
+                OperationGuard.NewId(), ct);
+            await fixture.Purchasing.RecordPaymentAsync(new(fixture.VendorId, posted.Id, date.AddDays(2),
+                new Money(1000 + index), "CASH", $"PAY-TAB-{index}", null), OperationGuard.NewId(), ct);
+        }
+
+        List<VendorLedgerItem> ledger = await AllPagesAsync(null);
+        ledger.Count.ShouldBe(6);
+        ledger[0].Balance.ShouldBe(new Money(100 + 3 * 2725 - 3003));
+        foreach (string kind in new[] { "PURCHASE", "PAYMENT" })
+        {
+            List<VendorLedgerItem> tab = await AllPagesAsync(kind);
+            tab.Count.ShouldBe(3);
+            foreach (VendorLedgerItem item in tab)
+                item.Balance.ShouldBe(ledger.Single(entry => entry.Kind == kind && entry.Reference == item.Reference).Balance,
+                    $"{kind} {item.Reference}");
+        }
+
+        async Task<List<VendorLedgerItem>> AllPagesAsync(string? kind)
+        {
+            VendorLedgerPage page = await fixture.Purchasing.GetVendorLedgerPageAsync(fixture.VendorId, limit: 2,
+                filterKind: kind, cancellationToken: ct);
+            var items = new List<VendorLedgerItem>(page.Items);
+            while (page.HasMore)
+            {
+                page = await fixture.Purchasing.GetVendorLedgerPageAsync(fixture.VendorId, page.NextDate, page.NextKind,
+                    page.NextId, limit: 2, filterKind: kind, cancellationToken: ct);
+                items.AddRange(page.Items);
+            }
+            return items;
+        }
+    }
+
     private sealed class StockInFixture : IDisposable
     {
         public StockInFixture()
