@@ -28,7 +28,7 @@ The SDK is pinned to 10.0.401 by `global.json`. A repo-local SDK in `.tools/dotn
 dotnet restore GroceryErp.slnx
 dotnet format GroceryErp.slnx --verify-no-changes --no-restore   # CI gate
 dotnet build GroceryErp.slnx -c Release --no-restore            # warnings are errors
-dotnet test GroceryErp.slnx -c Release --no-build               # ~325 tests; 2 opt-in UI journeys skip
+dotnet test GroceryErp.slnx -c Release --no-build               # ~358 tests; 2 opt-in UI journeys skip
 ```
 
 The test runner is **Microsoft.Testing.Platform** with xUnit v3 (set in `global.json`). Use `--project` and the xUnit v3 filters. Older docs use VSTest-style `--filter "FullyQualifiedName~..."`; use the forms below instead:
@@ -64,7 +64,7 @@ Opt-in UI tests: `PackagedOperatorJourneyTests` needs `GROCERY_PACKAGED_UI_TEST=
 - Modules are flat: `XxxModule.cs` (`IModule.Register` for DI, plus nav items), `XxxService*.cs` (services and their SQL together) and `XxxModels.cs` (DTOs). Partial classes split large services, e.g. `SalesService.ReturnRecreation.cs`.
 - Every WPF page and window lives in `src/GroceryErp.App/Presentation/` with code-behind. Modules hold no views.
 - All UI text is in one shared pair of files: `src/GroceryErp.Localization/Resources/Strings.resx` and `Strings.gu.resx`. Every module's `IModule.Strings` returns `SharedStrings.ResourceManager`. XAML uses `{l:Tr Key}`, and code uses `TranslationSource.Instance["Key"]`.
-- Screen help is the exception (revised plan §16): `docs/user-guide/help/{en,gu}/{topic}.md`, embedded by the App csproj, is shown by the ⓘ `HelpButton` beside a title and by F1 for the screen whose root sets `p:ScreenHelp.Topic`. The bold names in a help table must be labels the screen shows, in both languages (`ScreenHelpTests`), and every column and filter of a page needs a row (`VerifyPageHelp` in the UI smoke test); change the help with the label. A screen with tabs has a section per tab, named as the tab, and the help opens at the open tab. All ten pages and all 47 dialogs have help (index in `docs/user-guide/help/README.md`). A window built in code, or one window serving two purposes (Return/Void, Quantity/Change price), sets its topic with `ScreenHelp.SetTopic(this, "topic")` with the name written out, since `ScreenHelpTests` reads topics from those calls; a new dialog needs a topic, an ⓘ and both help files, and `VerifyDialogHelp` checks each dialog the smoke test captures. The guides' rework and screenshots with the ⓘ are next. This is on branch `screen-help`, for the release after 1.2.0.
+- Screen help is the exception (revised plan §16): `docs/user-guide/help/{en,gu}/{topic}.md`, embedded by the App csproj, is shown by the ⓘ `HelpButton` beside a title and by F1 for the screen whose root sets `p:ScreenHelp.Topic`. The bold names in a help table must be labels the screen shows, in both languages (`ScreenHelpTests`), and every column and filter of a page needs a row (`VerifyPageHelp` in the UI smoke test); change the help with the label. A screen with tabs has a section per tab, named as the tab, and the help opens at the open tab. All ten pages and all 46 dialogs have help (index in `docs/user-guide/help/README.md`). A window built in code, or one window serving two purposes (Return/Void, Quantity/Change price), sets its topic with `ScreenHelp.SetTopic(this, "topic")` with the name written out, since `ScreenHelpTests` reads topics from those calls; a new dialog needs a topic, an ⓘ and both help files, and `VerifyDialogHelp` checks each dialog the smoke test captures. The guides' rework and screenshots with the ⓘ are next. This is on branch `screen-help`, for the release after 1.2.0.
 
 Follow the structure that exists. Don't create the PLANS.md folders for one feature.
 
@@ -120,6 +120,7 @@ Triggers also enforce immutability: completed sale financials, posted purchase a
 
 - Integration tests run against real temporary SQLite files migrated to `MigrationRunner.LatestVersion`. Assert against that constant, never a literal version.
 - Each test class defines its own private fixture (`SalesFixture`, `StockInFixture`, …). There is no shared helper; copy the nearest fixture's pattern.
+- `AuditScenarioTests` enters a month of every document type through the services and checks every report, the dashboard, day end and the receipts against hand-worked figures, plus SQL checks that each projection equals its source rows. Change its expected figures only by working them out again by hand. DataGen refuses to write a purchase that does not add up; a store generated before 7 November 2026 (such as the `artifacts` fixtures) has purchase lines and headers with fixed amounts, so its purchase totals, Purchase register, inward GST and vendor balances do not add up. Check a suspected money bug on a store written through the services before blaming the app.
 - `Localization/LocalizationTests` enforces identical English/Gujarati key and placeholder sets, and no Gujarati digits (૦–૯) in any resource.
 
 ## Rules that bite
@@ -128,6 +129,7 @@ These are the full rules from PLANS.md, condensed.
 
 - **Banned APIs** (`BannedSymbols.txt`, enforced at build): `DateTime.Now`/`Today` (use `IClock`), and `decimal`/`Math.Round` without a `MidpointRounding` argument (use `Fx3.Round`). `double`/`float` are banned for business values. Use `Money`/`Quantity`/`Percent` from `Core/Numerics`.
 - Never show a stored code (CASH, PURCHASE, SALARY, REGULAR…) as it is: bind it through a converter such as `MoneyModeConverter` or `EntryStatusConverter`, and head every column with what it holds. Two labels on one screen must not read the same in either language (B-9, B-11).
+- A table's totals go in a `TotalsBar` (`Presentation/TotalsBar.cs`) under it, never in a title row or a `DetailPanel` header, where they were cut off; it wraps instead of trimming.
 - Numbers always display in English digits. Format through `DisplayFormatter`/`TranslationSource.FormatCulture`, never the UI culture.
 - Every new string goes in **both** resx files. Mark machine-drafted Gujarati with the comment `MT – needs review`. Batch/lot is **બેચ**, never લોટ.
 - Windows PowerShell 5.1 corrupts BOM-less UTF-8. Don't script edits to `.resx` or Gujarati text with it; use the Edit tool or pass `-Encoding utf8`.

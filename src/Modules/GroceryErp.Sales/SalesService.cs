@@ -1096,8 +1096,11 @@ public sealed partial class SalesService(
         string? snapshot = connection.QuerySingleOrDefault<string>(
             "SELECT receipt_snapshot FROM sale_return WHERE id=@returnId", new { returnId });
         if (snapshot is not null)
-            return JsonSerializer.Deserialize<ReceiptData>(snapshot, ReceiptJsonOptions)
-                ?? throw new DomainException(ErrorCode.Validation, "The stored return receipt is invalid.");
+            // A receipt saved before 7 November 2026 gave the refund as Gross, so Gross + Round off did
+            // not make the refund; its Gross is the goods' value, taxable + tax.
+            return JsonSerializer.Deserialize<ReceiptData>(snapshot, ReceiptJsonOptions) is { } stored
+                ? stored with { Gross = stored.Taxable + stored.Tax }
+                : throw new DomainException(ErrorCode.Validation, "The stored return receipt is invalid.");
         return BuildReturnReceipt(connection, returnId, settings.Current);
     }, cancellationToken);
 
@@ -1144,10 +1147,13 @@ public sealed partial class SalesService(
                 Money.FromScaled(row.Taxable), Money.FromScaled(row.Tax), Money.FromScaled(row.Total),
                 Percent.FromScaled(row.TaxRate))).ToArray();
         Money refund = Money.FromScaled(header.Refund);
+        // Gross is the goods' value; the refund adds the bill's round-off share to it, so the printed
+        // Gross + Round off = Refund total.
+        Money goods = Money.FromScaled(header.Taxable) + Money.FromScaled(header.Tax);
         return new ReceiptData(current.StoreName, current.StoreAddress, current.StorePhone, current.StoreGstin,
             "RETURN", header.ReturnNumber, header.CreatedAt, header.CustomerName, lines,
-            refund, Money.Zero, Money.FromScaled(header.Taxable), Money.FromScaled(header.Tax),
-            refund - Money.FromScaled(header.Taxable) - Money.FromScaled(header.Tax), refund,
+            goods, Money.Zero, Money.FromScaled(header.Taxable), Money.FromScaled(header.Tax),
+            refund - goods, refund,
             Money.Zero, [], Money.Zero, current.PrintLanguage,
             current.PrintLanguage == "gu-IN" ? current.GujaratiReceiptFooter : current.ReceiptFooter,
             false, header.OriginalInvoice, header.Reason, header.RefundMode,
@@ -1254,7 +1260,7 @@ public sealed partial class SalesService(
                    s.tax_total AS TaxTotal,s.round_off AS RoundOff,s.grand_total AS GrandTotal,
                    s.cost_total AS CostTotal,s.notes AS Notes,s.void_reason AS VoidReason,
                    s.created_at AS CreatedAt,s.completed_at AS CompletedAt,
-                   s.bill_discount AS BillDiscount,c.name AS CustomerName
+                   s.bill_discount AS BillDiscount,s.change_returned AS ChangeReturned,c.name AS CustomerName
             FROM sale s LEFT JOIN customer c ON c.id=s.customer_id
             LEFT JOIN sale_refund_progress rp ON rp.sale_id=s.id WHERE s.id=@saleId
             """, new { saleId }) ?? throw new DomainException(ErrorCode.NotFound, saleId);
@@ -1292,7 +1298,8 @@ public sealed partial class SalesService(
                 new PaymentInput(ParsePayment(row.Mode), Money.FromScaled(row.Amount), row.Reference)).ToArray();
         return new(header.Id, header.InvoiceNo, ParseDate(header.SaleDate), ParseStatus(header.Status),
             header.CustomerId, header.CustomerName, header.Notes, Money.FromScaled(header.BillDiscount),
-            lines, totals, payments, header.CreatedAt, header.CompletedAt, header.VoidReason);
+            lines, totals, payments, header.CreatedAt, header.CompletedAt, header.VoidReason)
+        { Change = Money.FromScaled(header.ChangeReturned) };
     }
 
     private static CompletedSale LoadCompleted(DbTx transaction, long saleId)
@@ -1439,7 +1446,7 @@ public sealed partial class SalesService(
     private sealed class DayRow { public int BillCount { get; init; } public long Gross { get; init; } public long Discounts { get; init; } public long Net { get; init; } public long Tax { get; init; } public long RoundOff { get; init; } public long Payable { get; init; } }
     private sealed class CountValueRow { public int Count { get; init; } public long Value { get; init; } }
     private sealed class PaymentRow { public string Mode { get; init; } = ""; public long Amount { get; init; } public string? Reference { get; init; } }
-    private sealed class DetailHeaderRow { public long Id { get; init; } public string? InvoiceNo { get; init; } public string SaleDate { get; init; } = ""; public long? CustomerId { get; init; } public string Status { get; init; } = ""; public long GrossTotal { get; init; } public long DiscountTotal { get; init; } public long TaxableTotal { get; init; } public long TaxTotal { get; init; } public long RoundOff { get; init; } public long GrandTotal { get; init; } public long CostTotal { get; init; } public string? Notes { get; init; } public string? VoidReason { get; init; } public DateTime CreatedAt { get; init; } public DateTime? CompletedAt { get; init; } public long BillDiscount { get; init; } public string? CustomerName { get; init; } }
+    private sealed class DetailHeaderRow { public long Id { get; init; } public string? InvoiceNo { get; init; } public string SaleDate { get; init; } = ""; public long? CustomerId { get; init; } public string Status { get; init; } = ""; public long GrossTotal { get; init; } public long DiscountTotal { get; init; } public long TaxableTotal { get; init; } public long TaxTotal { get; init; } public long RoundOff { get; init; } public long GrandTotal { get; init; } public long CostTotal { get; init; } public string? Notes { get; init; } public string? VoidReason { get; init; } public DateTime CreatedAt { get; init; } public DateTime? CompletedAt { get; init; } public long BillDiscount { get; init; } public long ChangeReturned { get; init; } public string? CustomerName { get; init; } }
     private sealed class DetailLineRow
     {
         public long Id { get; init; }

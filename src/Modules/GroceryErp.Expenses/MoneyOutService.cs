@@ -325,31 +325,6 @@ public sealed partial class MoneyOutService(
         }, cancellationToken);
     }
 
-    public Task<long> RecordOtherSalaryPaymentAsync(
-        long employeeId,
-        DateOnly payDate,
-        Money amount,
-        string mode,
-        string notes,
-        string operationId,
-        CancellationToken cancellationToken = default)
-    {
-        if (employeeId <= 0 || amount <= Money.Zero || !SalaryModes.Contains(mode))
-            throw new DomainException(ErrorCode.Validation, "Invalid employee payment.");
-        string cleanNotes = Required(notes, 500);
-        return database.WriteAsync(transaction =>
-        {
-            OperationRef? replay = OperationGuard.Claim(transaction, operationId, OpType.SalaryRun);
-            if (replay is not null) return replay.RefId ?? 0;
-            periods.EnsureOpen(transaction, payDate);
-            var run = new SalaryRunInput(YearMonth.From(payDate), payDate, mode, []);
-            long id = InsertSalary(transaction, employeeId, run, "OTHER", amount, cleanNotes, 0);
-            audit.Write(transaction, "salary_payment", id, "OTHER", new { employeeId, amount = amount.Scaled });
-            OperationGuard.Complete(transaction, operationId, "salary_payment", id);
-            return id;
-        }, cancellationToken);
-    }
-
     public Task<IReadOnlyList<SalaryPaymentItem>> GetSalaryRegisterAsync(YearMonth from, YearMonth to, CancellationToken cancellationToken = default) =>
         GetSalaryRegisterAsync(from, to, null, null, cancellationToken);
 

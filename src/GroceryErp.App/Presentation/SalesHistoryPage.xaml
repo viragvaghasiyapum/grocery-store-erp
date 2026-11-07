@@ -94,7 +94,7 @@
     </StackPanel>
    </local:DetailPanel.Actions>
    <Grid>
-    <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TabControl x:Name="DetailTabs" SelectionChanged="DetailTabs_OnSelectionChanged">
      <TabItem Header="{l:Tr Sales_Items}">
     <DataGrid x:Name="DetailGrid" Style="{StaticResource CompactTableGrid}" RowHeight="38" FrozenColumnCount="1">
@@ -144,7 +144,9 @@
       </DataGrid>
      </TabItem>
     </TabControl>
-    <local:PagerBar x:Name="DetailPager" Grid.Row="1"/>
+    <!-- The bill's totals and how it was paid, under whichever tab is open. -->
+    <local:TotalsBar x:Name="BillTotals" Grid.Row="1"/>
+    <local:PagerBar x:Name="DetailPager" Grid.Row="2"/>
    </Grid>
   </local:DetailPanel>
  </Grid>

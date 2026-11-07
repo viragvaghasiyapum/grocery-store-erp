@@ -212,8 +212,7 @@
       </DockPanel>
       <DockPanel x:Name="SalaryActions" Visibility="Collapsed" LastChildFill="False">
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-          <Button Style="{StaticResource ToolbarButton}" Click="PrepareSalary_OnClick" Content="{l:Tr MoneyOut_PrepareSalary}" FontWeight="SemiBold"/>
-          <Button Style="{StaticResource ToolbarButton}" Margin="0" Click="RecordAdvance_OnClick" Content="{l:Tr MoneyOut_RecordAdvance}"/>
+          <Button Style="{StaticResource ToolbarButton}" Margin="0" Click="PrepareSalary_OnClick" Content="{l:Tr MoneyOut_PrepareSalary}" FontWeight="SemiBold"/>
         </StackPanel>
       </DockPanel>
     </Grid>

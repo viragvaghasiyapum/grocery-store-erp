@@ -74,9 +74,20 @@ try
             "SELECT MAX(lines) FROM (SELECT COUNT(*) AS lines FROM purchase_line GROUP BY purchase_id)");
         long paddedPlus = connection.ExecuteScalar<long>(
             "SELECT COUNT(*) FROM product WHERE is_loose=1 AND plu_code LIKE '0%'");
+        // Every purchase adds up as the app's own purchases do: lines from quantity x rate, the header
+        // from its lines.
+        long purchaseMismatches = connection.ExecuteScalar<long>("""
+            SELECT COUNT(*) FROM purchase p JOIN (
+              SELECT purchase_id,SUM(CAST(ROUND(qty*unit_cost/1000.0) AS INTEGER)) AS sub,SUM(discount) AS discount,
+                     SUM(tax_amount) AS tax,SUM(line_total) AS total
+              FROM purchase_line GROUP BY purchase_id) l ON l.purchase_id=p.id
+            WHERE p.subtotal<>l.sub OR p.discount_total<>l.discount OR p.tax_total<>l.tax
+               OR p.grand_total<>p.subtotal-p.discount_total+p.tax_total+p.other_charges+p.round_off
+               OR l.total<>l.sub-l.discount+l.tax
+            """);
         if (integrity != "ok" || foreignKeys != 0 || cacheMismatches != 0 || expiredSaleLines != 0 ||
-            minPurchaseLines != 2 || maxPurchaseLines != 40 || paddedPlus != 0)
-            throw new InvalidDataException($"Generated database failed verification: {integrity}, FK={foreignKeys}, cache={cacheMismatches}, expired sale lines={expiredSaleLines}.");
+            minPurchaseLines != 2 || maxPurchaseLines != 40 || paddedPlus != 0 || purchaseMismatches != 0)
+            throw new InvalidDataException($"Generated database failed verification: {integrity}, FK={foreignKeys}, cache={cacheMismatches}, expired sale lines={expiredSaleLines}, purchases not adding up={purchaseMismatches}.");
     }
 
     SqliteConnection.ClearAllPools();
@@ -148,11 +159,11 @@ void InsertPurchasesAndLots(SqliteConnection connection)
             // Seed one lot per product before trading starts; later receipts follow Pareto demand.
             DateOnly received = nextLot <= products ? start : start.AddDays(random.Next(end.DayNumber - start.DayNumber + 1));
             int lineCount = purchaseLineCounts[purchaseId];
-            long total = lineCount * 10_000_000L;
+            // The header's totals are its lines' sums, set when the purchase is posted below.
             connection.Execute("""
                 INSERT INTO purchase(id,doc_no,vendor_id,vendor_invoice_no,vendor_invoice_date,received_date,status,
                   subtotal,tax_total,grand_total,posted_at)
-                VALUES (@id,@doc,@vendor,@invoice,@date,@date,'DRAFT',@subtotal,@tax,@grand,NULL)
+                VALUES (@id,@doc,@vendor,@invoice,@date,@date,'DRAFT',0,0,0,NULL)
                 """, new
             {
                 id = purchaseId,
@@ -160,11 +171,9 @@ void InsertPurchasesAndLots(SqliteConnection connection)
                 vendor = 1 + purchaseId % vendors,
                 invoice = $"VI-{purchaseId:D7}",
                 date = Iso(received),
-                subtotal = total,
-                tax = total / 20,
-                grand = total + total / 20,
-                at = Timestamp(received)
             }, transaction);
+            long subtotal = 0;
+            long taxTotal = 0;
             for (int line = 1; line <= lineCount; line++, nextLot++)
             {
                 int productId = nextLot <= products ? nextLot : PickProduct();
@@ -172,12 +181,17 @@ void InsertPurchasesAndLots(SqliteConnection connection)
                 long price = cost + Math.Max(5_000, cost / 4);
                 DateOnly expiry = received.AddDays(90 + random.Next(641));
                 // Every line is bought at GST 5% (tax rate 2) in Regular mode, so the booked cost is
-                // the purchase price before tax and the lot keeps the line's tax per piece.
+                // the purchase price before tax and the lot keeps the line's tax per piece. A line is
+                // 1,000 pieces, so its value before tax is 1,000 x the rate and its tax 5% of that.
+                long lineTaxable = 1000L * cost;
+                long lineTax = lineTaxable / 20;
+                subtotal += lineTaxable;
+                taxTotal += lineTax;
                 connection.Execute("""
                     INSERT INTO purchase_line(id,purchase_id,line_no,product_id,batch_no,expiry_date,qty,unit_cost,
                       tax_rate_pct,tax_amount,line_total,landed_unit_cost,mrp,selling_price,
                       tax_rate_id,tax_label_snapshot,landed_unit_tax,landed_unit_cost_incl_tax)
-                    VALUES (@id,@purchase,@line,@product,@batch,@expiry,1000000,@cost,5000,500000,10500000,@cost,@mrp,@price,
+                    VALUES (@id,@purchase,@line,@product,@batch,@expiry,1000000,@cost,5000,@lineTax,@lineTotal,@cost,@mrp,@price,
                       2,'GST 5%',@unitTax,@inclTax);
                     INSERT INTO product_lot(id,product_id,lot_code,batch_no,purchase_line_id,vendor_id,received_date,
                       expiry_date,unit_cost,mrp,selling_price,qty_received,
@@ -194,6 +208,8 @@ void InsertPurchasesAndLots(SqliteConnection connection)
                     batch = $"B{nextLot:D7}",
                     expiry = Iso(expiry),
                     cost,
+                    lineTax,
+                    lineTotal = lineTaxable + lineTax,
                     unitTax = UnitTax(cost),
                     inclTax = cost + UnitTax(cost),
                     mrp = price + 10_000,
@@ -204,8 +220,11 @@ void InsertPurchasesAndLots(SqliteConnection connection)
                 }, transaction);
                 lotPools[productId].Add(new GeneratedLot(nextLot, received, expiry, 1_000_000));
             }
-            connection.Execute("UPDATE purchase SET status='POSTED', posted_at=@at WHERE id=@id",
-                new { id = purchaseId, at = Timestamp(received) }, transaction);
+            connection.Execute("""
+                UPDATE purchase SET status='POSTED',posted_at=@at,subtotal=@subtotal,tax_total=@taxTotal,
+                  grand_total=@grandTotal WHERE id=@id
+                """, new { id = purchaseId, at = Timestamp(received), subtotal, taxTotal, grandTotal = subtotal + taxTotal },
+                transaction);
         }
         transaction.Commit();
         Console.WriteLine($"Purchases: {batchEnd:N0}/{purchases:N0}");

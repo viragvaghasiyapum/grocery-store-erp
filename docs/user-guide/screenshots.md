@@ -4,7 +4,6 @@
 
 Captures use synthetic example records. Gujarati screenshots are used where available; the guides explain every workflow in both languages.
 
-- [advance-form.en.png](screenshots/advance-form.en.png)
 - [asset-disposal.en.png](screenshots/asset-disposal.en.png)
 - [asset-form.en.png](screenshots/asset-form.en.png)
 - [asset-terms.en.png](screenshots/asset-terms.en.png)

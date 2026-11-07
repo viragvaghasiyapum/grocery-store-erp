@@ -485,13 +485,6 @@ public partial class MoneyOutPage : Page
         ShowStatus(T("MoneyOut_Saved"));
     }
 
-    private async void RecordAdvance_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (new AdvanceFormWindow(_service, _clock, _allEmployees) { Owner = Window.GetWindow(this) }.ShowDialog() != true) return;
-        await LoadSalaryRegisterAsync();
-        ShowStatus(T("MoneyOut_Saved"));
-    }
-
     // A selected entry opens its history and states how an edit would be dated.
     private async void DamageGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {

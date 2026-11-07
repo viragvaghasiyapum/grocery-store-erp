@@ -33,7 +33,7 @@ Filters apply as you type or choose, and the screen remembers them until the pro
 | **Vendor invoice** | The number on the vendor's bill. |
 | **Received date** | The day the goods arrived. The purchase counts on this date. |
 | **Status** | Draft, Posted or Voided. |
-| **Total** | The purchase total, tax included, after round off. |
+| **Total** | The purchase total, tax included, after round off. A draft shows the total it was saved with; posting works it out again at the tax rates in force then. |
 
 ## Buttons
 
@@ -42,7 +42,7 @@ Filters apply as you type or choose, and the screen remembers them until the pro
 | **New purchase** | Opens the purchase entry form (Ctrl+N). After **Post**, the new GRN number shows in the footer. |
 | **Open** | Opens the selected purchase (Enter or a double-click): a draft in the entry form, a posted or voided purchase in the panel. |
 | **Vendor return** | Sends part of a posted purchase's stock back to the vendor, with a credit note and reason. |
-| **Void purchase** | For a purchase entered by mistake: takes it out of stock, the vendor balance and every report. Only while no stock from it has been used and its received date is not in a locked year; otherwise use a vendor return. The button's tooltip says why it is not available. |
+| **Void purchase** | For a purchase entered by mistake: takes it out of stock, the vendor balance and every report of its received date, its Expense lines out of that date's profit and loss included. Only while no stock from it has been used and its received date is not in a locked year; otherwise use a vendor return. The button's tooltip says why it is not available. |
 | **Return history** | Lists the purchase's vendor returns. **Cancel return**, with a reason, puts the units back and restores the vendor balance. |
 | **More ▾** | Holds the actions that do not fit when the window is narrow. |
 
@@ -57,7 +57,7 @@ Filters apply as you type or choose, and the screen remembers them until the pro
 
 ## Purchase panel
 
-A posted or voided purchase opens in a panel, at full width until you choose otherwise. Its lines come first, then the totals and notes. While it is open, **Open**, **Vendor return**, **Void purchase** and **Return history** are in the panel.
+A posted or voided purchase opens in a panel, at full width until you choose otherwise. Its lines come first, then the notes; the totals are in a footer under them, always in view. While it is open, **Open**, **Vendor return**, **Void purchase** and **Return history** are in the panel.
 
 | Field | What it means |
 |---|---|

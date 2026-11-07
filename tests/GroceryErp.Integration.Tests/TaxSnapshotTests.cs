@@ -664,10 +664,10 @@ public sealed class TaxSnapshotTests
         var reports = new ReportService(fixture.Database, fixture.Settings, fixture.Clock);
         TabularReport gst = await reports.GetReportAsync(ReportKind.GstSummary,
             new(From: fixture.Today, To: fixture.Today), ct);
-        ReportRow inward = gst.Rows.Single(row => (string)row.Values["Direction"]! == "INWARD");
+        ReportRow inward = gst.Rows.Single(row => (string)row.Values["Direction"]! == "INWARD" && (string?)row.Values["Hsn"] != "Subtotal");
         inward.Values["Taxable"].ShouldBe(1_900_000L);
         inward.Values["Tax"].ShouldBe(95_000L);
-        ReportRow outward = gst.Rows.Single(row => (string)row.Values["Direction"]! == "OUTWARD");
+        ReportRow outward = gst.Rows.Single(row => (string)row.Values["Direction"]! == "OUTWARD" && (string?)row.Values["Hsn"] != "Subtotal");
         outward.Values["Taxable"].ShouldBe(sale.Totals.Taxable.Scaled);
         outward.Values["Tax"].ShouldBe(sale.Totals.Tax.Scaled);
     }

@@ -306,6 +306,7 @@ public partial class SalesHistoryPage : Page
         _openSale = null;
         _selectedDetails = null;
         _selectedActivity = null;
+        BillTotals.Clear();
         DetailGrid.ItemsSource = null;
         ReturnsGrid.ItemsSource = null;
         ActivityGrid.ItemsSource = null;
@@ -368,22 +369,27 @@ public partial class SalesHistoryPage : Page
     private void RefreshDetailHeading()
     {
         if (_selectedDetails is not { } sale) return;
-        string modes = string.Join(", ", sale.Payments.Select(payment =>
-        {
-            string key = payment.Mode switch
-            {
-                PaymentMode.Cash => "Receipt_RefundModeCash",
-                PaymentMode.Upi => "Receipt_RefundModeUpi",
-                PaymentMode.Card => "Receipt_RefundModeCard",
-                _ => "Receipt_RefundModeOther",
-            };
-            return $"{TranslationSource.Instance[key]} ₹{payment.Amount.Value.ToString("N3", Digits)}";
-        }));
-        Detail.Title = TranslationSource.Instance.Format("Sales_DetailHeading",
-            sale.InvoiceNumber ?? sale.Id.ToString(Digits), modes);
+        TranslationSource text = TranslationSource.Instance;
+        Detail.Title = sale.InvoiceNumber ?? sale.Id.ToString(Digits);
         Detail.Facts = _openSale is not { } item ? string.Empty : string.Join(" · ",
-            item.SaleDate.ToString("dd MMM yyyy", Digits), TranslationSource.Instance[$"Sales_Status_{item.Status}"],
-            $"₹{item.GrandTotal.Value.ToString("N3", Digits)}");
+            item.SaleDate.ToString("dd MMM yyyy", Digits), text[$"Sales_Status_{item.Status}"]);
+        // The amounts sit in the footer, as on Billing, so the header never cuts them off.
+        string Rupees(Money amount) => $"₹{amount.Value.ToString("N3", Digits)}";
+        var totals = new List<(string, string)> { (text["Sales_Gross"], Rupees(sale.Totals.Gross)) };
+        if (sale.Totals.Discount.Value != 0m) totals.Add((text["Purchasing_Discount"], Rupees(sale.Totals.Discount)));
+        totals.Add((text["Sales_TaxCharged"], Rupees(sale.Totals.Tax)));
+        if (sale.Totals.RoundOff.Value != 0m) totals.Add((text["Sales_RoundOff"], Rupees(sale.Totals.RoundOff)));
+        totals.Add((text["Sales_AmountBetween"], Rupees(sale.Totals.GrandTotal)));
+        totals.AddRange(sale.Payments.Select(payment => (text[payment.Mode switch
+        {
+            PaymentMode.Cash => "Receipt_RefundModeCash",
+            PaymentMode.Upi => "Receipt_RefundModeUpi",
+            PaymentMode.Card => "Receipt_RefundModeCard",
+            _ => "Receipt_RefundModeOther",
+        }], Rupees(payment.Amount))));
+        // Cash is what the customer handed over, so the change given back follows it, as on the receipt.
+        if (sale.Change.Value != 0m) totals.Add((text["Receipt_Change"], Rupees(sale.Change)));
+        BillTotals.Show(totals);
     }
 
     private void UpdateActions()

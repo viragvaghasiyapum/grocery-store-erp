@@ -1331,7 +1331,11 @@ public sealed class PhaseZeroSmokeTests
                         new { Label = "Cost of goods sold", Amount = "60.000" },
                         new { Label = "Gross profit", Amount = "30.000" },
                     };
-                    ((TextBlock)reportsPage.FindName("PnlTotals")).Text = "Gross profit ₹30.000 (33.333%) · Net profit ₹30.000 (33.333%)";
+                    ((TotalsBar)reportsPage.FindName("Totals")).Show(
+                    [
+                        (translations["Reports_Section_GrossProfit"], "₹30.000 (33.333%)"),
+                        (translations["Reports_Section_NetProfit"], "₹30.000 (33.333%)"),
+                    ]);
                     ((FrameworkElement)reportsPage.FindName("PnlPanel")).Visibility = Visibility.Visible;
                     ((DataGrid)reportsPage.FindName("ReportGrid")).Visibility = Visibility.Collapsed;
                     Capture(reportsHost, "reports-pnl.en.png");
@@ -1341,6 +1345,13 @@ public sealed class PhaseZeroSmokeTests
                     var reportPicker = (ComboBox)reportsPage.FindName("ReportPicker");
                     reportPicker.SelectedIndex = 1;
                     PopulateReportCapture(reportsPage, translations);
+                    // The totals and the status line sit under the table, never in the title row.
+                    reportsHost.UpdateLayout();
+                    var reportTable = (DataGrid)reportsPage.FindName("ReportGrid");
+                    double tableBottom = reportTable.TranslatePoint(new Point(0, reportTable.ActualHeight), reportsPage).Y;
+                    foreach (var footer in new FrameworkElement[]
+                        { (TotalsBar)reportsPage.FindName("Totals"), (TextBlock)reportsPage.FindName("StatusText") })
+                        footer.TranslatePoint(new Point(0, 0), reportsPage).Y.ShouldBeGreaterThanOrEqualTo(tableBottom);
                     VerifyAccessibleNames(reportsHost);
                     Capture(reportsHost, "reports-table.en.png");
                     translations.UiCulture = CultureInfo.GetCultureInfo("gu-IN");
@@ -1972,6 +1983,10 @@ public sealed class PhaseZeroSmokeTests
             invoice.IsFullWidth.ShouldBeTrue();
             invoice.Title.ShouldContain(posted.DocumentNumber);
             invoice.Facts.ShouldContain("Shree Wholesale Traders");
+            // The purchase's totals are in the footer under its lines, not in the header.
+            invoice.Facts.ShouldNotContain(translations["Purchasing_Total"]);
+            ((TotalsBar)((PurchaseInvoiceView)purchases.FindName("InvoiceView")).FindName("Totals")).Text
+                .ShouldContain(translations["Purchasing_ComputedTotal"]);
             var invoiceView = (PurchaseInvoiceView)purchases.FindName("InvoiceView");
             var invoiceLines = (DataGrid)invoiceView.FindName("LinesGrid");
             invoiceLines.Items.Count.ShouldBe(1);
@@ -2092,8 +2107,19 @@ public sealed class PhaseZeroSmokeTests
             ((Button)salesHistory.FindName("ViewItemsButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             var billPanel = (DetailPanel)salesHistory.FindName("Detail");
             PumpUntil(() => billPanel.Visibility == Visibility.Visible && ((DataGrid)salesHistory.FindName("DetailGrid")).Items.Count == 2);
-            billPanel.Title.ShouldContain(completedBill.InvoiceNumber);
             billPanel.IsFullWidth.ShouldBeFalse();
+            // The header holds the bill's number alone; its amounts are in the footer under the tabs,
+            // where nothing cuts them off.
+            billPanel.Title.ShouldBe(completedBill.InvoiceNumber);
+            billPanel.Facts.ShouldNotContain("₹");
+            var billTotals = (TotalsBar)salesHistory.FindName("BillTotals");
+            string billAmount = $"₹{billTotal.Value.ToString("N3", CultureInfo.GetCultureInfo("en-IN"))}";
+            billTotals.Visibility.ShouldBe(Visibility.Visible);
+            billTotals.Text.ShouldContain($"{translations["Sales_AmountBetween"]} {billAmount}");
+            billTotals.Text.ShouldContain($"{translations["Receipt_RefundModeCash"]} {billAmount}");
+            salesHistoryHost.UpdateLayout();
+            billTotals.TranslatePoint(new Point(0, 0), billPanel).Y
+                .ShouldBeGreaterThan(((FrameworkElement)salesHistory.FindName("DetailTabs")).TranslatePoint(new Point(0, 0), billPanel).Y);
             // A bill line shows its cost side copied from the sold lot, then the sale side from its saved
             // amounts. Salt was sold from the lot bought at 250 + 5%; the product's own rate is GST 0%.
             var billLines = (DataGrid)salesHistory.FindName("DetailGrid");
@@ -2174,7 +2200,6 @@ public sealed class PhaseZeroSmokeTests
             CaptureForm(new EmployeeFormWindow(moneyOut, clock), "employee-form.en.png");
             CaptureForm(new SalaryRunWindow(moneyOut, clock, staff.ToDictionary(static item => item.Id, static item => item.Name)),
                 "salary-run.en.png");
-            CaptureForm(new AdvanceFormWindow(moneyOut, clock, staff), "advance-form.en.png");
             CaptureForm(new ExpenseCategoriesWindow(moneyOut), "expense-categories.en.png");
             CaptureForm(new RepeatExpensesWindow(moneyOut, clock, expenseCategories), "repeat-expenses.en.png", fields: false);
             // The direct lot form takes a before-tax purchase price and a tax rate (the product's to
@@ -3494,7 +3519,7 @@ public sealed class PhaseZeroSmokeTests
         ((FrameworkElement)page.FindName("PnlPanel")).Visibility = Visibility.Collapsed;
         grid.Visibility = Visibility.Visible;
         ((TextBlock)page.FindName("StatusText")).Text = translations.Format("Reports_RowCount", 2);
-        ((TextBlock)page.FindName("TotalsText")).Text = translations["Reports_Column_Total"] + ": 90.000";
+        ((TotalsBar)page.FindName("Totals")).Show([(translations["Reports_Column_Total"], "90.000")]);
     }
 
     private static void PopulateDashboardCapture(DashboardPage page, TranslationSource translations)

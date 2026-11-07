@@ -88,8 +88,16 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
                 new KeyValuePair<string, object?>("operation", "dashboard.core"));
             cancellationToken.ThrowIfCancellationRequested();
             stageStarted = Stopwatch.GetTimestamp();
+            // Cash is what the drawer kept: what customers handed over less the change given back, as
+            // day end counts it. Change is given only on a bill paid partly in cash, so the modes add up
+            // to today's sales.
             List<PaymentRaw> payments = connection.Query<PaymentRaw>("""
-            SELECT sp.mode AS Mode,SUM(sp.amount) AS Amount FROM sale_payment sp
+            SELECT sp.mode AS Mode,SUM(sp.amount)-CASE WHEN sp.mode='CASH' THEN COALESCE((
+                     SELECT SUM(x.change_returned) FROM sale x
+                     WHERE x.status='COMPLETED' AND x.sale_date=@today
+                       AND EXISTS(SELECT 1 FROM sale_payment c WHERE c.sale_id=x.id AND c.mode='CASH')),0)
+                   ELSE 0 END AS Amount
+            FROM sale_payment sp
             JOIN sale s ON s.id=sp.sale_id WHERE s.status='COMPLETED' AND s.sale_date=@today GROUP BY sp.mode ORDER BY sp.mode
             """, new { today = Iso(today) }, transaction).ToList();
             PerformanceMetrics.ReportStageMilliseconds.Record(Stopwatch.GetElapsedTime(stageStarted).TotalMilliseconds,
@@ -251,13 +259,31 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
             if (truncated) rows.RemoveAt(rows.Count - 1);
             Dictionary<string, decimal> totals = definition.Columns.Where(static c => c.Kind is ReportValueKind.Money or ReportValueKind.Quantity)
                 .ToDictionary(static c => c.Key, c => rows.Sum(row => ScaledDecimal(row.Values.GetValueOrDefault(c.Key))));
+            IReadOnlyList<ReportTotal> footer = [];
             if (kind == ReportKind.ItemSales) rows = AddCategorySubtotals(rows);
+            if (kind == ReportKind.GstSummary)
+            {
+                // Tax collected on sales and tax paid on purchases are never added together: each
+                // direction ends with its subtotal, and the footer names both instead of one total.
+                (decimal salesTaxable, decimal salesTax) = DirectionTotals(rows, "OUTWARD");
+                (decimal purchasesTaxable, decimal purchasesTax) = DirectionTotals(rows, "INWARD");
+                totals = new Dictionary<string, decimal>();
+                footer =
+                [
+                    new(Text("Reports_GstSalesTaxable", "Taxable value of sales"), salesTaxable),
+                    new(Text("Reports_GstSalesTax", "Tax on sales"), salesTax),
+                    new(Text("Reports_GstPurchasesTaxable", "Taxable value of purchases"), purchasesTaxable),
+                    new(Text("Reports_GstPurchasesTax", "Tax on purchases"), purchasesTax),
+                ];
+                rows = AddDirectionSubtotals(rows);
+            }
             if (translations is not null) rows = rows.Select(LocalizeCodes).ToList();
             IReadOnlyList<ReportColumn> columns = definition.Columns.Select(column =>
                 column with { Heading = Text($"Reports_Column_{column.Key}", column.Heading) }).ToList();
             return new TabularReport(Text($"Reports_Kind_{kind}", definition.Title),
                 definition.UsesPeriod ? period : null, columns, rows, totals, truncated,
-                kind == ReportKind.StockValue ? ExpiredStockSummary(connection, filter.IncludeExpired) : null);
+                kind == ReportKind.StockValue ? ExpiredStockSummary(connection, filter.IncludeExpired) : null)
+            { FooterTotals = footer };
         }, cancellationToken);
     }
 
@@ -308,10 +334,37 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
                     string sql = SelectReportSql(kind, filter, definition.Sql);
                     var command = new CommandDefinition(sql, parameters, commandTimeout: 300,
                         flags: CommandFlags.None, cancellationToken: cancellationToken);
+                    // The GST summary ends each direction with its subtotal, as on screen, and has no
+                    // total line: tax on sales and tax on purchases are never added together.
+                    bool byDirection = kind == ReportKind.GstSummary;
+                    (string? Direction, long Taxable, long Tax) group = (null, 0, 0);
+                    void WriteDirectionSubtotal()
+                    {
+                        if (group.Direction is null) return;
+                        writer.WriteLine(string.Join(',', definition.Columns.Select(column => column.Key switch
+                        {
+                            "Direction" => CsvText(group.Direction),
+                            "Hsn" => CsvText(Text("Reports_Subtotal", "Subtotal")),
+                            "Taxable" => CsvValue(group.Taxable, column.Kind),
+                            "Tax" => CsvValue(group.Tax, column.Kind),
+                            _ => string.Empty,
+                        })));
+                    }
                     foreach (dynamic row in connection.Query<dynamic>(command))
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         var values = (IDictionary<string, object?>)row;
+                        if (byDirection)
+                        {
+                            string direction = Convert.ToString(values["Direction"], CultureInfo.InvariantCulture) ?? "";
+                            if (direction != group.Direction)
+                            {
+                                WriteDirectionSubtotal();
+                                group = (direction, 0, 0);
+                            }
+                            group = (direction, group.Taxable + Convert.ToInt64(values["Taxable"] ?? 0, CultureInfo.InvariantCulture),
+                                group.Tax + Convert.ToInt64(values["Tax"] ?? 0, CultureInfo.InvariantCulture));
+                        }
                         writer.WriteLine(string.Join(',', definition.Columns.Select(column =>
                         {
                             values.TryGetValue(column.Key, out object? value);
@@ -321,7 +374,8 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
                         count++;
                         if (count % 1000 == 0) progress?.Report(count);
                     }
-                    if (totals.Count > 0)
+                    if (byDirection) WriteDirectionSubtotal();
+                    else if (totals.Count > 0)
                         writer.WriteLine(string.Join(',', definition.Columns.Select((column, index) => index == 0
                             ? CsvText(Text("Reports_Column_Total", "Total"))
                             : totals.TryGetValue(column.Key, out decimal total)
@@ -413,6 +467,32 @@ public sealed partial class ReportService(DbExecutor database, ISettings setting
                 ["Revenue"] = group.Sum(row => Convert.ToInt64(row.Values.GetValueOrDefault("Revenue") ?? 0, CultureInfo.InvariantCulture)),
                 ["Cost"] = group.Sum(row => Convert.ToInt64(row.Values.GetValueOrDefault("Cost") ?? 0, CultureInfo.InvariantCulture)),
                 ["Margin"] = group.Sum(row => Convert.ToInt64(row.Values.GetValueOrDefault("Margin") ?? 0, CultureInfo.InvariantCulture)),
+            }));
+        }
+        return result;
+    }
+
+    private static (decimal Taxable, decimal Tax) DirectionTotals(List<ReportRow> rows, string direction)
+    {
+        List<ReportRow> matching = rows.Where(row => Equals(row.Values.GetValueOrDefault("Direction"), direction)).ToList();
+        return (matching.Sum(static row => ScaledDecimal(row.Values.GetValueOrDefault("Taxable"))),
+            matching.Sum(static row => ScaledDecimal(row.Values.GetValueOrDefault("Tax"))));
+    }
+
+    // The GST summary's rows come sorted by direction; each direction ends with its subtotal row.
+    private List<ReportRow> AddDirectionSubtotals(List<ReportRow> rows)
+    {
+        var result = new List<ReportRow>(rows.Count + 2);
+        foreach (IGrouping<string, ReportRow> group in rows.GroupBy(static row =>
+                     Convert.ToString(row.Values.GetValueOrDefault("Direction"), CultureInfo.InvariantCulture) ?? ""))
+        {
+            result.AddRange(group);
+            result.Add(new ReportRow(new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Direction"] = group.Key,
+                ["Hsn"] = Text("Reports_Subtotal", "Subtotal"),
+                ["Taxable"] = group.Sum(static row => Convert.ToInt64(row.Values.GetValueOrDefault("Taxable") ?? 0, CultureInfo.InvariantCulture)),
+                ["Tax"] = group.Sum(static row => Convert.ToInt64(row.Values.GetValueOrDefault("Tax") ?? 0, CultureInfo.InvariantCulture)),
             }));
         }
         return result;

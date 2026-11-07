@@ -93,7 +93,7 @@ Rent, wages paid outside payroll, electricity and every other cost of running th
 
 ## Posted payments
 
-Salary, overtime, bonus and advances paid to employees.
+Salary, overtime and bonus paid to employees. The salary run records each month's whole pay, including anything handed over earlier in that month.
 
 | Field | What it means |
 |---|---|
@@ -107,7 +107,7 @@ Salary, overtime, bonus and advances paid to employees.
 | **Employee name** | Who was paid. |
 | **Period** | The month worked. The payment counts in that month. |
 | **Pay date** | The day it was paid. |
-| **Type** | Salary, Bonus, Overtime or Other. An advance shows as Other. |
+| **Type** | Salary, Bonus, Overtime or Other. Other is a payment, such as an advance, recorded by an earlier version of the app. |
 | **Amount** | The amount paid. |
 | **Payment mode** | Cash, UPI, bank or other. |
 | **Status** | Posted, Corrected or Void. |
@@ -116,7 +116,6 @@ Salary, overtime, bonus and advances paid to employees.
 | Button | What it does |
 |---|---|
 | **Prepare run** | Opens the salary run: choose the month, pay date and mode, prepare the lines (salary, leave deduction, overtime and bonus for each working employee), check them and post. |
-| **Record advance** | Records an amount paid to an employee before the salary run. |
 | **Edit** | Corrects the selected payment, with a reason. |
 | **Void** | Takes a payment entered by mistake to zero, with a reason. |
 | **History** | The original payment and every correction. |

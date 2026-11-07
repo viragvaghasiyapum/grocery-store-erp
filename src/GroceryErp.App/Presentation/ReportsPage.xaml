@@ -6,8 +6,8 @@
  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
  Title="{l:Tr Reports_Title}" FontFamily="{StaticResource AppFont}" ScrollViewer.CanContentScroll="False" p:ScreenHelp.Topic="reports">
  <Grid Margin="14,8,14,8">
-  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-  <!-- One title row: the status line and the totals of the whole result, then the actions. -->
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <!-- One title row with the actions; the totals and the status line stay in view under the table. -->
   <DockPanel Margin="0,0,0,6">
    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
     <Button Style="{StaticResource ToolbarButton}" Click="Refresh_OnClick" Content="{l:Tr Stock_Refresh}"/>
@@ -25,14 +25,10 @@
     <ProgressBar x:Name="ExportProgress" Width="64" Height="5" Margin="0,0,8,0" VerticalAlignment="Center" IsIndeterminate="True" Visibility="Collapsed"/>
     <Button x:Name="CancelExportButton" Style="{StaticResource ToolbarButton}" Margin="0" IsEnabled="False" Visibility="Collapsed" Click="CancelExport_OnClick" Content="{l:Tr Reports_CancelExport}"/>
    </StackPanel>
-   <TextBlock x:Name="TotalsText" DockPanel.Dock="Right" Margin="12,0,12,0" VerticalAlignment="Center" FontWeight="SemiBold"
-              TextTrimming="CharacterEllipsis" MaxWidth="520" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
    <StackPanel Orientation="Horizontal">
     <TextBlock Style="{StaticResource PageTitle}" Margin="0,0,6,0" Text="{l:Tr Reports_Title}"/>
     <p:HelpButton VerticalAlignment="Center"/>
    </StackPanel>
-   <TextBlock x:Name="StatusText" Style="{StaticResource StatusText}" AutomationProperties.LiveSetting="Polite"
-              ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
   </DockPanel>
   <WrapPanel Grid.Row="1" Margin="0,0,0,2">
    <TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_Report}"/>
@@ -72,7 +68,7 @@
     <StackPanel x:Name="VendorFilterPanel" Orientation="Horizontal"><TextBlock Margin="0,0,6,6" VerticalAlignment="Center" Text="{l:Tr Reports_FilterVendor}"/><ComboBox x:Name="VendorFilter" Width="220" Margin="0,0,12,6" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="FilterPicker_OnSelectionChanged" AutomationProperties.Name="{l:Tr Reports_FilterVendor}"/></StackPanel>
   </WrapPanel>
   <Border Grid.Row="3" Padding="6" CornerRadius="8" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"><Grid>
-   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
    <Border x:Name="PnlStatusBadge" HorizontalAlignment="Left" Margin="0,0,0,6" Padding="8,3" CornerRadius="4" Visibility="Collapsed"
            Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
            ToolTip="{l:Tr Reports_PnlExplanation}">
@@ -80,7 +76,6 @@
    </Border>
    <DataGrid x:Name="ReportGrid" Grid.Row="1" Style="{StaticResource CompactTableGrid}" RowHeight="34"/>
    <Grid x:Name="PnlPanel" Grid.Row="1" Visibility="Collapsed">
-    <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <DataGrid x:Name="PnlGrid" Style="{StaticResource CompactTableGrid}" RowHeight="32" IsReadOnly="True"
               AutoGenerateColumns="False" PreviewMouseLeftButtonUp="PnlGrid_OnPreviewMouseLeftButtonUp" PreviewKeyDown="PnlGrid_OnPreviewKeyDown"
               AutomationProperties.Name="{l:Tr Reports_Kind_ProfitAndLoss}">
@@ -96,8 +91,11 @@
       </DataGridTextColumn>
      </DataGrid.Columns>
     </DataGrid>
-    <TextBlock x:Name="PnlTotals" Grid.Row="1" Margin="0,8,0,0" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"/>
    </Grid>
+   <!-- The totals of the whole result, or the profit and loss margins, under the table. -->
+   <p:TotalsBar x:Name="Totals" Grid.Row="2"/>
   </Grid></Border>
+  <TextBlock x:Name="StatusText" Grid.Row="4" Margin="0,8,0,0" Style="{StaticResource StatusText}" TextWrapping="Wrap"
+             TextTrimming="None" AutomationProperties.LiveSetting="Polite"/>
  </Grid>
 </Page>

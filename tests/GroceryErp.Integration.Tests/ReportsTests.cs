@@ -743,10 +743,17 @@ public sealed class ReportsTests
         TabularReport report = await fixture.Reports.GetReportAsync(ReportKind.GstSummary,
             new(From: new(2026, 10, 1), To: new(2026, 10, 31)), TestContext.Current.CancellationToken);
 
-        ReportRow outward = report.Rows.Single(row => (string)row.Values["Direction"]! == "OUTWARD");
+        ReportRow outward = report.Rows.Single(row => (string)row.Values["Direction"]! == "OUTWARD" &&
+            (string?)row.Values["Hsn"] != "Subtotal");
         outward.Values["Hsn"].ShouldBe("1006");
         outward.Values["Taxable"].ShouldBe(-100000L);
         outward.Values["Tax"].ShouldBe(-5000L);
+        // Each direction ends with its subtotal, and tax on sales is never added to tax on purchases.
+        report.Rows.Single(row => (string)row.Values["Direction"]! == "OUTWARD" &&
+            (string?)row.Values["Hsn"] == "Subtotal").Values["Tax"].ShouldBe(-5000L);
+        report.Totals.ShouldBeEmpty();
+        report.FooterTotals.Select(static total => (total.Label, total.Value)).ShouldBe(
+            [("Taxable value of sales", -100m), ("Tax on sales", -5m), ("Taxable value of purchases", 0m), ("Tax on purchases", 0m)]);
         TabularReport items = await fixture.Reports.GetReportAsync(ReportKind.ItemSales,
             new(From: new(2026, 10, 1), To: new(2026, 10, 31)), TestContext.Current.CancellationToken);
         ReportRow item = items.Rows.First(row => row.Values.GetValueOrDefault("Sku")?.ToString() == "RICE");
@@ -813,7 +820,8 @@ public sealed class ReportsTests
         TabularReport report = await fixture.Reports.GetReportAsync(ReportKind.GstSummary,
             new(From: new(2026, 10, 1), To: new(2026, 10, 31)), TestContext.Current.CancellationToken);
 
-        ReportRow inward = report.Rows.Single(row => (string)row.Values["Direction"]! == "INWARD");
+        ReportRow inward = report.Rows.Single(row => (string)row.Values["Direction"]! == "INWARD" &&
+            (string?)row.Values["Hsn"] != "Subtotal");
         inward.Values["Hsn"].ShouldBe("24ABCDE1234F1Z5");
         inward.Values["Taxable"].ShouldBe(-40000L);
         inward.Values["Tax"].ShouldBe(-2000L);

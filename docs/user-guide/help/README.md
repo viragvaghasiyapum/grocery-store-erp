@@ -62,7 +62,6 @@ Dialogs, by the page that opens them:
 | Money out | Correct damage write-off | [damage-correction](en/damage-correction.md) | [નુકસાનની નોંધ સુધારો](gu/damage-correction.md) |
 | Money out | New employee | [employee-form](en/employee-form.md) | [નવો કર્મચારી](gu/employee-form.md) |
 | Money out | Prepare run | [salary-run](en/salary-run.md) | [પગાર તૈયાર કરો](gu/salary-run.md) |
-| Money out | Record advance | [advance-form](en/advance-form.md) | [પેશગી નોંધો](gu/advance-form.md) |
 | Money out | Correct salary payment | [salary-correction](en/salary-correction.md) | [પગાર ચુકવણી સુધારો](gu/salary-correction.md) |
 | Assets | New asset | [asset-form](en/asset-form.md) | [નવી મિલકત](gu/asset-form.md) |
 | Assets | Dispose | [asset-disposal](en/asset-disposal.md) | [નિકાલ કરો](gu/asset-disposal.md) |

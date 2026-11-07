@@ -241,7 +241,7 @@ public sealed class StockInTests
             var month = new DateOnly(day.Year, day.Month, 1);
             TabularReport report = await reports.GetReportAsync(ReportKind.GstSummary,
                 new(From: month, To: month.AddMonths(1).AddDays(-1)), ct);
-            ReportRow inward = report.Rows.Single(row => (string)row.Values["Direction"]! == "INWARD");
+            ReportRow inward = report.Rows.Single(row => (string)row.Values["Direction"]! == "INWARD" && (string?)row.Values["Hsn"] != "Subtotal");
             inward.Values["Hsn"].ShouldBe("24ABCDE1234F1Z5");
             return ((long)inward.Values["Taxable"]!, (long)inward.Values["Tax"]!);
         }
@@ -266,7 +266,7 @@ public sealed class StockInTests
         {
             TabularReport report = await reports.GetReportAsync(ReportKind.GstSummary,
                 new(From: month, To: month.AddMonths(1).AddDays(-1)), ct);
-            ReportRow[] inward = report.Rows.Where(row => (string)row.Values["Direction"]! == "INWARD").ToArray();
+            ReportRow[] inward = report.Rows.Where(row => (string)row.Values["Direction"]! == "INWARD" && (string?)row.Values["Hsn"] != "Subtotal").ToArray();
             if (month.Month == 9)
                 inward.Single().Values["Tax"].ShouldBe(125_000L);
             else

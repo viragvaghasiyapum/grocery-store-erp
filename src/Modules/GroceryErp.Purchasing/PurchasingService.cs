@@ -177,7 +177,21 @@ public sealed partial class PurchasingService(
                 transaction.Connection.Execute("DELETE FROM purchase_line WHERE purchase_id=@id", new { id }, transaction.Transaction);
             }
 
-            InsertDraftLines(transaction, id, input, chosenBefore);
+            // A draft keeps the totals the purchase form shows, so the list and the panel show them too.
+            PurchaseTotals totals = InsertDraftLines(transaction, id, input, chosenBefore);
+            transaction.Connection.Execute("""
+                UPDATE purchase SET subtotal=@subtotal,discount_total=@discount,tax_total=@tax,round_off=@roundOff,
+                    grand_total=@grandTotal
+                WHERE id=@id AND status='DRAFT'
+                """, new
+            {
+                id,
+                subtotal = totals.Subtotal.Scaled,
+                discount = totals.Discount.Scaled,
+                tax = totals.Tax.Scaled,
+                roundOff = totals.RoundOff.Scaled,
+                grandTotal = totals.GrandTotal.Scaled,
+            }, transaction.Transaction);
             audit.Write(transaction, "purchase", id, purchaseId is null ? "CREATE_DRAFT" : "UPDATE_DRAFT", new { lines = input.Lines.Count });
             return id;
         }, cancellationToken);
@@ -310,13 +324,9 @@ public sealed partial class PurchasingService(
             }
             Money otherCharges = Money.FromScaled(header.OtherCharges);
             PricedPurchaseLine[] priced = PriceLines(resolved, otherCharges);
-            Money subtotal = priced.Aggregate(Money.Zero, static (sum, line) =>
-                sum + line.Line.Rate * line.Line.Quantity);
-            Money discounts = priced.Aggregate(Money.Zero, static (sum, line) => sum + line.Line.Discount);
-            Money taxTotal = priced.Aggregate(Money.Zero, static (sum, line) => sum + line.Tax);
-            Money beforeRound = subtotal - discounts + taxTotal + otherCharges;
-            Money roundOff = MoneyMath.RoundOff(beforeRound, Money.FromScaled(settings.Current.BillRoundTo));
-            Money grandTotal = beforeRound + roundOff;
+            PurchaseTotals totals = Totals(priced, otherCharges, null);
+            (Money subtotal, Money discounts, Money taxTotal, Money roundOff, Money grandTotal) =
+                (totals.Subtotal, totals.Discount, totals.Tax, totals.RoundOff, totals.GrandTotal);
             string docNo = numbers.Next(transaction, DocType.Purchase, header.ReceivedDate);
             var lotIds = new List<long>(rows.Count);
 
@@ -499,12 +509,16 @@ public sealed partial class PurchasingService(
                 Quantity.FromScaled(-lot.Received)));
             transaction.Connection.Execute("UPDATE product_lot SET is_active=0 WHERE id=@LotId", lot, transaction.Transaction);
         }
+        // A void takes the purchase out of its own date's reports, so its Expense lines are reversed on
+        // that date too, as a voided bill leaves its own date. Both callers refuse a purchase whose date
+        // is in a locked year, so the reversal never reaches a saved year.
         transaction.Connection.Execute("""
             INSERT INTO purchase_expense_reversal(expense_id,purchase_id,reversal_date,amount)
-            SELECT e.id,@purchaseId,@date,e.amount FROM expense e
+            SELECT e.id,@purchaseId,p.received_date,e.amount FROM expense e
             JOIN purchase_line pl ON pl.id=e.purchase_line_id
+            JOIN purchase p ON p.id=pl.purchase_id
             WHERE pl.purchase_id=@purchaseId
-            """, new { purchaseId, date = Format(cancellationDate) }, transaction.Transaction);
+            """, new { purchaseId }, transaction.Transaction);
         transaction.Connection.Execute("UPDATE purchase SET status='CANCELLED',cancelled_date=@date WHERE id=@purchaseId",
             new { purchaseId, date = Format(cancellationDate) }, transaction.Transaction);
         audit.Write(transaction, "purchase", purchaseId, "CANCEL", new { lots = lots.Count });
@@ -1077,7 +1091,7 @@ public sealed partial class PurchasingService(
     // Lines typed including tax are validated as typed, then stored before tax with the typed
     // rate and discount kept beside them. The draft also saves each line's tax label and per-piece
     // prices, so a reopened or reviewed draft shows what posting will save.
-    private void InsertDraftLines(DbTx transaction, long purchaseId, PurchaseDraftInput input,
+    private PurchaseTotals InsertDraftLines(DbTx transaction, long purchaseId, PurchaseDraftInput input,
         HashSet<long> chosenBefore)
     {
         var resolved = new List<(PurchaseLineInput Line, TaxRateSnapshot Rate)>(input.Lines.Count);
@@ -1146,6 +1160,19 @@ public sealed partial class PurchasingService(
                 unitCostInclTax = line.Unit.InclTax.Scaled,
             }, transaction.Transaction);
         }
+        return Totals(priced, input.OtherCharges, input.VendorBillTotal);
+    }
+
+    // A purchase's totals from its priced lines, as the form shows them and posting saves them:
+    // goods before tax, less discounts, plus tax and other charges, rounded like a bill.
+    private PurchaseTotals Totals(PricedPurchaseLine[] priced, Money otherCharges, Money? vendorBillTotal)
+    {
+        Money subtotal = priced.Aggregate(Money.Zero, static (sum, line) => sum + line.Line.Rate * line.Line.Quantity);
+        Money discounts = priced.Aggregate(Money.Zero, static (sum, line) => sum + line.Line.Discount);
+        Money tax = priced.Aggregate(Money.Zero, static (sum, line) => sum + line.Tax);
+        Money beforeRound = subtotal - discounts + tax + otherCharges;
+        Money roundOff = MoneyMath.RoundOff(beforeRound, Money.FromScaled(settings.Current.BillRoundTo));
+        return new(subtotal, discounts, tax, otherCharges, roundOff, beforeRound + roundOff, vendorBillTotal);
     }
 
     // One line as saved: its before-tax figures, its rate, tax on the goods, its per-piece prices

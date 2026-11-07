@@ -5,7 +5,7 @@ Pay one month's salaries together: prepare a line for each employee, adjust it, 
 
 ![Prepare run](../../screenshots/salary-run.en.png)
 
-Salary counts in profit and loss in the month worked, whatever the pay date. **Prepare lines** lists each active employee who worked that month and has not been paid salary for it, with the monthly salary in force that month. Each line pays salary − leave deduction + overtime + bonus, and must pay more than zero. Posting asks you to confirm the number of employees and the total.
+Salary counts in profit and loss in the month worked, whatever the pay date. **Prepare lines** lists each active employee who worked that month and has not been paid salary for it, with the monthly salary in force that month. Each line pays salary − leave deduction + overtime + bonus, and must pay more than zero. Posting asks you to confirm the number of employees and the total. Money handed to an employee earlier in the month is part of that month's pay: post the whole month here and say so in the line's notes. A payment after the month's run is an expense.
 
 ## Fields
 

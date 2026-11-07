@@ -26,7 +26,7 @@ The figures are worked out when the screen opens, after each completed bill and 
 | critical | Active lots of active products that expire within the next seven days. Opens Products filtered to **Expiring soon**. |
 | soon | Active lots of active products that expire later, but within their alert days: the product's own, else its category's, else the parent category's, else 30 days. Opens Products filtered to **Expiring soon**. |
 | low stock | Active products at or below their reorder level. Opens Products filtered to **Low stock**, which lists the same products. |
-| **Payments today:** | Today's payments by mode: cash, UPI, card and other. Click it to open today's sales register. |
+| **Payments today:** | Today's payments by mode: cash, UPI, card and other. Cash is what was kept: what customers handed over less the change given back, so the modes add up to today's sales. Click it to open today's sales register. |
 | Last backup, USB export | When the last backup was taken and the last copy saved to a USB drive. Click it to open Settings. |
 
 ## Top products

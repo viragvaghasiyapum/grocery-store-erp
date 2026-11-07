@@ -171,13 +171,18 @@ public partial class ReportsPage : Page
                 if (version != _refreshVersion) return;
                 _currentPnl = report;
                 timing.Bind(() => ShowPnl(report));
-                PnlTotals.Text = TranslationSource.Instance.Format("Reports_PnlSummary", report.Statement.GrossProfit.Value,
-                    report.Statement.GrossMargin.Value, report.Statement.NetProfit.Value, report.Statement.NetMargin.Value);
+                var margins = new List<(string, string)>
+                {
+                    (TranslationSource.Instance["Reports_Section_GrossProfit"],
+                        $"₹{Amount(report.Statement.GrossProfit.Value)} ({Amount(report.Statement.GrossMargin.Value)}%)"),
+                    (TranslationSource.Instance["Reports_Section_NetProfit"],
+                        $"₹{Amount(report.Statement.NetProfit.Value)} ({Amount(report.Statement.NetMargin.Value)}%)"),
+                };
                 if (previous is not null)
-                    PnlTotals.Text += TranslationSource.Instance.Format("Reports_PreviousNet", previous.Statement.NetProfit.Value);
+                    margins.Add((TranslationSource.Instance["Reports_PreviousNetProfit"], $"₹{Amount(previous.Statement.NetProfit.Value)}"));
+                Totals.Show(margins);
                 StatusText.Text = report.Period.Label + (period.Scope == PnlScope.Custom
                     ? " · " + TranslationSource.Instance["Reports_PnlCutMonthNote"] : "");
-                TotalsText.Text = "";
                 return;
             }
             ReportKind kind = ((ReportChoice)ReportPicker.SelectedItem).Kind!.Value;
@@ -194,8 +199,11 @@ public partial class ReportsPage : Page
                 ? TranslationSource.Instance.Format("Reports_TruncatedRows", _currentReport.Rows.Count)
                 : TranslationSource.Instance.Format("Reports_RowCount", _currentReport.Rows.Count);
             StatusText.Text = _currentReport.Summary is { } summary ? rows + " · " + summary : rows;
-            TotalsText.Text = string.Join(" · ", _currentReport.Columns.Where(column => _currentReport.Totals.ContainsKey(column.Key))
-                .Select(column => $"{column.Heading}: {_currentReport.Totals[column.Key].ToString("N3", NumberCulture)}"));
+            // A report whose column totals would add unlike figures names its own totals instead.
+            Totals.Show(_currentReport.FooterTotals.Count > 0
+                ? _currentReport.FooterTotals.Select(total => (total.Label, Amount(total.Value)))
+                : _currentReport.Columns.Where(column => _currentReport.Totals.ContainsKey(column.Key))
+                    .Select(column => (column.Heading, Amount(_currentReport.Totals[column.Key]))));
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception exception)
@@ -203,7 +211,7 @@ public partial class ReportsPage : Page
             if (version != _refreshVersion) return;
             ReportGrid.ItemsSource = null;
             PnlGrid.ItemsSource = null;
-            TotalsText.Text = "";
+            Totals.Clear();
             StatusText.Text = UserError.Message(exception);
         }
         finally
@@ -250,6 +258,8 @@ public partial class ReportsPage : Page
 
     private static bool HasDetail(PnlReport report, string head) =>
         report.Rows.Any(row => row.Kind == "CATEGORY" && row.ParentCode == head);
+
+    private static string Amount(decimal value) => value.ToString("N3", NumberCulture);
 
     private List<ReportColumn> MatrixColumns(PnlReport report)
     {

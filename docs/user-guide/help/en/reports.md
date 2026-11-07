@@ -5,7 +5,7 @@ Choose one of seven reports, set its period and filters, and read, export or pri
 
 ![Reports](../../screenshots/reports-table.en.png)
 
-Other lists live on their own screens: low stock and expiry are filters in Products, balances due are in Vendors, and damages, expenses and salaries are in Money out. The title row shows the report's status and, for a table, the totals of the whole result.
+Other lists live on their own screens: low stock and expiry are filters in Products, balances due are in Vendors, and damages, expenses and salaries are in Money out. A footer under the table, always in view, shows the totals of the whole result (for profit and loss, the gross and net profit with their margins; for the GST summary, the taxable value and tax of sales and of purchases, each on its own), and under it the report's status line.
 
 ## Choosing a report
 
@@ -32,7 +32,7 @@ Only the filters the chosen report uses are shown.
 | **Sales register** | Every bill in the period: its number, status, items, value before tax, tax, round off, total and payment mode. |
 | **Item-wise sales** | Each product's quantity, sales before tax, cost and margin in the period. |
 | **Purchase register** | Every posted purchase received in the period: vendor, GSTIN, bill number, subtotal, discount, tax, other charges and total. |
-| **GST summary** | Tax collected on sales by HSN and rate, and tax paid on purchases by vendor GSTIN and rate. A vendor return lowers the tax paid on its date; cancelling the return adds it back on the day it is cancelled. |
+| **GST summary** | Tax collected on sales by HSN and rate, and tax paid on purchases by vendor GSTIN and rate. A vendor return lowers the tax paid on its date; cancelling the return adds it back on the day it is cancelled. Sales and purchases each end with their subtotal; the two are never added together. |
 | **Current unsold stock** | Each product's stock now, with its value at cost, at selling price and at MRP. |
 | **Purchased vs used reconciliation** | For each lot, newest first: received, sold, returned, damaged, used in the shop, sent back and corrected quantities, with the expected and actual stock and any difference. |
 
@@ -44,7 +44,7 @@ Only the filters the chosen report uses are shown.
 | **Actions ▾** | Holds the export and print actions. Each export states the report, period and filters. |
 | **Export Excel** | Saves the rows on screen to an Excel file. When the table shows only the first rows, the file says it is partial. |
 | **Export P&L CSV** | Saves exactly the profit and loss on screen, so a finalized year's file is the same every time. |
-| **Export full CSV** | Saves every row of the result, with progress, and ends with the totals. |
+| **Export full CSV** | Saves every row of the result, with progress, and ends with the totals (for the GST summary, each direction ends with its subtotal). |
 | **Preview / print A4** | Shows the report on A4 pages to print. It prints the first 100 rows. |
 | **Cancel export** | Stops a full CSV export that is running. |
 
@@ -56,7 +56,7 @@ A badge above the table reads **Open**, with the last date the period's entries 
 |---|---|
 | **P&L period type** | **Month**, **Calendar year** (January to December), **Fiscal year** (April to March) or **Custom range**. |
 | **Show months** | Adds a column for each month of the period. |
-| **Compare previous period** | Shows the previous period's net profit beside this one's. |
+| **Compare previous period** | Adds the previous period's net profit to the totals under the table. |
 | **Particulars** | The heads: sales, returns, cost of goods sold, damages, salaries, depreciation, expenses and the rest. Select **Expenses** to show its categories. |
 | **Amount** | The head's total for the period. |
 

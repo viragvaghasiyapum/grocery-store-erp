@@ -49,7 +49,7 @@ Set the filters, then click **Search** or press Enter in any box.
 
 ## Bill panel
 
-The bill opens beside the list; picking another bill shows that one. While it is open, **Return**, **Reprint** and **Void** are in the panel.
+The bill opens beside the list; picking another bill shows that one. While it is open, **Return**, **Reprint** and **Void** are in the panel. Its title is the bill's number, with the date and status under it. A footer under the tabs, always in view, shows the bill's **Gross**, any **Discount**, the **Tax charged**, any **Round off** and the **Bill total**, then what was paid in each mode and any **Change** given back from the cash.
 
 | Field | What it means |
 |---|---|

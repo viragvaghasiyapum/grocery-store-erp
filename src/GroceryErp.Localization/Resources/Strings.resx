@@ -408,8 +408,6 @@
   <data name="MoneyOut_PostSalary" xml:space="preserve"><value>Post salary</value></data>
   <data name="MoneyOut_Role" xml:space="preserve"><value>Role</value></data>
   <data name="MoneyOut_Phone" xml:space="preserve"><value>Phone</value></data>
-  <data name="MoneyOut_Advance" xml:space="preserve"><value>Advance amount</value></data>
-  <data name="MoneyOut_RecordAdvance" xml:space="preserve"><value>Record advance</value></data>
   <data name="MoneyOut_Salary" xml:space="preserve"><value>Salary</value></data>
   <data name="MoneyOut_LeaveDeduction" xml:space="preserve"><value>Leave deduction</value></data>
   <data name="MoneyOut_Overtime" xml:space="preserve"><value>Overtime</value></data>
@@ -624,7 +622,6 @@
   <data name="Sales_ResultCount" xml:space="preserve"><value>{0} bills shown</value></data>
   <data name="Sales_Previous" xml:space="preserve"><value>Previous</value></data>
   <data name="Sales_Next" xml:space="preserve"><value>Next</value></data>
-  <data name="Sales_DetailHeading" xml:space="preserve"><value>{0}  ·  {1}</value></data>
   <data name="Sales_Reprinted" xml:space="preserve"><value>Reprinted {0}.</value></data>
   <data name="Sales_NothingToReturn" xml:space="preserve"><value>All items on this bill have already been returned.</value></data>
   <data name="Sales_Invoice" xml:space="preserve"><value>Invoice</value></data>
@@ -809,8 +806,7 @@
   <data name="Reports_Column_Total" xml:space="preserve"><value>Total</value></data>
   <data name="Reports_Column_Vendor" xml:space="preserve"><value>Vendor</value></data>
   <data name="Reports_Column_VendorInvoice" xml:space="preserve"><value>Vendor invoice</value></data>
-  <data name="Reports_PnlSummary" xml:space="preserve"><value>Gross profit ₹{0:N3} ({1:N3}%) · Net profit ₹{2:N3} ({3:N3}%)</value></data>
-  <data name="Reports_PreviousNet" xml:space="preserve"><value> · Previous ₹{0:N3}</value></data>
+  <data name="Reports_PreviousNetProfit" xml:space="preserve"><value>Previous period net profit</value></data>
   <data name="Reports_Section_Income" xml:space="preserve"><value>Income</value></data>
   <data name="Reports_Section_NetSales" xml:space="preserve"><value>Net sales</value></data>
   <data name="Reports_Section_Cogs" xml:space="preserve"><value>Cost of goods sold</value></data>
@@ -849,6 +845,10 @@
   <data name="Reports_Value_OUTWARD" xml:space="preserve"><value>Outward</value></data>
   <data name="Reports_Value_INWARD" xml:space="preserve"><value>Inward</value></data>
   <data name="Reports_Subtotal" xml:space="preserve"><value>Subtotal</value></data>
+  <data name="Reports_GstSalesTaxable" xml:space="preserve"><value>Taxable value of sales</value></data>
+  <data name="Reports_GstSalesTax" xml:space="preserve"><value>Tax on sales</value></data>
+  <data name="Reports_GstPurchasesTaxable" xml:space="preserve"><value>Taxable value of purchases</value></data>
+  <data name="Reports_GstPurchasesTax" xml:space="preserve"><value>Tax on purchases</value></data>
   <data name="Common_RowsPerPage" xml:space="preserve"><value>Rows per page</value></data>
   <data name="Selection_ThisPage" xml:space="preserve"><value>Select this page</value></data>
   <data name="Selection_AllMatching" xml:space="preserve"><value>Select all matching results</value></data>
@@ -1178,7 +1178,6 @@
   <data name="Common_NoFilters" xml:space="preserve"><value>No filters</value></data>
   <data name="Form_PeriodLocked" xml:space="preserve"><value>{0} is in a finalized year. Choose a date in an open period.</value></data>
   <data name="Form_PeriodOpen" xml:space="preserve"><value>Counts in profit and loss on {0}.</value></data>
-  <data name="MoneyOut_AdvanceContext" xml:space="preserve"><value>Records a salary advance or other payment on its pay date.</value></data>
   <data name="MoneyOut_AllCategories" xml:space="preserve"><value>All categories</value></data>
   <data name="MoneyOut_AllEmployees" xml:space="preserve"><value>All employees</value></data>
   <data name="MoneyOut_AnyReason" xml:space="preserve"><value>Any reason</value></data>

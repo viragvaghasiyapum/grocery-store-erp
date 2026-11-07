@@ -101,7 +101,17 @@ public sealed record ReportRow(IReadOnlyDictionary<string, object?> Values);
 /// <summary>A displayed report; <see cref="Filters"/> states the applied filters for every export of it.</summary>
 public sealed record TabularReport(string Title, DateRange? Period, IReadOnlyList<ReportColumn> Columns,
     IReadOnlyList<ReportRow> Rows, IReadOnlyDictionary<string, decimal> Totals, bool IsTruncated = false,
-    string? Summary = null, string? Filters = null);
+    string? Summary = null, string? Filters = null)
+{
+    /// <summary>
+    /// Named totals for the footer when the column totals would add unlike figures, such as the GST
+    /// summary's tax on sales and tax on purchases; empty for every other report.
+    /// </summary>
+    public IReadOnlyList<ReportTotal> FooterTotals { get; init; } = [];
+}
+
+/// <summary>A footer total: its name and amount.</summary>
+public sealed record ReportTotal(string Label, decimal Value);
 
 /// <param name="ProductName">The chosen product's name, for the filter line of exports; filtering uses the ID.</param>
 /// <param name="VendorName">The chosen vendor's name, for the filter line of exports; filtering uses the ID.</param>

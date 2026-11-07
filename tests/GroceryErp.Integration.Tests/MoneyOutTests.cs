@@ -366,10 +366,12 @@ public sealed class MoneyOutTests
             new YearMonth(2026, 8), fixture.Today, "BANK",
             [new(employee, new Money(12000), new Money(1000), new Money(500), new Money(250), "August")]),
             OperationGuard.NewId(), TestContext.Current.CancellationToken);
-        await fixture.MoneyOut.RecordOtherSalaryPaymentAsync(employee, fixture.Today, new Money(100), "CASH", "Advance",
-            OperationGuard.NewId(), TestContext.Current.CancellationToken);
-
         using var connection = fixture.Factory.Open();
+        // An advance saved by an earlier version, as an Other payment, still counts as salary.
+        connection.Execute("""
+            INSERT INTO salary_payment(employee_id,period_month,pay_date,kind,amount,mode,notes)
+            VALUES (@employee,@period,@payDate,'OTHER',100000,'CASH','Advance')
+            """, new { employee, period = YearMonth.From(fixture.Today).ToString(), payDate = Iso(fixture.Today) });
         connection.ExecuteScalar<long>("SELECT SUM(amount) FROM salary_payment").ShouldBe(11850000L);
         connection.ExecuteScalar<long>("SELECT COUNT(*) FROM salary_payment WHERE kind='OTHER'").ShouldBe(1L);
         connection.ExecuteScalar<string>("SELECT entry_date FROM v_pnl_entry WHERE head_code='SALARIES' ORDER BY amount DESC LIMIT 1")
@@ -384,9 +386,9 @@ public sealed class MoneyOutTests
         CancellationToken ct = TestContext.Current.CancellationToken;
         long employee = await fixture.MoneyOut.SaveEmployeeAsync(null,
             new("Asha", null, null, null, null, new Money(1000), true, null), ct);
-        await fixture.MoneyOut.RecordOtherSalaryPaymentAsync(employee, fixture.Today, new Money(1000),
-            "BANK", "Advance", OperationGuard.NewId(), ct);
         YearMonth month = YearMonth.From(fixture.Today);
+        await fixture.MoneyOut.PostSalaryRunAsync(new(month, fixture.Today, "BANK",
+            [new(employee, new Money(1000), Money.Zero, Money.Zero, Money.Zero, null)]), OperationGuard.NewId(), ct);
         SalaryPaymentItem original = (await fixture.MoneyOut.GetSalaryRegisterAsync(month, month, ct)).Single();
         long correctionId = await fixture.MoneyOut.CorrectSalaryPaymentAsync(original,
             new(fixture.Today.AddDays(2), new Money(900), "CASH", null),

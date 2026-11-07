@@ -428,9 +428,9 @@ public partial class PurchasesPage : Page
                     : $"{TranslationSource.Instance["Purchasing_Invoice"]} {purchase.VendorInvoiceNumber}",
                 invoice?.VendorInvoiceDate is { } invoiceDate ? $"{TranslationSource.Instance["Purchasing_InvoiceDate"]} {Date(invoiceDate)}" : null,
                 $"{TranslationSource.Instance["Purchasing_Received"]} {Date(purchase.ReceivedDate)}",
-                $"{TranslationSource.Instance["Purchasing_Total"]} {purchase.GrandTotal}",
             }.Where(static part => !string.IsNullOrEmpty(part)));
-            if (invoice is null) InvoiceView.ShowDraft();
+            // The totals are in the panel's footer, under the lines.
+            if (invoice is null) InvoiceView.ShowDraft(purchase.GrandTotal);
             else InvoiceView.Show(invoice);
             ShowRecordActions(false);
             _invoiceSplit.Open();

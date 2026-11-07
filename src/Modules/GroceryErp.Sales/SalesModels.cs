@@ -88,7 +88,11 @@ public sealed record SaleDetails(
     IReadOnlyList<PaymentInput> Payments,
     DateTime CreatedAt,
     DateTime? CompletedAt,
-    string? VoidReason);
+    string? VoidReason)
+{
+    /// <summary>The change given back from the cash handed over; zero when none was.</summary>
+    public Money Change { get; init; }
+}
 
 public sealed record HeldSale(long Id, DateTime CreatedAt, string? Label, int ItemCount, Money Total)
 {

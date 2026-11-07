@@ -408,8 +408,6 @@
   <data name="MoneyOut_PostSalary" xml:space="preserve"><value>પગાર પોસ્ટ કરો</value></data>
   <data name="MoneyOut_Role" xml:space="preserve"><value>ભૂમિકા</value></data>
   <data name="MoneyOut_Phone" xml:space="preserve"><value>ફોન</value></data>
-  <data name="MoneyOut_Advance" xml:space="preserve"><value>પેશગી રકમ</value></data>
-  <data name="MoneyOut_RecordAdvance" xml:space="preserve"><value>પેશગી નોંધો</value></data>
   <data name="MoneyOut_Salary" xml:space="preserve"><value>પગાર</value></data>
   <data name="MoneyOut_LeaveDeduction" xml:space="preserve"><value>રજા કપાત</value></data>
   <data name="MoneyOut_Overtime" xml:space="preserve"><value>વધારાનું કામ</value></data>
@@ -624,7 +622,6 @@
   <data name="Sales_ResultCount" xml:space="preserve"><value>{0} બિલ બતાવ્યાં</value><comment>MT - needs review</comment></data>
   <data name="Sales_Previous" xml:space="preserve"><value>પાછળ</value><comment>MT - needs review</comment></data>
   <data name="Sales_Next" xml:space="preserve"><value>આગળ</value><comment>MT - needs review</comment></data>
-  <data name="Sales_DetailHeading" xml:space="preserve"><value>{0}  ·  {1}</value></data>
   <data name="Sales_Reprinted" xml:space="preserve"><value>{0} ફરી છાપ્યું.</value><comment>MT - needs review</comment></data>
   <data name="Sales_NothingToReturn" xml:space="preserve"><value>આ બિલની બધી વસ્તુઓ પહેલેથી પરત થઈ ગઈ છે.</value><comment>MT - needs review</comment></data>
   <data name="Sales_Invoice" xml:space="preserve"><value>ઇન્વૉઇસ</value><comment>MT - needs review</comment></data>
@@ -809,8 +806,7 @@
   <data name="Reports_Column_Total" xml:space="preserve"><value>કુલ</value></data>
   <data name="Reports_Column_Vendor" xml:space="preserve"><value>વેપારી</value></data>
   <data name="Reports_Column_VendorInvoice" xml:space="preserve"><value>વેપારી ઇન્વૉઇસ</value></data>
-  <data name="Reports_PnlSummary" xml:space="preserve"><value>કુલ નફો ₹{0:N3} ({1:N3}%) · ચોખ્ખો નફો ₹{2:N3} ({3:N3}%)</value></data>
-  <data name="Reports_PreviousNet" xml:space="preserve"><value> · અગાઉનો ₹{0:N3}</value></data>
+  <data name="Reports_PreviousNetProfit" xml:space="preserve"><value>અગાઉના સમયગાળાનો ચોખ્ખો નફો</value><comment>MT – needs review</comment></data>
   <data name="Reports_Section_Income" xml:space="preserve"><value>આવક</value></data>
   <data name="Reports_Section_NetSales" xml:space="preserve"><value>ચોખ્ખું વેચાણ</value></data>
   <data name="Reports_Section_Cogs" xml:space="preserve"><value>વેચાયેલા માલની કિંમત</value></data>
@@ -849,6 +845,10 @@
   <data name="Reports_Value_OUTWARD" xml:space="preserve"><value>જાવક</value></data>
   <data name="Reports_Value_INWARD" xml:space="preserve"><value>આવક</value></data>
   <data name="Reports_Subtotal" xml:space="preserve"><value>પેટા સરવાળો</value></data>
+  <data name="Reports_GstSalesTaxable" xml:space="preserve"><value>વેચાણનું કરપાત્ર મૂલ્ય</value><comment>MT - needs review</comment></data>
+  <data name="Reports_GstSalesTax" xml:space="preserve"><value>વેચાણ પરનો કર</value><comment>MT - needs review</comment></data>
+  <data name="Reports_GstPurchasesTaxable" xml:space="preserve"><value>ખરીદીનું કરપાત્ર મૂલ્ય</value><comment>MT - needs review</comment></data>
+  <data name="Reports_GstPurchasesTax" xml:space="preserve"><value>ખરીદી પરનો કર</value><comment>MT - needs review</comment></data>
   <data name="Common_RowsPerPage" xml:space="preserve"><value>દર પાનાના રેકોર્ડ</value></data>
   <data name="Selection_ThisPage" xml:space="preserve"><value>આ પાનું પસંદ કરો</value></data>
   <data name="Selection_AllMatching" xml:space="preserve"><value>બધા મળતા પરિણામો પસંદ કરો</value></data>
@@ -1178,7 +1178,6 @@
   <data name="Common_NoFilters" xml:space="preserve"><value>કોઈ ફિલ્ટર નથી</value><comment>MT - needs review</comment></data>
   <data name="Form_PeriodLocked" xml:space="preserve"><value>{0} અંતિમ થયેલા વર્ષમાં છે. ખુલ્લા સમયગાળાની તારીખ પસંદ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Form_PeriodOpen" xml:space="preserve"><value>{0} ના નફા-નુકસાનમાં ગણાશે.</value><comment>MT - needs review</comment></data>
-  <data name="MoneyOut_AdvanceContext" xml:space="preserve"><value>પગાર પેશગી કે અન્ય ચુકવણી તેની ચુકવણી તારીખે નોંધે છે.</value><comment>MT - needs review</comment></data>
   <data name="MoneyOut_AllCategories" xml:space="preserve"><value>બધી શ્રેણીઓ</value><comment>MT - needs review</comment></data>
   <data name="MoneyOut_AllEmployees" xml:space="preserve"><value>બધા કર્મચારીઓ</value><comment>MT - needs review</comment></data>
   <data name="MoneyOut_AnyReason" xml:space="preserve"><value>કોઈપણ કારણ</value><comment>MT - needs review</comment></data>
