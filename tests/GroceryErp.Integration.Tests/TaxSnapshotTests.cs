@@ -364,7 +364,7 @@ public sealed class TaxSnapshotTests
     }
 
     [Fact]
-    public async Task HeldLineSavedExcludingTax_PricesAsItWasAdded_AndResumesAtTheLotsInclusivePrice()
+    public async Task HeldLineSavedExcludingTax_PricesAsItWasAdded_AndContinuesAtTheLotsInclusivePrice()
     {
         using var fixture = new TaxFixture();
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -376,9 +376,11 @@ public sealed class TaxSnapshotTests
             db.Execute("UPDATE sale_line SET price_includes_tax=0 WHERE id=@lineId", new { lineId });
         await fixture.Sales.SetLineQuantityAsync(saleId, lineId, Quantity.One, ct);
         (await fixture.Sales.GetAsync(saleId, ct)).Totals.GrandTotal.ShouldBe(new Money(158));
-        await fixture.Sales.HoldAsync(saleId, "Across the upgrade", ct);
+        // Held before Hold was removed; continuing it takes the lot's price, as resuming it did.
+        using (SqliteConnection db = fixture.Factory.Open())
+            db.Execute("UPDATE sale SET status='HELD',notes='Across the upgrade' WHERE id=@saleId", new { saleId });
 
-        await fixture.Sales.ResumeReviewedAsync(await fixture.Sales.GetHeldBillReviewAsync(saleId, ct), ct);
+        await fixture.Sales.ContinueSavedBillAsync(saleId, ct);
 
         (await fixture.Sales.GetAsync(saleId, ct)).Totals.GrandTotal.ShouldBe(new Money(150));
         using SqliteConnection check = fixture.Factory.Open();

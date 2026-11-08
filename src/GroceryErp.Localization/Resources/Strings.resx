@@ -129,13 +129,14 @@
   <data name="Lock_Command" xml:space="preserve"><value>Lock</value></data>
   <data name="Startup_LowDisk" xml:space="preserve"><value>Less than 1 GB of free disk space is available. Make space before continuing.</value></data>
   <data name="Startup_ClockWarning" xml:space="preserve"><value>The computer clock is behind the last bill dated {0:d}. Continue only after confirming the date.</value></data>
+  <data name="Startup_PrintCleared" xml:space="preserve"><value>These print jobs did not finish printing:{0}They have been cleared, so this message will not show again. Check the paper that printed. To print a bill again, open Sales history and press Reprint.</value></data>
+  <data name="Startup_PrintClearedMore" xml:space="preserve"><value>…and {0} more</value></data>
   <data name="Startup_RestorePending" xml:space="preserve"><value>A restored database is waiting for confirmation. Choose Yes to keep the restored data, No to undo the restore, or Cancel to leave it pending and close the application.</value></data>
   <data name="Startup_RestoreUndone" xml:space="preserve"><value>The restore was undone. The previous database has been put back.</value></data>
   <data name="Startup_RestoreFailed" xml:space="preserve"><value>The restored database could not start safely. Undo the restore and put the previous database back?</value></data>
   <data name="Startup_Failed" xml:space="preserve"><value>Hare Krushna could not start. Details were written to the log.</value></data>
   <data name="Startup_MaintenanceFailed" xml:space="preserve"><value>A background safety check failed. Check the log and verify a backup before continuing.</value></data>
   <data name="Startup_ShowLotDifferences" xml:space="preserve"><value>Show differences</value></data>
-  <data name="Startup_PrintReview" xml:space="preserve"><value>Saved print jobs need review. Check the printed paper, then open Billing and press Ctrl+P to review each job before retrying.</value></data>
   <data name="Catalog_Navigation" xml:space="preserve"><value>Products</value></data>
   <data name="Catalog_Title" xml:space="preserve"><value>Products</value></data>
   <data name="Catalog_LowStock" xml:space="preserve"><value>Low stock</value></data>
@@ -357,12 +358,17 @@
   <data name="Sales_Upi" xml:space="preserve"><value>F10 UPI</value></data>
   <data name="Sales_Split" xml:space="preserve"><value>F11 Split</value></data>
   <data name="Sales_New" xml:space="preserve"><value>F2 New bill</value></data>
+  <data name="Sales_DiscardForNew" xml:space="preserve"><value>Discard this unfinished bill and start a new one?</value></data>
+  <data name="Sales_SavedBillTitle" xml:space="preserve"><value>Saved bill</value></data>
+  <data name="Sales_SavedBillPrompt" xml:space="preserve"><value>A bill was left unfinished. Continue it, or discard it and start a new bill?</value></data>
+  <data name="Sales_SavedBillDetails" xml:space="preserve"><value>Started {0:dd-MM-yyyy HH:mm} · {1} items · ₹{2:N3}</value></data>
+  <data name="Sales_SavedBillCustomer" xml:space="preserve"><value>Customer: {0}</value></data>
+  <data name="Sales_ContinueBill" xml:space="preserve"><value>Continue bill</value></data>
+  <data name="Sales_DiscardBill" xml:space="preserve"><value>Discard bill</value></data>
   <data name="Sales_Quantity" xml:space="preserve"><value>F4 Quantity</value></data>
   <data name="Sales_LineDiscount" xml:space="preserve"><value>F5 Line discount</value></data>
   <data name="Sales_BillDiscount" xml:space="preserve"><value>F6 Bill discount</value></data>
   <data name="Sales_Remove" xml:space="preserve"><value>Delete line</value></data>
-  <data name="Sales_Hold" xml:space="preserve"><value>F7 Hold</value></data>
-  <data name="Sales_Resume" xml:space="preserve"><value>F8 Resume</value></data>
   <data name="Sales_Items" xml:space="preserve"><value>Items</value></data>
   <data name="Sales_Reprint" xml:space="preserve"><value>Reprint</value></data>
   <data name="Sales_Void" xml:space="preserve"><value>Void</value></data>
@@ -601,10 +607,6 @@
   <data name="Sales_NonCashOverpayment" xml:space="preserve"><value>Only cash can exceed the bill total.</value></data>
   <data name="Sales_Completed" xml:space="preserve"><value>Bill {0} completed.</value></data>
   <data name="Sales_PrintFailed" xml:space="preserve"><value>Bill {0} completed. Printing failed: {1} Press Ctrl+P to retry.</value></data>
-  <data name="Sales_SavedBills" xml:space="preserve"><value>Saved bills</value></data>
-  <data name="Sales_SelectSavedBill" xml:space="preserve"><value>Select a bill to continue</value></data>
-  <data name="Sales_HoldLabel" xml:space="preserve"><value>Label</value></data>
-  <data name="Sales_OpenBill" xml:space="preserve"><value>Open bill</value></data>
   <data name="Sales_RoundOff" xml:space="preserve"><value>Round off</value></data>
   <data name="Sales_Savings" xml:space="preserve"><value>You saved ₹{0}</value></data>
   <data name="Sales_ReturnLine" xml:space="preserve"><value>Item to return</value></data>
@@ -629,8 +631,6 @@
   <data name="Sales_ChooseLot" xml:space="preserve"><value>Choose lot</value></data>
   <data name="Sales_ChooseLotShortcut" xml:space="preserve"><value>Ctrl+L Lot</value></data>
   <data name="Sales_UseLot" xml:space="preserve"><value>Use lot</value></data>
-  <data name="Sales_HoldBill" xml:space="preserve"><value>Hold bill</value></data>
-  <data name="Sales_HoldHint" xml:space="preserve"><value>Optional label to find this bill later</value></data>
   <data name="Receipt_Return" xml:space="preserve"><value>RETURN RECEIPT</value></data>
   <data name="Receipt_OriginalInvoice" xml:space="preserve"><value>Original invoice</value></data>
   <data name="Receipt_ReturnReason" xml:space="preserve"><value>Reason</value></data>
@@ -673,16 +673,6 @@
   <data name="Sales_ExportCancelled" xml:space="preserve"><value>Export cancelled.</value></data>
   <data name="Sales_ReturnTotal" xml:space="preserve"><value>Refund ₹{0} · {1} lines</value></data>
   <data name="Sales_ReturnContext" xml:space="preserve"><value>Bill {0} · {1} · ₹{2}</value></data>
-  <data name="Sales_ReviewHeld" xml:space="preserve"><value>Review held bill</value></data>
-  <data name="Sales_PreviousPrice" xml:space="preserve"><value>Previous price</value></data>
-  <data name="Sales_CurrentPrice" xml:space="preserve"><value>Current price</value></data>
-  <data name="Sales_AcceptResume" xml:space="preserve"><value>Accept and resume</value></data>
-  <data name="Sales_HeldUnavailable" xml:space="preserve"><value>Stock on this bill is blocked, expired or insufficient. Resolve it before resuming.</value></data>
-  <data name="Sales_HeldPriceChanged" xml:space="preserve"><value>Prices or MRP have changed. Review the rows before accepting the updated bill.</value></data>
-  <data name="Sales_HeldNoChanges" xml:space="preserve"><value>Stock is available and prices are unchanged. Review and resume the bill.</value></data>
-  <data name="Sales_HeldStockIssue" xml:space="preserve"><value>Stock issue</value></data>
-  <data name="Sales_HeldChanged" xml:space="preserve"><value>Price changed</value></data>
-  <data name="Sales_HeldUnchanged" xml:space="preserve"><value>Ready</value></data>
   <data name="Sales_DiscountEntry" xml:space="preserve"><value>Discount</value></data>
   <data name="Sales_Amount" xml:space="preserve"><value>Amount</value></data>
   <data name="Sales_Percent" xml:space="preserve"><value>Percent</value></data>
@@ -727,7 +717,6 @@
   <data name="Stock_UnblockSelected" xml:space="preserve"><value>Unblock selected</value></data>
   <data name="Stock_SourceDoc_Purchase" xml:space="preserve"><value>Purchase</value></data>
   <data name="Sales_LastScan" xml:space="preserve"><value>Last: {0} · Stock {1} · MRP ₹{2}</value></data>
-  <data name="Sales_HeldChip" xml:space="preserve"><value>Held #{0}</value></data>
   <data name="Sales_PrinterReady" xml:space="preserve"><value>Receipt printer ready</value></data>
   <data name="Sales_PrinterUnavailable" xml:space="preserve"><value>Receipt printer unavailable</value></data>
   <data name="Sales_PrinterJobFailed" xml:space="preserve"><value>A saved print job needs review. Press Ctrl+P.</value></data>
@@ -1353,9 +1342,7 @@
   <data name="Purchasing_LedgerKind_VENDOR_RETURN" xml:space="preserve"><value>Vendor return</value></data>
   <data name="Purchasing_LedgerKind_VENDOR_RETURN_CANCEL" xml:space="preserve"><value>Cancelled return</value></data>
   <data name="MoneyOut_PaymentType" xml:space="preserve"><value>Type</value></data>
-  <data name="Sales_SavedBillSearch" xml:space="preserve"><value>Bill # or label</value></data>
   <data name="Shell_StoreTagline" xml:space="preserve"><value>Dairy &amp; Grocery Store</value></data>
-  <data name="Sales_NoSavedBills" xml:space="preserve"><value>No saved bills found.</value></data>
   <data name="Common_ExcelFileFilter" xml:space="preserve"><value>Excel workbook (*.xlsx)|*.xlsx</value></data>
   <data name="Stock_ShortageReason" xml:space="preserve"><value>Shortage reason</value></data>
   <data name="Reports_ProductSearch" xml:space="preserve"><value>Name, SKU or barcode, then Enter</value></data>

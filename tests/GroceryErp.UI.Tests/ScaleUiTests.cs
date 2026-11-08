@@ -695,9 +695,10 @@ public sealed class ScaleUiTests
             throw;
         }
         await Task.Delay(1000, TestContext.Current.CancellationToken);
+        // A bill left unfinished by an earlier run is offered first; the journey starts empty.
         foreach (Window saved in app.GetAllTopLevelWindows(automation).Where(window =>
-                     window.FindFirstDescendant(cf => cf.ByAutomationId("BillsGrid")) is not null))
-            saved.FindFirstDescendant(cf => cf.ByName("Cancel"))?.Click();
+                     window.FindFirstDescendant(cf => cf.ByAutomationId("SummaryText")) is not null))
+            saved.FindFirstDescendant(cf => cf.ByName("Discard bill"))?.Click();
         AutomationElement scan = shell.FindFirstDescendant(cf => cf.ByAutomationId("ScanBox"))!;
         var scanTimer = Stopwatch.StartNew();
         for (int iteration = 0; iteration < 3; iteration++)
@@ -728,13 +729,17 @@ public sealed class ScaleUiTests
         await WaitUntilAsync(() => app.GetAllTopLevelWindows(automation).All(window =>
             window.FindFirstDescendant(cf => cf.ByAutomationId("OptionsTabs")) is null), TimeSpan.FromSeconds(20));
         records.Add(new { journey = "unknown-barcode-interruption", billRowsPreserved = GridHasRows(shell, "BillGrid") });
-        shell.FindFirstDescendant(cf => cf.ByName("F7 Hold"))!.Click();
-        Window hold = await WaitWindowAsync(app, automation, "LabelBox", TimeSpan.FromSeconds(20));
-        hold.FindFirstDescendant(cf => cf.ByAutomationId("LabelBox"))!.AsTextBox().Text = "Phase 4 keyboard audit";
-        hold.FindFirstDescendant(cf => cf.ByName("F7 Hold"))!.Click();
-        await WaitUntilAsync(() => !GridHasRows(shell, "BillGrid"), TimeSpan.FromSeconds(20));
-        records.Add(new { journey = "hold-after-scan", billCleared = !GridHasRows(shell, "BillGrid") });
+        // Billing keeps one unfinished bill, so a new bill asks before it discards this one.
         shell.FindFirstDescendant(cf => cf.ByName("F2 New bill"))!.Click();
+        Window discard = await WaitWindowAsync(app, automation, "6", TimeSpan.FromSeconds(20));
+        discard.FindFirstDescendant(cf => cf.ByAutomationId("6"))!.Click();
+        await WaitUntilAsync(() => !GridHasRows(shell, "BillGrid"), TimeSpan.FromSeconds(20));
+        records.Add(new
+        {
+            journey = "new-bill-discards-after-scan",
+            billCleared = !GridHasRows(shell, "BillGrid"),
+            openBills = Scalar(root, "SELECT COUNT(*) FROM sale WHERE status IN ('HELD','DRAFT')")
+        });
         scan.AsTextBox().Text = barcode;
         scan.Focus();
         Keyboard.Type(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);

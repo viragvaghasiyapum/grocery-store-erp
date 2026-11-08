@@ -1052,10 +1052,6 @@ public sealed class PhaseZeroSmokeTests
                 ((TextBlock)billing.FindName("StatusText")).Text = TranslationSource.Instance["Sales_Status_Draft"];
                 ((TextBlock)billing.FindName("LastScanText")).Text = "Last scan: Tata Salt 1 kg · on hand 11.000 · MRP ₹30.000";
                 ((TextBlock)billing.FindName("PrinterStatusText")).Text = "Receipt printer ready";
-                ((ItemsControl)billing.FindName("HeldChips")).ItemsSource = new[]
-                {
-                    new { Label = "Held #41 · Mrs. Shah" }, new { Label = "Held #42 · Pickup" },
-                };
                 var billingHost = new Window { Content = billing, Width = 1120, Height = 680 };
                 billingHost.Show();
                 VerifyAccessibleNames(billingHost);
@@ -1085,21 +1081,20 @@ public sealed class PhaseZeroSmokeTests
                 guPayment.Close();
                 TranslationSource.Instance.UiCulture = CultureInfo.GetCultureInfo("en-IN");
 
-                var saved = new SavedBillsWindow([
-                    new HeldSale(41, new DateTime(2026, 10, 3, 10, 30, 0), "Mrs. Shah", 3, new Money(231)),
-                    new HeldSale(42, new DateTime(2026, 10, 3, 11, 15, 0), "Pickup", 2, new Money(109)),
-                ]);
-                saved.Show();
-                Capture(saved, "saved-bills.en.png");
-                saved.Close();
-
-                var heldReview = new HeldBillReviewWindow(new HeldBillReview(41,
-                    [new(1, "Tata Salt 1 kg", new Quantity(2), new Money(28), new Money(30),
-                        new Money(30), new Money(32), new Money(20), new Quantity(11), true,
-                        new DateOnly(2027, 9, 28))]), posClock);
-                heldReview.Show();
-                Capture(heldReview, "held-review.en.png");
-                heldReview.Close();
+                // The saved-bill question has no close button: only an answer closes it.
+                var savedBill = new SavedBillWindow(new SavedBill(41, new DateTime(2026, 10, 3, 10, 30, 0), 3,
+                    new Money(231), "Mrs. Shah"));
+                savedBill.Show();
+                ((TextBlock)savedBill.FindName("SummaryText")).Text.ShouldContain("03-10-2026 10:30");
+                ((TextBlock)savedBill.FindName("SummaryText")).Text.ShouldContain("231.000");
+                savedBill.WindowStyle.ShouldBe(WindowStyle.None);
+                Capture(savedBill, "saved-bill.en.png");
+                savedBill.Close();
+                savedBill.IsVisible.ShouldBeTrue("Closing without an answer leaves the saved-bill question open");
+                Descendants<Button>(savedBill).Single(button => Equals(button.Content, TranslationSource.Instance["Sales_ContinueBill"]))
+                    .RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                savedBill.IsVisible.ShouldBeFalse();
+                savedBill.Continue.ShouldBeTrue();
 
                 var discount = new DiscountWindow(new Money(100), new Money(5));
                 discount.Show();
@@ -1246,12 +1241,6 @@ public sealed class PhaseZeroSmokeTests
                 lotPicker.Show();
                 Capture(lotPicker, "lot-picker.en.png");
                 lotPicker.Close();
-
-                var hold = new HoldBillWindow();
-                ((TextBox)hold.FindName("LabelBox")).Text = "Mrs. Shah";
-                hold.Show();
-                Capture(hold, "hold-bill.en.png");
-                hold.Close();
 
                 var customerWindow = new CustomerWindow(sales, null, loadOnShow: false);
                 ((DataGrid)customerWindow.FindName("CustomersGrid")).ItemsSource = new[]
@@ -3475,8 +3464,8 @@ public sealed class PhaseZeroSmokeTests
         if (phase6Directory is null && phase4Directory is not null)
         {
             if (fileName is not ("billing.en.png" or "billing.gu.png" or "payment.en.png" or "payment.gu.png" or
-                "saved-bills.en.png" or "sales-history.en.png" or "sales-history.gu.png" or "return.en.png" or
-                "lot-picker.en.png" or "hold-bill.en.png" or "customer.en.png" or "held-review.en.png" or
+"saved-bill.en.png" or "sales-history.en.png" or "sales-history.gu.png" or "return.en.png" or
+                "lot-picker.en.png" or "customer.en.png" or
                 "discount-percent.en.png" or "day-end.en.png")) return;
         }
         string? phase3Directory = Environment.GetEnvironmentVariable("GROCERY_PHASE3_SCREENSHOT_DIR");

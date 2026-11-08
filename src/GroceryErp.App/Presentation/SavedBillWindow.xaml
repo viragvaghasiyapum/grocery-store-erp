@@ -1,0 +1,24 @@
+<Window x:Class="GroceryErp.App.Presentation.SavedBillWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
+    xmlns:p="clr-namespace:GroceryErp.App.Presentation"
+    Title="{l:Tr Sales_SavedBillTitle}" Width="460" SizeToContent="Height" ResizeMode="NoResize" WindowStyle="None"
+    WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}" p:ScreenHelp.Topic="saved-bill"
+    NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
+  <!-- No title bar, so no close button: the saved bill is either continued or discarded. -->
+  <Border BorderThickness="1" BorderBrush="{StaticResource TableGroupRuleBrush}">
+    <StackPanel Margin="20">
+      <DockPanel>
+        <p:HelpButton DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top"/>
+        <TextBlock Style="{StaticResource FormTitle}" Text="{l:Tr Sales_SavedBillTitle}"/>
+      </DockPanel>
+      <TextBlock Margin="0,12,0,0" TextWrapping="Wrap" Text="{l:Tr Sales_SavedBillPrompt}"/>
+      <TextBlock x:Name="SummaryText" Style="{StaticResource FormContext}" Margin="0,8,0,0"/>
+      <StackPanel Style="{StaticResource FormFooter}" Margin="0,20,0,0">
+        <Button Margin="0,0,8,0" Click="Discard_OnClick" Content="{l:Tr Sales_DiscardBill}"/>
+        <Button IsDefault="True" Click="Continue_OnClick" Content="{l:Tr Sales_ContinueBill}"/>
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</Window>

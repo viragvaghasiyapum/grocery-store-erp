@@ -252,7 +252,8 @@ public partial class App : Application
                 await maintenance.OverrideClockWarningAsync(health.LastSaleDate);
             }
 
-            bool pendingPrintReview = _host.Services.GetRequiredService<ReceiptPrinter>().HasFailedJobs;
+            ReceiptPrinter printer = _host.Services.GetRequiredService<ReceiptPrinter>();
+            IReadOnlyList<UnprintedJob> unprinted = printer.UnprintedJobs();
             ShellWindow shell = _host.Services.GetRequiredService<ShellWindow>();
             shell.Loaded += (_, _) =>
             {
@@ -264,9 +265,16 @@ public partial class App : Application
             MainWindow = shell;
             shell.Closed += async (_, _) => await RequestShutdownAsync();
             shell.Show();
-            if (pendingPrintReview)
-                MessageBox.Show(TranslationSource.Instance["Startup_PrintReview"],
-                    TranslationSource.Instance["App_Title"], MessageBoxButton.OK, MessageBoxImage.Warning);
+            if (unprinted.Count > 0)
+            {
+                // Told once: the jobs are cleared after this, so a printer left off does not bring
+                // the message back at every start. Ctrl+P still retries a job that fails later.
+                MessageBox.Show(UnprintedMessage(unprinted), TranslationSource.Instance["App_Title"],
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                try { printer.ClearUnprinted(unprinted); }
+                catch (Exception exception) { Log.Warning(exception, "Unprinted jobs could not be cleared"); }
+                await shell.RefreshPrinterStatusAsync();
+            }
             ReleaseNotesService releaseNotesService = _host.Services.GetRequiredService<ReleaseNotesService>();
             if (releaseNotesService.GetUnseen(TranslationSource.Instance.UiCulture) is { } releaseNotes)
             {
@@ -511,6 +519,18 @@ public partial class App : Application
                 exception is DomainException { Code: ErrorCode.LotsDifferFromDocuments })
             ? Convert.ToInt32(((DomainException)inner[0]).Arguments[0], CultureInfo.InvariantCulture)
             : null;
+    }
+
+    // Names the jobs that may not have printed, up to ten, so the owner knows which bills to check.
+    internal static string UnprintedMessage(IReadOnlyList<UnprintedJob> jobs)
+    {
+        ArgumentNullException.ThrowIfNull(jobs);
+        const int Listed = 10;
+        string list = string.Join(Environment.NewLine, jobs.Take(Listed).Select(static job => "• " + job.Document));
+        if (jobs.Count > Listed)
+            list += Environment.NewLine + TranslationSource.Instance.Format("Startup_PrintClearedMore", jobs.Count - Listed);
+        string gap = Environment.NewLine + Environment.NewLine;
+        return TranslationSource.Instance.Format("Startup_PrintCleared", gap + list + gap);
     }
 
     internal void SkipCloseBackup() => _skipCloseBackup = true;

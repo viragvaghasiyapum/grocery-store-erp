@@ -36,6 +36,26 @@ public sealed class PrintJobJournal(SqliteConnectionFactory factory)
         { Id = row.Id };
     }
 
+    /// <summary>The jobs waiting for review, oldest first, without their payloads.</summary>
+    public IReadOnlyList<UnprintedJob> ReviewJobs()
+    {
+        using var connection = factory.Open();
+        return connection.Query<UnprintedJob>("""
+            SELECT id AS Id,document AS Document FROM print_job WHERE state IN ('REVIEW','FAILED') ORDER BY id
+            """).ToArray();
+    }
+
+    /// <summary>Deletes these jobs, unless one has been retried meanwhile.</summary>
+    public void ClearReview(IReadOnlyList<long> ids)
+    {
+        using var connection = factory.Open();
+        using var transaction = connection.BeginTransaction(deferred: false);
+        foreach (long[] batch in ids.Chunk(500))
+            connection.Execute("DELETE FROM print_job WHERE state IN ('REVIEW','FAILED') AND id IN @batch",
+                new { batch }, transaction);
+        transaction.Commit();
+    }
+
     public SavedPrintJob Get(long id)
     {
         using var connection = factory.Open();
@@ -100,6 +120,9 @@ public sealed class PrintJobJournal(SqliteConnectionFactory factory)
 
     private sealed record PrintJobRow(long Id, string Payload);
 }
+
+/// <summary>A job that failed or was cut off, by its description, such as "Receipt S2627-000123".</summary>
+public sealed record UnprintedJob(long Id, string Document);
 
 public sealed record SavedPrintJob(
     string Kind,

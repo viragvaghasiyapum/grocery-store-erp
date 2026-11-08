@@ -152,7 +152,7 @@ public partial class ShellWindow : FluentWindow
         BackupStatusButton.ToolTip = TranslationSource.Instance["Settings_BackupTitle"];
     }
 
-    private async Task RefreshPrinterStatusAsync()
+    internal async Task RefreshPrinterStatusAsync()
     {
         if (_checkingPrinter || _printer is null) return;
         _checkingPrinter = true;

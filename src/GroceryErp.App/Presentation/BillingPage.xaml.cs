@@ -30,7 +30,7 @@ public partial class BillingPage : Page, IDisposable
     private string _completionOperationId = OperationGuard.NewId();
     private long? _lastCompletedSaleId;
     private ScanBurstDetector? _detector;
-    private bool _offeredSavedBills;
+    private bool _offeredSavedBill;
     private bool _isCompleting;
     private long? _lastScannedProductId;
     private Quantity _choiceQuantity = Quantity.One;
@@ -113,15 +113,12 @@ public partial class BillingPage : Page, IDisposable
                 };
                 _detector.Attach(window);
             }
-            if (!_offeredSavedBills)
-            {
-                _offeredSavedBills = true;
-                SavedBillPage available = await _sales.GetSavedBillPageAsync(
-                    includeDrafts: true, excludeId: _saleId, limit: 1);
-                if (available.Items.Count > 0) await OpenSavedBillsAsync(includeDrafts: true);
-            }
             await RefreshAsync();
-            await RefreshHeldChipsAsync();
+            if (!_offeredSavedBill)
+            {
+                _offeredSavedBill = true;
+                await EnqueueBillActionAsync(OfferSavedBillAsync);
+            }
             await RefreshPrinterAsync();
             _printerTimer.Start();
         }
@@ -471,67 +468,21 @@ public partial class BillingPage : Page, IDisposable
         finally { ScanBox.Focus(); }
     }
 
-    private async void Hold_OnClick(object sender, RoutedEventArgs e) =>
-        await EnqueueBillActionAsync(HoldCoreAsync);
-
-    private async Task HoldCoreAsync()
+    // Billing keeps one unfinished bill. Coming back to Billing asks whether to carry on with it or
+    // discard it, and either answer leaves no other unfinished bill behind.
+    private async Task OfferSavedBillAsync()
     {
-        if (_saleId is null) return;
-        var dialog = new HoldBillWindow { Owner = Window.GetWindow(this) };
-        if (dialog.ShowDialog() != true) { ScanBox.Focus(); return; }
-        try { await _sales.HoldAsync(_saleId.Value, dialog.Label); StartNew(); await RefreshAsync(); await RefreshHeldChipsAsync(); }
-        catch (Exception exception) { StatusText.Text = Message(exception); }
-        finally { ScanBox.Focus(); }
-    }
-
-    private async void Resume_OnClick(object sender, RoutedEventArgs e) =>
-        await EnqueueBillActionAsync(ResumeCoreAsync);
-
-    private async Task ResumeCoreAsync()
-    {
-        try { await OpenSavedBillsAsync(includeDrafts: false); }
-        catch (Exception exception) { StatusText.Text = Message(exception); }
-        finally { ScanBox.Focus(); }
-    }
-
-    private async Task OpenSavedBillsAsync(bool includeDrafts)
-    {
-        var picker = new SavedBillsWindow(_sales, includeDrafts, _saleId) { Owner = Window.GetWindow(this) };
-        if (picker.ShowDialog() != true || picker.SelectedBill is not { } selected) return;
-        await ResumeSelectedAsync(selected, selected.IsHeld);
-    }
-
-    private async Task ResumeSelectedAsync(HeldSale selected, bool isHeld)
-    {
-        if (isHeld)
+        if (_saleId is not null || await _sales.GetSavedBillAsync() is not { } saved) return;
+        var prompt = new SavedBillWindow(saved) { Owner = Window.GetWindow(this) };
+        prompt.ShowDialog();
+        if (prompt.Continue)
         {
-            HeldBillReview review = await _sales.GetHeldBillReviewAsync(selected.Id);
-            IClock clock = ((App)Application.Current).Services.GetRequiredService<IClock>();
-            var confirmation = new HeldBillReviewWindow(review, clock) { Owner = Window.GetWindow(this) };
-            if (confirmation.ShowDialog() != true) return;
-            await _sales.ResumeReviewedAsync(review);
+            await _sales.ContinueSavedBillAsync(saved.Id);
+            _saleId = saved.Id;
+            _completionOperationId = OperationGuard.NewId();
+            await RefreshAsync();
         }
-        _saleId = selected.Id;
-        _completionOperationId = OperationGuard.NewId();
-        await RefreshAsync();
-        await RefreshHeldChipsAsync();
-    }
-
-    private async Task RefreshHeldChipsAsync()
-    {
-        IReadOnlyList<HeldSale> held = await _sales.GetRecentHeldAsync();
-        HeldChips.ItemsSource = held.Select(item => new HeldChipItem(item,
-            string.IsNullOrWhiteSpace(item.Label)
-                ? TranslationSource.Instance.Format("Sales_HeldChip", item.Id)
-                : item.Label)).ToArray();
-    }
-
-    private async void HeldChip_OnClick(object sender, RoutedEventArgs e)
-    {
-        if ((sender as Button)?.DataContext is not HeldChipItem item) return;
-        try { await EnqueueBillActionAsync(() => ResumeSelectedAsync(item.Bill, true)); }
-        catch (Exception exception) { StatusText.Text = Message(exception); }
-        finally { ScanBox.Focus(); }
+        else await _sales.DiscardSavedBillsAsync();
     }
 
     private async Task RefreshPrinterAsync()
@@ -555,8 +506,6 @@ public partial class BillingPage : Page, IDisposable
             PrinterStatusText.Text = TranslationSource.Instance["Sales_PrinterUnavailable"];
         }
     }
-
-    private sealed record HeldChipItem(HeldSale Bill, string Label);
 
     private async void Delete_OnClick(object sender, RoutedEventArgs e)
     {
@@ -672,7 +621,27 @@ public partial class BillingPage : Page, IDisposable
     }
 
     private async void New_OnClick(object sender, RoutedEventArgs e) => await NewBillAsync();
-    private Task NewBillAsync() => EnqueueBillActionAsync(async () => { StartNew(); await RefreshAsync(); });
+    // Only one unfinished bill is kept, so a new bill discards the one on screen, after asking when
+    // it has lines or a customer. No is the default, so F2 then Enter keeps the bill.
+    private Task NewBillAsync() => EnqueueBillActionAsync(async () =>
+    {
+        try
+        {
+            if (_saleId is { } saleId)
+            {
+                SaleDetails sale = await _sales.GetAsync(saleId);
+                if ((sale.Lines.Count > 0 || sale.CustomerId is not null) &&
+                    MessageBox.Show(TranslationSource.Instance["Sales_DiscardForNew"], TranslationSource.Instance["App_Title"],
+                        MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+                    return;
+                await _sales.DiscardSavedBillsAsync();
+            }
+            StartNew();
+            await RefreshAsync();
+        }
+        catch (Exception exception) { StatusText.Text = Message(exception); }
+        finally { ScanBox.Focus(); }
+    });
     private void StartNew() { ++_refreshVersion; _saleId = null; _lastScannedProductId = null; _completionOperationId = OperationGuard.NewId(); ScanBox.Focus(); }
 
     private async void OnShortcut(object sender, KeyEventArgs e)
@@ -703,8 +672,6 @@ public partial class BillingPage : Page, IDisposable
         else if (e.Key == Key.F4) { Quantity_OnClick(sender, e); e.Handled = true; }
         else if (e.Key == Key.F5) { LineDiscount_OnClick(sender, e); e.Handled = true; }
         else if (e.Key == Key.F6) { BillDiscount_OnClick(sender, e); e.Handled = true; }
-        else if (e.Key == Key.F7) { Hold_OnClick(sender, e); e.Handled = true; }
-        else if (e.Key == Key.F8) { Resume_OnClick(sender, e); e.Handled = true; }
         else if (e.Key == Key.F9) { await PayAsync(PaymentMode.Cash); e.Handled = true; }
         else if (e.Key == Key.F10) { await PayAsync(PaymentMode.Upi); e.Handled = true; }
         else if (e.Key == Key.F11) { Split_OnClick(sender, e); e.Handled = true; }

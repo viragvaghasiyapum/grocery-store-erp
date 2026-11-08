@@ -143,6 +143,49 @@ public sealed class PrintJobJournalTests
         }
     }
 
+    // The startup notice names the jobs once and then clears them, so a printer left off does not
+    // bring it back at every start; a job retried meanwhile is not cleared.
+    [Fact]
+    public async Task UnprintedJobs_AreListedOnce_ThenCleared()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"grocery-erp-print-{Guid.NewGuid():N}");
+        try
+        {
+            var factory = new SqliteConnectionFactory(new AppPaths(new SettingsBootstrap(root)));
+            new MigrationRunner(factory, NullMigrationBackup.Instance).Run();
+            var journal = new PrintJobJournal(factory);
+            var appSettings = new AppSettings("Store", 4, 0, 15, 30, root)
+            {
+                Values = ImmutableDictionary<string, string>.Empty
+                    .Add("printer.receipt.name", $"missing-printer-{Guid.NewGuid():N}")
+                    .Add("printer.receipt.mode", "TEXT")
+                    .Add("printer.receipt.width_dots", "384"),
+            };
+            var printer = new ReceiptPrinter(new TestSettings(appSettings), journal);
+            await Should.ThrowAsync<Exception>(() => printer.PrintAsync(SampleReceipt()));
+            // A job cut off by closing the app is listed too once the next start recovers it.
+            await journal.AddAsync(new SavedPrintJob("DAY_END", "printer", "Day end 2026-11-07", "{}"));
+
+            var restarted = new ReceiptPrinter(new TestSettings(appSettings), journal);
+            IReadOnlyList<UnprintedJob> unprinted = restarted.UnprintedJobs();
+            unprinted.Select(static job => job.Document).ShouldBe(["Receipt S-001", "Day end 2026-11-07"]);
+            restarted.HasFailedJobs.ShouldBeTrue();
+            // Retried meanwhile: claimed back to pending, so clearing leaves it alone.
+            journal.ClaimOldestReview(unprinted[1].Id).ShouldNotBeNull();
+
+            restarted.ClearUnprinted(unprinted);
+
+            restarted.UnprintedJobs().ShouldBeEmpty();
+            using var connection = factory.Open();
+            connection.Query<string>("SELECT state FROM print_job").ShouldBe(["PENDING"]);
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearPoolForDataRoot(root);
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task LargeLabelBatch_SavesEveryBoundedChunkBeforeFailedPrinter()
     {

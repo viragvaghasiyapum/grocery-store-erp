@@ -376,114 +376,66 @@ public sealed partial class SalesService(
             new { customerId, saleId }, transaction.Transaction);
     }, cancellationToken);
 
-    public Task HoldAsync(long saleId, string? label = null, CancellationToken cancellationToken = default) =>
+    // Billing keeps one unfinished bill. A store from before Hold was removed can have several, held
+    // ones among them; the newest with lines or a customer is the one Billing offers to continue or
+    // discard, and either answer discards the rest. The status term matches ix_sale_saved.
+    public Task<SavedBill?> GetSavedBillAsync(CancellationToken cancellationToken = default) =>
+        database.ReadAsync<SavedBill?>(connection =>
+        {
+            SavedBillRow? row = connection.QuerySingleOrDefault<SavedBillRow>("""
+                SELECT s.id AS Id,s.created_at AS CreatedAt,s.line_count AS ItemCount,
+                       s.grand_total AS Total,c.name AS CustomerName
+                FROM sale s LEFT JOIN customer c ON c.id=s.customer_id
+                WHERE s.status IN ('HELD','DRAFT') AND (s.line_count>0 OR s.customer_id IS NOT NULL)
+                ORDER BY s.created_at DESC,s.id DESC LIMIT 1
+                """);
+            return row is null ? null : new SavedBill(row.Id, row.CreatedAt, row.ItemCount,
+                Money.FromScaled(row.Total), row.CustomerName);
+        }, cancellationToken);
+
+    /// <summary>
+    /// Keeps this unfinished bill and discards every other one. A bill held before Hold was removed
+    /// carries on as an open bill at today's prices, as resuming it did.
+    /// </summary>
+    public Task ContinueSavedBillAsync(long saleId, CancellationToken cancellationToken = default) =>
         database.WriteAsync(transaction =>
-        {
-            EnsureEditable(transaction, saleId);
-            transaction.Connection.Execute("UPDATE sale SET status='HELD',notes=@label WHERE id=@saleId",
-                new { label = Clean(label), saleId }, transaction.Transaction);
-        }, cancellationToken);
-
-    public Task ResumeReviewedAsync(HeldBillReview review, CancellationToken cancellationToken = default) =>
-        ResumeCoreAsync(review.SaleId, review.Lines, cancellationToken);
-
-    public Task<HeldBillReview> GetHeldBillReviewAsync(long saleId, CancellationToken cancellationToken = default) =>
-        database.ReadAsync(connection =>
-        {
-            string? status = connection.QuerySingleOrDefault<string>(
-                "SELECT status FROM sale WHERE id=@saleId", new { saleId });
-            if (status != "HELD") throw new DomainException(ErrorCode.SaleFinalized, saleId);
-            return new HeldBillReview(saleId, LoadHeldReviewLines(connection, saleId));
-        }, cancellationToken);
-
-    private Task ResumeCoreAsync(long saleId, IReadOnlyList<HeldBillReviewLine> accepted,
-        CancellationToken cancellationToken) => database.WriteAsync(transaction =>
         {
             string? status = transaction.Connection.QuerySingleOrDefault<string>(
                 "SELECT status FROM sale WHERE id=@saleId", new { saleId }, transaction.Transaction);
-            if (status != "HELD") throw new DomainException(ErrorCode.SaleFinalized, saleId);
-            if (!LoadHeldReviewLines(transaction.Connection, saleId).SequenceEqual(accepted))
-                throw new DomainException(ErrorCode.EntryChanged, saleId);
-            RevalidateStock(transaction, saleId);
-            // Resuming takes each lot's current price, which includes tax, and its cost-side tax.
+            if (status is null) throw new DomainException(ErrorCode.NotFound, saleId);
+            if (status is not ("DRAFT" or "HELD")) throw new DomainException(ErrorCode.SaleFinalized, saleId);
+            DiscardOpenBills(transaction, keepId: saleId);
+            if (status != "HELD") return;
+            // Each line takes its lot's current price, which includes tax, and its cost-side tax.
             transaction.Connection.Execute("""
                 UPDATE sale_line SET unit_price=l.selling_price,mrp=l.mrp,unit_cost=l.unit_cost,
                     price_includes_tax=1,unit_cost_tax=l.unit_tax,unit_cost_incl_tax=l.unit_cost_incl_tax
                 FROM product_lot l
                 WHERE sale_line.sale_id=@saleId AND l.id=sale_line.lot_id
                 """, new { saleId }, transaction.Transaction);
-            // A resumed bill belongs to the day it is resumed on, like a new one.
             transaction.Connection.Execute("UPDATE sale SET status='DRAFT',sale_date=@date WHERE id=@saleId",
                 new { date = DateText(clock.BusinessDate), saleId }, transaction.Transaction);
             Reprice(transaction, saleId);
         }, cancellationToken);
 
-    private static HeldBillReviewLine[] LoadHeldReviewLines(IDbConnection connection, long saleId) =>
-        connection.Query<HeldReviewRow>("""
-            SELECT sl.id AS LineId,sl.product_name AS ProductName,sl.qty AS Quantity,
-                   sl.unit_price AS PreviousPrice,l.selling_price AS CurrentPrice,
-                   sl.mrp AS PreviousMrp,l.mrp AS CurrentMrp,l.unit_cost AS CurrentCost,
-                   l.qty_on_hand AS Available,l.is_active AS IsActive,l.expiry_date AS ExpiryDate
-            FROM sale_line sl JOIN product_lot l ON l.id=sl.lot_id
-            WHERE sl.sale_id=@saleId ORDER BY sl.line_no
-            """, new { saleId }).Select(static row => new HeldBillReviewLine(row.LineId, row.ProductName,
-                Quantity.FromScaled(row.Quantity), Money.FromScaled(row.PreviousPrice),
-                Money.FromScaled(row.CurrentPrice), row.PreviousMrp is null ? null : Money.FromScaled(row.PreviousMrp.Value),
-                row.CurrentMrp is null ? null : Money.FromScaled(row.CurrentMrp.Value),
-                Money.FromScaled(row.CurrentCost), Quantity.FromScaled(row.Available), row.IsActive, row.ExpiryDate)).ToArray();
+    /// <summary>Discards every unfinished bill, the one on screen included.</summary>
+    public Task DiscardSavedBillsAsync(CancellationToken cancellationToken = default) =>
+        database.WriteAsync(transaction => DiscardOpenBills(transaction, keepId: null), cancellationToken);
 
-    public Task<IReadOnlyList<HeldSale>> GetRecentHeldAsync(int limit = 10, CancellationToken cancellationToken = default)
+    // An open bill has taken no stock, number or payment, so deleting it with its lines leaves
+    // nothing behind. One with lines is written to the audit log, as a void is.
+    private void DiscardOpenBills(DbTx transaction, long? keepId)
     {
-        if (limit is < 1 or > 50) throw new DomainException(ErrorCode.Validation, "Invalid held bill limit.");
-        return database.ReadAsync<IReadOnlyList<HeldSale>>(connection => connection.Query<HeldRow>("""
-            SELECT id AS Id,created_at AS CreatedAt,notes AS Label,line_count AS ItemCount,grand_total AS Total
-            FROM sale WHERE status='HELD' ORDER BY created_at DESC,id DESC LIMIT @limit
-            """, new { limit }).Select(static row => new HeldSale(row.Id, row.CreatedAt, row.Label, row.ItemCount,
-                Money.FromScaled(row.Total))).ToArray(), cancellationToken);
-    }
-
-    public Task<SavedBillPage> GetSavedBillPageAsync(bool includeDrafts, string? query = null,
-        string? beforeCreatedAt = null, long? beforeId = null, long? excludeId = null,
-        int limit = 50, CancellationToken cancellationToken = default)
-    {
-        if (beforeCreatedAt is null != (beforeId is null) || limit is < 1 or > 100)
-            throw new DomainException(ErrorCode.Validation, "Invalid saved bill page filter.");
-        string term = (query ?? string.Empty).Trim();
-        long? exactId = long.TryParse(term, out long parsed) && parsed > 0 ? parsed : null;
-        string pattern = "%" + term.Replace("%", "\\%", StringComparison.Ordinal)
-            .Replace("_", "\\_", StringComparison.Ordinal) + "%";
-        return database.ReadAsync(connection =>
+        foreach (DiscardedBillRow bill in transaction.Connection.Query<DiscardedBillRow>("""
+            SELECT id AS Id,status AS Status,line_count AS ItemCount,grand_total AS Total
+            FROM sale WHERE status IN ('HELD','DRAFT') AND (@keepId IS NULL OR id<>@keepId)
+            """, new { keepId }, transaction.Transaction).ToArray())
         {
-            List<HeldSale> rows = connection.Query<SavedBillRow>("""
-                SELECT id AS Id,created_at AS CreatedAt,notes AS Label,line_count AS ItemCount,
-                       grand_total AS Total,status AS Status
-                FROM sale
-                WHERE status IN ('HELD','DRAFT')
-                  AND (status='HELD' OR (@includeDrafts=1 AND (line_count>0 OR customer_id IS NOT NULL)))
-                  AND (@excludeId IS NULL OR id<>@excludeId)
-                  AND (@term='' OR id=@exactId OR notes LIKE @pattern ESCAPE '\')
-                  AND (@beforeCreatedAt IS NULL OR created_at<@beforeCreatedAt
-                       OR (created_at=@beforeCreatedAt AND id<@beforeId))
-                ORDER BY created_at DESC,id DESC LIMIT @take
-                """, new
-            {
-                includeDrafts,
-                excludeId,
-                term,
-                exactId,
-                pattern,
-                beforeCreatedAt,
-                beforeId,
-                take = limit + 1
-            }).Select(static row => new HeldSale(row.Id, row.CreatedAt,
-                row.Label, row.ItemCount, Money.FromScaled(row.Total))
-            { IsHeld = row.Status == "HELD" }).ToList();
-            bool hasMore = rows.Count > limit;
-            if (hasMore) rows.RemoveAt(limit);
-            HeldSale? last = rows.LastOrDefault();
-            return new SavedBillPage(rows, hasMore,
-                last?.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture), last?.Id);
-        }, cancellationToken);
+            if (bill.ItemCount > 0)
+                auditLog.Write(transaction, "sale", bill.Id, "DISCARD",
+                    new { status = bill.Status, items = bill.ItemCount, total = bill.Total });
+            transaction.Connection.Execute("DELETE FROM sale WHERE id=@Id", new { bill.Id }, transaction.Transaction);
+        }
     }
 
     public Task<IReadOnlyList<ReturnableSaleLine>> GetReturnableLinesAsync(long saleId,
@@ -1367,6 +1319,8 @@ public sealed partial class SalesService(
     private static DateOnly ParseDate(string value) => DateOnly.ParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture);
     private static string Timestamp(DateTime value) => value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
+    private sealed class SavedBillRow { public long Id { get; init; } public DateTime CreatedAt { get; init; } public int ItemCount { get; init; } public long Total { get; init; } public string? CustomerName { get; init; } }
+    private sealed class DiscardedBillRow { public long Id { get; init; } public string Status { get; init; } = ""; public int ItemCount { get; init; } public long Total { get; init; } }
     private sealed class MoneyJsonConverter : JsonConverter<Money>
     {
         public override Money Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
@@ -1432,9 +1386,6 @@ public sealed partial class SalesService(
     private sealed class LotRow { public long LotId { get; init; } public long OnHand { get; init; } public DateOnly? Expiry { get; init; } public long Price { get; init; } public long? Mrp { get; init; } public long Cost { get; init; } public bool IsActive { get; init; } public string LotCode { get; init; } = ""; public long? CostTax { get; init; } public long? CostInclTax { get; init; } }
     private sealed class LineCheckRow { public long ProductId { get; init; } public long OnHand { get; init; } public bool AllowFraction { get; init; } }
     private sealed class StockRow { public long ProductId { get; init; } public long Quantity { get; init; } public long OnHand { get; init; } public DateOnly? Expiry { get; init; } public bool IsActive { get; init; } public string LotCode { get; init; } = ""; }
-    private sealed class HeldRow { public long Id { get; init; } public DateTime CreatedAt { get; init; } public string? Label { get; init; } public int ItemCount { get; init; } public long Total { get; init; } }
-    private sealed class SavedBillRow { public long Id { get; init; } public DateTime CreatedAt { get; init; } public string? Label { get; init; } public int ItemCount { get; init; } public long Total { get; init; } public string Status { get; init; } = ""; }
-    private sealed class HeldReviewRow { public long LineId { get; init; } public string ProductName { get; init; } = ""; public long Quantity { get; init; } public long PreviousPrice { get; init; } public long CurrentPrice { get; init; } public long? PreviousMrp { get; init; } public long? CurrentMrp { get; init; } public long CurrentCost { get; init; } public long Available { get; init; } public bool IsActive { get; init; } public DateOnly? ExpiryDate { get; init; } }
     private sealed class HistoryRow { public long Id { get; init; } public string? InvoiceNumber { get; init; } public string SaleDate { get; init; } = ""; public string Status { get; init; } = ""; public int LineCount { get; init; } public long GrandTotal { get; init; } public string PaymentModes { get; init; } = ""; public DateTime? CompletedAt { get; init; } public string? VoidReason { get; init; } }
     private sealed class ReturnActivityRow { public string ReturnNumber { get; init; } = ""; public DateOnly Date { get; init; } public string ProductName { get; init; } = ""; public long Quantity { get; init; } public long Refund { get; init; } public bool Resellable { get; init; } public string Reason { get; init; } = ""; public string? RestockLotCode { get; init; } public string DispositionCode { get; init; } = "RETURN_ORIGINAL"; }
     private sealed class RestockRow { public long LineId { get; init; } public bool Reuse { get; init; } public DateOnly? CurrentExpiry { get; init; } }

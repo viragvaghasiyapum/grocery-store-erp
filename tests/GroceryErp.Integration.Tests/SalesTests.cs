@@ -982,19 +982,70 @@ public sealed class SalesTests
     }
 
     [Fact]
-    public async Task SavedDraftAndHeldBill_CanBeSelectedAndResumed()
+    public async Task SavedBill_IsTheNewestOpenBill_AndContinuingItDiscardsTheRest()
     {
         using var fixture = new SalesFixture();
         CancellationToken ct = TestContext.Current.CancellationToken;
-        long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
-        (await fixture.Sales.GetSavedBillPageAsync(includeDrafts: true, cancellationToken: ct)).Items.Single().Id.ShouldBe(saleId);
-        await fixture.Sales.HoldAsync(saleId, "Pickup", ct);
-        HeldSale held = (await fixture.Sales.GetSavedBillPageAsync(includeDrafts: true, cancellationToken: ct)).Items.Single();
-        held.IsHeld.ShouldBeTrue();
-        held.Label.ShouldBe("Pickup");
-        (await fixture.Sales.GetRecentHeldAsync(cancellationToken: ct)).Single().Id.ShouldBe(saleId);
-        await fixture.Sales.ResumeReviewedAsync(await fixture.Sales.GetHeldBillReviewAsync(saleId, ct), ct);
-        (await fixture.Sales.GetAsync(saleId, ct)).Status.ShouldBe(SaleStatus.Draft);
+        (await fixture.Sales.GetSavedBillAsync(ct)).ShouldBeNull();
+        // A store from before Hold was removed: an older open bill, a newer held one with a
+        // customer, and an empty bill, which is not offered.
+        long older = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
+        long held = await fixture.Sales.AddProductAsync(null, fixture.ProductId, new Quantity(2), cancellationToken: ct);
+        long customerId = await fixture.Sales.CreateCustomerAsync("Mrs. Shah", null, null, ct);
+        await fixture.Sales.SetCustomerAsync(held, customerId, ct);
+        long empty = await fixture.Sales.CreateDraftAsync(cancellationToken: ct);
+        using (var setup = fixture.Factory.Open())
+        {
+            setup.Execute("UPDATE sale SET created_at='2026-10-01 10:00:00' WHERE id=@older", new { older });
+            setup.Execute("UPDATE sale SET created_at='2026-10-02 10:00:00',status='HELD',notes='Pickup' WHERE id=@held", new { held });
+            setup.Execute("UPDATE sale SET created_at='2026-10-03 10:00:00' WHERE id=@empty", new { empty });
+        }
+
+        SavedBill saved = (await fixture.Sales.GetSavedBillAsync(ct)).ShouldNotBeNull();
+        saved.Id.ShouldBe(held);
+        saved.ItemCount.ShouldBe(1);
+        saved.Total.ShouldBe((await fixture.Sales.GetAsync(held, ct)).Totals.GrandTotal);
+        saved.CustomerName.ShouldBe("Mrs. Shah");
+        saved.CreatedAt.ShouldBe(new DateTime(2026, 10, 2, 10, 0, 0));
+
+        await fixture.Sales.ContinueSavedBillAsync(held, ct);
+        (await fixture.Sales.GetAsync(held, ct)).Status.ShouldBe(SaleStatus.Draft);
+        using var connection = fixture.Factory.Open();
+        connection.Query<long>("SELECT id FROM sale WHERE status IN ('HELD','DRAFT')").ShouldBe([held]);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sale_line WHERE sale_id IN @ids",
+            new { ids = new[] { older, empty } }).ShouldBe(0L);
+        // The discarded bill with lines is recorded; the empty one is not.
+        connection.Query<long>("SELECT entity_id FROM audit_log WHERE entity='sale' AND action='DISCARD'")
+            .ShouldBe([older]);
+        (await fixture.Sales.GetSavedBillAsync(ct)).ShouldNotBeNull().Id.ShouldBe(held);
+
+        await fixture.Sales.DiscardSavedBillsAsync(ct);
+        (await fixture.Sales.GetSavedBillAsync(ct)).ShouldBeNull();
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sale").ShouldBe(0L);
+        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sale_line").ShouldBe(0L);
+        connection.Query<long>("SELECT entity_id FROM audit_log WHERE entity='sale' AND action='DISCARD'")
+            .ShouldBe([older, held], ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task DiscardingSavedBills_LeavesCompletedBillsAndStock()
+    {
+        using var fixture = new SalesFixture();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        long completed = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
+        await fixture.Sales.CompleteAsync(new(completed, [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+        using var connection = fixture.Factory.Open();
+        long onHand = connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@LotId", new { fixture.LotId });
+        long open = await fixture.Sales.AddProductAsync(null, fixture.ProductId, new Quantity(3), cancellationToken: ct);
+
+        await fixture.Sales.DiscardSavedBillsAsync(ct);
+
+        connection.Query<long>("SELECT id FROM sale").ShouldBe([completed]);
+        connection.ExecuteScalar<long>("SELECT qty_on_hand FROM product_lot WHERE id=@LotId", new { fixture.LotId }).ShouldBe(onHand);
+        (await Should.ThrowAsync<DomainException>(() => fixture.Sales.ContinueSavedBillAsync(completed, ct)))
+            .Code.ShouldBe(ErrorCode.SaleFinalized);
+        (await Should.ThrowAsync<DomainException>(() => fixture.Sales.ContinueSavedBillAsync(open, ct)))
+            .Code.ShouldBe(ErrorCode.NotFound);
     }
 
     [Fact]
@@ -1056,21 +1107,31 @@ public sealed class SalesTests
     }
 
     [Fact]
-    public async Task HeldBill_ReviewDetectsChangedPrice_AndRejectsStaleAcceptance()
+    public async Task HeldBill_ContinuesAtTheLotsCurrentPrice_AndAnOpenBillKeepsItsOwn()
     {
         using var fixture = new SalesFixture();
         CancellationToken ct = TestContext.Current.CancellationToken;
         long saleId = await fixture.Sales.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
-        await fixture.Sales.HoldAsync(saleId, "Waiting", ct);
+        MarkHeld(fixture, saleId);
         await fixture.EditLotPriceAsync(fixture.LotId, new Money(115), ct);
-        HeldBillReview review = await fixture.Sales.GetHeldBillReviewAsync(saleId, ct);
-        review.Lines.Single().PriceChanged.ShouldBeTrue();
-        await fixture.EditLotPriceAsync(fixture.LotId, new Money(110), ct);
-        await Should.ThrowAsync<DomainException>(() => fixture.Sales.ResumeReviewedAsync(review, ct));
-        (await fixture.Sales.GetAsync(saleId, ct)).Status.ShouldBe(SaleStatus.Held);
 
-        await fixture.Sales.ResumeReviewedAsync(await fixture.Sales.GetHeldBillReviewAsync(saleId, ct), ct);
-        (await fixture.Sales.GetAsync(saleId, ct)).Lines.Single().UnitPrice.ShouldBe(new Money(110));
+        await fixture.Sales.ContinueSavedBillAsync(saleId, ct);
+        SaleDetails continued = await fixture.Sales.GetAsync(saleId, ct);
+        continued.Status.ShouldBe(SaleStatus.Draft);
+        continued.Lines.Single().UnitPrice.ShouldBe(new Money(115));
+        continued.Totals.GrandTotal.ShouldBe(new Money(115));
+
+        // A bill left open, rather than held, carries on as it was.
+        await fixture.EditLotPriceAsync(fixture.LotId, new Money(110), ct);
+        await fixture.Sales.ContinueSavedBillAsync(saleId, ct);
+        (await fixture.Sales.GetAsync(saleId, ct)).Lines.Single().UnitPrice.ShouldBe(new Money(115));
+    }
+
+    // Hold was removed; a store from before keeps the held bills it had.
+    private static void MarkHeld(SalesFixture fixture, long saleId)
+    {
+        using var connection = fixture.Factory.Open();
+        connection.Execute("UPDATE sale SET status='HELD',notes='Pickup' WHERE id=@saleId", new { saleId });
     }
 
     [Fact]
@@ -1082,9 +1143,9 @@ public sealed class SalesTests
         SalesService started = fixture.ServiceAt(new DateTime(2027, 3, 31, 21, 0, 0));
         SalesService nextDay = fixture.ServiceAt(new DateTime(2027, 4, 1, 9, 0, 0));
         long saleId = await started.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
-        await started.HoldAsync(saleId, "Pickup", ct);
+        MarkHeld(fixture, saleId);
 
-        await nextDay.ResumeReviewedAsync(await nextDay.GetHeldBillReviewAsync(saleId, ct), ct);
+        await nextDay.ContinueSavedBillAsync(saleId, ct);
         (await nextDay.GetAsync(saleId, ct)).SaleDate.ShouldBe(new DateOnly(2027, 4, 1));
         CompletedSale completed = await nextDay.CompleteAsync(new(saleId,
             [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
@@ -1107,12 +1168,13 @@ public sealed class SalesTests
         SalesService started = fixture.ServiceAt(new DateTime(2026, 12, 31, 20, 0, 0));
         SalesService locked = fixture.ServiceAt(new DateTime(2027, 1, 9, 10, 0, 0));
         long heldId = await started.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
-        await started.HoldAsync(heldId, "Pickup", ct);
+        MarkHeld(fixture, heldId);
         long openId = await started.AddProductAsync(null, fixture.ProductId, Quantity.One, cancellationToken: ct);
 
-        await locked.ResumeReviewedAsync(await locked.GetHeldBillReviewAsync(heldId, ct), ct);
-        await locked.CompleteAsync(new(heldId, [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+        // The open bill is completed first: continuing the held one discards any other open bill.
         await locked.CompleteAsync(new(openId, [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
+        await locked.ContinueSavedBillAsync(heldId, ct);
+        await locked.CompleteAsync(new(heldId, [new(PaymentMode.Cash, new Money(118))], OperationGuard.NewId()), ct);
 
         (await locked.GetAsync(heldId, ct)).SaleDate.ShouldBe(new DateOnly(2027, 1, 9));
         (await locked.GetAsync(openId, ct)).SaleDate.ShouldBe(new DateOnly(2027, 1, 9));

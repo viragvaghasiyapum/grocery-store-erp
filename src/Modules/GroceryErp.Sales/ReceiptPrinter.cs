@@ -59,6 +59,16 @@ public sealed class ReceiptPrinter
     public bool HasFailedJobs => !failed.IsEmpty || journal?.ReviewCount() > 0;
     public SavedPrintJob? OldestReviewJob => journal?.OldestReview();
 
+    /// <summary>The saved jobs that failed or were cut off, such as by closing the app, oldest first.</summary>
+    public IReadOnlyList<UnprintedJob> UnprintedJobs() => journal?.ReviewJobs() ?? [];
+
+    /// <summary>Forgets these jobs once the operator has been told about them.</summary>
+    public void ClearUnprinted(IReadOnlyList<UnprintedJob> jobs)
+    {
+        ArgumentNullException.ThrowIfNull(jobs);
+        journal?.ClearReview(jobs.Select(static job => job.Id).ToArray());
+    }
+
     public async Task PrintLabelsAsync(string printerName, IReadOnlyList<TsplLabel> labels, bool useDriver)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(printerName);

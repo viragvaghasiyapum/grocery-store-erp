@@ -1457,12 +1457,7 @@ switch (mode)
             ("history-status-payment", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(Status: SaleStatus.Completed, PaymentMode: PaymentMode.Cash))).Count),
             ("history-combined", async () => (await sales.GetHistoryAsync(new SaleHistoryFilter(From: fiscalStart, To: end, Status: SaleStatus.Completed, PaymentMode: PaymentMode.Cash, MinimumAmount: new Money(100)))).Count),
             ("history-cursor", async () => { IReadOnlyList<SaleHistoryItem> first = await sales.GetHistoryAsync(new SaleHistoryFilter(Limit: 20)); SaleHistoryItem? last = first.Count == 0 ? null : first[^1]; return last is null ? 0 : (await sales.GetHistoryAsync(new SaleHistoryFilter(BeforeDate: last.SaleDate, BeforeId: last.Id, Limit: 20))).Count; }),
-            ("saved-bills", async () => (await sales.GetSavedBillPageAsync(includeDrafts: true)).Items.Count),
-            ("saved-bills-search", async () => (await sales.GetSavedBillPageAsync(includeDrafts: true, query: "Scale")).Items.Count),
-            ("saved-bills-cursor", async () => { SavedBillPage first = await sales.GetSavedBillPageAsync(includeDrafts: true, limit: 20); return first.NextCreatedAt is null ? 0 : (await sales.GetSavedBillPageAsync(includeDrafts: true, beforeCreatedAt: first.NextCreatedAt, beforeId: first.NextId, limit: 20)).Items.Count; }),
-            ("held-bills", async () => (await sales.GetRecentHeldAsync()).Count),
-            ("held-recent", async () => (await sales.GetRecentHeldAsync()).Count),
-            ("draft-bills", async () => (await sales.GetSavedBillPageAsync(true)).Items.Count),
+            ("saved-bill", async () => await sales.GetSavedBillAsync() is null ? 0 : 1),
             ("expiry-badge", () => moneyOut.GetActionableExpiryCountAsync()),
             ("damage-page", async () => (await moneyOut.GetDamagePageAsync(new DamageFilter(monthStart, end), null, null)).Items.Count),
             ("expense-page", async () => (await moneyOut.GetExpensePageAsync(new ExpenseFilter(monthStart, end), null, null)).Items.Count),
@@ -3005,7 +3000,7 @@ switch (mode)
         await Measure("lots-first-page", () => inventory.GetLotPageAsync(), static x => x.Items.Count);
         await Measure("expiry-badge-count", () => moneyOut.GetActionableExpiryCountAsync(), static x => x);
         await Measure("purchases-first-page", () => purchasing.GetPurchasePageAsync(new PurchaseFilter(), null, null), static x => x.Items.Count);
-        await Measure("saved-bills-first-page", () => sales.GetSavedBillPageAsync(includeDrafts: true), static x => x.Items.Count);
+        await Measure("saved-bill", () => sales.GetSavedBillAsync(), static x => x is null ? 0 : 1);
         await Measure("assets-first-page", () => assets.GetAssetPageAsync(), static x => x.Items.Count);
         await Measure("pnl-month", () => reports.GetPnlReportAsync(ReportService.CustomPeriod(monthStart, end)), static x => x.Statement.Income.Count + x.Statement.CostOfGoodsSold.Count + x.Statement.Expenses.Count);
         await Measure("pnl-fiscal", () => reports.GetPnlReportAsync(ReportService.CustomPeriod(fiscalStart, end)), static x => x.Statement.Income.Count + x.Statement.CostOfGoodsSold.Count + x.Statement.Expenses.Count);
@@ -3022,7 +3017,7 @@ switch (mode)
             if (mismatches != 0) throw new InvalidDataException($"Stock projection has {mismatches} mismatches.");
             return (int)mismatches;
         }), static x => x);
-        CapturePlan("saved-bills", "SELECT id FROM sale WHERE status IN ('HELD','DRAFT') AND (status='HELD' OR (status='DRAFT' AND line_count>0)) ORDER BY created_at DESC,id DESC LIMIT 50");
+        CapturePlan("saved-bill", "SELECT id FROM sale WHERE status IN ('HELD','DRAFT') AND (line_count>0 OR customer_id IS NOT NULL) ORDER BY created_at DESC,id DESC LIMIT 1");
         CapturePlan("purchase-page", "SELECT id FROM purchase ORDER BY received_date DESC,id DESC LIMIT 100");
         CapturePlan("expiry-page", ExpiredPageSql(), new { today = "2026-09-26" });
         break;
@@ -3402,8 +3397,7 @@ switch (mode)
         await Measure("customer-contains-miss", () => sales.SearchCustomersAsync("son"), static x => x.Count);
         await Measure("customer-contains-match", () => sales.SearchCustomersAsync("Scale Customer 4"), static x => x.Count);
         await Measure("customer-phone", () => sales.SearchCustomersAsync("9000040000"), static x => x.Count);
-        await Measure("held-bills", () => sales.GetRecentHeldAsync(), static x => x.Count);
-        await Measure("saved-drafts", () => sales.GetSavedBillPageAsync(true), static x => x.Items.Count);
+        await Measure("saved-bill", () => sales.GetSavedBillAsync(), static x => x is null ? 0 : 1);
         await Measure("assets-all", () => assets.GetAssetPageAsync(), static x => x.Items.Count);
         await Measure("asset-schedule-posted", () => assets.GetScheduleAsync(41), static x => x.Count);
 

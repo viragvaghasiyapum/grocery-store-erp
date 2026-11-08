@@ -41,15 +41,7 @@
     </Grid>
     <Grid Grid.Row="1" Margin="0,8,0,0">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <StackPanel>
-        <TextBlock x:Name="LastScanText" FontSize="12" TextTrimming="CharacterEllipsis"/>
-        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" MaxHeight="34">
-          <ItemsControl x:Name="HeldChips">
-            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate><DataTemplate><Button Margin="0,2,6,2" Padding="8,1" MinHeight="24" MinWidth="50" Click="HeldChip_OnClick" Content="{Binding Label}"/></DataTemplate></ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </ScrollViewer>
-      </StackPanel>
+      <TextBlock x:Name="LastScanText" FontSize="12" TextTrimming="CharacterEllipsis"/>
       <TextBlock x:Name="PrinterStatusText" Grid.Column="1" Margin="12,0,0,0" FontSize="12" VerticalAlignment="Top"/>
     </Grid>
     <Grid Grid.Row="2" Margin="0,8,0,12">
@@ -116,9 +108,7 @@
         <Button x:Name="LineDiscountButton" Margin="0,0,8,8" Click="LineDiscount_OnClick" Content="{l:Tr Sales_LineDiscount}"/>
         <Button Margin="0,0,8,8" Click="BillDiscount_OnClick" Content="{l:Tr Sales_BillDiscount}"/>
         <Button Margin="0,0,8,8" Click="Customer_OnClick" Content="{l:Tr Sales_CustomerShortcut}"/>
-        <Button x:Name="DeleteButton" Margin="0,0,8,8" Click="Delete_OnClick" Content="{l:Tr Sales_Remove}"/>
-        <Button Margin="0,0,8,8" Click="Hold_OnClick" Content="{l:Tr Sales_Hold}"/>
-        <Button Margin="0,0,0,8" Click="Resume_OnClick" Content="{l:Tr Sales_Resume}"/>
+        <Button x:Name="DeleteButton" Margin="0,0,0,8" Click="Delete_OnClick" Content="{l:Tr Sales_Remove}"/>
     </WrapPanel>
   </Grid>
 </Page>

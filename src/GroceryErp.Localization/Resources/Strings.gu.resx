@@ -129,13 +129,14 @@
   <data name="Lock_Command" xml:space="preserve"><value>લૉક</value><comment>MT - needs review</comment></data>
   <data name="Startup_LowDisk" xml:space="preserve"><value>ડિસ્કમાં 1 GB કરતાં ઓછી જગ્યા છે. ચાલુ રાખતા પહેલાં જગ્યા ખાલી કરો.</value><comment>MT - needs review</comment></data>
   <data name="Startup_ClockWarning" xml:space="preserve"><value>કમ્પ્યુટર ઘડિયાળ છેલ્લી બિલ તારીખ {0:d} કરતાં પાછળ છે. તારીખ તપાસ્યા પછી જ ચાલુ રાખો.</value><comment>MT - needs review</comment></data>
+  <data name="Startup_PrintCleared" xml:space="preserve"><value>આ પ્રિન્ટ કામ પૂરાં છપાયાં નહીં:{0}તે હવે કાઢી નાખ્યાં છે, એટલે આ સંદેશ ફરી નહીં દેખાય. છપાયેલું કાગળ તપાસો. બિલ ફરી છાપવા વેચાણ ઇતિહાસ ખોલી ફરી છાપો દબાવો.</value><comment>MT – needs review</comment></data>
+  <data name="Startup_PrintClearedMore" xml:space="preserve"><value>…અને બીજાં {0}</value><comment>MT – needs review</comment></data>
   <data name="Startup_RestorePending" xml:space="preserve"><value>પુનઃસ્થાપિત ડેટાબેઝ પુષ્ટિની રાહ જોઈ રહ્યો છે. પુનઃસ્થાપિત ડેટા રાખવા માટે હા, પાછું ફેરવવા માટે ના, અથવા તેને બાકી રાખીને એપ્લિકેશન બંધ કરવા માટે રદ કરો પસંદ કરો.</value><comment>MT - needs review</comment></data>
   <data name="Startup_RestoreUndone" xml:space="preserve"><value>પુનઃસ્થાપન રદ કરવામાં આવ્યું છે. અગાઉનો ડેટાબેઝ પાછો મૂકવામાં આવ્યો છે.</value><comment>MT - needs review</comment></data>
   <data name="Startup_RestoreFailed" xml:space="preserve"><value>પુનઃસ્થાપિત ડેટાબેઝ સુરક્ષિત રીતે શરૂ થઈ શક્યો નથી. પુનઃસ્થાપન રદ કરીને અગાઉનો ડેટાબેઝ પાછો મૂકવો છે?</value><comment>MT - needs review</comment></data>
   <data name="Startup_Failed" xml:space="preserve"><value>ગ્રોસરી ERP શરૂ થઈ શક્યું નથી. વિગતો લૉગમાં લખવામાં આવી છે.</value><comment>MT - needs review</comment></data>
   <data name="Startup_MaintenanceFailed" xml:space="preserve"><value>પાછળ ચાલી રહેલી સુરક્ષા તપાસ નિષ્ફળ ગઈ. આગળ વધતા પહેલાં લૉગ તપાસો અને બેકઅપ ચકાસો.</value><comment>MT - needs review</comment></data>
   <data name="Startup_ShowLotDifferences" xml:space="preserve"><value>તફાવત બતાવો</value><comment>MT – needs review</comment></data>
-  <data name="Startup_PrintReview" xml:space="preserve"><value>સાચવેલાં પ્રિન્ટ કામ તપાસવા જરૂરી છે. છપાયેલું કાગળ તપાસો, પછી બિલિંગ ખોલી દરેક કામ ફરી છાપતા પહેલાં તેની સમીક્ષા કરવા Ctrl+P દબાવો.</value><comment>MT - needs review</comment></data>
   <data name="Catalog_Navigation" xml:space="preserve"><value>ઉત્પાદનો</value><comment>MT - needs review</comment></data>
   <data name="Catalog_Title" xml:space="preserve"><value>ઉત્પાદનો</value><comment>MT - needs review</comment></data>
   <data name="Catalog_LowStock" xml:space="preserve"><value>ઓછો સ્ટોક</value><comment>MT - needs review</comment></data>
@@ -357,12 +358,17 @@
   <data name="Sales_Upi" xml:space="preserve"><value>F10 UPI</value><comment>MT - needs review</comment></data>
   <data name="Sales_Split" xml:space="preserve"><value>F11 વિભાજિત</value><comment>MT - needs review</comment></data>
   <data name="Sales_New" xml:space="preserve"><value>F2 નવું બિલ</value><comment>MT - needs review</comment></data>
+  <data name="Sales_DiscardForNew" xml:space="preserve"><value>આ અધૂરું બિલ કાઢી નાખીને નવું બિલ શરૂ કરવું?</value><comment>MT – needs review</comment></data>
+  <data name="Sales_SavedBillTitle" xml:space="preserve"><value>સાચવેલું બિલ</value><comment>MT – needs review</comment></data>
+  <data name="Sales_SavedBillPrompt" xml:space="preserve"><value>એક બિલ અધૂરું રહી ગયું છે. તેને ચાલુ રાખવું, કે કાઢી નાખીને નવું બિલ શરૂ કરવું?</value><comment>MT – needs review</comment></data>
+  <data name="Sales_SavedBillDetails" xml:space="preserve"><value>શરૂ કર્યું {0:dd-MM-yyyy HH:mm} · {1} વસ્તુઓ · ₹{2:N3}</value><comment>MT – needs review</comment></data>
+  <data name="Sales_SavedBillCustomer" xml:space="preserve"><value>ગ્રાહક: {0}</value><comment>MT – needs review</comment></data>
+  <data name="Sales_ContinueBill" xml:space="preserve"><value>બિલ ચાલુ રાખો</value><comment>MT – needs review</comment></data>
+  <data name="Sales_DiscardBill" xml:space="preserve"><value>બિલ કાઢી નાખો</value><comment>MT – needs review</comment></data>
   <data name="Sales_Quantity" xml:space="preserve"><value>F4 જથ્થો</value><comment>MT - needs review</comment></data>
   <data name="Sales_LineDiscount" xml:space="preserve"><value>F5 લાઇન ડિસ્કાઉન્ટ</value><comment>MT - needs review</comment></data>
   <data name="Sales_BillDiscount" xml:space="preserve"><value>F6 બિલ ડિસ્કાઉન્ટ</value><comment>MT - needs review</comment></data>
   <data name="Sales_Remove" xml:space="preserve"><value>લાઇન દૂર કરો</value><comment>MT - needs review</comment></data>
-  <data name="Sales_Hold" xml:space="preserve"><value>F7 હોલ્ડ</value><comment>MT - needs review</comment></data>
-  <data name="Sales_Resume" xml:space="preserve"><value>F8 ફરી શરૂ કરો</value><comment>MT - needs review</comment></data>
   <data name="Sales_Items" xml:space="preserve"><value>વસ્તુઓ</value><comment>MT - needs review</comment></data>
   <data name="Sales_Reprint" xml:space="preserve"><value>ફરી છાપો</value><comment>MT - needs review</comment></data>
   <data name="Sales_Void" xml:space="preserve"><value>બિલ રદ કરો</value><comment>MT – needs review</comment></data>
@@ -601,10 +607,6 @@
   <data name="Sales_NonCashOverpayment" xml:space="preserve"><value>માત્ર રોકડ ચુકવણી બિલની રકમ કરતાં વધુ હોઈ શકે.</value><comment>MT - needs review</comment></data>
   <data name="Sales_Completed" xml:space="preserve"><value>બિલ {0} પૂર્ણ થયું.</value><comment>MT - needs review</comment></data>
   <data name="Sales_PrintFailed" xml:space="preserve"><value>બિલ {0} પૂર્ણ થયું. છાપવામાં ભૂલ: {1} ફરી છાપવા Ctrl+P દબાવો.</value><comment>MT - needs review</comment></data>
-  <data name="Sales_SavedBills" xml:space="preserve"><value>સાચવેલા બિલ</value><comment>MT - needs review</comment></data>
-  <data name="Sales_SelectSavedBill" xml:space="preserve"><value>આગળ વધવા માટે બિલ પસંદ કરો</value><comment>MT - needs review</comment></data>
-  <data name="Sales_HoldLabel" xml:space="preserve"><value>લેબલ</value><comment>MT - needs review</comment></data>
-  <data name="Sales_OpenBill" xml:space="preserve"><value>બિલ ખોલો</value><comment>MT - needs review</comment></data>
   <data name="Sales_RoundOff" xml:space="preserve"><value>રાઉન્ડ ઓફ</value><comment>MT - needs review</comment></data>
   <data name="Sales_Savings" xml:space="preserve"><value>તમે ₹{0} બચાવ્યા</value><comment>MT - needs review</comment></data>
   <data name="Sales_ReturnLine" xml:space="preserve"><value>પરત કરવાની વસ્તુ</value><comment>MT - needs review</comment></data>
@@ -629,8 +631,6 @@
   <data name="Sales_ChooseLot" xml:space="preserve"><value>બેચ પસંદ કરો</value><comment>MT - needs review</comment></data>
   <data name="Sales_ChooseLotShortcut" xml:space="preserve"><value>Ctrl+L બેચ</value><comment>MT - needs review</comment></data>
   <data name="Sales_UseLot" xml:space="preserve"><value>બેચ વાપરો</value><comment>MT - needs review</comment></data>
-  <data name="Sales_HoldBill" xml:space="preserve"><value>બિલ રોકો</value><comment>MT - needs review</comment></data>
-  <data name="Sales_HoldHint" xml:space="preserve"><value>પછી બિલ શોધવા માટે વૈકલ્પિક લેબલ</value><comment>MT - needs review</comment></data>
   <data name="Receipt_Return" xml:space="preserve"><value>પરત રસીદ</value><comment>MT - needs review</comment></data>
   <data name="Receipt_OriginalInvoice" xml:space="preserve"><value>મૂળ ઇન્વૉઇસ</value><comment>MT - needs review</comment></data>
   <data name="Receipt_ReturnReason" xml:space="preserve"><value>કારણ</value><comment>MT - needs review</comment></data>
@@ -673,16 +673,6 @@
   <data name="Sales_ExportCancelled" xml:space="preserve"><value>નિકાસ રદ થઈ.</value><comment>MT - needs review</comment></data>
   <data name="Sales_ReturnTotal" xml:space="preserve"><value>રિફંડ ₹{0} · {1} લાઇન</value><comment>MT - needs review</comment></data>
   <data name="Sales_ReturnContext" xml:space="preserve"><value>બિલ {0} · {1} · ₹{2}</value><comment>MT - needs review</comment></data>
-  <data name="Sales_ReviewHeld" xml:space="preserve"><value>રોકેલું બિલ તપાસો</value><comment>MT - needs review</comment></data>
-  <data name="Sales_PreviousPrice" xml:space="preserve"><value>જૂની કિંમત</value><comment>MT - needs review</comment></data>
-  <data name="Sales_CurrentPrice" xml:space="preserve"><value>હાલની કિંમત</value><comment>MT - needs review</comment></data>
-  <data name="Sales_AcceptResume" xml:space="preserve"><value>સ્વીકારીને ચાલુ કરો</value><comment>MT - needs review</comment></data>
-  <data name="Sales_HeldUnavailable" xml:space="preserve"><value>આ બિલનો સ્ટોક અવરોધિત, મુદત વીતી ગયેલો અથવા અપૂરતો છે. ચાલુ કરતા પહેલાં સુધારો.</value><comment>MT - needs review</comment></data>
-  <data name="Sales_HeldPriceChanged" xml:space="preserve"><value>કિંમત અથવા MRP બદલાઈ છે. નવું બિલ સ્વીકારતા પહેલાં પંક્તિઓ તપાસો.</value><comment>MT - needs review</comment></data>
-  <data name="Sales_HeldNoChanges" xml:space="preserve"><value>સ્ટોક ઉપલબ્ધ છે અને કિંમત બદલાઈ નથી. તપાસીને બિલ ચાલુ કરો.</value><comment>MT - needs review</comment></data>
-  <data name="Sales_HeldStockIssue" xml:space="preserve"><value>સ્ટોકની સમસ્યા</value><comment>MT - needs review</comment></data>
-  <data name="Sales_HeldChanged" xml:space="preserve"><value>કિંમત બદલાઈ</value><comment>MT - needs review</comment></data>
-  <data name="Sales_HeldUnchanged" xml:space="preserve"><value>તૈયાર</value><comment>MT - needs review</comment></data>
   <data name="Sales_DiscountEntry" xml:space="preserve"><value>છૂટ</value><comment>MT - needs review</comment></data>
   <data name="Sales_Amount" xml:space="preserve"><value>રકમ</value><comment>MT - needs review</comment></data>
   <data name="Sales_Percent" xml:space="preserve"><value>ટકા</value><comment>MT - needs review</comment></data>
@@ -727,7 +717,6 @@
   <data name="Stock_UnblockSelected" xml:space="preserve"><value>પસંદ કરેલી બેચ ખોલો</value><comment>MT - needs review</comment></data>
   <data name="Stock_SourceDoc_Purchase" xml:space="preserve"><value>ખરીદી</value><comment>MT - needs review</comment></data>
   <data name="Sales_LastScan" xml:space="preserve"><value>છેલ્લું: {0} · સ્ટોક {1} · MRP ₹{2}</value><comment>MT - needs review</comment></data>
-  <data name="Sales_HeldChip" xml:space="preserve"><value>રોકેલું #{0}</value><comment>MT - needs review</comment></data>
   <data name="Sales_PrinterReady" xml:space="preserve"><value>રસીદ પ્રિન્ટર તૈયાર છે</value><comment>MT - needs review</comment></data>
   <data name="Sales_PrinterUnavailable" xml:space="preserve"><value>રસીદ પ્રિન્ટર ઉપલબ્ધ નથી</value><comment>MT - needs review</comment></data>
   <data name="Sales_PrinterJobFailed" xml:space="preserve"><value>સાચવેલું પ્રિન્ટ કામ તપાસવું જરૂરી છે. Ctrl+P દબાવો.</value><comment>MT - needs review</comment></data>
@@ -1353,9 +1342,7 @@
   <data name="Purchasing_LedgerKind_VENDOR_RETURN" xml:space="preserve"><value>વિક્રેતાને પરત</value><comment>MT – needs review</comment></data>
   <data name="Purchasing_LedgerKind_VENDOR_RETURN_CANCEL" xml:space="preserve"><value>રદ કરેલું પરત</value><comment>MT – needs review</comment></data>
   <data name="MoneyOut_PaymentType" xml:space="preserve"><value>પ્રકાર</value><comment>MT – needs review</comment></data>
-  <data name="Sales_SavedBillSearch" xml:space="preserve"><value>બિલ # કે લેબલ</value><comment>MT – needs review</comment></data>
   <data name="Shell_StoreTagline" xml:space="preserve"><value>ડેરી અને કરિયાણા સ્ટોર</value><comment>MT – needs review</comment></data>
-  <data name="Sales_NoSavedBills" xml:space="preserve"><value>કોઈ સાચવેલું બિલ મળ્યું નથી.</value><comment>MT – needs review</comment></data>
   <data name="Common_ExcelFileFilter" xml:space="preserve"><value>Excel વર્કબુક (*.xlsx)|*.xlsx</value><comment>MT – needs review</comment></data>
   <data name="Stock_ShortageReason" xml:space="preserve"><value>ઘટનું કારણ</value><comment>MT – needs review</comment></data>
   <data name="Reports_ProductSearch" xml:space="preserve"><value>નામ, SKU કે બારકોડ, પછી Enter</value><comment>MT – needs review</comment></data>

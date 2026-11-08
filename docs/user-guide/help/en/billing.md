@@ -5,7 +5,7 @@ Make a bill: scan or search products, check quantities, batches, prices and disc
 
 ![Billing](../../screenshots/billing.en.png)
 
-Every line takes its stock from the lot a bill takes next: the earliest expiry first, then the earliest received. Prices include tax. A bill takes its date and number when it is paid, so a bill held or left open from an earlier day counts on the day it is completed. When Billing opens and unfinished bills are waiting, it offers them first.
+Every line takes its stock from the lot a bill takes next: the earliest expiry first, then the earliest received. Prices include tax. A bill takes its date and number when it is paid, so a bill left open from an earlier day counts on the day it is completed. Billing keeps one unfinished bill: leave Billing or close the app before a bill is paid and the bill is saved, and when Billing opens again it asks whether to continue it or discard it.
 
 ## Adding products
 
@@ -15,8 +15,7 @@ Every line takes its stock from the lot a bill takes next: the earliest expiry f
 | **Matching products** | As you type, the products matching it are listed under the box with SKU, Gujarati name, price and stock: from one Gujarati letter, or two other characters, once you pause. Enter lists them too when several match. The price is that of the lot the bill takes next. Down moves into the list; pick one with the arrow keys and Enter, or click it; Esc closes the list. |
 | **Items** | How many lines the bill has. Under it, the customer: **Walk-in customer** until you choose one. |
 | Last: … | The last product added, with its stock and MRP. |
-| Held bills | A button for each recently held bill, with its label or number. Click one to check it and carry on with it. |
-| Receipt printer | Whether the receipt printer is ready. When a receipt did not print, it says so; press Ctrl+P to try again. |
+| Receipt printer | Whether the receipt printer is ready. When a receipt did not print, it says so; press Ctrl+P to try again. A job still unprinted when the app closes is named once at the next start, then cleared. |
 
 ## Bill lines
 
@@ -47,7 +46,7 @@ Most buttons work on the line selected in the table.
 
 | Button | What it does |
 |---|---|
-| **F2 New bill** | Starts an empty bill. A bill that was not paid stays open and can be resumed with **F8 Resume**. |
+| **F2 New bill** | Starts an empty bill. Billing keeps only one unfinished bill, so a bill on screen with lines or a customer is discarded once you confirm. |
 | **F4 Quantity** | Changes the selected line's quantity. |
 | **Ctrl+L Lot** | Chooses which batch the selected line is sold from. |
 | **Change price** | Changes the selected line's price for this bill. It must be above zero and cannot be above MRP. |
@@ -55,8 +54,6 @@ Most buttons work on the line selected in the table.
 | **F6 Bill discount** | Gives the whole bill a discount, shared across the lines. |
 | **Ctrl+U Customer** | Finds or adds a customer, with name, phone and GSTIN, for this bill. |
 | **Delete line** | Removes the selected line. The Delete key does the same. |
-| **F7 Hold** | Puts the bill aside with a label, such as the customer's name, and starts an empty one. |
-| **F8 Resume** | Lists held bills by number or label. Before a held bill carries on, a review shows any price, MRP or stock that changed since it was held. |
 
 Ctrl+P prints the last receipt again, marked DUPLICATE, or retries a receipt that did not print.
 
@@ -66,4 +63,4 @@ Ctrl+P prints the last receipt again, marked DUPLICATE, or retries a receipt tha
 2. Check the quantity, batch, price and discount of each line.
 3. Choose the customer if the bill needs one.
 4. Check the amount under **Pay** and take the payment with **F9 Cash**, **F10 UPI** or **F11 Split**.
-5. Give the receipt. Use **F7 Hold** and **F8 Resume** when a customer has to step away.
+5. Give the receipt. When a customer has to step away, the bill waits on screen; if you leave Billing meanwhile, it is offered again when you come back.

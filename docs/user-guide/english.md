@@ -142,23 +142,26 @@ When editing a saved asset, a change to method, rate or salvage shows **Effectiv
 
 **Workflow:** Add asset → review its schedule → post due depreciation → edit when permitted → dispose when retired.
 
-## 8. Billing and held bills
+## 8. Billing and the saved bill
 
 ![Billing](screenshots/billing.en.png)
 
 The **ⓘ** at the end of the scan row, or F1 in any field, opens the [Billing help](help/en/billing.md): every field, total, button and shortcut.
 
-Scan or search in the top box (`F3`). As you type part of a product name, from one Gujarati letter or two other characters, the matching saleable products are [listed under the box](screenshots/billing-choices.en.png) once you pause, with SKU, local name, price and stock, the price being that of the lot the bill takes next, as on the Products list. Down moves into the list: choose one with the arrow keys and Enter, or click it; Esc closes the list. Pressing Enter in the box adds an exact barcode or SKU, or the product when only one matches, and lists them when several do. A quantity typed before `*`, such as `2*salt`, applies to the product chosen. A name with no match shows **No matching product was found.** The line table shows product, quantity, unit price, line discount and total. The right panel recalculates gross, discount, tax, round off and amount to pay. **Cash**, **UPI**, or **Split** completes payment. The bottom commands start a new bill, change quantity, choose lot, override price, apply line or bill discount, set customer, delete a line, hold, and resume.
+Scan or search in the top box (`F3`). As you type part of a product name, from one Gujarati letter or two other characters, the matching saleable products are [listed under the box](screenshots/billing-choices.en.png) once you pause, with SKU, local name, price and stock, the price being that of the lot the bill takes next, as on the Products list. Down moves into the list: choose one with the arrow keys and Enter, or click it; Esc closes the list. Pressing Enter in the box adds an exact barcode or SKU, or the product when only one matches, and lists them when several do. A quantity typed before `*`, such as `2*salt`, applies to the product chosen. A name with no match shows **No matching product was found.** The line table shows product, quantity, unit price, line discount and total. The right panel recalculates gross, discount, tax, round off and amount to pay. **Cash**, **UPI**, or **Split** completes payment. The bottom commands start a new bill, change quantity, choose lot, override price, apply line or bill discount, set customer and delete a line.
+
+Billing keeps one unfinished bill. A bill not yet paid when you leave Billing, or close the app, is saved; the next time Billing opens, [Saved bill](help/en/saved-bill.md) shows when it was started, its lines, its total and its customer, and asks you to **Continue bill** or **Discard bill**. It cannot be closed without choosing. **F2 New bill** on a bill with lines or a customer asks before discarding it, so there is never a second unfinished bill. A bill takes its date and number on the day it is paid: a bill left open from an earlier day counts in the day end and P&L of the day it is completed.
+
+When a receipt does not print, Billing says so and Ctrl+P tries again. Jobs still unprinted when the app closes are named once at the next start, with the bills they were for, and then cleared; to print one of those bills again, open it in Sales history and press **Reprint**.
 
 | Dialog | Fields and effect |
 |---|---|
 | [Quantity](screenshots/quantity.en.png) · [lot picker](screenshots/lot-picker.en.png) | Quantity changes the selected line and stock demand; lot selection chooses which batch is sold. |
 | [Discount](screenshots/discount-percent.en.png) | Enter a value and choose amount or percent; the preview shows the resulting discount before **Save** applies it to the chosen line or bill. |
 | [Customer](screenshots/customer.en.png) | Search an existing customer or create one with name, phone and GSTIN. **Use customer** attaches it to the bill; **Walk in** proceeds without a saved customer. |
-| [Hold](screenshots/hold-bill.en.png) · [saved bills](screenshots/saved-bills.en.png) · [held review](screenshots/held-review.en.png) | Give an unfinished bill a label. Search held bills by ID or label, then **Open bill**. Review compares previous/current price, MRP, on hand quantity and status before **Accept and resume**. A bill takes its date and number on the day it is paid: a bill held or left open from an earlier day counts in the day end and P&L of the day it is completed. |
 | [Split payment](screenshots/payment.en.png) | Cash, UPI and card amounts must cover the payable total; references document digital/card components. **Confirm payment** posts the sale. |
 
-**Workflow:** Scan/search product → verify quantity, batch, price and discount → attach customer if needed → check payable total → take payment → give the receipt. Use Hold/Resume for interrupted transactions. See [sale receipt preview](screenshots/sale-receipt.en.png).
+**Workflow:** Scan/search product → verify quantity, batch, price and discount → attach customer if needed → check payable total → take payment → give the receipt. An interrupted bill waits on screen, and is offered again if you leave Billing meanwhile. See [sale receipt preview](screenshots/sale-receipt.en.png).
 
 ## 9. Sales History and day end
 

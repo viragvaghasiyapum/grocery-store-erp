@@ -94,22 +94,8 @@ public sealed record SaleDetails(
     public Money Change { get; init; }
 }
 
-public sealed record HeldSale(long Id, DateTime CreatedAt, string? Label, int ItemCount, Money Total)
-{
-    public bool IsHeld { get; init; } = true;
-}
-
-public sealed record SavedBillPage(IReadOnlyList<HeldSale> Items, bool HasMore,
-    string? NextCreatedAt, long? NextId);
-
-public sealed record HeldBillReviewLine(long LineId, string ProductName, Quantity Quantity,
-    Money PreviousPrice, Money CurrentPrice, Money? PreviousMrp, Money? CurrentMrp,
-    Money CurrentCost, Quantity Available, bool IsActive, DateOnly? ExpiryDate)
-{
-    public bool PriceChanged => PreviousPrice != CurrentPrice || PreviousMrp != CurrentMrp;
-}
-
-public sealed record HeldBillReview(long SaleId, IReadOnlyList<HeldBillReviewLine> Lines);
+/// <summary>The one unfinished bill Billing keeps: when it was started, its lines and what it comes to.</summary>
+public sealed record SavedBill(long Id, DateTime CreatedAt, int ItemCount, Money Total, string? CustomerName);
 
 public sealed record ReturnableSaleLine(SaleLine Line, Quantity Remaining)
 {

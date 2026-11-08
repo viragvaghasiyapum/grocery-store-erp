@@ -47,9 +47,7 @@ Dialogs, by the page that opens them:
 | Billing | Change price | [price-change](en/price-change.md) | [કિંમત બદલો](gu/price-change.md) |
 | Billing | Choose lot | [lot-picker](en/lot-picker.md) | [બેચ પસંદ કરો](gu/lot-picker.md) |
 | Billing | Discount | [discount](en/discount.md) | [છૂટ](gu/discount.md) |
-| Billing | Hold bill | [hold-bill](en/hold-bill.md) | [બિલ રોકો](gu/hold-bill.md) |
-| Billing | Saved bills | [saved-bills](en/saved-bills.md) | [સાચવેલા બિલ](gu/saved-bills.md) |
-| Billing | Review held bill | [held-review](en/held-review.md) | [રોકેલું બિલ તપાસો](gu/held-review.md) |
+| Billing | Saved bill | [saved-bill](en/saved-bill.md) | [સાચવેલું બિલ](gu/saved-bill.md) |
 | Billing | Customer | [customer](en/customer.md) | [ગ્રાહક](gu/customer.md) |
 | Billing | Take payment | [split-payment](en/split-payment.md) | [ચુકવણી લો](gu/split-payment.md) |
 | Sales history | Return | [sale-return](en/sale-return.md) | [પરત](gu/sale-return.md) |
