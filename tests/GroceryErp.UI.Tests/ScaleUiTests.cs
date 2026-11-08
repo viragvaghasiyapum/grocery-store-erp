@@ -308,13 +308,13 @@ public sealed class ScaleUiTests
                 if (label == "Billing (POS)" &&
                     Environment.GetEnvironmentVariable("GROCERY_SCALE_UI_SAVED_BILLS") == "1")
                 {
-                    // Populated fixtures can open the saved-bill picker on entry.
-                    // Dismiss it before navigating to another shell page.
-                    Window savedBills = await WaitWindowAsync(app, automation, "BillsGrid", TimeSpan.FromSeconds(15));
-                    (savedBills.FindFirstDescendant(cf => cf.ByName("Cancel"))
-                        ?? throw new InvalidOperationException("Saved-bill picker has no Cancel action.")).Click();
+                    // A fixture with an unfinished bill asks on entry whether to continue it. Continuing
+                    // keeps the bill, so the question comes back on the next round's visit.
+                    Window savedBill = await WaitWindowAsync(app, automation, "SummaryText", TimeSpan.FromSeconds(15));
+                    (savedBill.FindFirstDescendant(cf => cf.ByName("Continue bill"))
+                        ?? throw new InvalidOperationException("The saved-bill question has no Continue bill action.")).Click();
                     await WaitUntilAsync(() => app.GetAllTopLevelWindows(automation).All(window =>
-                        window.FindFirstDescendant(cf => cf.ByAutomationId("BillsGrid")) is null),
+                        window.FindFirstDescendant(cf => cf.ByAutomationId("SummaryText")) is null),
                         TimeSpan.FromSeconds(10));
                 }
             }
