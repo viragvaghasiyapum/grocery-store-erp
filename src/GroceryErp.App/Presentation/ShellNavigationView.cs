@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Threading;
+using Wpf.Ui.Animations;
 using Wpf.Ui.Controls;
 
 namespace GroceryErp.App.Presentation;
@@ -14,8 +15,15 @@ public sealed class ShellNavigationView : NavigationView
 {
     private DispatcherOperation? _release;
 
-    // WPF UI's template is an implicit style for its own type, which a subclass does not match.
-    public ShellNavigationView() => SetResourceReference(StyleProperty, typeof(NavigationView));
+    public ShellNavigationView()
+    {
+        // WPF UI's template is an implicit style for its own type, which a subclass does not match.
+        SetResourceReference(StyleProperty, typeof(NavigationView));
+        // A page appears at once. WPF UI fades and slides each one in over 200 ms, and the app draws
+        // in software (less memory than the graphics driver), so every frame redrew the whole page,
+        // table included, on the CPU and the slide stuttered.
+        Transition = Transition.None;
+    }
 
     protected override void OnNavigated(object page)
     {

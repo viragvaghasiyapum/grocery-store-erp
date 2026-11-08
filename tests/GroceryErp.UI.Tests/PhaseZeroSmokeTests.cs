@@ -213,6 +213,8 @@ public sealed class PhaseZeroSmokeTests
                 Environment.SetEnvironmentVariable("GROCERY_ERP_TEST_DATA_ROOT", previousTestRoot);
                 TranslationSource translations = TranslationSource.Instance;
                 translations.UiCulture = CultureInfo.GetCultureInfo("en-IN");
+                // The sidebar shows each page at once: WPF UI's fade and slide stuttered in software drawing.
+                new ShellNavigationView().Transition.ShouldBe(Wpf.Ui.Animations.Transition.None);
                 // Runs first, while no other window has queued work on this dispatcher.
                 VerifyPhaseSixScreens(translations);
                 VerifyPhaseSevenScreens(translations);

@@ -378,6 +378,8 @@ Billing search as you type (8 November 2026, branch `screen-help`, after the 1.2
 - The Billing help and both guides describe it.
 - Tests: `BillingLiveSearchTests` (18 cases of the term rule: lengths, Gujarati letters and digits, the quantity prefix, barcodes) and, in the smoke test, one letter listing nothing, `3*sa` listing both salts with the text kept and the quantity 3 kept for the pick, Esc closing it, and an empty box staying closed.
 
+Sidebar pages without animation (8 November 2026, branch `screen-help`; no schema change): the owner found that pages opened from the sidebar came in with a slow, stuttering animation. WPF UI's `NavigationView` fades and slides each page in over 200 ms by default (`Transition.FadeInWithSlide`), and the app draws in software (§13, Phase 9: about 190 MiB less memory than the graphics driver), so each frame redrew the whole page on the CPU. `ShellNavigationView` now sets `Transition.None`, so a page appears at once; software drawing stays. The smoke test checks the setting. The detail panel's 200 ms slide and the More filters expansion keep their short motion.
+
 ## 1. Product contract and precedence
 
 The decisions and acceptance criteria in this file supersede older statements in `revised plan.md`, `implementation.md`, `PLANS.md`, and supporting Phase 0 notes wherever they disagree. Preserve the offline, single-user Windows application, three-decimal fixed-point values, bilingual UI, durable transactions, backups, and existing payment, tax, and printing guarantees.
