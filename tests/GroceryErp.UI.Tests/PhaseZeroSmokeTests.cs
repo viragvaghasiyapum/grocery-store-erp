@@ -1814,6 +1814,20 @@ public sealed class PhaseZeroSmokeTests
             PumpUntil(() => TextOf(selection).Contains(translations.Format("Selection_AllMatchingCount", 42), StringComparison.Ordinal));
             CaptureRevision(productsHost, "products-all-matching.en.png");
 
+            // Set category…, Set tax rate… and Set product type… ask for their value in one window
+            // with one help, which has a row for each use's field.
+            foreach ((string titleKey, string labelKey) in new[] { ("Catalog_SetCategory", "Catalog_Category"),
+                ("Catalog_SetTaxRate", "Catalog_TaxRate"), ("Catalog_SetProductClass", "Catalog_ProductClass") })
+            {
+                var choice = new ChoiceWindow(translations[titleKey], "", translations[labelKey], Array.Empty<object>(), "", "")
+                { Language = AppLanguage };
+                choice.Show();
+                ScreenHelp.GetTopic(choice).ShouldBe("bulk-choice");
+                VerifyDialogHelp(choice);
+                VerifyHelpRows("bulk-choice", [((FormField)choice.FindName("ChoiceField"), FormField.LabelProperty)]);
+                choice.Close();
+            }
+
             // The review re-resolves the rows on the server, then runs them in bounded batches.
             BulkAction categoryChange = products.CatalogBulk(new CatalogBulkCommand(CatalogBulkAction.Category, household),
                 "Catalog_SetCategory");

@@ -4,10 +4,13 @@
     xmlns:l="clr-namespace:GroceryErp.Localization;assembly=GroceryErp.Localization"
     xmlns:p="clr-namespace:GroceryErp.App.Presentation"
     Width="420" SizeToContent="Height" MinHeight="200" ResizeMode="NoResize"
-    WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}"
+    WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="{StaticResource AppFont}" p:ScreenHelp.Topic="bulk-choice"
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN" NumberSubstitution.Substitution="European">
   <StackPanel Margin="20">
-    <TextBlock x:Name="TitleText" Style="{StaticResource FormTitle}"/>
+    <DockPanel>
+      <p:HelpButton DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top"/>
+      <TextBlock x:Name="TitleText" Style="{StaticResource FormTitle}"/>
+    </DockPanel>
     <TextBlock x:Name="ContextText" Style="{StaticResource FormContext}" Margin="0,4,0,12"/>
     <p:FormField x:Name="ChoiceField" IsRequired="True" Margin="0">
       <ComboBox x:Name="ChoiceBox"/>

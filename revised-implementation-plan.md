@@ -323,7 +323,7 @@ Open-issue fixes (from 26 October 2026): the review items in `revised-plan-issue
       - The large-store journey (G-5): update 37→42 in 30.4 s, round ends 269–289 MiB, process peak 325 MiB, export 26.1 s, all in line with schema 41.
     - G-1 finished on schema 42, 6 November 2026 (record in `revised-plan-bugs.md` G-1). A fresh schema-37 copy was upgraded to 42 and took the 1.2.0 profile's writes (300 bills, no errors, no lot mismatches). Then came the eight store checks, a bill killed before commit that left nothing behind, a verified backup and a restore into an empty data root; both stores passed the eight checks. The PC ran 2.5–4 times slower than on 5 November, on reads with unchanged SQL too, so the times are not compared. Evidence: `artifacts/data/revised-plan-bugs/g1-c2`.
 
-Screen help execution record (6–7 November 2026, branch `screen-help`, for the release after 1.2.0; no schema change): **the help button, window and F1 work, and all ten pages and 47 dialogs have their help, opening at the open tab or setup step. The guides' rework and the screenshots with the ⓘ are next (§16.4 step 4).** Decisions and order: §16.
+Screen help execution record (6–8 November 2026, branch `screen-help`, shipped in 1.2.0 by the owner's decision of 8 November; no schema change): **the help button, window and F1 work, and all ten pages and 47 dialogs have their help, opening at the open tab or setup step. The owner set aside the guides' rework and the screenshots with the ⓘ (§16.4 step 4) on 8 November 2026.** Decisions and order: §16.
 
 - Code: `ScreenHelp` (the inherited `Topic` property, F1 through WPF's Help command, registered at startup, and the focused field's label), `HelpButton`, `HelpWindow` and `HelpDocument` (the Markdown reader). Four new strings in both languages (`Help_*`; the Gujarati is marked MT). The `HelpButton` style in `Tokens.xaml` draws the ⓘ as a blue icon, lighter than the page's actions.
 - Products: the ⓘ beside the title and topic `products`. `docs/user-guide/help/en/products.md` and `gu/products.md` explain its filters, table, buttons, selection and bulk actions, the product panel, and the Lots tab's filters, table and buttons. Both guides' Products chapters link them.
@@ -340,6 +340,7 @@ Screen help execution record (6–7 November 2026, branch `screen-help`, for the
 - Tests: `ScreenHelpTests` also takes topics from `ScreenHelp.SetTopic` calls in code. In the smoke test, `VerifyDialogHelp` runs on every dialog the capture helpers show, once per language shown: its ⓘ is there, and every form field and column it shows (collapsed parts left out, such as a void's hidden return lines) has a help row in both languages; a label set in code is checked in the language on screen. Change price and the Setup steps are checked too, the ⓘ opening each step's section.
 - O-8, done on the owner's decision, 7 November: Setup no longer offers **Start with an empty catalog** / **Import products from Excel after setup** or asks for an **A4 printer**. `FirstRunRequest` lost `StartChoice` and `A4PrinterName`, `SettingsService` its two readers, and the A4 test page and three strings went with them. The Start step now says that **Finish** saves the setup and takes the first backup, and that products are added on the Products page. A store set up before keeps its two inert `setting` rows (`setup.start_choice`, `printer.a4.name`); no migration, since nothing reads them. `FoundationsTests.FirstRun_PersistsWizardConfiguration` checks neither key is written.
 - Verification, 7 November 2026, on the working tree after the dialogs: the format gate passed, the Release build of the solution and ScaleAudit had no warnings, and the full suite ran 355 tests, one test project at a time: 353 passed and the 2 opt-in journeys skipped.
+- 8 November 2026: the owner set aside step 4 (the guides' rework and the screenshots) and asked for any help pop-up still missing. One was: the window that asks for the value of Products' **Set category…**, **Set tax rate…** and **Set product type…** (`ChoiceWindow`) had no ⓘ. It now has one in its title row and the topic `bulk-choice`, one help for its three uses with a row for each field, in both languages (Gujarati marked MT), listed in the help index; 47 dialogs have help. The smoke test opens it for each use and checks the ⓘ and the field's row. Left without help, as they have nothing to fill in: the compaction progress window and the release notes window.
 
 Totals footer (7 November 2026, branch `screen-help`; no schema change): **implemented and locally verified.** The owner reported that many screens still showed totals at the top, cut off, in bold black, and asked for them in a bar at the bottom that always stays in view, as the row counts went on 25 October.
 
@@ -760,7 +761,7 @@ Not in scope: renaming database columns, more than one tax on a line (such as a 
 
 ## 16. Screen help
 
-Status: **agreed with the owner on 6 November 2026; started on branch `screen-help` for the release after 1.2.0.** 1.2.0 ships without it, so its gates stay valid. Execution record at the top.
+Status: **agreed with the owner on 6 November 2026 and built on branch `screen-help`, first for the release after 1.2.0. On 8 November 2026 the owner chose to ship it in 1.2.0, with the totals footer and the calculation audit's fixes, so the 1.2.0 packages and their gates are redone** (`docs/release-checklist.md`). Execution record at the top.
 
 ### 16.1 Decisions
 
@@ -789,7 +790,7 @@ Status: **agreed with the owner on 6 November 2026; started on branch `screen-he
 1. The button, window, F1, tests and the Products help (done 6 November 2026, the sample).
 2. After the owner reviews the sample: the other nine pages (Dashboard, Billing, Purchases, Vendors, Sales history, Money out, Assets, Reports, Settings) with their panels (done 6 November 2026, with help that follows tabs).
 3. Every dialog, such as the product form, purchase entry, vendor return, salary run and restore (done 7 November 2026: 47 topics).
-4. The guides: `english.md` and `gujarati.md` keep the start, navigation and lists chapters, and each screen chapter links its help files instead of repeating them. The screenshots are retaken with the ⓘ.
+4. The guides: `english.md` and `gujarati.md` keep the start, navigation and lists chapters, and each screen chapter links its help files instead of repeating them. The screenshots are retaken with the ⓘ. (Set aside by the owner on 8 November 2026: the in-app help is what is wanted now.)
 
 ### 16.5 Exit
 

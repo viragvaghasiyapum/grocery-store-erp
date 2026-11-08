@@ -34,6 +34,7 @@ Dialogs, by the page that opens them:
 | Products | Record damage | [lot-damage](en/lot-damage.md) | [નુકસાન નોંધો](gu/lot-damage.md) |
 | Products | Mark selected lots damaged | [bulk-damage](en/bulk-damage.md) | [પસંદ કરેલી બેચ નુકસાનમાં નોંધો](gu/bulk-damage.md) |
 | Products | Stock count | [count-review](en/count-review.md) | [સ્ટોક ગણતરી](gu/count-review.md) |
+| Products | Set category, tax rate or product type | [bulk-choice](en/bulk-choice.md) | [શ્રેણી, કર દર કે ઉત્પાદનનો પ્રકાર બદલો](gu/bulk-choice.md) |
 | Products | Bulk action | [bulk-action](en/bulk-action.md) | [સમૂહ ક્રિયા](gu/bulk-action.md) |
 | Products | Unknown barcode | [unknown-barcode](en/unknown-barcode.md) | [અજાણ્યો બારકોડ](gu/unknown-barcode.md) |
 | Products | Quick add product | [quick-product](en/quick-product.md) | [ઉત્પાદન ઝડપથી ઉમેરો](gu/quick-product.md) |

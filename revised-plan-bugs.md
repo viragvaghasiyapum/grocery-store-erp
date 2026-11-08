@@ -5,7 +5,7 @@ Progress (6 November 2026):
   - B-3 was a High bug: the restore-product window could not open in the running app.
   - G-5 found B-5 to B-7. B-6 and B-7 were 1.2.0 regressions: page actions folded under **More** at any window width, and opening a bill or an asset's timeline kept that page in memory for the rest of the session. Over ten rounds the app reached 375 MiB against the 350 MiB gate; with the fix it stays at about 280 MiB.
 - Release gates that run on the development PC: G-1 to G-6 were done. B-5 to B-7 changed the app after G-3 and G-4 first ran, so on 6 November the packages were rebuilt from commit 0be0113 and the packaged journey passed on them. C-2 then changed the schema and the code, so G-1, G-3, G-4 and G-5 had to run again on schema 42. G-3, G-4 and G-5 were redone the same day on commit 6f6b52b, and then all of G-1: the upgrade, the profiling writes, the eight store checks, the killed bill, and the backup and restore passed on schema 42.
-- Writing the screen help (branch `screen-help`, for the release after 1.2.0) found B-8 to B-13 and O-7, all done in the working tree (O-7 after the owner agreed to the recommendation). The dialog help, on 7 November, found B-14 and B-15 (fixed) and O-8, done the same day on the owner's decision. See "Found while writing screen help".
+- Writing the screen help (branch `screen-help`, first for the release after 1.2.0; in 1.2.0 since the owner's decision of 8 November) found B-8 to B-13 and O-7, all done in the working tree (O-7 after the owner agreed to the recommendation). The dialog help, on 7 November, found B-14 and B-15 (fixed) and O-8, done the same day on the owner's decision. See "Found while writing screen help".
 - The calculation audit (7 November, `AuditScenarioTests`) found every booked figure right and five shown or saved wrongly, B-16 to B-20, all fixed in the working tree, and four accounting choices the owner decided the same day: the salary advance is removed (O-9), a voided purchase's Expense lines leave its own date (O-12), and count surpluses and internal use stay outside P&L (O-10, O-11). DataGen's purchases now add up. See "Found by the calculation audit".
 - Drive D: was cleared before this work (199 GB free), so packaging was not blocked.
 - Owner decisions, 6 November: O-1, O-2, O-4 and O-5 kept as built, and schema 41 approved (O-6). O-3, the review of the recorded decisions, waits for the owner to go through `docs/owner-review-1.2.0.md`.
@@ -17,8 +17,10 @@ Verified on commit 6f6b52b (C-2, schema 42), 6 November:
 
 Done 6 November: the 1.2.0 packages were rebuilt from 0be0113 (B-5 to B-7), then from 6f6b52b (C-2, schema 42), so the embedded commit matches (G-3). The packaged journey passed on each new portable build (G-4), and the large-store journey on the schema-42 publish (G-5). G-1 then ran in full on schema 42: after the profile's writes the eight store checks passed, a killed bill left nothing behind, and the backup restored into an empty data root and passed them too.
 
+8 November: the owner chose to ship the `screen-help` work in 1.2.0 (see "Found by the calculation audit") and set aside the guides' rework and screenshots, including the Purchases page pictures (`purchases-page.en/.gu.png`) that still show the folded **More** (B-6).
+
 Still to do, in order:
-1. Retake the guide's Purchases page pictures (`purchases-page.en/.gu.png`) with the vendor and status lists loaded; they still show the folded **More** (B-6).
+1. Rebuild the 1.2.0 packages from `screen-help` (G-3) and rerun the packaged journey (G-4) and the large-store journey (G-5) on them.
 2. The human gates in `docs/release-checklist.md`, including the owner's review of the recorded decisions (O-3).
 
 Status: review of `revised-implementation-plan.md` and `revised-plan-issues.md` against the code, 5 November 2026, release 1.2.0 on schema 40. Every item in `revised-plan-issues.md` is closed with a regression test; this file lists what the review found beyond them.
@@ -121,7 +123,7 @@ The gates that need the target PC, store hardware or people (WPF memory on the r
 
 ## Found while writing screen help
 
-Found on 6 November 2026 while writing the screen help (revised plan §16, branch `screen-help`), and fixed the same day in the working tree, for the release after 1.2.0. None comes from data migrated through older schemas: B-8 and B-10 were reproduced on a new schema-42 store whose records were made only through today's services, and the rest are in the code, the schema's CHECK constraints and the resource strings. The owner asked for similar issues to be looked for too, so each item says how the rest of the app was checked.
+Found on 6 November 2026 while writing the screen help (revised plan §16, branch `screen-help`), and fixed the same day in the working tree, for the release after 1.2.0 (in 1.2.0 since the owner's decision of 8 November). None comes from data migrated through older schemas: B-8 and B-10 were reproduced on a new schema-42 store whose records were made only through today's services, and the rest are in the code, the schema's CHECK constraints and the resource strings. The owner asked for similar issues to be looked for too, so each item says how the rest of the app was checked.
 
 - [x] **B-8 The vendor panel's Purchases, Payments and Vendor returns tabs showed a wrong Balance due after each page's first row** (Medium; reproduced)
   - `GetVendorLedgerPageAsync` took the first row's balance over every kind of entry, then stepped back through the tab's own entries only, so a payment or return between two purchases was missed. On the new store: a purchase on 20 Sep, ₹1,000 paid on 22 Sep and a purchase on 24 Sep showed ₹1,825 after the first purchase on the Purchases tab, where the ledger shows ₹2,825. The existing test dated everything on one day, so nothing fell between two rows.
@@ -217,6 +219,7 @@ None of these comes from data made before a schema change. The scenario store is
   - **DataGen fixed (owner, 7 November).** A line's tax is 5% of quantity × rate, its total their sum, and the header's totals are its lines' sums, set as the purchase is posted, so vendor balances follow. Generation now refuses a store with a purchase that does not add up. A store generated at scale 0.02 (12,800 bills) passed all 11 projection checks, the purchase one included. Stores generated earlier, such as the fixtures in `artifacts`, keep the old amounts until regenerated; nothing in the tests or ScaleAudit depended on them.
 
 These figures were wrong in release 1.2.0 too, except B-20. The fixes are on `screen-help` for the release after 1.2.0; putting them in 1.2.0 means rebuilding the packages and rerunning G-3 and G-4.
+- **Decided 8 Nov 2026:** the owner chose to put them in 1.2.0, with the rest of `screen-help` (the screen help and the totals footer), rather than release the 6 November packages with figures known to be wrong; no human gate had run on those. The 1.2.0 packages are rebuilt from `screen-help` and their gates rerun (G-3, G-4 and G-5).
 
 Verified on the working tree, 7 November 2026, after the owner's decisions and the DataGen fix: the format gate passed, the Release build of the solution, ScaleAudit and DataGen had no warnings, and the full suite ran 358 tests, one test project at a time: 356 passed, including the three scenario tests and the UI smoke test's dialog-help checks without the advance form, and the 2 opt-in journeys skipped.
 
