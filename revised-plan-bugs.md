@@ -19,9 +19,9 @@ Done 6 November: the 1.2.0 packages were rebuilt from 0be0113 (B-5 to B-7), then
 
 8 November: the owner chose to ship the `screen-help` work in 1.2.0 (see "Found by the calculation audit") and set aside the guides' rework and screenshots, including the Purchases page pictures (`purchases-page.en/.gu.png`) that still show the folded **More** (B-6).
 
-Still to do, in order:
-1. Rebuild the 1.2.0 packages from `screen-help` (G-3) and rerun the packaged journey (G-4) and the large-store journey (G-5) on them.
-2. The human gates in `docs/release-checklist.md`, including the owner's review of the recorded decisions (O-3).
+Done 8 November: the 1.2.0 packages were rebuilt from commit 1d8593d on `screen-help` (G-3), and the packaged journey (G-4) and the large-store journey on the schema-42 fixture (G-5) passed on them.
+
+Still to do: the human gates in `docs/release-checklist.md`, including the owner's review of the recorded decisions (O-3).
 
 Status: review of `revised-implementation-plan.md` and `revised-plan-issues.md` against the code, 5 November 2026, release 1.2.0 on schema 40. Every item in `revised-plan-issues.md` is closed with a regression test; this file lists what the review found beyond them.
 
@@ -270,6 +270,11 @@ Verified on the working tree, 7 November 2026, after the owner's decisions and t
     - The 0be0113 files were moved out of `artifacts/Releases` first and deleted after the journey passed (G-4). `artifacts/publish` was already empty.
     - The script ran in 85 s: setup 90.0 MB, portable zip and full package 82.4 MB, delta 2.28 MB. The delta again patches 19 files, leaves 291 unchanged and removes 2.
     - The executable's product version reads `1.2.0+6f6b52b59bc535f7aeb4377cd08fce5a105ecaf6`, in `artifacts/publish` and in the portable zip's `current` folder. The zip's `sq.version` is 1.2.0. The feed again lists 27 entries, and Velopack reports 307 files unsigned.
+  - **Rebuilt 8 Nov 2026** from commit 1d8593d on `screen-help`, on the owner's decision to ship the screen help, the totals footer and the calculation audit's fixes in 1.2.0 (no schema change; still 42).
+    - Before packaging, on that commit: the format gate passed, the solution, ScaleAudit and DataGen built without warnings, and the full suite, one project at a time, ran 358 tests: 356 passed and the 2 opt-in journeys skipped (UI project 35 s, integration 4 min 20 s).
+    - The 6f6b52b files were moved to `artifacts/Releases-1.2.0-6f6b52b` and deleted after the journey passed (G-4). `artifacts/publish` was cleared first.
+    - The script ran in 68 s: setup 90.1 MB, portable zip and full package 82.6 MB, delta 2.47 MB. The delta again patches 19 files, leaves 291 unchanged and removes 2.
+    - The executable's product version reads `1.2.0+1d8593de921073aa7f9202f1bcce893605d4e23f`, in `artifacts/publish` and in the portable zip's `current` folder. The zip's `sq.version` is 1.2.0. The feed lists 27 entries, and Velopack reports 307 files unsigned.
 - [x] **G-4 Packaged operator journey on the 1.2.0 portable build** (`GROCERY_PACKAGED_UI_TEST=1`), including the release notes window on first sign-in (checklist lines 14 and 27). It last ran on 1.1.0, before the schema-38 purchase form, the table footer, the detail panel, the tax columns and the notes window.
   - **Passed 5 Nov 2026** in 30 s on the 1.2.0 portable zip, extracted to a temporary folder with an empty store and no network use.
   - The journey covers first-run setup, a product and vendor, a purchase whose cells are found by column header, every page, a cash sale, Gujarati, lock and unlock, and manual and close backups.
@@ -282,6 +287,10 @@ Verified on the working tree, 7 November 2026, after the owner's decisions and t
   - **Passed on schema 42, 6 Nov 2026,** in 32 s on the portable zip rebuilt from 6f6b52b (G-3).
     - The release notes end "Database schema: 42.". Its seven screens were checked by eye, and the Purchases title row again shows all five actions.
     - Screens and log: `artifacts/data/revised-plan-bugs/g4-c2`.
+  - **Passed on the 8 November rebuild** (G-3, commit 1d8593d) in 30 s, with TMP and TEMP pointed at `artifacts\temp` so nothing landed on C:.
+    - Its seven screens were checked by eye. The release notes show the new Help bullet and scroll, and end "Database schema: 42.". The Purchases title row has its ⓘ and all five actions, the purchase form its ⓘ, and both dashboards their ⓘ; **Payments today** equals **Today's sales** (B-16).
+    - The test left its 0.9 MB extracted store folder behind; it was deleted.
+    - Screens and log: `artifacts/data/revised-plan-bugs/g4-help`.
 - [x] **G-5 Large-store WPF journey on the published 1.2.0 build** (`ScaleUiTests`): the update window from schema 37, every page over three rounds, the detail panels and a full-history export, with the working set recorded (checklist lines 28 and 44). Memory was last measured on 1.1.0 (296 MiB peak), before the detail panel.
   - **Done 6 Nov 2026**, after it found B-5, B-6 and B-7. The final run is on the 1.2.0 build with all three fixed: the release script's own self-contained ReadyToRun publish of the working tree, version 1.2.0. The packages were rebuilt from the same code after the commit (G-3, 6 Nov).
   - The runner is `artifacts/data/revised-plan-bugs/g5/run-journey.sh <root> <exe> <label> [details] [rounds]`. It takes a fresh copy of the schema-37 full-size store into `%TEMP%\grocery-erp-packaged-ui-*` and sets the login with the 1.1.0 build's ScaleAudit `ui-setup`. It runs the rounds, the export of all 871,876 bills and, with `details`, the detail panels. It keeps the JSON, logs and screens, then deletes the copy. `summarize.mjs` and `roundends.mjs` print the figures below.
@@ -313,6 +322,11 @@ Verified on the working tree, 7 November 2026, after the owner's decisions and t
     - Working set at the round ends 272, 269, 282, 285, then 277–289 MiB (schema 41: 267–285). Highest private bytes 211 MiB and process peak 325 MiB (214 and 325). Panels showed in 330–521 ms. The export took 26.1 s, and the bill's panel after it 268 ms.
     - Seen, not investigated: the sign-in window came 37.2 s after launch, against 32.8 s, while the update itself took only 0.9 s longer. So the update window took about 3.5 s longer to appear.
     - Every capture is the app. The panels were checked by eye; the other pages match `v120x10`'s checked captures in at least 98% of sampled pixels.
+  - **Redone on the 8 November rebuild** (`v120helpx10`), on the release script's publish of commit 1d8593d (G-3), with every page's ⓘ and the totals bars: ten rounds with every panel, then the export. It passed in 5 min 0 s.
+    - The store is different: the schema-37 store was deleted on 7 November, so the run used the schema-42 full-size fixture (`artifacts/fixtures/schema42-full-size`: 20,000 products, 150,000 lots, 640,000 bills). There was no update window, since the build adds no migration. The new runner, `g5/run-journey-42.ps1`, copies the fixture into `artifacts\temp` on D: with TMP and TEMP pointed there, sets the login with this tree's ScaleAudit `ui-setup`, and deletes the copy afterwards.
+    - Working set at the round ends 274, 277, 289, 296, then 288–293 MiB, so it levels off. Highest private bytes 226 MiB (211 on 6f6b52b) and process peak 328 MiB (325), under the 350 MiB candidate gate. Panels showed in 333–518 ms. The export of 640,000 bills took 18.7 s, and the bill's panel after it 293 ms. The sign-in window came 7.7 s after launch.
+    - Money out's panel was not opened: the journey opens a damage, and this fixture has none ("no rows"), so 42 panels opened against 53. The figures come from a smaller store than the schema-37 runs', so they are close to, not directly comparable with, `v120c2x10`.
+    - Every capture is the app; the purchase and bill panels were checked by eye, with their totals bar at the foot.
 - [x] **G-6 Behaviour never tried in the running app**, each noted in its own record (all three tried by 5 Nov 2026):
   - [x] the weekly-check notice and **Show differences** (P6-1): tried in the running app on 5 Nov 2026.
     - Setup: a fresh DataGen store (schema 41, B-2 fixed) with one lot's quantity lowered by 5 in SQL, the only way to make a lot differ from its documents on fresh data. Release build, driven by UI Automation (`artifacts/data/revised-plan-bugs/weekly-journey.ps1`). Nothing was touched after sign-in.
