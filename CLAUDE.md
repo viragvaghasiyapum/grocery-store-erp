@@ -41,7 +41,7 @@ dotnet test --project tests/GroceryErp.Integration.Tests/GroceryErp.Integration.
 Run the app against generated demo data. Do not use the real `%LocalAppData%\GroceryErpData` store:
 
 ```powershell
-./Start-Demo.ps1        # makes a temp store with DataGen, sets the login, builds and launches; login owner / scale-audit-2026
+./Start-Demo.ps1        # makes a store under artifacts\temp with DataGen (TMP/TEMP point there, so nothing lands on C:), sets the login, builds and launches; login owner / scale-audit-2026
 dotnet run -c Release --project tools/GroceryErp.DataGen -- --scale=0.001 --output=artifacts/data/x.db
 dotnet run -c Release --project tools/GroceryErp.ScaleAudit -- <data-root> verify   # also: migrate, ui-setup, many profiling modes
 ./scripts/build-release.ps1 -Version 1.2.3   # self-contained R2R publish + Velopack pack into artifacts/
