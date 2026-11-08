@@ -19,7 +19,7 @@ Done 6 November: the 1.2.0 packages were rebuilt from 0be0113 (B-5 to B-7), then
 
 8 November: the owner chose to ship the `screen-help` work in 1.2.0 (see "Found by the calculation audit") and set aside the guides' rework and screenshots, including the Purchases page pictures (`purchases-page.en/.gu.png`) that still show the folded **More** (B-6).
 
-Done 8 November: the 1.2.0 packages were rebuilt from commit 1d8593d on `screen-help` (G-3), and the packaged journey (G-4) and the large-store journey on the schema-42 fixture (G-5) passed on them.
+Done 8 November: the 1.2.0 packages were rebuilt from commit 1d8593d on `screen-help` (G-3), and the packaged journey (G-4) and the large-store journey on the schema-42 fixture (G-5) passed on them. Later that day they were rebuilt from 8132341, with Billing's search as you type and sidebar pages without animation, and G-4 and G-5 passed again.
 
 Still to do: the human gates in `docs/release-checklist.md`, including the owner's review of the recorded decisions (O-3).
 
@@ -275,6 +275,10 @@ Verified on the working tree, 7 November 2026, after the owner's decisions and t
     - The 6f6b52b files were moved to `artifacts/Releases-1.2.0-6f6b52b` and deleted after the journey passed (G-4). `artifacts/publish` was cleared first.
     - The script ran in 68 s: setup 90.1 MB, portable zip and full package 82.6 MB, delta 2.47 MB. The delta again patches 19 files, leaves 291 unchanged and removes 2.
     - The executable's product version reads `1.2.0+1d8593de921073aa7f9202f1bcce893605d4e23f`, in `artifacts/publish` and in the portable zip's `current` folder. The zip's `sq.version` is 1.2.0. The feed lists 27 entries, and Velopack reports 307 files unsigned.
+  - **Rebuilt again 8 Nov 2026** from commit 8132341, after the owner added Billing's search as you type (4029ed4) and sidebar pages without the sliding animation (8132341) and asked for the installer with them.
+    - Before packaging, on that commit: the format gate passed, the solution, ScaleAudit and DataGen built without warnings, and the full suite, one project at a time, ran 376 tests: 374 passed and the 2 opt-in journeys skipped.
+    - The 1d8593d files were moved to `artifacts/Releases-1.2.0-1d8593d` and deleted after the journeys passed; `artifacts/publish` was cleared first.
+    - The script ran in 31 s: setup 90.1 MB, portable zip and full package 82.6 MB, delta 2.47 MB (19 patched, 291 unchanged, 2 removed). The product version reads `1.2.0+8132341d13cb90179ddbadfef7c0e3284e64ad6d` in `artifacts/publish` and in the portable zip's `current` folder; `sq.version` 1.2.0; 27 feed entries; 307 files unsigned.
 - [x] **G-4 Packaged operator journey on the 1.2.0 portable build** (`GROCERY_PACKAGED_UI_TEST=1`), including the release notes window on first sign-in (checklist lines 14 and 27). It last ran on 1.1.0, before the schema-38 purchase form, the table footer, the detail panel, the tax columns and the notes window.
   - **Passed 5 Nov 2026** in 30 s on the 1.2.0 portable zip, extracted to a temporary folder with an empty store and no network use.
   - The journey covers first-run setup, a product and vendor, a purchase whose cells are found by column header, every page, a cash sale, Gujarati, lock and unlock, and manual and close backups.
@@ -291,6 +295,7 @@ Verified on the working tree, 7 November 2026, after the owner's decisions and t
     - Its seven screens were checked by eye. The release notes show the new Help bullet and scroll, and end "Database schema: 42.". The Purchases title row has its ⓘ and all five actions, the purchase form its ⓘ, and both dashboards their ⓘ; **Payments today** equals **Today's sales** (B-16).
     - The test left its 0.9 MB extracted store folder behind; it was deleted.
     - Screens and log: `artifacts/data/revised-plan-bugs/g4-help`.
+  - **Passed on the 8132341 rebuild** in 31 s. The release notes show the new Billing and sidebar lines, and the journey's scanned product joined the bill with no list in the way. The 0.9 MB store folder it left was deleted. Screens and log: `g4-live`.
 - [x] **G-5 Large-store WPF journey on the published 1.2.0 build** (`ScaleUiTests`): the update window from schema 37, every page over three rounds, the detail panels and a full-history export, with the working set recorded (checklist lines 28 and 44). Memory was last measured on 1.1.0 (296 MiB peak), before the detail panel.
   - **Done 6 Nov 2026**, after it found B-5, B-6 and B-7. The final run is on the 1.2.0 build with all three fixed: the release script's own self-contained ReadyToRun publish of the working tree, version 1.2.0. The packages were rebuilt from the same code after the commit (G-3, 6 Nov).
   - The runner is `artifacts/data/revised-plan-bugs/g5/run-journey.sh <root> <exe> <label> [details] [rounds]`. It takes a fresh copy of the schema-37 full-size store into `%TEMP%\grocery-erp-packaged-ui-*` and sets the login with the 1.1.0 build's ScaleAudit `ui-setup`. It runs the rounds, the export of all 871,876 bills and, with `details`, the detail panels. It keeps the JSON, logs and screens, then deletes the copy. `summarize.mjs` and `roundends.mjs` print the figures below.
@@ -327,6 +332,7 @@ Verified on the working tree, 7 November 2026, after the owner's decisions and t
     - Working set at the round ends 274, 277, 289, 296, then 288–293 MiB, so it levels off. Highest private bytes 226 MiB (211 on 6f6b52b) and process peak 328 MiB (325), under the 350 MiB candidate gate. Panels showed in 333–518 ms. The export of 640,000 bills took 18.7 s, and the bill's panel after it 293 ms. The sign-in window came 7.7 s after launch.
     - Money out's panel was not opened: the journey opens a damage, and this fixture has none ("no rows"), so 42 panels opened against 53. The figures come from a smaller store than the schema-37 runs', so they are close to, not directly comparable with, `v120c2x10`.
     - Every capture is the app; the purchase and bill panels were checked by eye, with their totals bar at the foot.
+  - **Redone on the 8132341 rebuild** (`v120livex10`, same fixture and runner): passed. Working set at the round ends 273, 277, 289, 288, then 287–292 MiB, and 300 after the export; highest private 226 MiB; process peak 319 MiB (328 on 1d8593d). Panels showed in 333–465 ms, the export of 640,000 bills took 18.7 s, and the bill's panel after it 367 ms.
 - [x] **G-6 Behaviour never tried in the running app**, each noted in its own record (all three tried by 5 Nov 2026):
   - [x] the weekly-check notice and **Show differences** (P6-1): tried in the running app on 5 Nov 2026.
     - Setup: a fresh DataGen store (schema 41, B-2 fixed) with one lot's quantity lowered by 5 in SQL, the only way to make a lot differ from its documents on fresh data. Release build, driven by UI Automation (`artifacts/data/revised-plan-bugs/weekly-journey.ps1`). Nothing was touched after sign-in.

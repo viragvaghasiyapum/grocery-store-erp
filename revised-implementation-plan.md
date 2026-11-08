@@ -380,6 +380,8 @@ Billing search as you type (8 November 2026, branch `screen-help`, after the 1.2
 
 Sidebar pages without animation (8 November 2026, branch `screen-help`; no schema change): the owner found that pages opened from the sidebar came in with a slow, stuttering animation. WPF UI's `NavigationView` fades and slides each page in over 200 ms by default (`Transition.FadeInWithSlide`), and the app draws in software (§13, Phase 9: about 190 MiB less memory than the graphics driver), so each frame redrew the whole page on the CPU. `ShellNavigationView` now sets `Transition.None`, so a page appears at once; software drawing stays. The smoke test checks the setting. The detail panel's 200 ms slide and the More filters expansion keep their short motion.
 
+The 1.2.0 packages were rebuilt the same day from commit 8132341 with both changes; the full suite (376 tests: 374 passed, 2 opt-in skipped), the packaged journey and the large-store journey (process peak 319 MiB) passed on them (`revised-plan-bugs.md` G-3 to G-5).
+
 ## 1. Product contract and precedence
 
 The decisions and acceptance criteria in this file supersede older statements in `revised plan.md`, `implementation.md`, `PLANS.md`, and supporting Phase 0 notes wherever they disagree. Preserve the offline, single-user Windows application, three-decimal fixed-point values, bilingual UI, durable transactions, backups, and existing payment, tax, and printing guarantees.
