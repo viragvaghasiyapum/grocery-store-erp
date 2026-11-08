@@ -8,7 +8,7 @@
     Title="{l:Tr Login_Title}" Width="900" Height="500" MinWidth="760" MinHeight="430" ResizeMode="CanResize"
     WindowStartupLocation="CenterScreen" FontFamily="{StaticResource AppFont}" p:ScreenHelp.Topic="login">
   <DockPanel>
-    <ui:TitleBar DockPanel.Dock="Top" Title="{l:Tr Login_Title}"/>
+    <ui:TitleBar DockPanel.Dock="Top" Title="{l:Tr Login_Title}" Icon="{StaticResource StoreLogoIcon}"/>
     <Grid Background="White" Margin="34,28">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" MinWidth="280"/>

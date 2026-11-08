@@ -30,5 +30,6 @@ if ($LASTEXITCODE -ne 0) { throw 'Tool restore failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
 
 & $dotnet tool run vpk pack --packId GroceryErp --packVersion $Version --packDir $publish `
-    --mainExe GroceryErp.App.exe --runtime win-x64 --outputDir $releases
+    --mainExe GroceryErp.App.exe --runtime win-x64 --outputDir $releases `
+    --icon (Join-Path $repository 'logo\logo.ico')
 if ($LASTEXITCODE -ne 0) { throw 'Velopack packaging failed.' }

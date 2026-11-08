@@ -12,6 +12,11 @@
         <ui:ControlsDictionary />
         <ResourceDictionary Source="pack://application:,,,/GroceryErp.UI.Common;component/Themes/Tokens.xaml" />
       </ResourceDictionary.MergedDictionaries>
+      <!-- The store logo in a FluentWindow's own title bar (other windows show the exe's icon). Not shared: an
+           element has one parent, and two of these windows can be open at once. -->
+      <ui:ImageIcon x:Key="StoreLogoIcon" x:Shared="False" Width="18" Height="18"
+                    RenderOptions.BitmapScalingMode="HighQuality"
+                    Source="/GroceryErp.App;component/Assets/logo.jpeg"/>
       <Style x:Key="CatalogGrid" TargetType="DataGrid" BasedOn="{StaticResource CatalogGridBase}">
         <EventSetter Event="Loaded" Handler="TableGrid_OnLoaded"/>
       </Style>

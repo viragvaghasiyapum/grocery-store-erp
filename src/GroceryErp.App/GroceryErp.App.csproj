@@ -3,6 +3,8 @@
     <OutputType>WinExe</OutputType>
     <UseWPF>true</UseWPF>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- The store logo: the exe's icon, which every window without its own Icon shows in its title bar and the taskbar. -->
+    <ApplicationIcon>../../logo/logo.ico</ApplicationIcon>
     <StartupObject>GroceryErp.App.Program</StartupObject>
   </PropertyGroup>
   <ItemGroup>

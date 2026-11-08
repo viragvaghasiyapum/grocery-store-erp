@@ -10,7 +10,7 @@
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN"
     NumberSubstitution.Substitution="European" p:ScreenHelp.Topic="setup">
   <DockPanel>
-    <ui:TitleBar DockPanel.Dock="Top" Title="{l:Tr Setup_Title}"/>
+    <ui:TitleBar DockPanel.Dock="Top" Title="{l:Tr Setup_Title}" Icon="{StaticResource StoreLogoIcon}"/>
   <Grid Margin="28">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <DockPanel>

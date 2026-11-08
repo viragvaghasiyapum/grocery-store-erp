@@ -9,7 +9,7 @@
     NumberSubstitution.CultureSource="Override" NumberSubstitution.CultureOverride="en-IN"
     NumberSubstitution.Substitution="European" p:ScreenHelp.Topic="restore">
   <DockPanel>
-    <ui:TitleBar DockPanel.Dock="Top" Title="{l:Tr Settings_RestoreTitle}"/>
+    <ui:TitleBar DockPanel.Dock="Top" Title="{l:Tr Settings_RestoreTitle}" Icon="{StaticResource StoreLogoIcon}"/>
   <Grid Margin="28">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <DockPanel>
