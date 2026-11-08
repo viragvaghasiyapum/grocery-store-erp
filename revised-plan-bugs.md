@@ -19,7 +19,7 @@ Done 6 November: the 1.2.0 packages were rebuilt from 0be0113 (B-5 to B-7), then
 
 8 November: the owner chose to ship the `screen-help` work in 1.2.0 (see "Found by the calculation audit") and set aside the guides' rework and screenshots, including the Purchases page pictures (`purchases-page.en/.gu.png`) that still show the folded **More** (B-6).
 
-Done 8 November: the 1.2.0 packages were rebuilt from commit 1d8593d on `screen-help` (G-3), and the packaged journey (G-4) and the large-store journey on the schema-42 fixture (G-5) passed on them. Later that day they were rebuilt from 8132341, with Billing's search as you type and sidebar pages without animation, and G-4 and G-5 passed again.
+Done 8 November: the 1.2.0 packages were rebuilt from commit 1d8593d on `screen-help` (G-3), and the packaged journey (G-4) and the large-store journey on the schema-42 fixture (G-5) passed on them. Later that day they were rebuilt from 8132341, with Billing's search as you type and sidebar pages without animation, and G-4 and G-5 passed again. They were then rebuilt from 6168a14, with one saved bill in Billing and the unprinted-jobs notice shown once (G-3); G-4 and G-5 have not run on that build yet.
 
 Still to do: the human gates in `docs/release-checklist.md`, including the owner's review of the recorded decisions (O-3).
 
@@ -275,6 +275,10 @@ Verified on the working tree, 7 November 2026, after the owner's decisions and t
     - The 6f6b52b files were moved to `artifacts/Releases-1.2.0-6f6b52b` and deleted after the journey passed (G-4). `artifacts/publish` was cleared first.
     - The script ran in 68 s: setup 90.1 MB, portable zip and full package 82.6 MB, delta 2.47 MB. The delta again patches 19 files, leaves 291 unchanged and removes 2.
     - The executable's product version reads `1.2.0+1d8593de921073aa7f9202f1bcce893605d4e23f`, in `artifacts/publish` and in the portable zip's `current` folder. The zip's `sq.version` is 1.2.0. The feed lists 27 entries, and Velopack reports 307 files unsigned.
+  - **Rebuilt a third time 8 Nov 2026** from commit 6168a14, after the owner asked for one saved bill in Billing and the unprinted-jobs notice shown once, and to include them in the build.
+    - Before packaging, on that commit: the format gate passed, the solution and ScaleAudit built without warnings, and the full suite, one project at a time, ran 378 tests: 376 passed and the 2 opt-in journeys skipped.
+    - The 8132341 files were moved to `artifacts/temp/releases-1.2.0-8132341`, to be deleted once the journeys pass; `artifacts/publish` was cleared first.
+    - Setup 90.1 MB, portable zip and full package 82.5 MB, delta 2.47 MB (19 patched, 291 unchanged, 2 removed). The product version reads `1.2.0+6168a14972b67fb2299dc0aba4005c1511b38067` in `artifacts/publish` and in the portable zip's `current` folder; 27 feed entries; 307 files unsigned.
   - **Rebuilt again 8 Nov 2026** from commit 8132341, after the owner added Billing's search as you type (4029ed4) and sidebar pages without the sliding animation (8132341) and asked for the installer with them.
     - Before packaging, on that commit: the format gate passed, the solution, ScaleAudit and DataGen built without warnings, and the full suite, one project at a time, ran 376 tests: 374 passed and the 2 opt-in journeys skipped.
     - The 1d8593d files were moved to `artifacts/Releases-1.2.0-1d8593d` and deleted after the journeys passed; `artifacts/publish` was cleared first.
