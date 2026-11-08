@@ -37,6 +37,11 @@ public partial class BillingPage : Page, IDisposable
     private Task _billOperations = Task.CompletedTask;
     private int _refreshVersion;
     private readonly DispatcherTimer _printerTimer = new() { Interval = TimeSpan.FromSeconds(15) };
+    // The matches of a typed name list once typing pauses. A scanner's keys come far closer
+    // together than this (scanner.max_gap_ms, 35 ms by default), so a scan never starts a search.
+    private readonly DispatcherTimer _liveSearchDelay;
+    private CancellationTokenSource? _liveSearch;
+    private int _liveSearchVersion;
 
     public BillingPage() : this(
         ((App)Application.Current).Services.GetRequiredService<SalesService>(),
@@ -56,6 +61,12 @@ public partial class BillingPage : Page, IDisposable
         _inventory = inventory;
         _printer = printer;
         _printerTimer.Tick += async (_, _) => await RefreshPrinterAsync();
+        _liveSearchDelay = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromMilliseconds(250) };
+        _liveSearchDelay.Tick += async (_, _) =>
+        {
+            _liveSearchDelay.Stop();
+            await LiveSearchAsync();
+        };
         UpdateLineActions();
         if (loadOnShow)
         {
@@ -71,6 +82,7 @@ public partial class BillingPage : Page, IDisposable
             _detector?.Dispose();
             _detector = null;
             _printerTimer.Stop();
+            StopLiveSearch();
             TranslationSource.Instance.PropertyChanged -= OnLanguageChanged;
         };
         PreviewKeyDown += OnShortcut;
@@ -125,12 +137,100 @@ public partial class BillingPage : Page, IDisposable
             ProductChoices.FocusSelected();
             return;
         }
+        if (e.Key == Key.Escape && ProductChoices.IsOpen)
+        {
+            e.Handled = true;
+            StopLiveSearch();
+            ProductChoices.IsOpen = false;
+            return;
+        }
         if (e.Key != Key.Enter) return;
         e.Handled = true;
         string value = ScanBox.Text;
         if (value.Trim().EndsWith('*')) return;
         ScanBox.Clear();
         await EnqueueBillActionAsync(() => AddTextAsync(value));
+    }
+
+    // While a name is typed its matches list under the box, without waiting for Enter: from one
+    // Gujarati letter, or two of anything else. The keyboard stays in the box, Down moves into the
+    // list, and Enter still adds an exact barcode or SKU, or the one match.
+    private void ScanBox_OnTextChanged(object sender, TextChangedEventArgs e)
+    {
+        StopLiveSearch();
+        if (LiveSearchTerm(ScanBox.Text, out _) is null)
+        {
+            ProductChoices.IsOpen = false;
+            return;
+        }
+        _liveSearchDelay.Start();
+    }
+
+    private async Task LiveSearchAsync()
+    {
+        StopLiveSearch();
+        if (LiveSearchTerm(ScanBox.Text, out Quantity prefix) is not { } term) return;
+        var cancellation = new CancellationTokenSource();
+        _liveSearch = cancellation;
+        int version = ++_liveSearchVersion;
+        try
+        {
+            IReadOnlyList<ProductListItem> matches = await _catalog.SearchAsync(
+                new(Query: term, Limit: 50, SaleableOnly: true), cancellation.Token);
+            // A dialog opened meanwhile, such as payment, keeps the keyboard; the list waits for the next keystroke.
+            if (version != _liveSearchVersion || !IsLoaded ||
+                Keyboard.FocusedElement is DependencyObject focused && Window.GetWindow(focused) is { } owner &&
+                owner != Window.GetWindow(this))
+                return;
+            if (matches.Count == 0)
+            {
+                ProductChoices.IsOpen = false;
+                return;
+            }
+            _choiceQuantity = prefix;
+            ProductChoices.Show(matches);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        catch (Exception exception)
+        {
+            if (version == _liveSearchVersion) StatusText.Text = Message(exception);
+        }
+        finally
+        {
+            if (ReferenceEquals(_liveSearch, cancellation)) _liveSearch = null;
+            cancellation.Dispose();
+        }
+    }
+
+    // Stops a pending or running search; the one running disposes its own cancellation when it ends.
+    private void StopLiveSearch()
+    {
+        _liveSearchDelay.Stop();
+        ++_liveSearchVersion;
+        _liveSearch?.Cancel();
+        _liveSearch = null;
+    }
+
+    /// <summary>
+    /// The name to list matches for while typing, after an optional quantity and *, or null while it
+    /// is too short (one Gujarati letter, else two characters) or reads as a barcode, which waits for Enter.
+    /// </summary>
+    internal static string? LiveSearchTerm(string text, out Quantity prefix)
+    {
+        prefix = Quantity.One;
+        string term = InputNormalizer.Normalize(text).Trim();
+        int separator = term.IndexOf('*', StringComparison.Ordinal);
+        if (separator >= 0)
+        {
+            if (separator == 0 || !decimal.TryParse(term[..separator], NumberStyles.Number,
+                    CultureInfo.GetCultureInfo("en-IN"), out decimal parsed) || parsed <= 0)
+                return null;
+            prefix = new Quantity(parsed);
+            term = term[(separator + 1)..].TrimStart();
+        }
+        if (term.Length >= 8 && term.All(char.IsAsciiDigit)) return null;
+        bool gujarati = term.Any(static character => character is >= '઀' and <= '૿');
+        return term.Length >= (gujarati ? 1 : 2) ? term : null;
     }
 
     private Task EnqueueBillActionAsync(Func<Task> action)
@@ -235,8 +335,11 @@ public partial class BillingPage : Page, IDisposable
         finally { ScanBox.Focus(); }
     }
 
-    // The quantity typed before * in the search applies to the product picked from the list.
-    private async void ProductChoices_OnPicked(object? sender, ProductListItem product) =>
+    // The quantity typed before * in the search applies to the product picked from the list. A list
+    // shown while typing leaves the name in the box, so picking clears it.
+    private async void ProductChoices_OnPicked(object? sender, ProductListItem product)
+    {
+        ScanBox.Clear();
         await EnqueueBillActionAsync(async () =>
         {
             try
@@ -248,6 +351,7 @@ public partial class BillingPage : Page, IDisposable
             catch (Exception exception) { StatusText.Text = Message(exception); }
             finally { ScanBox.Focus(); }
         });
+    }
 
     private void ProductChoices_OnClosed(object? sender, EventArgs e) => ScanBox.Focus();
 
@@ -614,6 +718,7 @@ public partial class BillingPage : Page, IDisposable
 
     public void Dispose()
     {
+        StopLiveSearch();
         _detector?.Dispose();
         _detector = null;
         GC.SuppressFinalize(this);

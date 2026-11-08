@@ -11,8 +11,8 @@ Every line takes its stock from the lot a bill takes next: the earliest expiry f
 
 | Field | What it means |
 |---|---|
-| **Scan barcode or search (F3)** | Scan a barcode, or type a barcode, SKU or part of a name and press Enter. One match joins the bill. Type a quantity and * first, such as 2*salt or 2*8901234567890, to add that many. A number of eight or more digits that matches nothing opens Unknown barcode, where you can add the product or attach the barcode to one. F3 jumps here from anywhere on the screen. |
-| **Matching products** | When several products match a name, they are listed under the box with SKU, Gujarati name, price and stock. The price is that of the lot the bill takes next. Pick one with the arrow keys and Enter, or click it; Esc closes the list. |
+| **Scan barcode or search (F3)** | Scan a barcode, or type a barcode, SKU or part of a name. As you type a name, its matches are listed under the box (below); Enter adds an exact barcode or SKU, or the one match. Type a quantity and * first, such as 2*salt or 2*8901234567890, to add that many. A number of eight or more digits that matches nothing opens Unknown barcode, where you can add the product or attach the barcode to one. F3 jumps here from anywhere on the screen. |
+| **Matching products** | As you type, the products matching it are listed under the box with SKU, Gujarati name, price and stock: from one Gujarati letter, or two other characters, once you pause. Enter lists them too when several match. The price is that of the lot the bill takes next. Down moves into the list; pick one with the arrow keys and Enter, or click it; Esc closes the list. |
 | **Items** | How many lines the bill has. Under it, the customer: **Walk-in customer** until you choose one. |
 | Last: … | The last product added, with its stock and MRP. |
 | Held bills | A button for each recently held bill, with its label or number. Click one to check it and carry on with it. |

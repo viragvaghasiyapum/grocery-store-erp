@@ -21,10 +21,19 @@ public partial class ProductChoices : Popup
     /// <summary>Lists the matches with the first one selected and moves the keyboard into the list.</summary>
     public void Open(IReadOnlyList<ProductListItem> matches)
     {
+        Show(matches);
+        _ = Dispatcher.BeginInvoke(FocusSelected, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// Lists the matches with the first one selected and leaves the keyboard in the search box, for
+    /// a list that follows the typing; Down moves into it.
+    /// </summary>
+    public void Show(IReadOnlyList<ProductListItem> matches)
+    {
         List.ItemsSource = matches;
         List.SelectedIndex = 0;
         IsOpen = true;
-        _ = Dispatcher.BeginInvoke(FocusSelected, DispatcherPriority.Loaded);
     }
 
     /// <summary>Moves the keyboard into the open list, as Down in the search box does.</summary>

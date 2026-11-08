@@ -2105,6 +2105,30 @@ public sealed class PhaseZeroSmokeTests
             billChoices.IsOpen.ShouldBeFalse();
             billGrid.Items.Count.ShouldBe(2);
             ((TextBlock)billing.FindName("StatusText")).Text.ShouldBe(translations["Purchasing_NoProduct"]);
+            // Typing lists the matches without Enter once typing pauses: from two letters (one
+            // Gujarati letter, BillingLiveSearchTests), with the text left in the box and the
+            // quantity before * kept for the pick. Esc closes the list; the bill does not change.
+            var scanBox = (TextBox)billing.FindName("ScanBox");
+            var paused = System.Diagnostics.Stopwatch.StartNew();
+            scanBox.Text = "s";
+            PumpUntil(() => paused.ElapsedMilliseconds > 600);
+            billChoices.IsOpen.ShouldBeFalse();
+            scanBox.Text = "3*sa";
+            PumpUntil(() => billChoices.IsOpen);
+            string.Join(",", billChoiceList.Items.Cast<ProductListItem>().Select(static item => item.Sku).Order(StringComparer.Ordinal))
+                .ShouldBe("SALT001,SALT0011");
+            scanBox.Text.ShouldBe("3*sa");
+            ((Quantity)typeof(BillingPage).GetField("_choiceQuantity", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(billing)!).ShouldBe(new Quantity(3));
+            scanBox.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(billingHost)!, 0, Key.Escape)
+            { RoutedEvent = Keyboard.KeyDownEvent });
+            billChoices.IsOpen.ShouldBeFalse();
+            scanBox.Text.ShouldBe("3*sa");
+            scanBox.Clear();
+            paused.Restart();
+            PumpUntil(() => paused.ElapsedMilliseconds > 600);
+            billChoices.IsOpen.ShouldBeFalse();
+            billGrid.Items.Count.ShouldBe(2);
             billingHost.Close();
             long billId = (long)typeof(BillingPage).GetField("_saleId", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(billing)!;
             Money billTotal = Run(() => sales.GetAsync(billId)).Totals.GrandTotal;
