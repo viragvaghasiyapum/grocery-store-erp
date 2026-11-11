@@ -45,6 +45,7 @@ Run the app against generated demo data. Do not use the real `%LocalAppData%\Gro
 dotnet run -c Release --project tools/GroceryErp.DataGen -- --scale=0.001 --output=artifacts/data/x.db
 dotnet run -c Release --project tools/GroceryErp.ScaleAudit -- <data-root> verify   # also: migrate, ui-setup, many profiling modes
 ./scripts/build-release.ps1 -Version 1.2.3   # self-contained R2R publish + Velopack pack into artifacts/
+./scripts/make-logo-assets.ps1               # after replacing logo/logo.png: remakes logo/logo-app.png (embedded) and logo/logo.ico
 ```
 
 `tools/GroceryErp.ScaleAudit` is **not in the solution**, so the solution build won't catch breaks there. After changing a service signature, build ScaleAudit too. There is no separate password tool: ScaleAudit `ui-setup` sets a store's login (owner / scale-audit-2026), as `Start-Demo.ps1` does.
