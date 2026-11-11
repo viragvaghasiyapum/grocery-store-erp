@@ -1,5 +1,5 @@
 <!-- MT – needs review: machine-drafted Gujarati for 1.2.0. Remove this line after the native review. -->
-Grocery ERP 1.2.0
+Hare Krushna 1.2.0
 
 આ સંસ્કરણ દરેક ખરીદી, બેચ અને બિલ લાઇનનો કર સાચવે છે, દરેક સ્ક્રીનમાં મદદ ઉમેરે છે, અને ખરીદી, યાદીઓ અને સંદેશા વાપરવામાં સરળ બનાવે છે.
 

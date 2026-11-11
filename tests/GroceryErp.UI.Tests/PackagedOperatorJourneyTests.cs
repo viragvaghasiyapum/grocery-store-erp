@@ -66,7 +66,7 @@ public sealed class PackagedOperatorJourneyTests
             await WaitUntilAsync(() => (notes = shell.ModalWindows.FirstOrDefault(window =>
                 window.FindFirstDescendant(cf => cf.ByAutomationId("CloseButton")) is not null)) is not null,
                 TimeSpan.FromSeconds(15));
-            Find(notes!, "VersionText").Name.ShouldStartWith("Grocery ERP ");
+            Find(notes!, "VersionText").Name.ShouldStartWith("Hare Krushna ");
             Screen(notes!, "1-release-notes");
             Invoke(notes!, "CloseButton");
             await WaitUntilAsync(() => shell.ModalWindows.Length == 0, TimeSpan.FromSeconds(10));

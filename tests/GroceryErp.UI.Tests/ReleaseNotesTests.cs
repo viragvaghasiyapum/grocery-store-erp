@@ -32,7 +32,7 @@ public sealed class ReleaseNotesTests
             string[] en = Lines(english.Text);
             string[] gu = Lines(gujarati.Text);
 
-            en[0].ShouldMatch(@"^Grocery ERP \d+\.\d+\.\d+$");
+            en[0].ShouldMatch(@"^Hare Krushna \d+\.\d+\.\d+$");
             gu[0].ShouldBe(en[0]);
             en[^1].ShouldBe($"Database schema: {MigrationRunner.LatestVersion}.");
             gu[^1].ShouldBe($"ડેટાબેઝ સ્કીમા: {MigrationRunner.LatestVersion}.");

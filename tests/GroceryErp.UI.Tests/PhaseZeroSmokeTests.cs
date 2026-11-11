@@ -2700,7 +2700,7 @@ public sealed class PhaseZeroSmokeTests
                 close.IsCancel.ShouldBeTrue();
                 close.Content.ShouldBe(translations["Common_Close"]);
                 window.Title.ShouldBe(translations["ReleaseNotes_Title"]);
-                ((TextBlock)window.FindName("VersionText")).Text.ShouldMatch(@"^Grocery ERP \d+\.\d+\.\d+$");
+                ((TextBlock)window.FindName("VersionText")).Text.ShouldMatch(@"^Hare Krushna \d+\.\d+\.\d+$");
                 string text = ((TextBlock)window.FindName("NotesText")).Text;
                 text.ShouldEndWith($": {MigrationRunner.LatestVersion}.");
                 text.ShouldNotContain("<!--");

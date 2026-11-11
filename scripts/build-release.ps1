@@ -17,8 +17,8 @@ foreach ($language in 'en', 'gu') {
     $notes = Join-Path $repository "src\GroceryErp.App\CHANGELOG.$language.md"
     $title = Get-Content -LiteralPath $notes -Encoding UTF8 |
         Where-Object { $_.Trim() -and -not $_.TrimStart().StartsWith('<!--') } | Select-Object -First 1
-    if ($title -cne "Grocery ERP $Version") {
-        throw "CHANGELOG.$language.md begins '$title', not 'Grocery ERP $Version'. Write the release notes for $Version first."
+    if ($title -cne "Hare Krushna $Version") {
+        throw "CHANGELOG.$language.md begins '$title', not 'Hare Krushna $Version'. Write the release notes for $Version first."
     }
 }
 
@@ -29,7 +29,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Tool restore failed.' }
     -p:Version=$Version -o $publish
 if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
 
-& $dotnet tool run vpk pack --packId GroceryErp --packVersion $Version --packDir $publish `
+# packId stays GroceryErp: installed copies find their updates by it. packTitle is the name the
+# installer, its messages, the shortcuts and Installed apps show; without it they show the packId.
+& $dotnet tool run vpk pack --packId GroceryErp --packTitle 'Hare Krushna' --packVersion $Version --packDir $publish `
     --mainExe GroceryErp.App.exe --runtime win-x64 --outputDir $releases `
     --icon (Join-Path $repository 'logo\logo.ico')
 if ($LASTEXITCODE -ne 0) { throw 'Velopack packaging failed.' }

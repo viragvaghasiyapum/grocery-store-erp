@@ -1,4 +1,4 @@
-Grocery ERP 1.2.0
+Hare Krushna 1.2.0
 
 This version saves the tax of every purchase, lot and bill line, adds help to every screen, and makes purchases, lists and messages easier to use.
 

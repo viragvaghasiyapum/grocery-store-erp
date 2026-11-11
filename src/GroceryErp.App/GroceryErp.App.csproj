@@ -6,6 +6,10 @@
     <!-- The store logo: the exe's icon, which every window without its own Icon shows in its title bar and the taskbar. -->
     <ApplicationIcon>../../logo/logo.ico</ApplicationIcon>
     <StartupObject>GroceryErp.App.Program</StartupObject>
+    <!-- The exe's description and product name, which Windows shows in Task Manager and its own
+         messages about the app; without them it shows "GroceryErp.App". -->
+    <AssemblyTitle>Hare Krushna</AssemblyTitle>
+    <Product>Hare Krushna</Product>
   </PropertyGroup>
   <ItemGroup>
     <ApplicationDefinition Remove="App.xaml" />

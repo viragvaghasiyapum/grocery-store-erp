@@ -399,6 +399,13 @@ Store logo as the window icon (8 November 2026, branch `screen-help`, no schema 
 - `scripts/build-release.ps1` passes the same icon to `vpk pack --icon`, so the installer shows it too. The release notes' Screens line says so in both languages.
 - Verification: the format gate passed, the Release builds of the solution and ScaleAudit had no warnings, and the full suite ran 378 tests one test project at a time: 376 passed and the 2 opt-in journeys skipped. On the demo store the login window, the shell and the dashboard's help dialog showed the logo in the title bar and on the taskbar.
 
+Store name instead of "Grocery ERP" (11 November 2026, branch `screen-help`, no schema change): **implemented; the 1.2.0 packages must be rebuilt for it to reach the installer.** The owner asked that no title show "GroceryERP" as the app's name. The app's own windows and messages already used `App_Title` ("Hare Krushna"); the old name was left in four places.
+
+- The release notes' first line, shown as the heading of the notes window after sign-in, is "Hare Krushna 1.2.0" in both languages; `build-release.ps1` and the release-notes tests expect that form.
+- `vpk pack` gets `--packTitle 'Hare Krushna'`, so the installer, its messages, the shortcuts and Installed apps show the store's name instead of the package ID. The package ID stays `GroceryErp`, since installed copies find their updates by it.
+- The App project sets `AssemblyTitle` and `Product` to "Hare Krushna", so Task Manager and Windows' own messages about the app no longer show "GroceryErp.App".
+- The Gujarati Setup title and startup failure message said "ગ્રોસરી ERP"; they now say "Hare Krushna", as `App_Title` does in both languages.
+
 ## 1. Product contract and precedence
 
 The decisions and acceptance criteria in this file supersede older statements in `revised plan.md`, `implementation.md`, `PLANS.md`, and supporting Phase 0 notes wherever they disagree. Preserve the offline, single-user Windows application, three-decimal fixed-point values, bilingual UI, durable transactions, backups, and existing payment, tax, and printing guarantees.
