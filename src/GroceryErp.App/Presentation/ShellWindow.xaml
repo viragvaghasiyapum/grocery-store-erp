@@ -27,7 +27,7 @@
       <ui:TitleBar.Header>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
           <Image Width="28" Height="28" Margin="0,0,8,0"
-                 Source="/GroceryErp.App;component/Assets/logo.jpeg" Stretch="Uniform"/>
+                 Source="/GroceryErp.App;component/Assets/logo.png" Stretch="Uniform"/>
           <TextBlock x:Name="StoreHeading" FontSize="15" FontWeight="SemiBold" Text="Hare Krushna"
                      TextTrimming="CharacterEllipsis" VerticalAlignment="Center" MaxWidth="220"/>
           <TextBlock x:Name="StoreTagline" Margin="8,0,0,0" FontSize="12" Opacity="0.72" Text="{l:Tr Shell_StoreTagline}" VerticalAlignment="Center"/>
@@ -103,7 +103,7 @@
           <ColumnDefinition Width="2"/>
           <ColumnDefinition Width="*" MinWidth="330"/>
         </Grid.ColumnDefinitions>
-        <Image Source="/GroceryErp.App;component/Assets/logo.jpeg" Stretch="Uniform"
+        <Image Source="/GroceryErp.App;component/Assets/logo.png" Stretch="Uniform"
                MaxWidth="420" MaxHeight="420" Margin="0,0,36,0" VerticalAlignment="Center"/>
         <Border Grid.Column="1" Width="2" Margin="0,32" Background="#B7C4D5"/>
         <StackPanel Grid.Column="2" MaxWidth="360" Margin="36,0,0,0"

@@ -16,7 +16,7 @@
            element has one parent, and two of these windows can be open at once. -->
       <ui:ImageIcon x:Key="StoreLogoIcon" x:Shared="False" Width="18" Height="18"
                     RenderOptions.BitmapScalingMode="HighQuality"
-                    Source="/GroceryErp.App;component/Assets/logo.jpeg"/>
+                    Source="/GroceryErp.App;component/Assets/logo.png"/>
       <Style x:Key="CatalogGrid" TargetType="DataGrid" BasedOn="{StaticResource CatalogGridBase}">
         <EventSetter Event="Loaded" Handler="TableGrid_OnLoaded"/>
       </Style>

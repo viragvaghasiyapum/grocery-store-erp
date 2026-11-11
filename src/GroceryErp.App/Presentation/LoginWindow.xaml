@@ -15,7 +15,7 @@
         <ColumnDefinition Width="2"/>
         <ColumnDefinition Width="*" MinWidth="330"/>
       </Grid.ColumnDefinitions>
-      <Image Source="/GroceryErp.App;component/Assets/logo.jpeg" Stretch="Uniform"
+      <Image Source="/GroceryErp.App;component/Assets/logo.png" Stretch="Uniform"
              MaxWidth="350" MaxHeight="350" Margin="12,0,28,0" VerticalAlignment="Center"/>
       <Border Grid.Column="1" Width="2" Margin="0,14" Background="#B7C4D5"/>
       <ScrollViewer Grid.Column="2" Margin="28,0,0,0" VerticalScrollBarVisibility="Auto"

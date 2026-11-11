@@ -406,6 +406,11 @@ Store name instead of "Grocery ERP" (11 November 2026, branch `screen-help`, no 
 - The App project sets `AssemblyTitle` and `Product` to "Hare Krushna", so Task Manager and Windows' own messages about the app no longer show "GroceryErp.App".
 - The Gujarati Setup title and startup failure message said "ગ્રોસરી ERP"; they now say "Hare Krushna", as `App_Title` does in both languages.
 
+New store logo (11 November 2026, branch `screen-help`, no schema change): **implemented and locally verified; not yet in the 1.2.0 packages.** The owner supplied `logo/logo.png` (1254 pixels square, spelled "Hare Krushna" like the store's name) to replace the logo everywhere.
+
+- `logo/logo.ico` is cut again from `logo.png` the same way as before: to its rounded border, transparent outside it, nine sizes from 16 to 256 pixels. It stays the exe's `ApplicationIcon` and `vpk pack --icon`, so the title bars, the taskbar, the shortcuts and the installer show the new logo.
+- The App project embeds `logo.png` as `Assets/logo.png` instead of `logo.jpeg`, so the shell's title bar and empty page, the sign-in window and `StoreLogoIcon` (Login, Setup and Restore title bars) show it too. `logo/logo.jpeg` was removed, since nothing uses it.
+
 ## 1. Product contract and precedence
 
 The decisions and acceptance criteria in this file supersede older statements in `revised plan.md`, `implementation.md`, `PLANS.md`, and supporting Phase 0 notes wherever they disagree. Preserve the offline, single-user Windows application, three-decimal fixed-point values, bilingual UI, durable transactions, backups, and existing payment, tax, and printing guarantees.

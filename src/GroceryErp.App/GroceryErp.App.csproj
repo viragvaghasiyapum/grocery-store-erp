@@ -21,7 +21,7 @@
     <!-- Screen help: one file per screen and language, shared with the user guide (ScreenHelp.Read). -->
     <EmbeddedResource Include="../../docs/user-guide/help/en/*.md" LogicalName="GroceryErp.App.Help.en.%(Filename).md" WithCulture="false" />
     <EmbeddedResource Include="../../docs/user-guide/help/gu/*.md" LogicalName="GroceryErp.App.Help.gu.%(Filename).md" WithCulture="false" />
-    <Resource Include="../../logo/logo.jpeg" Link="Assets/logo.jpeg" />
+    <Resource Include="../../logo/logo.png" Link="Assets/logo.png" />
     <InternalsVisibleTo Include="GroceryErp.UI.Tests" />
   </ItemGroup>
   <ItemGroup>
