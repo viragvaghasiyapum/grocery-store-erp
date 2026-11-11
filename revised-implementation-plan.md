@@ -406,10 +406,11 @@ Store name instead of "Grocery ERP" (11 November 2026, branch `screen-help`, no 
 - The App project sets `AssemblyTitle` and `Product` to "Hare Krushna", so Task Manager and Windows' own messages about the app no longer show "GroceryErp.App".
 - The Gujarati Setup title and startup failure message said "ગ્રોસરી ERP"; they now say "Hare Krushna", as `App_Title` does in both languages.
 
-New store logo (11 November 2026, branch `screen-help`, no schema change): **implemented and locally verified; not yet in the 1.2.0 packages.** The owner supplied `logo/logo.png` (1254 pixels square, spelled "Hare Krushna" like the store's name) to replace the logo everywhere.
+New store logo (11 November 2026, branch `screen-help`, no schema change): **implemented and locally verified; the 1.2.0 packages were rebuilt with it from commit f5a59a6 the same day and the packaged journey passed on them (`revised-plan-bugs.md` G-3, G-4); the large-store journey was not redone, on the owner's decision, since only the image changed. That build is the final 1.2.0 copy.** The owner supplied `logo/logo.png` (1254 pixels square, spelled "Hare Krushna" like the store's name) to replace the logo everywhere.
 
 - `logo/logo.ico` is cut again from `logo.png` the same way as before: to its rounded border, transparent outside it, nine sizes from 16 to 256 pixels. It stays the exe's `ApplicationIcon` and `vpk pack --icon`, so the title bars, the taskbar, the shortcuts and the installer show the new logo.
 - The App project embeds `logo.png` as `Assets/logo.png` instead of `logo.jpeg`, so the shell's title bar and empty page, the sign-in window and `StoreLogoIcon` (Login, Setup and Restore title bars) show it too. `logo/logo.jpeg` was removed, since nothing uses it.
+- Verification: the format gate passed, the Release builds of the solution and ScaleAudit had no warnings, and the full suite ran 378 tests one test project at a time: 376 passed and the 2 opt-in journeys skipped. The built exe and Setup.exe carry the new icon, and the packaged journey's screens show the logo in the shell and the dialogs' title bars.
 
 ## 1. Product contract and precedence
 
